@@ -93,15 +93,45 @@ export function registerIpcHandlers(): void {
     async (
       _event,
       messages: Array<{ role: string; content: string }>,
-      model: string
+      model: string,
+      collection: string
     ): Promise<string> => {
       try {
+        let concepts = "";
+        if (collection) {
+          try {
+            const scrollData = await fetchJson<QdrantScrollResponse>(
+              `${QDRANT_URL}/collections/${encodeURIComponent(collection)}/points/scroll`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ limit: SCROLL_LIMIT, with_payload: true, with_vector: false }),
+              }
+            );
+            concepts = scrollData.result.points
+              .map((p) => String(p.payload.explanation ?? ""))
+              .filter(Boolean)
+              .join("\n");
+          } catch (e) {
+            console.error("[qdrant:concepts]", e instanceof Error ? e.message : e);
+          }
+        }
+
+        const systemPrompt = concepts
+          ? `You are an expert assistant with access to a knowledge base. Apply these principles when answering:\n\n${concepts}\n\nRules:\n- Apply these concepts in your response\n- Respond in Russian\n- Give practical, actionable advice\n- Use examples from the concepts when relevant`
+          : "You are a helpful assistant. Respond in Russian.";
+
+        const fullMessages = [
+          { role: "system", content: systemPrompt },
+          ...messages,
+        ];
+
         const data = await fetchJson<LmStudioChatResponse>(`${LM_STUDIO_URL}/v1/chat/completions`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             model,
-            messages,
+            messages: fullMessages,
             temperature: DEFAULT_TEMPERATURE,
             max_tokens: DEFAULT_MAX_TOKENS,
           }),

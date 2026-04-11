@@ -151,7 +151,8 @@ async function sendMessage() {
   showTyping();
 
   try {
-    const answer = await window.api.sendChat([...history], model);
+    const collection = collectionSelect.value;
+    const answer = await window.api.sendChat([...history], model, collection);
     hideTyping();
     addMessage("assistant", answer);
     history.push({ role: "assistant", content: answer });

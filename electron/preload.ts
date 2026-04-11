@@ -12,7 +12,8 @@ contextBridge.exposeInMainWorld("api", {
 
   sendChat: (
     messages: Array<{ role: string; content: string }>,
-    model: string
+    model: string,
+    collection: string
   ): Promise<string> =>
-    ipcRenderer.invoke("lmstudio:chat", messages, model),
+    ipcRenderer.invoke("lmstudio:chat", messages, model, collection),
 });
