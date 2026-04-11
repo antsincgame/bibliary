@@ -1,0 +1,20 @@
+appId: com.bibliary.app
+productName: Bibliary
+directories:
+  output: release
+files:
+  - dist-electron/**/*
+  - renderer/**/*
+  - node_modules/**/*
+  - package.json
+win:
+  target: nsis
+  forceCodeSigning: false
+  signAndEditExecutable: false
+nsis:
+  oneClick: true
+  perMachine: false
+asar: true
+asarUnpack:
+  - "**/onnxruntime-node/**"
+  - "**/sharp/**"

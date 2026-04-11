@@ -1,0 +1,33 @@
+{
+  "name": "bibliary",
+  "version": "2.0.0",
+  "type": "module",
+  "main": "dist-electron/electron/main.js",
+  "description": "Vector knowledge store — natural language concepts for site generation",
+  "scripts": {
+    "init": "tsx src/init-collection.ts",
+    "load": "tsx src/load.ts",
+    "search": "tsx src/search.ts",
+    "decode": "tsx src/decode-hdsk.ts",
+    "llm": "tsx src/llm-prompt.ts",
+    "chat": "tsx src/rag-chat.ts",
+    "electron:compile": "tsc -p tsconfig.electron.json",
+    "electron:dev": "tsc -p tsconfig.electron.json && echo {\"type\":\"commonjs\"} > dist-electron/package.json && electron dist-electron/electron/main.js",
+    "electron:build": "tsc -p tsconfig.electron.json && echo {\"type\":\"commonjs\"} > dist-electron/package.json && electron-builder"
+  },
+  "dependencies": {
+    "@qdrant/js-client-rest": "^1.12.0",
+    "@xenova/transformers": "^2.17.2",
+    "dotenv": "^16.4.7",
+    "uuid": "^11.1.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "@types/uuid": "^10.0.0",
+    "electron": "^41.2.0",
+    "electron-builder": "^26.8.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

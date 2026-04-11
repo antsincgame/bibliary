@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src http://localhost:*">
+  <title>Bibliary</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <!-- Top bar -->
+    <div class="top-bar">
+      <div class="app-title">Bibliary</div>
+
+      <div class="control-group">
+        <span class="control-label">Collection</span>
+        <select id="collection-select">
+          <option value="">loading...</option>
+        </select>
+        <button class="btn-refresh" id="btn-refresh-collections" title="Refresh collections">↻</button>
+      </div>
+
+      <div class="control-group">
+        <span class="control-label">Model</span>
+        <select id="model-select">
+          <option value="">loading...</option>
+        </select>
+        <button class="btn-refresh" id="btn-refresh-models" title="Refresh models">↻</button>
+      </div>
+
+      <div class="status-dot" id="status-dot" title="Offline"></div>
+    </div>
+
+    <!-- Chat area -->
+    <div class="chat-area" id="chat-area">
+      <div class="welcome">
+        <div class="welcome-title">Bibliary</div>
+        <div class="welcome-sub">knowledge base // year 2666</div>
+      </div>
+    </div>
+
+    <!-- Input bar -->
+    <div class="input-bar">
+      <div class="input-wrapper">
+        <textarea
+          id="input"
+          rows="1"
+          placeholder="Enter message..."
+        ></textarea>
+      </div>
+      <button class="btn-send" id="btn-send">Send</button>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

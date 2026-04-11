@@ -1,0 +1,50 @@
+[
+  {
+    "principle": "Content must solve reader problem, not present yourself",
+    "explanation": "X.content|reader_problem >> self_presentation; NO:\"we_are_art\" -> answer \"can_you_help_me?\" eg: \"clean_after_tenants\" >> \"cleaning_is_art\"",
+    "domain": "copy",
+    "tags": ["reader-first", "content-strategy", "useful-action"]
+  },
+  {
+    "principle": "Replace bureaucratic text with human specifics",
+    "explanation": "X.copy|bureaucratic -> human + specifics; add: weekday + full_words + duration + fallback_plan; human_text -support_calls eg: \"water_off_MON_11may_4-6h_tel:XXX\" >> \"cold/hot_water_off_until_done\"",
+    "domain": "copy",
+    "tags": ["clarity", "human-language", "specifics", "editing"]
+  },
+  {
+    "principle": "CV: answer requirements point by point with proof",
+    "explanation": "X.content|CV: answer requirements point_by_point; skill + proof; NO:biography; NO:pity; NO:\"since_school\"; admit_gaps_honestly eg: \"support_exp, answered_in_socials\" >> \"talent_for_texts_since_childhood\"",
+    "domain": "copy",
+    "tags": ["cv", "resume", "proof", "requirements"]
+  },
+  {
+    "principle": "Three text qualities: brief, clear, convincing",
+    "explanation": "X.read|3_qualities: brief (NO:words_without_meaning) + clear (understood_1st_read) + convincing (facts + numbers); brief eg: \"in_2_days\" >> \"in_advance_no_later_than\"; clear eg: \"contractor_miscalculated\" >> \"unforeseen_circumstances\"; convincing eg: \"5x_more_popular, 1M_vs_200K\"",
+    "domain": "copy",
+    "tags": ["brevity", "clarity", "persuasion", "fundamentals"]
+  },
+  {
+    "principle": "Text has 5 editing levels: action, words, sentences, structure, presentation",
+    "explanation": "X.structure|5_levels: useful_action -> words -> sentences -> structure -> presentation; all_levels_required; NO:words_only == 20%_of_work; clean_words_first_then_up",
+    "domain": "copy",
+    "tags": ["editing-levels", "structure", "fundamentals", "workflow"]
+  },
+  {
+    "principle": "Useful action: write for reader needs, not your message",
+    "explanation": "X.content|useful_action: ask \"for_whom? what_need? how_help?\" NO:\"what_I_want_to_say\"; structure_around_reader_needs eg: \"lightweight_materials, waterproof\" >> \"rich_history, family_values\"; company_story -> separate_page",
+    "domain": "copy",
+    "tags": ["useful-action", "reader-first", "content-strategy", "seo"]
+  },
+  {
+    "principle": "Different audiences need different pages",
+    "explanation": "X.content|different_audiences -> different_pages; NO:one_text_for_all eg: buyers -> properties; employees -> conditions; investors -> finance",
+    "domain": "copy",
+    "tags": ["audience-segmentation", "page-structure", "content-strategy"]
+  },
+  {
+    "principle": "Edit direction: bottom-up for existing, top-down for new text",
+    "explanation": "X.structure|existing_text: bottom_up (words -> sent -> para -> structure); new_text: top_down (structure -> para -> sent -> words) eg: \"nano_surface_processing\" -> \"silicone_coating\"",
+    "domain": "copy",
+    "tags": ["editing-process", "workflow", "structure"]
+  }
+]
