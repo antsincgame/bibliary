@@ -55,7 +55,11 @@ function showTyping() {
   const div = document.createElement("div");
   div.className = "typing-indicator";
   div.id = "typing";
-  div.innerHTML = '<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>';
+  for (let i = 0; i < 3; i++) {
+    const dot = document.createElement("div");
+    dot.className = "typing-dot";
+    div.appendChild(dot);
+  }
   chatArea.appendChild(div);
   chatArea.scrollTop = chatArea.scrollHeight;
 }

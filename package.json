@@ -12,8 +12,8 @@
     "llm": "tsx src/llm-prompt.ts",
     "chat": "tsx src/rag-chat.ts",
     "electron:compile": "tsc -p tsconfig.electron.json",
-    "electron:dev": "tsc -p tsconfig.electron.json && echo {\"type\":\"commonjs\"} > dist-electron/package.json && electron dist-electron/electron/main.js",
-    "electron:build": "tsc -p tsconfig.electron.json && echo {\"type\":\"commonjs\"} > dist-electron/package.json && electron-builder"
+    "electron:dev": "node scripts/prepare-electron.js && tsc -p tsconfig.electron.json && electron dist-electron/electron/main.js",
+    "electron:build": "node scripts/prepare-electron.js && tsc -p tsconfig.electron.json && electron-builder"
   },
   "dependencies": {
     "@qdrant/js-client-rest": "^1.12.0",
