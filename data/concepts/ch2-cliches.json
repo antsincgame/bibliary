@@ -1,0 +1,32 @@
+[
+  {
+    "principle": "Clichés are mental shortcuts that feel safe — compress to one word or unpack the hidden specific meaning",
+    "explanation": "X.copy|cliche_shortcut: cliche == first_phrase_that_comes_to_mind; safe + predictable + easy; surface_fix: compress_to_one_word; deep_fix: unpack_what_you_really_mean; NO:leaving_cliche_unexamined eg: \"completely_and_entirely_support\" >> \"support\"; \"family_and_loved_ones\" >> \"family\"",
+    "domain": "copy",
+    "tags": ["cliches", "compression", "unpacking", "mental-shortcuts"]
+  },
+  {
+    "principle": "If the text fits any audience it's a cliché — specificity creates memorability",
+    "explanation": "X.copy|cliche_test: text_works_for_anyone == touches_no_one; write_for_specific_people/context -> remembered; generic_graduation_speech -> forgotten; speech_about_THIS_class -> remembered_for_life; NO:universal_safe_phrasing eg: \"new_chapter_of_adult_life_awaits\" >> \"I_remember_when_you_came_to_my_4th_grade_whispering_if_I_was_kind_or_strict\"",
+    "domain": "copy",
+    "tags": ["cliches", "specificity", "memorability", "audience"]
+  },
+  {
+    "principle": "Behind every cliché is a unique thought the author didn't bother to articulate",
+    "explanation": "X.copy|cliche_hides_meaning: familiar_phrase -> conceals_what_author_REALLY_means; each_person_means_something_different; unpack_to_find_real_message; NO:assuming_reader_fills_in_same_meaning eg: \"dont_want_to_work_for_the_man\" >> \"want_to_choose_my_own_projects_not_do_monotone_tasks\"; \"fascinating_adventures\" >> \"character_enters_dragon_kingdom_and_learns\"",
+    "domain": "copy",
+    "tags": ["cliches", "hidden-meaning", "unpacking", "precision"]
+  },
+  {
+    "principle": "Corporate clichés feel safe but say nothing — replace with specific plans, products, departments",
+    "explanation": "X.copy|corporate_cliche: \"ambitious_goals/team_of_professionals/key_to_success\" -> safe_because_everyone_uses_them + dead_because_they_say_nothing; replace_with_specifics: what_product + which_market + which_departments; NO:abstract_motivation eg: \"expanding_sales_geography\" >> \"new_building_mixes_for_Far_East_cities_where_we_werent_present\"",
+    "domain": "copy",
+    "tags": ["cliches", "corporate-speak", "specifics", "motivation"]
+  },
+  {
+    "principle": "A mission statement competitors could copy is a cliché — genuine culture produces unique wording",
+    "explanation": "X.copy|mission_cliche: \"best_service/reliability/confidence\" -> any_company_could_say_this; real_culture -> unique_phrasing_competitor_cant_steal; test: would_this_fit_a_rival? YES -> cliche; NO:generic_aspirational_statements eg: \"provide_best_service_to_clients\" >> \"no_tenders_no_conveyor_handmade_work_for_companies_who_love_what_they_do\"",
+    "domain": "copy",
+    "tags": ["cliches", "mission-statement", "culture", "uniqueness"]
+  }
+]

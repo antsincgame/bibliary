@@ -1,0 +1,32 @@
+[
+  {
+    "principle": "One hero and one plot per sentence — if the sentence doesn't know what it's about, split it",
+    "explanation": "X.copy|one_hero: sentence_must_have_one_subject; cramming_multiple_actors+events -> unreadable; ask \"who_is_the_hero?\"; split_rest_into_next_sentences; includes_compound_clauses_with_no_link; NO:multi-plot_sentences eg: \"man_slipped_breaking_car_window_with_bottle_nearly_hitting_child\" >> \"man_slipped._Bottle_hit_car._Glass_flew_toward_child\"",
+    "domain": "copy",
+    "tags": ["sentence-level", "overload", "one-thought", "splitting"]
+  },
+  {
+    "principle": "Cursor-back trap: author inserts details backwards — reader gets full complexity at once. Introduce gradually, keep chronology",
+    "explanation": "X.copy|cursor_back: author_writes_simple_sentence -> inserts_details_backwards_5x; author_has_context_each_time; reader_sees_ALL_at_once == overload; also_breaks_chronology; NO:nesting_circumstances_into_existing_text; introduce_one_detail_per_sentence; maintain_time_order eg: \"25jan_such_Ermolaev_at_ceremony_of...\" >> \"children_centers_launch._Announced_by_X_and_Y._Ceremony_held_at...\"",
+    "domain": "copy",
+    "tags": ["sentence-level", "cursor-back", "chronology", "progressive-disclosure"]
+  },
+  {
+    "principle": "Near-synonym homogeneous members: reader sees no difference — keep one or replace with a fact",
+    "explanation": "X.copy|near_synonyms: \"quickly_precisely_punctually\" -> reader_cant_distinguish; keep_one OR replace_all_with_fact; 3+_distinct_items -> list_with_intro_phrase; NO:padding_evaluations_with_synonyms eg: \"deliver_fast_precise_punctual\" >> \"deliver_in_30_minutes\"",
+    "domain": "copy",
+    "tags": ["sentence-level", "homogeneous-members", "synonyms", "compression"]
+  },
+  {
+    "principle": "Overdried text: after cutting fluff the remaining facts choke the reader — split dense sentences and space out information",
+    "explanation": "X.copy|overdried: watery_text -> cut_fluff -> cram_all_facts_into_one_sentence -> reader_chokes; water_was_invisible_padding; now_every_word_demands_attention; NO:replacing_water_with_brick; split_facts_across_sentences eg: \"since_2003_dispatching_warehouse_tracking_shipping_ISO\" >> 3_sentences: what_we_do | certification | year_founded",
+    "domain": "copy",
+    "tags": ["sentence-level", "overdried", "density", "splitting"]
+  },
+  {
+    "principle": "Flatten complex grammar: nested subordination, paired conjunctions, indirect speech — reader holds too much in memory",
+    "explanation": "X.copy|flatten_grammar: \"because...when...which\" x2_levels -> reader_loses_thread; \"not_only...but_also\" -> holds_part_1_while_reading_part_2; \"he_said_that...\" -> often_\"that\"_clause_IS_the_sentence; digressions: worth_own_paragraph? extract; not? delete; NO:hierarchical_constructions eg: \"not_only_list_but_also_estimate\" >> \"three_tasks:_list,_sort,_estimate\"",
+    "domain": "copy",
+    "tags": ["sentence-level", "subordination", "paired-conjunctions", "flattening"]
+  }
+]

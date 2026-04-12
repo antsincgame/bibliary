@@ -1,0 +1,38 @@
+[
+  {
+    "principle": "Indefinite hedges hide missing info — delete them, reader needs orientation not false precision",
+    "explanation": "X.copy|indefinite_hedges: \"more_than/about/approximately/some\" -> noise; reader_needs_ballpark NOT precision_disclaimers; NO:hedging_every_number; if_legally_needed -> add_date_instead eg: \"more_than_20000_clients\" >> \"20_thousand_clients\"",
+    "domain": "copy",
+    "tags": ["indefinite", "hedging", "numbers", "precision"]
+  },
+  {
+    "principle": "Round big numbers and convert units — do the math for the reader",
+    "explanation": "X.copy|big_numbers: reader_skips_after_3_digits; round_to_meaningful_precision + convert_units; precise_numbers ONLY for accountants/scientists; NO:raw_multidigit_dumps eg: \"10_543_768_rubles\" >> \"10.5M_rubles\"; \"12_698_341_kg\" >> \"12.7_thousand_tons\"",
+    "domain": "copy",
+    "tags": ["indefinite", "numbers", "rounding", "reader-effort"]
+  },
+  {
+    "principle": "Big numbers need comparison to land — translate to relatable human scale",
+    "explanation": "X.copy|number_comparison: abstract_big_number -> meaningless_without_reference; translate_to_familiar_scale; NO:assuming_reader_grasps_magnitude eg: \"54.6M_km_to_Mars\" >> \"light_takes_3_minutes_to_reach_Mars\"",
+    "domain": "copy",
+    "tags": ["indefinite", "numbers", "comparison", "relatability"]
+  },
+  {
+    "principle": "Rankings are useless without reader benefit — state position and explain what it gives them",
+    "explanation": "X.copy|rankings: \"top_20\" usually_means_18th -> state_actual_position; position_alone == still_useless; explain_what_it_means_for_reader; NO:vague_bragging eg: \"we_are_in_top_20_producers\" >> \"offices_in_40_cities_=_delivery_anywhere\"",
+    "domain": "copy",
+    "tags": ["indefinite", "rankings", "reader-benefit", "specifics"]
+  },
+  {
+    "principle": "Indefinite pronouns: delete or replace with specifics — keep only when mystery is the point",
+    "explanation": "X.copy|indef_pronouns: \"a_certain/some_kind_of/something/various\" -> delete OR specify; keep ONLY when_indefiniteness == the_message; \"various\" usually == lazy_listing; NO:vague_when_facts_exist eg: \"helps_with_various_headaches\" >> \"helps_with_migraine_cluster_and_tension_headache\"",
+    "domain": "copy",
+    "tags": ["indefinite", "pronouns", "specifics", "lazy-listing"]
+  },
+  {
+    "principle": "Dense indefinite corporate text means saying everything while committing to nothing — replace with named services and clients",
+    "explanation": "X.copy|corporate_fog: \"wide_range/many_years/leading_provider/many_directions\" == company_wants_to_brag_but_fears_commitment; NO:compress_everything_into_one_vague_paragraph; fix: name_services + list_clients + cite_numbers eg: \"wide_range_of_services_for_various_industries\" >> \"automate_accounting_warehouse_logistics_for_140_companies\"",
+    "domain": "copy",
+    "tags": ["indefinite", "corporate-speak", "specifics", "commitment"]
+  }
+]

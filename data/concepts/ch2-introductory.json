@@ -1,0 +1,44 @@
+[
+  {
+    "principle": "\"As everyone knows\" is a logical trap: either obvious or a lie — replace with source",
+    "explanation": "X.copy|false_certainty: \"as_everyone_knows/no_secret/obviously\" -> logical_trap; if_true -> why_write_it; if_false -> you_lied; NO:just_delete; replace_with_actual_source; when_contradicting_common_belief -> explain_origin_first eg: \"obviously_neural_nets_won\" >> \"AI_job_postings_tripled_in_2024\"",
+    "domain": "copy",
+    "tags": ["introductory-words", "false-certainty", "credibility", "source-based"]
+  },
+  {
+    "principle": "Opinion markers imply previous dishonesty — delete unless contrasting two positions",
+    "explanation": "X.copy|opinion_markers: \"in_my_opinion/honestly/frankly\" -> delete; \"honestly\"_implies_before_was_dishonest; keep ONLY when_contrasting: \"survey_says_X + but_I_think_Y\"; NO:habitual_hedging eg: \"honestly_the_food_was_bad\" >> \"good_reviews_but_I_disliked_the_food\"",
+    "domain": "copy",
+    "tags": ["introductory-words", "opinion-markers", "directness", "honesty-trap"]
+  },
+  {
+    "principle": "Oral clarifiers are speech crutches — write precisely the first time instead of self-correcting",
+    "explanation": "X.copy|oral_clarifiers: \"more_precisely/in_other_words/I_mean\" -> oral_habit; reader_can_reread -> no_live_corrections_needed; NO:self-correcting_on_paper; write_right_first_time eg: \"he_bought_a_smartwatch._Actually_grandma_gifted_it\" >> \"grandma_gifted_him_a_smartwatch\"",
+    "domain": "copy",
+    "tags": ["introductory-words", "oral-vs-written", "precision", "self-correction"]
+  },
+  {
+    "principle": "Verbal numbering is oral structuring — in writing use paragraphs or real numbered lists",
+    "explanation": "X.copy|verbal_numbering: \"firstly/secondly/finally\" -> oral_structuring_tool; writing: one_paragraph == one_thought; numeric_list ONLY for instructions_or_referenced_items; NO:numbering_unordered_criteria eg: \"1._truth 2._testability 3._rigor\" >> \"— truth — testability — rigor\"",
+    "domain": "copy",
+    "tags": ["introductory-words", "verbal-numbering", "structure", "speech-vs-writing"]
+  },
+  {
+    "principle": "Parentheses visually say skip me — extract important content or delete unimportant",
+    "explanation": "X.copy|parentheses: content_in_brackets -> visually_demoted; important? -> extract_to_main_text; unimportant? -> delete; OK_only_for_citations_at_sentence_end; NO:hiding_key_info_in_brackets eg: \"Vasily_(factory_director)_greeted_us\" >> \"factory_director_Vasily_greeted_us\"",
+    "domain": "copy",
+    "tags": ["introductory-words", "parentheses", "visual-hierarchy", "editing"]
+  },
+  {
+    "principle": "\"By the way\" reveals the thought doesn't belong here — restructure or delete, don't patch",
+    "explanation": "X.copy|by_the_way: \"by_the_way/incidentally\" == author_insecurity; relevant_thought -> place_in_natural_flow; irrelevant -> delete; NO:gluing_unrelated_ideas eg: \"dont_eat_at_night._BTW_our_yogurt_1.5kcal\" >> \"our_yogurt_1.5kcal_—_safe_to_eat_at_night\"",
+    "domain": "copy",
+    "tags": ["introductory-words", "by-the-way", "insecurity", "structure"]
+  },
+  {
+    "principle": "Nested subordinate clauses signal author stress — split into sentences or compress to one word",
+    "explanation": "X.copy|nested_clauses: clause_within_clause -> author_cramming_story_into_one_breath; often_stress/justification; many_commas == warning; fix: split_to_sentences OR compress_clause_to_adjective; NO:one_sentence_excuses eg: \"child_who_is_sick_and_needs_treatment\" >> \"sick_child\"",
+    "domain": "copy",
+    "tags": ["introductory-words", "subordinate-clauses", "stress-signal", "sentence-splitting"]
+  }
+]

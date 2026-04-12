@@ -1,0 +1,20 @@
+[
+  {
+    "principle": "Three-step document restructure: group into sections → put conclusion before chronology within each → extract summary to top with explicit request",
+    "explanation": "X.copy|doc_restructure: step1: group_content_into_sections_with_subheadings; step2: within_each_section_put_conclusion_FIRST_then_backstory; step3: collect_first_sentences_of_all_sections -> executive_summary_at_document_top; step4: add_explicit_request/question_for_reader; takes_5-15min; NO:rewriting_style; NO:cutting_content; just_reorganize eg: \"in_feb_we_hired_contractor...in_the_end_we_did_it_ourselves\" >> \"Executor:_our_team._Reason:_contractor_failed._Chronology:_feb...\"",
+    "domain": "copy",
+    "tags": ["text-level", "documents", "restructure", "executive-summary"]
+  },
+  {
+    "principle": "Wanting to bold something mid-text is a signal: that thing should become a subheading — don't spoon-feed, build a buffet",
+    "explanation": "X.copy|bold_signal: urge_to_bold_mid-paragraph == key_info_buried; fix: extract_as_subheading -> reader_navigates_freely; bold_words_in_text == spoon-feeding (author_decides_whats_important); subheadings == buffet (reader_chooses); too_much_bold == visual_chaos; NO:highlighting_random_words_in_paragraphs eg: \"...were_**suspended**...then_**fully_revised**...\" >> \"Suspension_and_revision._New_team_stopped_work_then...\"",
+    "domain": "copy",
+    "tags": ["text-level", "documents", "bold-trap", "subheadings"]
+  },
+  {
+    "principle": "Numbers in text are pain — put data into tables, processes into diagrams, products into photos; readers spend most time on visuals",
+    "explanation": "X.copy|visualize_data: numbers_in_prose -> reader_drowns_counting_digits; table: same_data + less_space + easy_comparison + color_for_highlights; diagrams: processes + dependencies; photos/screenshots: physical_products + interfaces; readers_spend_most_time_on_visuals_in_documents; NO:describing_in_words_what_can_be_shown eg: \"Q1_shipments_20.1M_98%_plan_Q2_19M_96%_Q3_24.4M_105%\" >> table_with_3_rows_and_columns: quarter|shipments|vs_plan|vs_year",
+    "domain": "copy",
+    "tags": ["text-level", "documents", "visualization", "tables"]
+  }
+]

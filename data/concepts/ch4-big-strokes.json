@@ -1,0 +1,14 @@
+[
+  {
+    "principle": "Structure shapes everything: choose it before writing or discover it during — it dictates order, depth, and appearance",
+    "explanation": "X.copy|structure_first: same_topic -> story OR analysis OR logical_chain OR reference; structure_dictates: order_of_exposition + visual_appearance + reader_behavior (scan_vs_deep_read); think_about_structure_before_OR_let_it_emerge; NO:writing_without_structural_intent eg: \"thesis + example + antiexample\" -> deep_text; \"five_stories_with_subheadings\" -> scannable_text",
+    "domain": "copy",
+    "tags": ["text-level", "structure", "planning", "format-choice"]
+  },
+  {
+    "principle": "Two content approaches: farmer researches topics deeply, hunter shapes existing material — combine both",
+    "explanation": "X.copy|farmer_hunter: farmer (research): topic -> sources -> expert -> article; expensive_but_deep; one_research -> multiple_formats (article+social+digest); hunter (resource): internal_trainings + client_stories + FAQ + news -> articles; fast_but_quality == source_quality; NO:hunter_without_factchecker; author_with_domain_experience -> asks_questions_others_miss -> deeper_content",
+    "domain": "copy",
+    "tags": ["text-level", "content-strategy", "research", "resource-approach"]
+  }
+]

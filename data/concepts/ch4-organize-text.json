@@ -1,0 +1,26 @@
+[
+  {
+    "principle": "Same event becomes a different story depending on headline focus — choosing the angle IS the editorial act",
+    "explanation": "X.copy|headline_angle: same_event -> 5_headlines -> 5_stories; headline_selects: hero OR cost OR scandal OR benefit; closing_paragraphs_also_shape_meaning; NO:thinking_headlines_are_objective eg: Kaluga_brand: \"new_tourism_brand_2026\" vs \"10M_for_Moscow_designers\" vs \"scandalous_designer_at_apartment_price\" == same_facts_different_stories",
+    "domain": "copy",
+    "tags": ["text-level", "headlines", "editorial-angle", "interpretation"]
+  },
+  {
+    "principle": "Stories work because we calibrate our lives by watching others — fake characters fail, products can't be heroes",
+    "explanation": "X.copy|story_calibration: humans_use_stories_to_calibrate: \"how_do_others_live?_am_I_doing_it_right?\"; hero == real_person_with_real_actions; fake_characters -> no_calibration -> reader_disengages; product_as_hero == boring; case_study: show_people_overcoming_obstacles_not_product_features; NO:\"Masha_on_regular_chair_Sasha_on_ergonomic\" eg: \"CRM_improved_service\" >> \"managers_rebelled_against_new_system_—_CEO_handled_it_by...\"",
+    "domain": "copy",
+    "tags": ["text-level", "storytelling", "calibration", "authenticity"]
+  },
+  {
+    "principle": "Written arguments only convince the already convinced — opponents won't even open the text",
+    "explanation": "X.copy|preaching_to_choir: reader_who_disagrees -> wont_open_your_article; your_readers == already_agree -> they_mine_arguments_to_reinforce_own_position; to_reach_opponents -> work_on_communication_context_first (trust + platform + relationship); NO:expecting_thesis+proof_structure_to_change_minds eg: \"5_reasons_why_X_is_wrong\" -> read_only_by_X_haters_not_X_supporters",
+    "domain": "copy",
+    "tags": ["text-level", "argumentation", "persuasion-limits", "audience"]
+  },
+  {
+    "principle": "Content drives structure, never the reverse — don't force material into a template; report needs results first, not a story",
+    "explanation": "X.copy|content_over_template: NO:blind_adherence_to_formula (pyramid/storytelling/modules); if_structure_doesnt_fit_content -> change_structure; story != universal_wrapper; boss_wants_results_first NOT backstory; module_structure_should_follow_from_what_you_say; NO:\"lets_use_storytelling_for_everything\" eg: conference_report_as_story >> boss_wants: \"results:_X_deals_Y_revenue_Z%_of_plan._Details_below\"",
+    "domain": "copy",
+    "tags": ["text-level", "structure-flexibility", "anti-template", "content-first"]
+  }
+]

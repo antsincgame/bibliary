@@ -16,4 +16,11 @@ contextBridge.exposeInMainWorld("api", {
     collection: string
   ): Promise<string> =>
     ipcRenderer.invoke("lmstudio:chat", messages, model, collection),
+
+  compareChat: (
+    messages: Array<{ role: string; content: string }>,
+    model: string,
+    collection: string
+  ): Promise<{ withoutRag: string; withRag: string; usageBase?: { prompt: number; completion: number; total: number }; usageRag?: { prompt: number; completion: number; total: number } }> =>
+    ipcRenderer.invoke("lmstudio:compare", messages, model, collection),
 });

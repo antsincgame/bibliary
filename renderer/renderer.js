@@ -20,21 +20,35 @@ const collectionSelect = /** @type {HTMLSelectElement} */ (getEl("collection-sel
 const modelSelect = /** @type {HTMLSelectElement} */ (getEl("model-select"));
 const btnRefreshCollections = /** @type {HTMLButtonElement} */ (getEl("btn-refresh-collections"));
 const btnRefreshModels = /** @type {HTMLButtonElement} */ (getEl("btn-refresh-models"));
+const btnCompare = /** @type {HTMLButtonElement} */ (getEl("btn-compare"));
 const statusDot = /** @type {HTMLDivElement} */ (getEl("status-dot"));
 
 let isLoading = false;
+let compareMode = false;
 
 function removeWelcome() {
   const welcome = chatArea.querySelector(".welcome");
   if (welcome) welcome.remove();
 }
 
-/** @param {string} className @param {string} content */
-function appendChatBubble(className, content) {
+/** @param {string} md */
+function renderMarkdown(md) {
+  if (typeof marked !== "undefined" && marked.parse) {
+    return marked.parse(md, { breaks: true });
+  }
+  return md.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
+}
+
+/** @param {string} className @param {string} content @param {boolean} isMarkdown */
+function appendChatBubble(className, content, isMarkdown = false) {
   removeWelcome();
   const div = document.createElement("div");
   div.className = className;
-  div.textContent = content;
+  if (isMarkdown) {
+    div.innerHTML = renderMarkdown(content);
+  } else {
+    div.textContent = content;
+  }
   chatArea.appendChild(div);
   chatArea.scrollTop = chatArea.scrollHeight;
 }
@@ -42,7 +56,7 @@ function appendChatBubble(className, content) {
 /** @param {string} role @param {string} content */
 function addMessage(role, content) {
   const cls = role === "user" ? "message message-user" : "message message-assistant";
-  appendChatBubble(cls, content);
+  appendChatBubble(cls, content, role === "assistant");
 }
 
 /** @param {string} text */
@@ -152,10 +166,18 @@ async function sendMessage() {
 
   try {
     const collection = collectionSelect.value;
-    const answer = await window.api.sendChat([...history], model, collection);
-    hideTyping();
-    addMessage("assistant", answer);
-    history.push({ role: "assistant", content: answer });
+
+    if (compareMode && collection) {
+      const result = await window.api.compareChat([...history], model, collection);
+      hideTyping();
+      addCompareResult(result.withoutRag, result.withRag, result.usageBase, result.usageRag);
+      history.push({ role: "assistant", content: result.withRag });
+    } else {
+      const answer = await window.api.sendChat([...history], model, collection);
+      hideTyping();
+      addMessage("assistant", answer);
+      history.push({ role: "assistant", content: answer });
+    }
   } catch (err) {
     hideTyping();
     addError("Error: " + (err instanceof Error ? err.message : String(err)));
@@ -164,6 +186,62 @@ async function sendMessage() {
   setLoading(false);
   input.focus();
 }
+
+/**
+ * @param {string} withoutRag
+ * @param {string} withRag
+ * @param {{prompt:number, completion:number, total:number}} [usageBase]
+ * @param {{prompt:number, completion:number, total:number}} [usageRag]
+ */
+function addCompareResult(withoutRag, withRag, usageBase, usageRag) {
+  removeWelcome();
+  const row = document.createElement("div");
+  row.className = "compare-row";
+
+  const colBase = document.createElement("div");
+  colBase.className = "compare-col";
+  const labelBase = document.createElement("div");
+  labelBase.className = "compare-label compare-label-base";
+  labelBase.textContent = "Without RAG";
+  const textBase = document.createElement("div");
+  textBase.className = "compare-text compare-text-base";
+  textBase.innerHTML = renderMarkdown(withoutRag);
+  colBase.appendChild(labelBase);
+  colBase.appendChild(textBase);
+  if (usageBase) {
+    const statsBase = document.createElement("div");
+    statsBase.className = "compare-stats compare-stats-base";
+    statsBase.textContent = `prompt: ${usageBase.prompt} | completion: ${usageBase.completion} | total: ${usageBase.total}`;
+    colBase.appendChild(statsBase);
+  }
+
+  const colRag = document.createElement("div");
+  colRag.className = "compare-col";
+  const labelRag = document.createElement("div");
+  labelRag.className = "compare-label compare-label-rag";
+  labelRag.textContent = "With RAG";
+  const textRag = document.createElement("div");
+  textRag.className = "compare-text compare-text-rag";
+  textRag.innerHTML = renderMarkdown(withRag);
+  colRag.appendChild(labelRag);
+  colRag.appendChild(textRag);
+  if (usageRag) {
+    const statsRag = document.createElement("div");
+    statsRag.className = "compare-stats compare-stats-rag";
+    statsRag.textContent = `prompt: ${usageRag.prompt} | completion: ${usageRag.completion} | total: ${usageRag.total}`;
+    colRag.appendChild(statsRag);
+  }
+
+  row.appendChild(colBase);
+  row.appendChild(colRag);
+  chatArea.appendChild(row);
+  chatArea.scrollTop = chatArea.scrollHeight;
+}
+
+btnCompare.addEventListener("click", () => {
+  compareMode = !compareMode;
+  btnCompare.classList.toggle("active", compareMode);
+});
 
 input.addEventListener("input", () => {
   input.style.height = "auto";

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com">
   <title>Bibliary</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -29,6 +29,7 @@
         <button class="btn-refresh" id="btn-refresh-models" title="Refresh models">↻</button>
       </div>
 
+      <button class="btn-compare" id="btn-compare" title="Compare RAG vs No-RAG">Compare</button>
       <div class="status-dot" id="status-dot" title="Offline"></div>
     </div>
 
@@ -53,6 +54,7 @@
     </div>
   </div>
 
+  <script src="marked.umd.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

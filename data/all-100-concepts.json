@@ -1,0 +1,1102 @@
+[
+  {
+    "principle": "\"As everyone knows\" is a logical trap: either obvious or a lie — replace with source",
+    "explanation": "X.copy|false_certainty: \"as_everyone_knows/no_secret/obviously\" -> logical_trap; if_true -> why_write_it; if_false -> you_lied; NO:just_delete; replace_with_actual_source; when_contradicting_common_belief -> explain_origin_first eg: \"obviously_neural_nets_won\" >> \"AI_job_postings_tripled_in_2024\"",
+    "domain": "copy",
+    "tags": [
+      "introductory-words",
+      "false-certainty",
+      "credibility",
+      "source-based"
+    ]
+  },
+  {
+    "principle": "\"By the way\" reveals the thought doesn't belong here — restructure or delete, don't patch",
+    "explanation": "X.copy|by_the_way: \"by_the_way/incidentally\" == author_insecurity; relevant_thought -> place_in_natural_flow; irrelevant -> delete; NO:gluing_unrelated_ideas eg: \"dont_eat_at_night._BTW_our_yogurt_1.5kcal\" >> \"our_yogurt_1.5kcal_—_safe_to_eat_at_night\"",
+    "domain": "copy",
+    "tags": [
+      "introductory-words",
+      "by-the-way",
+      "insecurity",
+      "structure"
+    ]
+  },
+  {
+    "principle": "\"Develop our tone of voice\" is usually the wrong brief — the real pain is bad writing, invisibility, or reputation, not missing guidelines",
+    "explanation": "X.copy|tonvoice_trap: company_asks_for_\"tone_of_voice\" -> real_pain: support_writes_badly OR nobody_knows_us OR reputation_damaged; guidelines_alone_dont_fix_these; fix: training + error_review + separate_rules_per_channel; \"raise_sales\" -> too_broad -> dig_deeper: \"help_dog_owners_make_informed_decisions_buy_from_us\"; NO:expecting_document_to_change_culture eg: \"redpolitika_document\" >> \"train_support + launch_media + fix_products\"",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "tone-of-voice",
+      "misdiagnosis",
+      "corporate"
+    ]
+  },
+  {
+    "principle": "A mission statement competitors could copy is a cliché — genuine culture produces unique wording",
+    "explanation": "X.copy|mission_cliche: \"best_service/reliability/confidence\" -> any_company_could_say_this; real_culture -> unique_phrasing_competitor_cant_steal; test: would_this_fit_a_rival? YES -> cliche; NO:generic_aspirational_statements eg: \"provide_best_service_to_clients\" >> \"no_tenders_no_conveyor_handmade_work_for_companies_who_love_what_they_do\"",
+    "domain": "copy",
+    "tags": [
+      "cliches",
+      "mission-statement",
+      "culture",
+      "uniqueness"
+    ]
+  },
+  {
+    "principle": "Abstractions compress experience the reader can't unpack — pair the label with concrete examples",
+    "explanation": "X.copy|unpack_abstraction: author_saw_7_people_working -> compressed_to_\"seamless_logistics\"; reader_has_no_images_behind_the_label; fix: keep_abstract_label + add_concrete_scenes; NO:abstraction_alone eg: \"seamless_logistics\" >> \"seamless_logistics:_our_staff_builds_routes_negotiates_carriers_handles_customs_—_you_just_name_the_address\"",
+    "domain": "copy",
+    "tags": [
+      "sentence-level",
+      "abstractions",
+      "examples",
+      "unpacking"
+    ]
+  },
+  {
+    "principle": "After editing text may become robotic — vary sentence length, reconnect related thoughts, diversify openings",
+    "explanation": "X.copy|monotone_fix: all_short_sentences + same_structure == choppy_robotic; fix: merge_related_sentences_back; vary_length_short+long; diversify_openings_with_connectors; words_deleted_as_filler_in_ch1 -> sometimes_restored_for_flow; NO:uniform_sentence_length NO:every_sentence_standalone eg: \"dangerous._October._Dark._67%_drivers\" >> \"October_is_worst_because_dark_early+no_snow._67%_crashes_drivers_fault_but_pedestrians_can_protect\"",
+    "domain": "copy",
+    "tags": [
+      "paragraph",
+      "monotone-syntax",
+      "sentence-variety",
+      "flow"
+    ]
+  },
+  {
+    "principle": "Amplifiers weaken what follows — delete without loss; blind-name test reveals empty text",
+    "explanation": "X.copy|amplifiers: \"absolutely/extremely/truly/incredibly\" -> stacked_on_evaluation == desperation_not_conviction; delete_amplifier -> meaning_intact; blind_test: cover_company_name -> if_text_fits_any_company == empty; NO:amplifying_emptiness eg: \"absolutely_free\" >> \"free\"; \"maximally_quality_repair\" >> \"repair_with_guarantee\"",
+    "domain": "copy",
+    "tags": [
+      "evaluations",
+      "amplifiers",
+      "blind-test",
+      "deletion"
+    ]
+  },
+  {
+    "principle": "Back evaluations with contractable facts — but empty facts unknown to reader are useless",
+    "explanation": "X.copy|facts_for_eval: fact == something_you_can_put_in_contract; reader_draws_own_conclusion_from_facts -> stronger_than_your_evaluation; BUT unknown_fact == empty; NO:citing_obscure_ratings/acronyms eg: \"quality_content\" >> \"articles_by_Business_School_professors\"; \"member_of_RSVA_ICC\" -> means_nothing_to_reader",
+    "domain": "copy",
+    "tags": [
+      "evaluations",
+      "facts",
+      "reader-knowledge",
+      "credibility"
+    ]
+  },
+  {
+    "principle": "Behind every cliché is a unique thought the author didn't bother to articulate",
+    "explanation": "X.copy|cliche_hides_meaning: familiar_phrase -> conceals_what_author_REALLY_means; each_person_means_something_different; unpack_to_find_real_message; NO:assuming_reader_fills_in_same_meaning eg: \"dont_want_to_work_for_the_man\" >> \"want_to_choose_my_own_projects_not_do_monotone_tasks\"; \"fascinating_adventures\" >> \"character_enters_dragon_kingdom_and_learns\"",
+    "domain": "copy",
+    "tags": [
+      "cliches",
+      "hidden-meaning",
+      "unpacking",
+      "precision"
+    ]
+  },
+  {
+    "principle": "Big numbers need comparison to land — translate to relatable human scale",
+    "explanation": "X.copy|number_comparison: abstract_big_number -> meaningless_without_reference; translate_to_familiar_scale; NO:assuming_reader_grasps_magnitude eg: \"54.6M_km_to_Mars\" >> \"light_takes_3_minutes_to_reach_Mars\"",
+    "domain": "copy",
+    "tags": [
+      "indefinite",
+      "numbers",
+      "comparison",
+      "relatability"
+    ]
+  },
+  {
+    "principle": "Bureaucratic language deliberately hides problems in abstraction — simplify to expose the truth",
+    "explanation": "X.copy|bureaucratic_fog: officials_hide_specifics_to_avoid_accountability; \"temporary_suspension_of_project_activities_was_decided\" -> reader_skims_past_the_crisis; NO:wrapping_bad_news_in_process_nouns eg: \"decision_on_temporary_suspension_of_works\" >> \"we_froze_the_project_until_August\"",
+    "domain": "copy",
+    "tags": [
+      "sentence-level",
+      "bureaucracy",
+      "accountability",
+      "clarity"
+    ]
+  },
+  {
+    "principle": "Bureaucratic style has its place for deliberate distance — but simpler text saves money measurably",
+    "explanation": "X.copy|when_keep_bureaucracy: pre-trial_claims -> need_formal_intimidation; unread_formalities -> use_templates; deliberate_distance == valid_goal; BUT for_citizen-facing_text: simpler -> fewer_questions -> fewer_mistakes -> less_rework -> less_cost; NO:one_style_for_courts_AND_social_media eg: better_button_text -> 5-7%_more_tax_collected",
+    "domain": "copy",
+    "tags": [
+      "bureaucracy",
+      "exceptions",
+      "economics",
+      "service-design"
+    ]
+  },
+  {
+    "principle": "Clichés are mental shortcuts that feel safe — compress to one word or unpack the hidden specific meaning",
+    "explanation": "X.copy|cliche_shortcut: cliche == first_phrase_that_comes_to_mind; safe + predictable + easy; surface_fix: compress_to_one_word; deep_fix: unpack_what_you_really_mean; NO:leaving_cliche_unexamined eg: \"completely_and_entirely_support\" >> \"support\"; \"family_and_loved_ones\" >> \"family\"",
+    "domain": "copy",
+    "tags": [
+      "cliches",
+      "compression",
+      "unpacking",
+      "mental-shortcuts"
+    ]
+  },
+  {
+    "principle": "Complex synonyms add no meaning — replace with the simplest word that carries the same idea",
+    "explanation": "X.copy|complex_synonyms: same_concept often has simple + complex forms; complex != smarter; pick_shortest_familiar_word; NO:using_latin_root_when_native_exists eg: \"personnel_resource_demonstrated_positive_productivity_tendency\" >> \"team_started_closing_deals_faster\"",
+    "domain": "copy",
+    "tags": [
+      "jargon",
+      "simplicity",
+      "synonyms",
+      "register"
+    ]
+  },
+  {
+    "principle": "Conclusion: flip the modality — objective article ends with personal take, opinion piece ends with cold statistics",
+    "explanation": "X.copy|flip_conclusion: objective_article -> end_with_personal_opinion; opinion_piece -> end_with_statistics; scary_article -> end_with_\"but_if_you_dont...\"; positive_article -> end_with_honest_caveat; NO:repeating_subheadings_as_summary (reader_feels_insulted); \"look_from_other_side\" -> bodes_well eg: \"Canada_downsides:_medicine,_career,_banks\" conclusion >> \"despite_all_this_Canada_is_great_for_those_who...\"",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "conclusion",
+      "flip-modality",
+      "counterbalance"
+    ]
+  },
+  {
+    "principle": "Concrete actions not abstract processes — citizens think in events, bureaucrats in programs",
+    "explanation": "X.copy|actions_not_processes: \"implementation_of_support_program\" -> abstract; \"city_gave_money_to_entrepreneurs\" -> concrete; start_with_specific_event -> mention_program_later; NO:leading_with_systems_concepts_programs eg: \"within_framework_of_program_various_measures_taken\" >> \"city_hosted_small_business_fair._Entrepreneurs_met_investors._Part_of_support_program\"",
+    "domain": "copy",
+    "tags": [
+      "bureaucracy",
+      "concrete-actions",
+      "events-vs-processes",
+      "clarity"
+    ]
+  },
+  {
+    "principle": "Content drives structure, never the reverse — don't force material into a template; report needs results first, not a story",
+    "explanation": "X.copy|content_over_template: NO:blind_adherence_to_formula (pyramid/storytelling/modules); if_structure_doesnt_fit_content -> change_structure; story != universal_wrapper; boss_wants_results_first NOT backstory; module_structure_should_follow_from_what_you_say; NO:\"lets_use_storytelling_for_everything\" eg: conference_report_as_story >> boss_wants: \"results:_X_deals_Y_revenue_Z%_of_plan._Details_below\"",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "structure-flexibility",
+      "anti-template",
+      "content-first"
+    ]
+  },
+  {
+    "principle": "Content must solve reader problem, not present yourself — ask what they need, not what you want to say",
+    "explanation": "X.copy|reader_problem: ask \"can_you_help_me?\" NOT \"let_me_tell_about_us\"; structure_around_reader_needs; NO:self_presentation_as_content eg: \"cleaning_is_art_+_years_of_experience\" >> \"we_clean_apartments_after_tenants_parties_and_renovations\"",
+    "domain": "copy",
+    "tags": [
+      "reader-first",
+      "content-strategy",
+      "useful-action",
+      "fundamentals"
+    ]
+  },
+  {
+    "principle": "Corporate clichés feel safe but say nothing — replace with specific plans, products, departments",
+    "explanation": "X.copy|corporate_cliche: \"ambitious_goals/team_of_professionals/key_to_success\" -> safe_because_everyone_uses_them + dead_because_they_say_nothing; replace_with_specifics: what_product + which_market + which_departments; NO:abstract_motivation eg: \"expanding_sales_geography\" >> \"new_building_mixes_for_Far_East_cities_where_we_werent_present\"",
+    "domain": "copy",
+    "tags": [
+      "cliches",
+      "corporate-speak",
+      "specifics",
+      "motivation"
+    ]
+  },
+  {
+    "principle": "Cursor-back trap: author inserts details backwards — reader gets full complexity at once. Introduce gradually, keep chronology",
+    "explanation": "X.copy|cursor_back: author_writes_simple_sentence -> inserts_details_backwards_5x; author_has_context_each_time; reader_sees_ALL_at_once == overload; also_breaks_chronology; NO:nesting_circumstances_into_existing_text; introduce_one_detail_per_sentence; maintain_time_order eg: \"25jan_such_Ermolaev_at_ceremony_of...\" >> \"children_centers_launch._Announced_by_X_and_Y._Ceremony_held_at...\"",
+    "domain": "copy",
+    "tags": [
+      "sentence-level",
+      "cursor-back",
+      "chronology",
+      "progressive-disclosure"
+    ]
+  },
+  {
+    "principle": "Cutting noise makes text cleaner not better — better needs substance added",
+    "explanation": "X.copy|clean_vs_useful: cut_noise -> cleaner (NOT better NOT more_interesting); better == add_substance; two_separate_steps; NO:stop_after_cutting eg: \"loan_on_best_terms\" -> cleaned_to_nothing -> filled: \"cash_loan_at_X%_card_delivered_to_home_or_office\"",
+    "domain": "copy",
+    "tags": [
+      "stop-words",
+      "specifics",
+      "two-step-editing",
+      "fundamentals"
+    ]
+  },
+  {
+    "principle": "CV must answer job requirements point by point with proof — not biography, not passion, not pity",
+    "explanation": "X.copy|cv_matching: read_requirements -> answer_each_with_skill + proof; NO:biography NO:childhood_passion NO:\"I_will_grow_in_your_company\"; admit_gaps_honestly; calm_tone > pafos eg: \"talent_for_texts_since_school_+_dream_of_being_writer\" >> \"support_exp_at_X_+_sorted_mail_at_Y_+_no_exp_in_Z_but_willing\"",
+    "domain": "copy",
+    "tags": [
+      "cv",
+      "resume",
+      "proof",
+      "requirements-matching"
+    ]
+  },
+  {
+    "principle": "Demonstrate sensory qualities instead of describing them — text handles specs, visuals handle emotions",
+    "explanation": "X.copy|demonstration: feelings_cant_be_written_convincingly; \"sharp_knife\" -> show_chef_cutting; \"creative_freedom\" -> show_person_creating; text_role: specs + facts; visual_role: emotions + identity; NO:writing_feelings_as_adjectives eg: \"premium_backpacks_for_adventurous_spirits\" >> \"backpacks_for_forest_steppe_desert\" + photos_of_confident_people",
+    "domain": "copy",
+    "tags": [
+      "evaluations",
+      "demonstration",
+      "visual-vs-text",
+      "sensory"
+    ]
+  },
+  {
+    "principle": "Dense indefinite corporate text means saying everything while committing to nothing — replace with named services and clients",
+    "explanation": "X.copy|corporate_fog: \"wide_range/many_years/leading_provider/many_directions\" == company_wants_to_brag_but_fears_commitment; NO:compress_everything_into_one_vague_paragraph; fix: name_services + list_clients + cite_numbers eg: \"wide_range_of_services_for_various_industries\" >> \"automate_accounting_warehouse_logistics_for_140_companies\"",
+    "domain": "copy",
+    "tags": [
+      "indefinite",
+      "corporate-speak",
+      "specifics",
+      "commitment"
+    ]
+  },
+  {
+    "principle": "Different audiences need different pages — one text for all serves none",
+    "explanation": "X.copy|audience_split: different_readers -> different_needs -> different_pages; buyers_want_properties; employees_want_conditions; investors_want_financials; NO:one_text_for_all == text_for_none eg: \"single_advantages_page_for_everyone\" >> \"buyers: product_specs | employees: benefits | investors: growth_metrics\"",
+    "domain": "copy",
+    "tags": [
+      "audience-segmentation",
+      "page-structure",
+      "content-strategy",
+      "fundamentals"
+    ]
+  },
+  {
+    "principle": "Discover reader needs through observation, research, testing and intuition — then split big texts into focused ones per segment",
+    "explanation": "X.copy|discover_needs: observe: support_calls + forum_questions + course_Q&A; research: interviews + surveys; test: publish_hypothesis + measure_reaction; intuition: breathe_same_air_as_audience; big_unfocused_text -> split_by_audience_into_focused_articles; NO:guessing_from_inside_the_company eg: \"quarterly_blog_digest\" >> \"sellers_on_marketplaces:_new_laws_from_September\"",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "audience-research",
+      "segmentation",
+      "content-strategy"
+    ]
+  },
+  {
+    "principle": "Don't project your wounds onto new readers — aggressive disclaimers about past bad clients lecture innocent people",
+    "explanation": "X.copy|wound_projection: designer_burned_by_\"need_it_yesterday\" -> puts_angry_disclaimer_on_site; reader_who_hasnt_done_anything -> gets_lectured_at_first_meeting; your_past_pain != readers_question; NO:preemptive_aggression_from_bad_experiences; address_real_reader_questions_not_your_trauma eg: \"I_dont_work_with_rush_orders_dont_even_ask\" >> \"typical_timeline:_one_week._For_faster_options_lets_discuss\"",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "about-yourself",
+      "wound-projection",
+      "first-impression"
+    ]
+  },
+  {
+    "principle": "Drama, origin stories, fan letters, forced creativity in job applications — each feels like advantage but repels employers",
+    "explanation": "X.copy|application_traps: drama (hard_life+last_chance) -> employer_sees_risk; origin (\"since_school_I_dreamed\") -> nobody_cares_about_childhood; fan_letters (\"I_love_your_company\") -> bosses_know_fans_have_inflated_expectations; forced_creativity (poems+unusual_tone) -> recruiter_has_no_time; NO:all_four; calm_factual_response_to_requirements eg: \"tragic_backstory+lifelong_dream+your_biggest_fan+poem\" >> \"I_did_X_at_Y._Proof:_link._Gap:_Z._Ready_to_learn\"",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "job-applications",
+      "self-sabotage",
+      "anti-patterns"
+    ]
+  },
+  {
+    "principle": "Each evaluation hides a story the author was too lazy to tell — the adjective is a shortcut past real work",
+    "explanation": "X.copy|eval_as_shortcut: adjective == compressed_story_author_skipped; \"eco-friendly\" hides sourcing + manufacturing + certification; author_thinks_one_word == job_done; NO:false_sense_of_completed_work; unpack_each_claim_into_its_story eg: \"eco-friendly_floors\" >> \"wood_from_sustainable_forests_+_natural_resin_coatings_safe_for_nurseries\"",
+    "domain": "copy",
+    "tags": [
+      "evaluations",
+      "lazy-writing",
+      "unpacking",
+      "substance"
+    ]
+  },
+  {
+    "principle": "Edit direction: bottom-up for existing text, top-down for new — start from words or structure depending on context",
+    "explanation": "X.copy|edit_direction: existing_text: words -> sentences -> paragraphs -> structure (bottom_up); new_text: structure -> paragraphs -> sentences -> words (top_down); NO:always_starting_from_words eg: \"nano_surface_processing_of_materials\" >> \"silicone_coating_protects_fabric_from_rain\"",
+    "domain": "copy",
+    "tags": [
+      "editing-process",
+      "workflow",
+      "structure",
+      "direction"
+    ]
+  },
+  {
+    "principle": "Edit words in four steps: stop, think, cut, fill with substance",
+    "explanation": "X.copy|word_editing: stop -> think -> cut -> fill; ask_each_word \"delete_without_loss?\"; cut_noise_first; then_fill_gap_with_facts + specifics + reader_scenario; NO:just_delete NO:refill_with_filler eg: \"you_must_register_before_we_proceed\" >> \"register_so_we_know_where_to_deliver\"",
+    "domain": "copy",
+    "tags": [
+      "stop-words",
+      "editing-method",
+      "word-level",
+      "fundamentals"
+    ]
+  },
+  {
+    "principle": "Evaluative adjectives signal intent to convince but don't convince — reader needs to experience it themselves",
+    "explanation": "X.copy|eval_adjectives: \"incredible/exclusive/premium/exquisite\" -> reader_recognizes_manipulation NOT feels_quality; evaluation == authors_conclusion_forced_on_reader; NO:stacking_adjectives_for_impact; replace_with_experience eg: \"incredible_quality_low_price\" >> facts + scenarios + demonstration",
+    "domain": "copy",
+    "tags": [
+      "evaluations",
+      "adjectives",
+      "persuasion",
+      "show-dont-tell"
+    ]
+  },
+  {
+    "principle": "Examples force reader to mentally rehearse your experience — without them, conclusions don't stick even if understood",
+    "explanation": "X.copy|examples_as_rehearsal: author_has_years_of_experience -> compresses_into_conclusion; reader_reads_conclusion_but_cant_apply: holds_phone_with_diet_article + reaches_for_sweet_yogurt; example_forces_mental_practice: reader_imagines_SPECIFIC_situation -> connects_abstract_to_concrete; NO:conclusions_without_examples; finding_good_examples == the_actual_work eg: \"avoid_fast_carbs\" >> \"avoid_fast_carbs:_pastries_sandwiches_sweet_drinks_even_fruit_yogurts\"",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "examples",
+      "mental-rehearsal",
+      "depth"
+    ]
+  },
+  {
+    "principle": "Examples hijack attention to irrelevant details — strip noise and stay in one movie across all points",
+    "explanation": "X.copy|example_focus: reader_fixates_on_example_details_not_your_point; strip_distracting_specifics; switching_between_different_example_domains -> reader_fatigue; NO:jumping_movies NO:over-detailed_examples; one_consistent_scenario_for_all_tezises eg: \"escort_client_to_car_with_umbrella\" -> reader_thinks_about_parking_not_your_point",
+    "domain": "copy",
+    "tags": [
+      "sentence-level",
+      "examples",
+      "attention-control",
+      "focus"
+    ]
+  },
+  {
+    "principle": "Expert writing for beginners imagines colleagues reading and overcomplicates — explicit disclaimer frees you",
+    "explanation": "X.copy|expert_fear: expert_writes_for_beginners -> imagines_colleagues_judging_accuracy -> overloads_with_caveats+details; text_becomes_lecture_not_help; fix: explicit_disclaimer \"this_is_for_beginners_experts_come_help_in_comments\"; NO:writing_for_two_audiences_at_once eg: Python_tutorial -> \"experts_please_dont_judge_simplifications._Beginners:_heres_how_to_install_and_run_first_program\"",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "expert-trap",
+      "audience-purity",
+      "disclaimer"
+    ]
+  },
+  {
+    "principle": "Falsehood is the worst tonal crime — readers tolerate ads but hate hidden intentions; be direct about what you want",
+    "explanation": "X.copy|anti_falsehood: readers_accept: ads + sales + self-promotion; readers_reject: hidden_commercial_intent + fake_friendliness + manufactured_characters; falsehood == mismatch_between_stated_and_real_motive; fix: state_intentions_openly + communicate_as_equals; NO:disguising_sales_as_caring NO:fake_brand_mascots eg: \"you_asked_about_loafers_heres_my_secret_favorite_brand_(ad)\" >> \"ad_time:_my_favorite_shoe_brand_from_Ryazan._I_own_4_pairs._Discount_for_readers\"",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "tonality",
+      "falsehood",
+      "directness"
+    ]
+  },
+  {
+    "principle": "Find real actors in impersonal sentences — but skip when the actor is obvious or irrelevant",
+    "explanation": "X.copy|find_actor: \"fines_are_applied\" -> who_fines? -> \"company_fines_employees\"; BUT obvious_actor == noise; NO:adding_self-evident_performers eg: \"mechanics_installed_the_engine\" >> pointless_if_only_mechanics_can; better: \"the_engine_was_5_liters\" -> hero_is_engine_not_mechanic",
+    "domain": "copy",
+    "tags": [
+      "sentence-level",
+      "impersonal",
+      "actors",
+      "relevance"
+    ]
+  },
+  {
+    "principle": "Flatten complex grammar: nested subordination, paired conjunctions, indirect speech — reader holds too much in memory",
+    "explanation": "X.copy|flatten_grammar: \"because...when...which\" x2_levels -> reader_loses_thread; \"not_only...but_also\" -> holds_part_1_while_reading_part_2; \"he_said_that...\" -> often_\"that\"_clause_IS_the_sentence; digressions: worth_own_paragraph? extract; not? delete; NO:hierarchical_constructions eg: \"not_only_list_but_also_estimate\" >> \"three_tasks:_list,_sort,_estimate\"",
+    "domain": "copy",
+    "tags": [
+      "sentence-level",
+      "subordination",
+      "paired-conjunctions",
+      "flattening"
+    ]
+  },
+  {
+    "principle": "If the text fits any audience it's a cliché — specificity creates memorability",
+    "explanation": "X.copy|cliche_test: text_works_for_anyone == touches_no_one; write_for_specific_people/context -> remembered; generic_graduation_speech -> forgotten; speech_about_THIS_class -> remembered_for_life; NO:universal_safe_phrasing eg: \"new_chapter_of_adult_life_awaits\" >> \"I_remember_when_you_came_to_my_4th_grade_whispering_if_I_was_kind_or_strict\"",
+    "domain": "copy",
+    "tags": [
+      "cliches",
+      "specificity",
+      "memorability",
+      "audience"
+    ]
+  },
+  {
+    "principle": "In business emails replace importance-evaluations with why and what exactly — praise with impact not adjectives",
+    "explanation": "X.copy|business_eval: \"very_important/critical/urgent\" -> empty_pressure; explain_WHY + WHAT_specifically; praise: adjectives_only_work_from_authority; without_authority -> describe_impact_instead; NO:evaluative_manipulation eg: \"very_important_task_react_fast\" >> \"call_center_=_60%_revenue_react_within_30min\"",
+    "domain": "copy",
+    "tags": [
+      "evaluations",
+      "business-writing",
+      "specifics",
+      "authority"
+    ]
+  },
+  {
+    "principle": "Indefinite hedges hide missing info — delete them, reader needs orientation not false precision",
+    "explanation": "X.copy|indefinite_hedges: \"more_than/about/approximately/some\" -> noise; reader_needs_ballpark NOT precision_disclaimers; NO:hedging_every_number; if_legally_needed -> add_date_instead eg: \"more_than_20000_clients\" >> \"20_thousand_clients\"",
+    "domain": "copy",
+    "tags": [
+      "indefinite",
+      "hedging",
+      "numbers",
+      "precision"
+    ]
+  },
+  {
+    "principle": "Indefinite pronouns: delete or replace with specifics — keep only when mystery is the point",
+    "explanation": "X.copy|indef_pronouns: \"a_certain/some_kind_of/something/various\" -> delete OR specify; keep ONLY when_indefiniteness == the_message; \"various\" usually == lazy_listing; NO:vague_when_facts_exist eg: \"helps_with_various_headaches\" >> \"helps_with_migraine_cluster_and_tension_headache\"",
+    "domain": "copy",
+    "tags": [
+      "indefinite",
+      "pronouns",
+      "specifics",
+      "lazy-listing"
+    ]
+  },
+  {
+    "principle": "Inflated adjectives evaluate instead of showing — replace dramatic/critical/tectonic with facts",
+    "explanation": "X.copy|inflated_adjectives: \"dramatic/critical/tectonic/phenomenal/catastrophic\" -> empty_evaluation; reader_cant_feel_scale_from_adjective; show_with_facts_instead; NO:decorating_mundane_with_epic_words eg: \"dramatic_sales_growth\" >> \"monthly_revenue_equaled_annual_target\"",
+    "domain": "copy",
+    "tags": [
+      "jargon",
+      "evaluations",
+      "facts-over-adjectives",
+      "showing"
+    ]
+  },
+  {
+    "principle": "Introduction is not a separate task — lead with your strongest material; throat-clearing openings mean you have nothing to say yet",
+    "explanation": "X.copy|intro_is_content: NO:writing_intro_as_separate_task; intro == first_piece_of_your_strongest_material; if_you_have_strong_facts -> lead_with_them; strong_experience -> lead_with_it; strong_solution -> give_it_immediately; weak_openings (metaphor/generalization/\"everyone_knows\"/season) == author_has_nothing_to_say_yet eg: \"everyone_knows_not_sleeping_is_bad\" >> \"healthy_adult_falls_asleep_in_10-20min._Over_30min_=_problem\"",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "introduction",
+      "strongest-material",
+      "anti-throat-clearing"
+    ]
+  },
+  {
+    "principle": "Jargon hides bad news from accountability — simplify to expose the real situation",
+    "explanation": "X.copy|jargon_shield: complex_language -> obscures_problems; reader_skims_without_grasping_severity; also: myth_that_bosses_need_formal_language -> ask_them; NO:wrapping_failure_in_latinisms eg: \"resource_consolidation_demonstrated_unsatisfactory_motivation_effect\" >> \"we_raised_salaries_but_still_behind_plan_by_a_month\"",
+    "domain": "copy",
+    "tags": [
+      "jargon",
+      "accountability",
+      "problem-hiding",
+      "corporate-speak"
+    ]
+  },
+  {
+    "principle": "Keep subject and verb close — bureaucratic insertions between them make sentences unreadable",
+    "explanation": "X.copy|subject_verb_close: bureaucrats_insert_passports+addresses+regulations_between_subject_and_predicate; reader_loses_the_action; fix: core_sentence_first (subject+verb) -> details_in_next_sentences; enumerations_of_conditions -> extract_into_list; NO:mega-sentences_with_buried_predicate eg: \"students_who_passed_and_registered_and_living_and_not_earning...may_apply\" >> \"who_qualifies?_list:_passed/registered/living/not_earning\"",
+    "domain": "copy",
+    "tags": [
+      "bureaucracy",
+      "subject-verb",
+      "sentence-splitting",
+      "lists"
+    ]
+  },
+  {
+    "principle": "Lists need parallel structure and reader's search scenario — start each element from what the reader is looking for",
+    "explanation": "X.copy|list_design: elements_must_have_same_structure + same_field_order; build_from_reader_perspective: reader_knows_WHO_they_are -> match_to_tariff; NO:author_taxonomy_first; uneven_element == structural_break -> extract_the_outlier; repeated_info_across_all_elements -> extract_above eg: \"child_tariff._For_kids_under_12\" >> \"kids_under_12_—_child_tariff\"",
+    "domain": "copy",
+    "tags": [
+      "lists",
+      "parallel-structure",
+      "reader-scenario",
+      "navigation"
+    ]
+  },
+  {
+    "principle": "Most readers scan — sequential reading is only for changing beliefs; design for scanning by default",
+    "explanation": "X.copy|scan_vs_sequential: most_texts: reader_scans_subheadings + first_sentences + tables -> finds_answer_in_3min_not_20; sequential_only_when_changing_beliefs (controversial_topic + tightly_woven_narrative); design_for_scanning_first: structure + subheadings + first_sentences + lists; NO:assuming_reader_reads_every_word eg: informational_article -> scanning; article_against_animal_cruelty -> sequential_narrative_that_pulls_reader_through",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "scanning",
+      "reading-modes",
+      "information-design"
+    ]
+  },
+  {
+    "principle": "Near-synonym homogeneous members: reader sees no difference — keep one or replace with a fact",
+    "explanation": "X.copy|near_synonyms: \"quickly_precisely_punctually\" -> reader_cant_distinguish; keep_one OR replace_all_with_fact; 3+_distinct_items -> list_with_intro_phrase; NO:padding_evaluations_with_synonyms eg: \"deliver_fast_precise_punctual\" >> \"deliver_in_30_minutes\"",
+    "domain": "copy",
+    "tags": [
+      "sentence-level",
+      "homogeneous-members",
+      "synonyms",
+      "compression"
+    ]
+  },
+  {
+    "principle": "Nested subordinate clauses signal author stress — split into sentences or compress to one word",
+    "explanation": "X.copy|nested_clauses: clause_within_clause -> author_cramming_story_into_one_breath; often_stress/justification; many_commas == warning; fix: split_to_sentences OR compress_clause_to_adjective; NO:one_sentence_excuses eg: \"child_who_is_sick_and_needs_treatment\" >> \"sick_child\"",
+    "domain": "copy",
+    "tags": [
+      "introductory-words",
+      "subordinate-clauses",
+      "stress-signal",
+      "sentence-splitting"
+    ]
+  },
+  {
+    "principle": "Numbers in text are pain — put data into tables, processes into diagrams, products into photos; readers spend most time on visuals",
+    "explanation": "X.copy|visualize_data: numbers_in_prose -> reader_drowns_counting_digits; table: same_data + less_space + easy_comparison + color_for_highlights; diagrams: processes + dependencies; photos/screenshots: physical_products + interfaces; readers_spend_most_time_on_visuals_in_documents; NO:describing_in_words_what_can_be_shown eg: \"Q1_shipments_20.1M_98%_plan_Q2_19M_96%_Q3_24.4M_105%\" >> table_with_3_rows_and_columns: quarter|shipments|vs_plan|vs_year",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "documents",
+      "visualization",
+      "tables"
+    ]
+  },
+  {
+    "principle": "One hero and one plot per sentence — if the sentence doesn't know what it's about, split it",
+    "explanation": "X.copy|one_hero: sentence_must_have_one_subject; cramming_multiple_actors+events -> unreadable; ask \"who_is_the_hero?\"; split_rest_into_next_sentences; includes_compound_clauses_with_no_link; NO:multi-plot_sentences eg: \"man_slipped_breaking_car_window_with_bottle_nearly_hitting_child\" >> \"man_slipped._Bottle_hit_car._Glass_flew_toward_child\"",
+    "domain": "copy",
+    "tags": [
+      "sentence-level",
+      "overload",
+      "one-thought",
+      "splitting"
+    ]
+  },
+  {
+    "principle": "Opinion markers imply previous dishonesty — delete unless contrasting two positions",
+    "explanation": "X.copy|opinion_markers: \"in_my_opinion/honestly/frankly\" -> delete; \"honestly\"_implies_before_was_dishonest; keep ONLY when_contrasting: \"survey_says_X + but_I_think_Y\"; NO:habitual_hedging eg: \"honestly_the_food_was_bad\" >> \"good_reviews_but_I_disliked_the_food\"",
+    "domain": "copy",
+    "tags": [
+      "introductory-words",
+      "opinion-markers",
+      "directness",
+      "honesty-trap"
+    ]
+  },
+  {
+    "principle": "Oral clarifiers are speech crutches — write precisely the first time instead of self-correcting",
+    "explanation": "X.copy|oral_clarifiers: \"more_precisely/in_other_words/I_mean\" -> oral_habit; reader_can_reread -> no_live_corrections_needed; NO:self-correcting_on_paper; write_right_first_time eg: \"he_bought_a_smartwatch._Actually_grandma_gifted_it\" >> \"grandma_gifted_him_a_smartwatch\"",
+    "domain": "copy",
+    "tags": [
+      "introductory-words",
+      "oral-vs-written",
+      "precision",
+      "self-correction"
+    ]
+  },
+  {
+    "principle": "Overdried text: after cutting fluff the remaining facts choke the reader — split dense sentences and space out information",
+    "explanation": "X.copy|overdried: watery_text -> cut_fluff -> cram_all_facts_into_one_sentence -> reader_chokes; water_was_invisible_padding; now_every_word_demands_attention; NO:replacing_water_with_brick; split_facts_across_sentences eg: \"since_2003_dispatching_warehouse_tracking_shipping_ISO\" >> 3_sentences: what_we_do | certification | year_founded",
+    "domain": "copy",
+    "tags": [
+      "sentence-level",
+      "overdried",
+      "density",
+      "splitting"
+    ]
+  },
+  {
+    "principle": "Paragraph structure: one theme, first sentence declares it for scanning, last sentence bridges to next",
+    "explanation": "X.copy|paragraph_structure: one_paragraph == one_theme; first_sentence == declaration_of_topic + keywords_early; last_sentence == conclusion + bridge_to_next; 3-9_lines_optimal; NO:starting_with_\"for_example\"/\"however\"/\"in_this_case\" eg: \"And_vice_versa:_if_you...\" >> \"To_choose_headphones_answer_these_questions:...\"",
+    "domain": "copy",
+    "tags": [
+      "paragraph",
+      "structure",
+      "navigation",
+      "first-sentence"
+    ]
+  },
+  {
+    "principle": "Parentheses visually say skip me — extract important content or delete unimportant",
+    "explanation": "X.copy|parentheses: content_in_brackets -> visually_demoted; important? -> extract_to_main_text; unimportant? -> delete; OK_only_for_citations_at_sentence_end; NO:hiding_key_info_in_brackets eg: \"Vasily_(factory_director)_greeted_us\" >> \"factory_director_Vasily_greeted_us\"",
+    "domain": "copy",
+    "tags": [
+      "introductory-words",
+      "parentheses",
+      "visual-hierarchy",
+      "editing"
+    ]
+  },
+  {
+    "principle": "Passive voice to active — but keep the real hero, don't just swap mechanically",
+    "explanation": "X.copy|passive_to_active: \"was_done_by_X\" -> \"X_did\"; BUT check_who_is_hero; if_hero_shifts_after_swap -> restructure_differently; NO:mechanical_swap_losing_focus eg: \"houses_were_built_per_standard\" >> NOT \"builder_built_houses\" >> \"houses_meet_standard_X\"",
+    "domain": "copy",
+    "tags": [
+      "sentence-level",
+      "passive-voice",
+      "active-voice",
+      "hero-focus"
+    ]
+  },
+  {
+    "principle": "Person + does + this way — four-step algorithm to turn fog into cinema",
+    "explanation": "X.copy|person_does: 1_find_the_action; 2_find_who_does_it; 3_formulate_action_in_clear_words; 4_check_for_conclusion; NO:abstract_noun_piles_without_actors eg: \"comfort_of_visitors_is_our_priority\" >> \"admin_offers_coffee_enters_client_data_walks_to_car_with_umbrella\"",
+    "domain": "copy",
+    "tags": [
+      "sentence-level",
+      "algorithm",
+      "clarity",
+      "cinematographic"
+    ]
+  },
+  {
+    "principle": "Pop psychology terms obscure what actually happened — describe the situation plainly",
+    "explanation": "X.copy|pop_psychology: \"subconscious/gestalt/projection/abusive/narcissist\" -> borrowed_terms_used_loosely; easy_to_misuse + reader_may_not_share_framework; describe_observable_behavior_instead; NO:diagnosing_via_buzzwords eg: \"client_projects_abusive_narcissist_behavior\" >> \"client_gives_contradictory_feedback\"",
+    "domain": "copy",
+    "tags": [
+      "jargon",
+      "psychology",
+      "plain-language",
+      "observable-behavior"
+    ]
+  },
+  {
+    "principle": "Pragmatic headlines must name the specific situation — no wordplay, the more concrete the more the reader feels it's about THEIR problem",
+    "explanation": "X.copy|pragmatic_headline: direct + specific_situation > clever_wordplay; reader_came_to_solve_problem_fast; add: audience + time + place + method + budget; long_headline_OK_if_every_part_is_useful; NO:playful_headlines_for_problem_solving eg: \"dry_and_doesnt_smell\" (plumber_article) >> \"how_to_find_plumber_on_Avito_if_no_time_for_search\"",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "headlines",
+      "pragmatic-text",
+      "specificity"
+    ]
+  },
+  {
+    "principle": "Pragmatic text solves the problem and loses the reader — they won't remember your brand; pull questions before pushing answers",
+    "explanation": "X.copy|pragmatic_limits: problem_solved -> reader_forgets_you; no_brand_loyalty_from_utility_texts; plan_accordingly; for_internal_comms: survey_first (\"ask_the_CEO\") -> then_answer_collected_questions; pull > push; NO:expecting_loyalty_from_one-time_problem_solving eg: \"quarterly_digest\" >> \"ask_your_question_to_CEO\" -> then_CEO_answers_in_newsletter",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "pragmatic-limits",
+      "loyalty",
+      "pull-vs-push"
+    ]
+  },
+  {
+    "principle": "Proactive care: don't just inform — help solve the problem with addresses, forms, next steps",
+    "explanation": "X.copy|proactive_care: basic: \"apply_at_local_office\"; better: add_address+hours+phone; best: attach_form+step-by-step+link; every_step_toward_helping == more_trust; good_text_costs_same_as_bad -> templateable; NO:\"informing_is_our_job_rest_is_theirs\" eg: \"contact_your_local_UMVD\" >> \"your_UMVD:_address_X_hours_Y_room_Z_book_online_at_link\"",
+    "domain": "copy",
+    "tags": [
+      "bureaucracy",
+      "proactive-care",
+      "reader-help",
+      "service-design"
+    ]
+  },
+  {
+    "principle": "Rankings are useless without reader benefit — state position and explain what it gives them",
+    "explanation": "X.copy|rankings: \"top_20\" usually_means_18th -> state_actual_position; position_alone == still_useless; explain_what_it_means_for_reader; NO:vague_bragging eg: \"we_are_in_top_20_producers\" >> \"offices_in_40_cities_=_delivery_anywhere\"",
+    "domain": "copy",
+    "tags": [
+      "indefinite",
+      "rankings",
+      "reader-benefit",
+      "specifics"
+    ]
+  },
+  {
+    "principle": "Reading is constructing a mental movie — if the reader can't picture it, the sentence is fog",
+    "explanation": "X.copy|mental_movie: reader_decodes_words -> mental_images like_watching_film; if_image_forms -> understood; if_not -> fog; too_much_fog -> reader_skips_paragraphs/quits; NO:assuming_reader_decodes_abstractions_automatically eg: \"possible_hyperinflation_like_Venezuela\" -> works_if_reader_knows_Venezuela_2018 >> fails_if_they_dont",
+    "domain": "copy",
+    "tags": [
+      "sentence-level",
+      "mental-model",
+      "readability",
+      "fundamentals"
+    ]
+  },
+  {
+    "principle": "Replace bureaucratic text with human specifics — day, time, duration, fallback plan",
+    "explanation": "X.copy|bureaucratic_to_human: formal_template -> human_text_with_specifics; add: weekday + full_date + duration + what_to_do_if_problem; human_text -support_calls; NO:vague_deadlines NO:abbreviations_without_explanation eg: \"cold/hot_water_off_until_done\" >> \"water_off_MON_11may_11am_4-6hrs_call_XXX_if_no_water_after_5pm\"",
+    "domain": "copy",
+    "tags": [
+      "clarity",
+      "human-language",
+      "specifics",
+      "bureaucracy"
+    ]
+  },
+  {
+    "principle": "Reverse obvious advice into depth: ask why people don't follow it and what specifically goes wrong",
+    "explanation": "X.copy|reverse_approach: obvious_advice -> everyone_knows_but_nobody_follows; ask: WHY_dont_they? WHAT_specifically_goes_wrong? WHERE_do_they_stumble?; transforms_banal_into_deep; NO:repeating_\"do_the_right_thing\"; explore_the_failure_gap eg: \"dont_be_late_to_interview\" >> \"why_you_might_be_late_despite_planning + what_to_do_when_it_happens\"; \"eject_USB_safely\" >> \"what_actually_happens_to_files_when_you_dont\"",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "reverse-approach",
+      "depth-from-banality",
+      "failure-gap"
+    ]
+  },
+  {
+    "principle": "Root cause of bureaucratic writing: one style for all contexts — court documents and social media get same treatment",
+    "explanation": "X.copy|one_style_trap: officials_use_court_protocol_style_for_everything: laws + letters + social_media + news; each_text_has_own_audience + own_task; NO:copying_law_text_into_social_media; cant_just_paste_legal_language_and_hope_people_figure_it_out eg: police_protocol_style_in_water_shutoff_notice >> human_style_for_citizens + formal_for_court",
+    "domain": "copy",
+    "tags": [
+      "bureaucracy",
+      "root-cause",
+      "audience-mismatch",
+      "context"
+    ]
+  },
+  {
+    "principle": "Round big numbers and convert units — do the math for the reader",
+    "explanation": "X.copy|big_numbers: reader_skips_after_3_digits; round_to_meaningful_precision + convert_units; precise_numbers ONLY for accountants/scientists; NO:raw_multidigit_dumps eg: \"10_543_768_rubles\" >> \"10.5M_rubles\"; \"12_698_341_kg\" >> \"12.7_thousand_tons\"",
+    "domain": "copy",
+    "tags": [
+      "indefinite",
+      "numbers",
+      "rounding",
+      "reader-effort"
+    ]
+  },
+  {
+    "principle": "Same event becomes a different story depending on headline focus — choosing the angle IS the editorial act",
+    "explanation": "X.copy|headline_angle: same_event -> 5_headlines -> 5_stories; headline_selects: hero OR cost OR scandal OR benefit; closing_paragraphs_also_shape_meaning; NO:thinking_headlines_are_objective eg: Kaluga_brand: \"new_tourism_brand_2026\" vs \"10M_for_Moscow_designers\" vs \"scandalous_designer_at_apartment_price\" == same_facts_different_stories",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "headlines",
+      "editorial-angle",
+      "interpretation"
+    ]
+  },
+  {
+    "principle": "Same word can be jargon or precise term — keep when it's the real discipline, cut when it's decoration",
+    "explanation": "X.copy|term_vs_jargon: word_in_its_discipline == precise_term -> keep; same_word_outside_discipline == decoration -> replace; NO:blanket_banning_complex_words; context_decides eg: \"audit_of_consumer_patterns\" (jargon) vs \"audit_by_accounting_firm\" (term); \"dominant_theme\" (jargon) vs \"dominant_gene\" (biology)",
+    "domain": "copy",
+    "tags": [
+      "jargon",
+      "terminology",
+      "context",
+      "editorial-judgment"
+    ]
+  },
+  {
+    "principle": "Sentences serve paragraphs not rules — weak syntax may be right if it serves the paragraph's main idea",
+    "explanation": "X.copy|paragraph_context: sentence_that_looks_weak_alone -> may_be_perfect_in_paragraph; \"from_different_viewpoints\" vague_alone -> in_paragraph_unfolds_into_ethical + scientific; adding_actors_mechanically -> may_hijack_attention_from_real_topic; NO:blind_syntax_rules_ignoring_paragraph_purpose eg: adding_\"animal_rights_activists_advise\" -> distracts_from_the_point_about_viewpoints",
+    "domain": "copy",
+    "tags": [
+      "paragraph",
+      "context",
+      "syntax-flexibility",
+      "judgment"
+    ]
+  },
+  {
+    "principle": "Specificity collapses possibility space — that's the point, it forces real implementation thinking",
+    "explanation": "X.copy|collapse_space: abstract_\"comfort\" -> everyone_imagines_own_version; concrete_example -> collapses_to_specific_meaning; readers_ask_\"is_that_all?\"; this_is_GOOD: forces_real_planning; NO:staying_abstract_to_avoid_hard_questions eg: \"raise_quality_of_life\" >> \"students_furnish_apartment_in_one_trip_for_cheap\"",
+    "domain": "copy",
+    "tags": [
+      "sentence-level",
+      "specificity",
+      "abstraction-trap",
+      "implementation"
+    ]
+  },
+  {
+    "principle": "State verbs hide real actions — restore them, but don't force action where there's genuinely none",
+    "explanation": "X.copy|state_verbs: \"is/exists/implies/is_located/appears\" -> check_if_action_is_hidden; YES -> restore_verb_of_action; NO_action -> state_verb_is_fine; NO:mechanical_verb_replacement eg: \"CRM_implementation_ensures_sales_growth\" >> \"after_CRM_launch_managers_sell_30%_more\"; \"70%_of_warehouses_are_in_Moscow\" -> OK_as_is",
+    "domain": "copy",
+    "tags": [
+      "sentence-level",
+      "state-verbs",
+      "hidden-actions",
+      "judgment"
+    ]
+  },
+  {
+    "principle": "Stop-word is attention flag not ban: same word essential or garbage depending on context",
+    "explanation": "X.copy|context_flag: stop_word == signal \"check_this_spot\" NOT ban_list; word_carries_meaning? -> keep; word_is_filler? -> cut; NO:mechanical_deletion_by_checklist; author_decides eg: \"for_example\"_before_real_example -> essential; \"for_example\"_in_hedge_chain -> noise",
+    "domain": "copy",
+    "tags": [
+      "stop-words",
+      "context",
+      "editorial-judgment",
+      "rules"
+    ]
+  },
+  {
+    "principle": "Stories create mental movies — reader draws own conclusions and generalizes beyond your examples",
+    "explanation": "X.copy|stories_over_eval: scenario -> reader_imagines_situation -> arrives_at_conclusion_independently -> holds_it_stronger; stories_expand: describe_one_case -> reader_infers_many_similar; NO:abstract_praise eg: \"we_handle_complex_data_recovery\" >> \"phone_fell_from_window/pulled_from_sea/run_over_by_car_—_bring_it\"",
+    "domain": "copy",
+    "tags": [
+      "evaluations",
+      "storytelling",
+      "scenarios",
+      "reader-inference"
+    ]
+  },
+  {
+    "principle": "Stories work because we calibrate our lives by watching others — fake characters fail, products can't be heroes",
+    "explanation": "X.copy|story_calibration: humans_use_stories_to_calibrate: \"how_do_others_live?_am_I_doing_it_right?\"; hero == real_person_with_real_actions; fake_characters -> no_calibration -> reader_disengages; product_as_hero == boring; case_study: show_people_overcoming_obstacles_not_product_features; NO:\"Masha_on_regular_chair_Sasha_on_ergonomic\" eg: \"CRM_improved_service\" >> \"managers_rebelled_against_new_system_—_CEO_handled_it_by...\"",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "storytelling",
+      "calibration",
+      "authenticity"
+    ]
+  },
+  {
+    "principle": "Structure serves the thought — if one sentence reveals it fully, one-sentence paragraph is enough",
+    "explanation": "X.copy|dont_pad: paragraph_template == useful_scaffold NOT mandatory_filler; if_one_sentence_says_it_all -> done; three_sentences_repeating_same_idea -> monotone; NO:mechanical_three-part_padding eg: \"no_safe_alcohol_dose._Even_a_glass_a_week_impairs_cognition._Simply_put_each_drink_makes_you_dumber._So_even_a_little_is_harmful\" >> first_sentence_alone_is_enough",
+    "domain": "copy",
+    "tags": [
+      "paragraph",
+      "conciseness",
+      "anti-padding",
+      "structure"
+    ]
+  },
+  {
+    "principle": "Structure shapes everything: choose it before writing or discover it during — it dictates order, depth, and appearance",
+    "explanation": "X.copy|structure_first: same_topic -> story OR analysis OR logical_chain OR reference; structure_dictates: order_of_exposition + visual_appearance + reader_behavior (scan_vs_deep_read); think_about_structure_before_OR_let_it_emerge; NO:writing_without_structural_intent eg: \"thesis + example + antiexample\" -> deep_text; \"five_stories_with_subheadings\" -> scannable_text",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "structure",
+      "planning",
+      "format-choice"
+    ]
+  },
+  {
+    "principle": "Substance first, legal basis last — answer the question, then cite the law",
+    "explanation": "X.copy|substance_first: bureaucratic_disease: start_with_legal_references -> reader_wades_3_pages_to_find_answer; fix: answer_first + \"basis:\" section_at_end; same_for_paragraph_order: move_answer_to_top; NO:cause_before_effect NO:legal_preamble_as_opening eg: \"pursuant_to_regulation_X_citizens_have_right_to...\" >> \"you_qualify_for_the_program._Basis:_regulation_X\"",
+    "domain": "copy",
+    "tags": [
+      "bureaucracy",
+      "substance-first",
+      "structure",
+      "reader-first"
+    ]
+  },
+  {
+    "principle": "Text about yourself is not about you — it's about your utility; reader has 50 tabs open, not a romantic dinner with you",
+    "explanation": "X.copy|about_you_paradox: reader_wants_to_hire/order/partner -> they_seek_function_not_soul; your_creative_path+feelings == interesting_only_to_family; match_readers_request_fast; NO:imagining_reader_on_date_with_full_attention; recruiter_has_50_candidates; once_utility_proven -> then_personality_matters eg: \"my_creative_journey_began\" >> \"I_make_websites_for_small_business._Ready_in_a_week._Examples:\"",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "about-yourself",
+      "utility-first",
+      "reader-attention"
+    ]
+  },
+  {
+    "principle": "Text has 5 editing levels — useful action, words, sentences, structure, presentation — all required",
+    "explanation": "X.copy|five_levels: useful_action -> words -> sentences -> structure -> presentation; all_levels_required; words_only == 20%_of_work; NO:stopping_at_word_cleanup; like_cleaning_room: remove_trash + arrange_remaining_for_use eg: \"deleted_stop_words_but_wrong_structure\" >> \"clean_words + logical_flow + reader_task_solved\"",
+    "domain": "copy",
+    "tags": [
+      "editing-levels",
+      "structure",
+      "workflow",
+      "fundamentals"
+    ]
+  },
+  {
+    "principle": "The 'therefore' test: any company claim must continue with concrete action or reader benefit — values without 'therefore' are empty words",
+    "explanation": "X.copy|therefore_test: \"we_value_X\" -> must_continue: \"THEREFORE_we_do_Y_and_refuse_Z\"; also: \"we_have_X\" -> \"THIS_MEANS_for_you:_Y\"; mission_without_concrete_action == decoration; real_values: state_belief + prove_with_action + show_what_you_refuse; NO:abstract_mission_anyone_could_copy eg: \"we_value_quality\" >> \"we_value_quality_THEREFORE_24/7_support_call_us_midnight_new_years_eve\"; \"no_tobacco_clients_because_we_want_ads_to_make_world_better\"",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "company-text",
+      "therefore-test",
+      "mission-values"
+    ]
+  },
+  {
+    "principle": "Three mind constraints for sentences: limited memory, image-based thinking, scanning eyes",
+    "explanation": "X.copy|three_constraints: 1_working_memory_limited -> dont_overload_sentences; 2_we_think_in_images -> help_reader_paint_picture_from_what_they_know; 3_eyes_scan_for_key_info -> dont_hide_important_in_the_middle; NO:abstract_info_dumps NO:burying_the_lead eg: \"abstract_noun_pile\" >> \"person_does_action_reader_can_picture\"",
+    "domain": "copy",
+    "tags": [
+      "sentence-level",
+      "cognitive-limits",
+      "readability",
+      "structure"
+    ]
+  },
+  {
+    "principle": "Three text qualities: brief means no meaningless words, clear means understood first read, convincing means facts and numbers",
+    "explanation": "X.copy|three_qualities: brief (cut_words_without_meaning) + clear (understood_on_first_read) + convincing (facts + numbers); three_separate_skills; NO:verbose_formality NO:abstract_claims eg: \"in_advance_no_later_than\" >> \"in_2_days\"; \"unforeseen_circumstances\" >> \"contractor_miscalculated_budget\"",
+    "domain": "copy",
+    "tags": [
+      "brevity",
+      "clarity",
+      "persuasion",
+      "fundamentals"
+    ]
+  },
+  {
+    "principle": "Three-step document restructure: group into sections → put conclusion before chronology within each → extract summary to top with explicit request",
+    "explanation": "X.copy|doc_restructure: step1: group_content_into_sections_with_subheadings; step2: within_each_section_put_conclusion_FIRST_then_backstory; step3: collect_first_sentences_of_all_sections -> executive_summary_at_document_top; step4: add_explicit_request/question_for_reader; takes_5-15min; NO:rewriting_style; NO:cutting_content; just_reorganize eg: \"in_feb_we_hired_contractor...in_the_end_we_did_it_ourselves\" >> \"Executor:_our_team._Reason:_contractor_failed._Chronology:_feb...\"",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "documents",
+      "restructure",
+      "executive-summary"
+    ]
+  },
+  {
+    "principle": "Turn verbal nouns back into verbs — osushchestvlyat + noun is always replaceable",
+    "explanation": "X.copy|verbal_nouns: \"perform/conduct/ensure/implement\" + noun_from_verb -> replace_with_plain_verb; spot_by_pairing: empty_verb + action_noun; NO:noun_piles_with_hollow_verbs eg: \"company_performs_delivery_of_equipment\" >> \"company_delivers_equipment\"",
+    "domain": "copy",
+    "tags": [
+      "sentence-level",
+      "verbal-nouns",
+      "verbs",
+      "simplification"
+    ]
+  },
+  {
+    "principle": "Two content approaches: farmer researches topics deeply, hunter shapes existing material — combine both",
+    "explanation": "X.copy|farmer_hunter: farmer (research): topic -> sources -> expert -> article; expensive_but_deep; one_research -> multiple_formats (article+social+digest); hunter (resource): internal_trainings + client_stories + FAQ + news -> articles; fast_but_quality == source_quality; NO:hunter_without_factchecker; author_with_domain_experience -> asks_questions_others_miss -> deeper_content",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "content-strategy",
+      "research",
+      "resource-approach"
+    ]
+  },
+  {
+    "principle": "Two types of useful action: solve a problem or provoke an emotion — informing is NOT a useful action",
+    "explanation": "X.copy|action_types: pragmatic: reader_has_problem -> searches_solution -> already_motivated; emotional: fear/outrage/curiosity/pride/nostalgia/joy; if_no_problem_AND_no_emotion -> why_read?; NO:\"inform\" == not_useful_action; \"50_new_features\" -> nobody_opens eg: \"program_update_announcement\" >> \"5_ways_to_simplify_salon_admin_work\"",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "useful-action",
+      "pragmatic-vs-emotional",
+      "anti-informing"
+    ]
+  },
+  {
+    "principle": "Useful action framework: why reader comes voluntarily → what changes in their mind → how we get there = your writing plan",
+    "explanation": "X.copy|useful_action: useful_action == \"why_reader_comes_on_their_own\"; goal == \"what_changes_in_readers_mind\"; tasks == \"what_we_must_do_to_achieve_goal\"; well-formulated_tasks == writing_plan; NO:\"what_I_want_to_say\" eg: useful_action: \"less_micromanagement\" -> goal: \"reader_sees_how_motivation_system_helps\" -> tasks: \"examples_from_similar_businesses + theory\"",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "useful-action",
+      "goal-setting",
+      "planning"
+    ]
+  },
+  {
+    "principle": "Useful action: structure text around reader needs, not company story — ask for whom, what need, how help",
+    "explanation": "X.copy|useful_action: ask \"for_whom? + what_need? + how_help?\"; NOT \"what_I_want_to_say\"; company_story -> separate_about_page; NO:advantages_page_about_history_and_values eg: \"rich_history + family_values + reliable_suppliers\" >> \"lightweight_materials + back_support + waterproof_coating\"",
+    "domain": "copy",
+    "tags": [
+      "useful-action",
+      "reader-first",
+      "content-strategy",
+      "structure"
+    ]
+  },
+  {
+    "principle": "Useful headline replaces Dear Residents — on paper attention is already captured, use it for content",
+    "explanation": "X.copy|useful_headline: \"dear_residents!/attention!\" -> oral_attention-getters_useless_on_paper; eyes_already_on_text -> deliver_content_immediately; headline == summary_of_message; NO:empty_salutation_as_headline eg: \"Dear_residents!_We_inform_you_that...\" >> \"Hot_water_shutoff_Wed-Thu_Oct_1-2\"",
+    "domain": "copy",
+    "tags": [
+      "bureaucracy",
+      "headlines",
+      "information-density",
+      "reader-first"
+    ]
+  },
+  {
+    "principle": "Vanity facts serve the company not the reader — replace with reader scenarios",
+    "explanation": "X.copy|vanity_facts: \"180_classrooms_in_40_cities_90_programs\" -> impresses_company NOT reader; reader_needs_one_classroom_near_them; NO:facts_of_grandeur; translate_scale_into_reader_benefit eg: \"10_years_180_classrooms_40_cities\" >> \"classrooms_in_business_centers_so_you_come_after_work\"",
+    "domain": "copy",
+    "tags": [
+      "evaluations",
+      "vanity-facts",
+      "reader-scenarios",
+      "relevance"
+    ]
+  },
+  {
+    "principle": "Verbal numbering is oral structuring — in writing use paragraphs or real numbered lists",
+    "explanation": "X.copy|verbal_numbering: \"firstly/secondly/finally\" -> oral_structuring_tool; writing: one_paragraph == one_thought; numeric_list ONLY for instructions_or_referenced_items; NO:numbering_unordered_criteria eg: \"1._truth 2._testability 3._rigor\" >> \"— truth — testability — rigor\"",
+    "domain": "copy",
+    "tags": [
+      "introductory-words",
+      "verbal-numbering",
+      "structure",
+      "speech-vs-writing"
+    ]
+  },
+  {
+    "principle": "Wanting to bold something mid-text is a signal: that thing should become a subheading — don't spoon-feed, build a buffet",
+    "explanation": "X.copy|bold_signal: urge_to_bold_mid-paragraph == key_info_buried; fix: extract_as_subheading -> reader_navigates_freely; bold_words_in_text == spoon-feeding (author_decides_whats_important); subheadings == buffet (reader_chooses); too_much_bold == visual_chaos; NO:highlighting_random_words_in_paragraphs eg: \"...were_**suspended**...then_**fully_revised**...\" >> \"Suspension_and_revision._New_team_stopped_work_then...\"",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "documents",
+      "bold-trap",
+      "subheadings"
+    ]
+  },
+  {
+    "principle": "When list elements outgrow the format — use paragraphs with headings; complex data wants a table",
+    "explanation": "X.copy|list_limits: element_is_a_whole_paragraph? -> make_it_a_paragraph_with_subheading; list == glanceable_homogeneous_items; paragraph == content_that_needs_unpacking; \"here_is_what\" before_list == crutch: fix_the_intro_sentence_instead; multi-dimensional_data -> pseudo-table; NO:forcing_long_content_into_bullet_format",
+    "domain": "copy",
+    "tags": [
+      "lists",
+      "tables",
+      "format-choice",
+      "paragraphs"
+    ]
+  },
+  {
+    "principle": "Written arguments only convince the already convinced — opponents won't even open the text",
+    "explanation": "X.copy|preaching_to_choir: reader_who_disagrees -> wont_open_your_article; your_readers == already_agree -> they_mine_arguments_to_reinforce_own_position; to_reach_opponents -> work_on_communication_context_first (trust + platform + relationship); NO:expecting_thesis+proof_structure_to_change_minds eg: \"5_reasons_why_X_is_wrong\" -> read_only_by_X_haters_not_X_supporters",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "argumentation",
+      "persuasion-limits",
+      "audience"
+    ]
+  },
+  {
+    "principle": "You can improve bureaucratic text without touching style — just rearrange: move the answer up, basis down",
+    "explanation": "X.copy|rearrange_first: step_1: move_answer_paragraph_to_top (no_style_change); step_2: within_paragraphs_swap_basis_and_substance; step_3: only_then_clean_style; non-threatening_for_bureaucrats; NO:demanding_full_rewrite_at_once eg: 3_pages_of_legal_basis_then_answer >> answer_in_first_paragraph + legal_basis_at_end",
+    "domain": "copy",
+    "tags": [
+      "bureaucracy",
+      "rearrangement",
+      "gradual-improvement",
+      "low-resistance"
+    ]
+  },
+  {
+    "principle": "You can't write for everyone — segment by audience and rephrase as their specific benefit",
+    "explanation": "X.copy|segment_audience: universal_needs (health/wealth/love) -> too_much_competition -> invisible_in_noise; specialization_creates_attention; examples_must_be_about_someone_specific -> reader_must_recognize_themselves; NO:one_text_for_all == text_for_none eg: \"how_to_fight_procrastination\" >> three_articles: \"procrastination_for_students\" + \"for_creatives\" + \"in_office\"",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "audience-segmentation",
+      "specialization",
+      "personalization"
+    ]
+  },
+  {
+    "principle": "Your baggage lies: beaten topic doesn't mean reader has seen it — social media posts are waves, not monuments",
+    "explanation": "X.copy|beaten_topic_myth: author_read_10_articles -> thinks_\"everything_written\"; but_reader_hasnt_seen_99%_of_internet; social_media == waves: post_reaches_fraction_of_audience_then_dies; dont_fear_repetition; for_SEO: differentiate_by_audience+time+specificity; NO:self-censoring_based_on_own_baggage eg: \"products_that_prevent_weight_loss\" -> beaten? >> \"products_that_prevent_weight_loss_for_office_workers_2025\"",
+    "domain": "copy",
+    "tags": [
+      "text-level",
+      "beaten-topics",
+      "author-baggage",
+      "content-strategy"
+    ]
+  }
+]

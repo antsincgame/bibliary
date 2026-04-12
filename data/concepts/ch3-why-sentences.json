@@ -1,0 +1,14 @@
+[
+  {
+    "principle": "Reading is constructing a mental movie — if the reader can't picture it, the sentence is fog",
+    "explanation": "X.copy|mental_movie: reader_decodes_words -> mental_images like_watching_film; if_image_forms -> understood; if_not -> fog; too_much_fog -> reader_skips_paragraphs/quits; NO:assuming_reader_decodes_abstractions_automatically eg: \"possible_hyperinflation_like_Venezuela\" -> works_if_reader_knows_Venezuela_2018 >> fails_if_they_dont",
+    "domain": "copy",
+    "tags": ["sentence-level", "mental-model", "readability", "fundamentals"]
+  },
+  {
+    "principle": "Three mind constraints for sentences: limited memory, image-based thinking, scanning eyes",
+    "explanation": "X.copy|three_constraints: 1_working_memory_limited -> dont_overload_sentences; 2_we_think_in_images -> help_reader_paint_picture_from_what_they_know; 3_eyes_scan_for_key_info -> dont_hide_important_in_the_middle; NO:abstract_info_dumps NO:burying_the_lead eg: \"abstract_noun_pile\" >> \"person_does_action_reader_can_picture\"",
+    "domain": "copy",
+    "tags": ["sentence-level", "cognitive-limits", "readability", "structure"]
+  }
+]
