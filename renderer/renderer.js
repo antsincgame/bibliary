@@ -22,6 +22,8 @@ const btnRefreshCollections = /** @type {HTMLButtonElement} */ (getEl("btn-refre
 const btnRefreshModels = /** @type {HTMLButtonElement} */ (getEl("btn-refresh-models"));
 const statusDot = /** @type {HTMLDivElement} */ (getEl("status-dot"));
 
+const PING_INTERVAL_MS = 15000;
+
 let isLoading = false;
 
 function removeWelcome() {
@@ -104,14 +106,8 @@ async function withSpin(btn, action) {
 
 async function loadCollections() {
   await withSpin(btnRefreshCollections, async () => {
-    try {
-      const collections = await window.api.getCollections();
-      populateSelect(collectionSelect, collections);
-      updateStatus(true);
-    } catch {
-      populateSelect(collectionSelect, []);
-      updateStatus(false);
-    }
+    const collections = await window.api.getCollections().catch(() => []);
+    populateSelect(collectionSelect, collections);
   });
 }
 
@@ -126,10 +122,21 @@ async function loadModels() {
   });
 }
 
-/** @param {boolean} qdrantOk */
-function updateStatus(qdrantOk) {
-  statusDot.classList.toggle("online", qdrantOk);
-  statusDot.title = qdrantOk ? "Qdrant online" : "Qdrant offline";
+/** @param {boolean} qdrantOk @param {boolean} lmOk */
+function updateStatus(qdrantOk, lmOk = false) {
+  const allOk = qdrantOk && lmOk;
+  statusDot.classList.toggle("online", allOk);
+  const qdrantLabel = qdrantOk ? "online" : "offline";
+  const lmLabel = lmOk ? "online" : "offline";
+  statusDot.title = `Qdrant: ${qdrantLabel} | LM Studio: ${lmLabel}`;
+}
+
+async function pingServices() {
+  const [qdrantOk, lmOk] = await Promise.all([
+    window.api.pingQdrant().catch(() => false),
+    window.api.pingLmStudio().catch(() => false),
+  ]);
+  updateStatus(qdrantOk, lmOk);
 }
 
 async function sendMessage() {
@@ -181,6 +188,8 @@ btnSend.addEventListener("click", sendMessage);
 btnRefreshCollections.addEventListener("click", loadCollections);
 btnRefreshModels.addEventListener("click", loadModels);
 
+pingServices();
+setInterval(pingServices, PING_INTERVAL_MS);
 loadCollections();
 loadModels();
 input.focus();

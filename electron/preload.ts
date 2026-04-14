@@ -1,6 +1,12 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("api", {
+  pingQdrant: (): Promise<boolean> =>
+    ipcRenderer.invoke("qdrant:ping"),
+
+  pingLmStudio: (): Promise<boolean> =>
+    ipcRenderer.invoke("lmstudio:ping"),
+
   getCollections: (): Promise<string[]> =>
     ipcRenderer.invoke("qdrant:collections"),
 

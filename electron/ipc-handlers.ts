@@ -44,6 +44,24 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export function registerIpcHandlers(): void {
+  ipcMain.handle("qdrant:ping", async (): Promise<boolean> => {
+    try {
+      const response = await fetch(`${QDRANT_URL}/`);
+      return response.ok;
+    } catch {
+      return false;
+    }
+  });
+
+  ipcMain.handle("lmstudio:ping", async (): Promise<boolean> => {
+    try {
+      const response = await fetch(`${LM_STUDIO_URL}/v1/models`);
+      return response.ok;
+    } catch {
+      return false;
+    }
+  });
+
   ipcMain.handle("qdrant:collections", async (): Promise<string[]> => {
     try {
       const data = await fetchJson<QdrantCollectionsResponse>(`${QDRANT_URL}/collections`);
