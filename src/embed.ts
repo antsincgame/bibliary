@@ -1,29 +1,34 @@
-import { pipeline, type FeatureExtractionPipeline } from "@xenova/transformers";
+import { EmbeddingModel, FlagEmbedding } from "fastembed";
 
-const MODEL_NAME = "Xenova/multilingual-e5-small";
 export const VECTOR_SIZE = 384;
+const CACHE_DIR = "/tmp/fastembed-models";
 
-let extractor: FeatureExtractionPipeline | null = null;
+let model: FlagEmbedding | null = null;
 
-async function getExtractor(): Promise<FeatureExtractionPipeline> {
-  if (!extractor) {
-    console.log(`Loading model ${MODEL_NAME}...`);
-    extractor = await pipeline("feature-extraction", MODEL_NAME);
+async function getModel(): Promise<FlagEmbedding> {
+  if (!model) {
+    console.log("Loading model AllMiniLML6V2 (384-dim)...");
+    model = await FlagEmbedding.init({
+      model: EmbeddingModel.AllMiniLML6V2,
+      cacheDir: CACHE_DIR,
+    });
     console.log("Model loaded.");
   }
-  return extractor;
+  return model;
 }
 
 async function embed(text: string): Promise<number[]> {
-  const model = await getExtractor();
-  const output = await model(text, { pooling: "mean", normalize: true });
-  return Array.from(output.data as Float32Array);
+  const m = await getModel();
+  for await (const batch of m.embed([text], 1)) {
+    return Array.from(batch[0]);
+  }
+  throw new Error("No embedding returned");
 }
 
 export async function embedPassage(text: string): Promise<number[]> {
-  return embed(`passage: ${text}`);
+  return embed(text);
 }
 
 export async function embedQuery(text: string): Promise<number[]> {
-  return embed(`query: ${text}`);
+  return embed(text);
 }
