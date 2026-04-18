@@ -5,3 +5,5 @@ release/
 .env
 .cache/
 *.blockmap
+storage/
+.qdrant-initialized
