@@ -7,6 +7,7 @@
   "scripts": {
     "init": "tsx src/init-collection.ts",
     "load": "tsx src/load.ts",
+    "import-dump": "tsx scripts/import-dump.ts",
     "search": "tsx src/search.ts",
     "decode": "tsx src/decode-hdsk.ts",
     "llm": "tsx src/llm-prompt.ts",
