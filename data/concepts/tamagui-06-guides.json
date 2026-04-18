@@ -1,0 +1,122 @@
+[
+  {
+    "principle": "Next.js: use CLI build script for Turbopack, legacy plugin for Webpack",
+    "explanation": "Modern: `yarn add -D @tamagui/cli`, build script `tamagui build --target web ./src -- next build`. Configures transpilation for `@tamagui/lucide-icons-2`, sets Turbopack aliases for RN compatibility. Legacy Webpack: `withTamagui` plugin from `@tamagui/next-plugin`. Use `@tamagui/next-theme` with `useRootTheme` hook for SSR-safe light/dark.",
+    "domain": "web",
+    "tags": ["nextjs", "turbopack", "webpack", "setup", "next-theme"]
+  },
+  {
+    "principle": "Expo: use template, babel plugin, and Inter font",
+    "explanation": "`yarn create tamagui@latest --template expo-router` (Yarn 4.4.0+). Manual: install `@tamagui/babel-plugin`, add to `babel.config.js`. Web: follow Metro guide. Fonts via `@tamagui/font-inter` or `@expo-google-fonts/inter` + `useFonts` hook. Clear cache on first run: `npx expo start -c`. Add `userInterfaceStyle: \"automatic\"` to app.config.ts for dark mode.",
+    "domain": "mobile",
+    "tags": ["expo", "setup", "fonts", "babel-plugin", "expo-router"]
+  },
+  {
+    "principle": "Vite: @tamagui/vite-plugin requires ESM",
+    "explanation": "Set `\"type\": \"module\"` in package.json. Add to `vite.config.ts`: `tamaguiPlugin({ config: './tamagui.config.ts', components: ['tamagui'] })`. Plugin reads `tamagui.build.ts` for shared config. React Native packages may need additional alias mappings for RNW compatibility.",
+    "domain": "web",
+    "tags": ["vite", "setup", "esm"]
+  },
+  {
+    "principle": "Metro/React Native: @tamagui/babel-plugin is fully optional",
+    "explanation": "Tamagui works without any babel config on native — just `TamaguiProvider`. The babel plugin adds compiler optimizations: CSS extraction isn't applicable, but it can flatten styled components and hoist constants. Configure in `babel.config.js` with `config`, `components`, and `exclude: /node_modules/`.",
+    "domain": "mobile",
+    "tags": ["metro", "babel", "react-native", "optional"]
+  },
+  {
+    "principle": "Design system package: own npm module + tamagui-build + components array",
+    "explanation": "Design systems need their own package (can be private) so the compiler can import and analyze them. Use `@tamagui/build` (wraps esbuild+tsc) to build with JSX preserved. Set `module:jsx` and `sideEffects: ['*.css']` in package.json. Then add the package name to `components: ['@yourapp/ui', 'tamagui']` in bundler config.",
+    "domain": "arch",
+    "tags": ["design-systems", "package", "tamagui-build", "compiler"]
+  },
+  {
+    "principle": "Design system pattern: styled() with variants + GetProps type export",
+    "explanation": "Create components with `styled(YStack, { variants: {…} })`, export `export type CircleProps = GetProps<typeof Circle>`. Re-export base components from `tamagui` or `@tamagui/core` for a single import surface. Test with `// debug` pragma to verify extraction: output should say `1 optimized, 1 flattened`.",
+    "domain": "arch",
+    "tags": ["design-systems", "styled", "GetProps", "types"]
+  },
+  {
+    "principle": "createFont: align keys across size, lineHeight, letterSpacing, weight",
+    "explanation": "Aligning the same key names across all font sub-categories enables SizableText `size` prop to look up matching values from all categories simultaneously. Example: size: { $4: 16 }, lineHeight: { $4: 24 } — `<SizableText size=\"$4\" />` picks both. Use `createFont({ family, size, lineHeight, weight, letterSpacing, transform, style, color })` inside `createTamagui({ fonts: { body, heading } })`.",
+    "domain": "arch",
+    "tags": ["fonts", "createFont", "typography", "design-system"]
+  },
+  {
+    "principle": "v2 breaking change: animation → transition, space → gap, tag → render",
+    "explanation": "Renamed props in v2: `animation` prop → `transition`, `space`/`spaceDirection` → `gap`, `tag` → `render`, `Stack` → `View`, `ellipse` → `numberOfLines`. Shadow props removed — use `boxShadow`. All RN accessibility props → ARIA equivalents. `Group` children now need `Group.Item` wrapper. `Input` migrated to web-standard HTML attrs.",
+    "domain": "arch",
+    "tags": ["v2", "migration", "breaking-changes", "upgrade"]
+  },
+  {
+    "principle": "v2 breaking change: media query naming and flex defaults",
+    "explanation": "Config v5 media renames: `$2xl` → `$xxl`, `$2xs` → `$xxs`. Max queries: kebab-case (`max-xxl`). New height queries (`height-sm/md/lg`) and device queries (`touch`, `hoverable`). Flex behavior: `flexBasis` now defaults to `0` (RN-aligned). `position` defaults to browser `static` (not `relative`). Bundle size: ~32% smaller (37KB → 25KB gzipped).",
+    "domain": "arch",
+    "tags": ["v2", "migration", "media-queries", "flexBasis", "config-v5"]
+  },
+  {
+    "principle": "unstyled prop removes all Tamagui default styles",
+    "explanation": "Every Tamagui UI component accepts `unstyled` — removes all default padding, colors, border radius etc. Useful when you want the accessibility/behavior layer without the visual defaults. Pair with your own styled() wrapper to add custom styling.",
+    "domain": "ui",
+    "tags": ["unstyled", "customization", "styling"]
+  },
+  {
+    "principle": "asChild passes all props to the single child element",
+    "explanation": "`asChild` on any Tamagui component renders without a wrapper — it passes all props (style, events, theme) to its direct child. `<Popover.Trigger asChild><MyButton /></Popover.Trigger>` makes MyButton open the Popover. Child must accept the passed props. Similar to Radix UI's asChild pattern.",
+    "domain": "ui",
+    "tags": ["asChild", "composition", "radix", "polymorphic"]
+  },
+  {
+    "principle": "render prop: change the rendered element type",
+    "explanation": "v2 replaces `tag` with `render`. Three forms: (1) string tag name `render=\"a\"` — compiler-optimized; (2) JSX element `render={<a href=\"/\">}` — not compiler-optimizable (deopt); (3) render function `render={(props) => <a {...props} />}` — full control. For HTML anchor links use `<View render=\"a\" href=\"/\" />`.",
+    "domain": "ui",
+    "tags": ["render", "polymorphic", "tag", "compiler"]
+  },
+  {
+    "principle": ".styleable() wraps functional components for use with styled()",
+    "explanation": "When building a compound component, your functional component needs `.styleable()` wrapper so it can be passed to `styled()` later: `const Button = ButtonFrame.styleable(({children, ...props}, ref) => <ButtonFrame ref={ref} {...props}><ButtonText>{children}</ButtonText></ButtonFrame>)`. This ensures prop forwarding, variant merging, and ref forwarding work correctly.",
+    "domain": "arch",
+    "tags": ["styleable", "styled", "compound-components", "ref"]
+  },
+  {
+    "principle": "accept: wrap non-Tamagui components (SVG, third-party) for token support",
+    "explanation": "`styled(SvgIcon, { accept: { fill: 'color' } })` — the `accept` option maps non-Tamagui prop names to Tamagui style categories, enabling token values like `fill=\"$blue10\"`. Set `acceptsClassName: true` on web for CSS media query support and compile-time optimization for external components.",
+    "domain": "arch",
+    "tags": ["accept", "styled", "svg", "third-party", "tokens"]
+  },
+  {
+    "principle": "forceStyle prop activates a pseudo state programmatically",
+    "explanation": "`<View forceStyle=\"hover\">` forces hover styles even without hovering — useful for demos, visual regression tests, Storybook stories, or keyboard-driven navigation where you want the hover appearance without mouse presence.",
+    "domain": "ui",
+    "tags": ["forceStyle", "pseudo-states", "testing", "storybook"]
+  },
+  {
+    "principle": "themeInverse flips light↔dark within any subtree",
+    "explanation": "`<View themeInverse>` inverts the current theme for the subtree. If the root is dark, the children get light; vice versa. Useful for contrast sections or call-to-action areas that need to stand out from the rest of the page.",
+    "domain": "ui",
+    "tags": ["themeInverse", "themes", "contrast"]
+  },
+  {
+    "principle": "Exports: platform detection constants and helper hooks",
+    "explanation": "@tamagui/core exports: `isWeb`, `isBrowser`, `isServer`, `isClient`, `isChrome`, `isWebTouchable`, `isTouchable`, `useIsomorphicLayoutEffect`. Helpers: `getConfig`, `getTokens`, `getToken`, `getTokenValue`, `getVariable` (CSS var on web, raw on native), `isTamaguiComponent`, `isTamaguiElement`. Type helpers: `GetProps`, `GetRef`.",
+    "domain": "arch",
+    "tags": ["exports", "helpers", "constants", "types", "GetProps"]
+  },
+  {
+    "principle": "useProps and useStyle hooks extract computed values from styled components",
+    "explanation": "`useProps(props)` returns the fully-resolved props after merging variants and theme. `useStyle(props)` returns just the style object. `usePropsAndStyle(props)` returns both. Useful when you need to pass resolved styles to third-party components or for debugging what a component actually produces.",
+    "domain": "arch",
+    "tags": ["useProps", "useStyle", "hooks", "debugging"]
+  },
+  {
+    "principle": "Radix Colors v3 in v5: 10+ palettes, improved accessibility",
+    "explanation": "V5 config adds orange, pink, purple, teal, gray, neutral color themes built on Radix Colors v3. Includes shadow scales, highlight variants, opacity adjustments. Use `createV5Theme({ palettes: { accent: myPalette } })` to swap any palette. `adjustPalette` utilities transform lightness/saturation programmatically.",
+    "domain": "ui",
+    "tags": ["colors", "radix-colors", "config-v5", "themes", "palettes"]
+  },
+  {
+    "principle": "useThemeName returns the current resolved theme name string",
+    "explanation": "`const name = useThemeName()` returns the current theme name (e.g. `'dark_green'`). Useful for conditional logic based on theme without subscribing to all theme values. Lighter alternative to `useTheme()` when you only need the name.",
+    "domain": "arch",
+    "tags": ["useThemeName", "hooks", "themes"]
+  }
+]

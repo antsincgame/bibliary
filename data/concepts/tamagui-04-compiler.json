@@ -1,0 +1,92 @@
+[
+  {
+    "principle": "Tamagui compiler does 4 things: atomic CSS, inline hoisting, tree-flattening, hook evaluation",
+    "explanation": "@tamagui/static analyses JSX at build time via partial evaluation: (1) extracts all style props into atomic CSS classes; (2) hoists constants out of the render loop; (3) flattens styled() wrappers into plain div/View nodes; (4) evaluates useMedia/useTheme calls into CSS media queries and variables. Result: smaller JS bundle, faster runtime, native primitives on web.",
+    "domain": "perf",
+    "tags": ["compiler", "static", "optimization", "tree-flattening", "atomic-css"]
+  },
+  {
+    "principle": "Tree-flattening converts styled components into native DOM/View nodes",
+    "explanation": "A `<YStack>` becomes a `<div>` on web and `<View>` on native; `<Text>` becomes `<p>`. This removes styled-component wrapper depth from the React tree, cutting React reconciliation cost. Across real apps 30-50% of components typically flatten — mark up with `// debug` pragma to see exactly what gets flattened.",
+    "domain": "perf",
+    "tags": ["tree-flattening", "compiler", "render-performance"]
+  },
+  {
+    "principle": "Tamagui web benchmarks: ~3-6x faster than RNW, ~2x faster than Emotion",
+    "explanation": "Simple component render: Tamagui 0.018ms vs RNW 0.057ms vs Emotion 0.041ms. Updating variants: 0.02ms vs RNW 0.063ms vs SC 0.081ms. Inline styles (unique to Tamagui — only library that compiles them): 0.025ms vs RNW 0.06ms. Deep tree mounting: 18.61ms vs Emotion 42.49ms vs SC 51.4ms. Gains come largely from tree-flattening.",
+    "domain": "perf",
+    "tags": ["benchmarks", "performance", "web"]
+  },
+  {
+    "principle": "Native benchmarks: within 10% of vanilla React Native",
+    "explanation": "Tamagui without compiler averages 125ms (12% slower). With compiler, within ~5-10% of hand-optimized RN. The compiler is less impactful on native than web since native can't emit CSS, but it still removes hooks and object allocations from the render loop.",
+    "domain": "perf",
+    "tags": ["benchmarks", "react-native", "performance", "native"]
+  },
+  {
+    "principle": "Compiler is optional and never required to use Tamagui",
+    "explanation": "All Tamagui features work 100% at runtime. The compiler adds performance on top. Install it per bundler: `tamagui-loader` (webpack), `@tamagui/vite-plugin` (Vite), `@tamagui/babel-plugin` (Metro/Babel), `@tamagui/next-plugin` (Next.js legacy), or `@tamagui/cli` (any bundler via pre-compilation). Start without it; add later.",
+    "domain": "perf",
+    "tags": ["compiler", "optional", "install"]
+  },
+  {
+    "principle": "Vite plugin: @tamagui/vite-plugin, requires ESM",
+    "explanation": "Install `@tamagui/vite-plugin`, set `\"type\": \"module\"` in package.json. Add `tamaguiPlugin({ config: './tamagui.config.ts', components: ['tamagui'] })` to `vite.config.ts`. Reads from `tamagui.build.ts` automatically for shared settings.",
+    "domain": "web",
+    "tags": ["vite", "compiler", "setup"]
+  },
+  {
+    "principle": "Next.js + CLI is the modern path for Turbopack",
+    "explanation": "For Next.js with Turbopack: `yarn add -D @tamagui/cli`. Build script: `tamagui build --target web ./src -- next build`. CLI pre-compiles files in place and restores them after. For legacy Webpack Next.js use `@tamagui/next-plugin` instead.",
+    "domain": "web",
+    "tags": ["nextjs", "compiler", "turbopack", "cli"]
+  },
+  {
+    "principle": "disableExtraction speeds up dev builds",
+    "explanation": "In `tamagui.build.ts` set `disableExtraction: true` for dev. This skips CSS extraction and relies on runtime — fast HMR. Enable it for production to get CSS output and tree-flattening. The `logTimings: true` option shows per-file compile times.",
+    "domain": "perf",
+    "tags": ["compiler", "dev", "disableExtraction", "hmr"]
+  },
+  {
+    "principle": "// debug pragma shows extraction details per file",
+    "explanation": "Add `// debug` as the first comment in a file to print full compiler output: which components flattened, what CSS was generated, how styles were merged. Also add `// tamagui-ignore` to completely skip extraction for a file, or use the `disableOptimization` prop on a single component.",
+    "domain": "perf",
+    "tags": ["compiler", "debug", "tamagui-ignore", "diagnostics"]
+  },
+  {
+    "principle": "Design system packages need to be listed in components array",
+    "explanation": "The compiler knows how to optimize `styled()` components only from packages declared in `components: ['tamagui', '@yourapp/ui']`. If your design system is in its own package, add it there. Use `@tamagui/build` to build design-system packages with JSX preserved (`module:jsx`). Also add `sideEffects: ['*.css']` to prevent Webpack from stripping generated CSS.",
+    "domain": "arch",
+    "tags": ["design-systems", "compiler", "components-array", "build"]
+  },
+  {
+    "principle": "SSR three-phase: server CSS → hydration match → client animations",
+    "explanation": "Phase 1: server renders with CSS media queries and variables (no JS). Phase 2: client hydrates to exactly match server output (no flicker). Phase 3: after hydration, spring animations activate. SSR is auto-detected via TamaguiProvider's config; produce CSS with `config.getCSS()` or bundler plugins and serve it in the initial HTML.",
+    "domain": "web",
+    "tags": ["ssr", "hydration", "animations", "no-flicker"]
+  },
+  {
+    "principle": "ClientOnly and useDidFinishSSR for selective client rendering",
+    "explanation": "`<ClientOnly>` renders children only after hydration — useful for interactive charts or editors where SSR output would mismatch. `useDidFinishSSR()` returns false on server, true after hydration. `useClientValue(val)` returns undefined during SSR then the real value client-side. Disable SSR entirely via config for SPAs.",
+    "domain": "web",
+    "tags": ["ssr", "ClientOnly", "useDidFinishSSR", "hydration"]
+  },
+  {
+    "principle": "config.getCSS() extracts all generated CSS for SSR",
+    "explanation": "Call `config.getCSS()` server-side to get a string of all atomic CSS to inject into `<style>` tags or serve as a file. This includes token CSS variables, theme classes, and component styles. With React 19, non-static styles auto-inject via style tags at runtime. For production, generate and serve the CSS file for best performance.",
+    "domain": "web",
+    "tags": ["ssr", "css-extraction", "getCSS", "server-rendering"]
+  },
+  {
+    "principle": "Partial evaluation handles most const/import patterns",
+    "explanation": "The compiler evaluates simple expressions at build time: string/number literals, object spreads, ternaries on known booleans, imports from whitelisted files. Add constants files to the `importsWhitelist` in `tamagui.build.ts` to include their values. Complex logic (closures over non-const values, third-party hooks) causes a graceful deopt to runtime.",
+    "domain": "perf",
+    "tags": ["compiler", "partial-evaluation", "deopt", "importsWhitelist"]
+  },
+  {
+    "principle": "Platform-specific file splits work with CLI and bundlers",
+    "explanation": "Create `animations.ts` (web) and `animations.native.ts` (native). `@tamagui/cli` automatically handles `.web.tsx`, `.native.tsx`, `.ios.tsx`, `.android.tsx` when pre-compiling. Metro/Expo handle these natively. Result: optimal code per platform without `Platform.select` in your source.",
+    "domain": "arch",
+    "tags": ["platform-split", "native", "web", "cli"]
+  }
+]

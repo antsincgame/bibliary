@@ -1,0 +1,176 @@
+[
+  {
+    "principle": "View and Text are the Tamagui base primitives",
+    "explanation": "Import from `tamagui` or `@tamagui/core`. View = RN View + Tamagui style superset + press/hover/focus events (like Pressable). Text = RN Text + Tamagui styles. Both accept inline styles, $-prefix selectors, hoverStyle/pressStyle etc. Use them for inline styling; extend via `styled()` for reusable components. Order of style props is significant.",
+    "domain": "ui",
+    "tags": ["View", "Text", "primitives", "core"]
+  },
+  {
+    "principle": "XStack = flex row, YStack = flex column, ZStack = absolute overlap",
+    "explanation": "XStack = `flexDirection: 'row'`. YStack = `flexDirection: 'column'` (default). ZStack = absolute-positioned children stacked on top of each other. All extend View — accept all Tamagui style props. Use `gap=\"$4\"` for spacing between children. `elevation` creates a platform-native-looking shadow that grows with size.",
+    "domain": "ui",
+    "tags": ["XStack", "YStack", "ZStack", "layout", "flexbox"]
+  },
+  {
+    "principle": "group prop transforms any Stack into a group context",
+    "explanation": "Adding `group` (or `group=\"name\"`) to a Stack makes it a container query root. Child components can then use `$group-hover`, `$group-press`, `$group-sm` selectors. No import changes needed — it's a built-in prop. Named groups enable `$group-name-hover` cross-component targeting.",
+    "domain": "ui",
+    "tags": ["group", "XStack", "YStack", "container-queries", "parent-state"]
+  },
+  {
+    "principle": "Button: size prop cascades to text, icon, borderRadius, padding",
+    "explanation": "Tamagui Button accepts `size` (SizeTokens) — one prop sets padding, border radius, font size, icon size simultaneously via size-spread variants. Variants: `outlined` (transparent bg, visible border). Props: `icon`, `iconAfter`, `iconSize`, `scaleIcon`, `circular`, `chromeless`, `unstyled`. Defaults to `type=\"button\"` to prevent form-submit. In v2, text styling uses `<Button.Text>` subcomponent.",
+    "domain": "ui",
+    "tags": ["Button", "size", "icons", "form", "composable"]
+  },
+  {
+    "principle": "Button.Apply enables group-based interactive theming",
+    "explanation": "Set `group=\"btn\"` on the Button frame and use `$group-btn-hover`/`$group-btn-press` on Button.Text or Button.Icon children to coordinate hover/press visual state across sub-components. This replaces the old pattern of prop-drilling active states.",
+    "domain": "ui",
+    "tags": ["Button", "group", "interactive", "compound-component"]
+  },
+  {
+    "principle": "SizableText and Paragraph add the size prop for theme-aware typography",
+    "explanation": "`SizableText` extends Text with a `size` spread variant that maps to font size, line height, letter spacing, and font weight — all from your createFont config. `Paragraph` extends SizableText with `tag='p'`, `color='$color'`, `userSelect='auto'`, `whiteSpace='normal'`. Use Paragraph for readable prose; SizableText for span-level inline text.",
+    "domain": "ui",
+    "tags": ["SizableText", "Paragraph", "typography", "size", "fonts"]
+  },
+  {
+    "principle": "Text truncation: ellipsis prop and numberOfLines",
+    "explanation": "`ellipsis` = shorthand for `numberOfLines={1}`. On web: `text-overflow: ellipsis` + `white-space: nowrap` + `overflow: hidden`. On native: `numberOfLines={1}`. `numberOfLines={3}` → multi-line clamp via `-webkit-line-clamp` on web, native `numberOfLines` on native. Both work on Text, SizableText, and Paragraph.",
+    "domain": "ui",
+    "tags": ["Text", "ellipsis", "numberOfLines", "truncation"]
+  },
+  {
+    "principle": "Input/TextArea: web-first API with native mapping",
+    "explanation": "v2 Inputs use HTML input attributes directly — `type=\"password\"`, `type=\"email\"`, `enterKeyHint` for keyboard return key. `onChange` is preferred over `onChangeText`. On native Tamagui maps these to RN equivalents. TextArea uses `rows` instead of `numberOfLines`. Migration from v1: `secureTextEntry` → `type=\"password\"`, `keyboardType=\"email-address\"` → `type=\"email\"`.",
+    "domain": "ui",
+    "tags": ["Input", "TextArea", "forms", "web-first", "cross-platform"]
+  },
+  {
+    "principle": "Form + Form.Trigger enables accessible universal forms",
+    "explanation": "`<Form onSubmit={fn}>…<Form.Trigger asChild><Button /></Form.Trigger></Form>`. `Form.Trigger` calls `onSubmit` when pressed — works on native and web. Produces accessible markup on web (`<form>`). Use `asChild` to wrap any pressable element as the submit trigger.",
+    "domain": "ui",
+    "tags": ["Form", "forms", "accessibility", "cross-platform"]
+  },
+  {
+    "principle": "Dialog: accessible modal with optional Sheet adaptation",
+    "explanation": "Anatomy: `Dialog > Dialog.Trigger > Dialog.Portal > Dialog.Overlay + Dialog.Content > Dialog.Title + Dialog.Description + Dialog.Close`. Title and Description required for accessibility. Dismiss: click outside, Escape, or Close. `modal={false}` removes focus trap and allows background interaction. Use `Dialog.Adapt when=\"max-md\"` + `<Dialog.Sheet>` to render as a Sheet on mobile.",
+    "domain": "ui",
+    "tags": ["Dialog", "modal", "accessibility", "Adapt", "Sheet"]
+  },
+  {
+    "principle": "Dialog.Scoping: mount at root, trigger from anywhere",
+    "explanation": "Add matching `scope=\"myDialog\"` to both `<Dialog>` (placed at app root) and `<Dialog.Trigger>`. Lets you avoid React context issues in portals and improves performance for deeply nested triggers. Same pattern works for Popover and Tooltip.",
+    "domain": "ui",
+    "tags": ["Dialog", "scope", "performance", "portal"]
+  },
+  {
+    "principle": "Popover: floating pane with 12 placements and arrow",
+    "explanation": "Anatomy: `Popover > Popover.Trigger + Popover.Content > Popover.Arrow`. 12 placement options (top/bottom/left/right × center/start/end). `allowFlip` repositions when no space. `stayInFrame` adds 10px viewport padding. `transformOrigin: true` auto-calculates for scale animations. On mobile, adapt to Sheet.",
+    "domain": "ui",
+    "tags": ["Popover", "floating", "placement", "Arrow"]
+  },
+  {
+    "principle": "Sheet: bottom panel with snap points and drag support",
+    "explanation": "Anatomy: `Sheet > Sheet.Overlay + Sheet.Handle + Sheet.Frame`. `snapPoints` defaults to [80, 10] (percent). `modal={true}` renders at app root. `disableDrag` removes gesture. `moveOnKeyboardChange` shifts sheet up on native keyboard. `dismissOnOverlayPress` defaults true. Install `react-native-gesture-handler` for smoother scroll-to-drag transitions.",
+    "domain": "ui",
+    "tags": ["Sheet", "bottom-sheet", "snap-points", "drag", "modal"]
+  },
+  {
+    "principle": "Adapt: render one component for web, another for native/mobile",
+    "explanation": "`<Adapt when=\"max-md\"><Sheet>…<Adapt.Contents /></Sheet></Adapt>` — Tamagui renders the Adapt contents (Dialog/Popover/Select inner content) inside the wrapper when the condition is true. `Adapt.Contents` preserves all children and event handlers from the original. Condition can be any media query key.",
+    "domain": "ui",
+    "tags": ["Adapt", "responsive", "Sheet", "cross-platform", "media-queries"]
+  },
+  {
+    "principle": "Select: accessible dropdown with typeahead, adapts to Sheet on mobile",
+    "explanation": "Anatomy: `Select > Select.Trigger + Select.Content > Select.Viewport > Select.Item + Select.ItemText`. Keyboard navigable with typeahead. Use `lazyMount` + `renderValue` together for pages with many Selects — defers mounting all items until first open. Must adapt to Sheet on native (no native dropdown API).",
+    "domain": "ui",
+    "tags": ["Select", "dropdown", "accessibility", "Adapt", "lazyMount"]
+  },
+  {
+    "principle": "Tabs: horizontal/vertical, automatic or manual activation",
+    "explanation": "`activationMode=\"automatic\"` selects on focus; `\"manual\"` requires click/Enter. Anatomy: `Tabs > Tabs.List > Tabs.Tab + Tabs.Content`. Three modes: Styled (default), Unstyled (`createTabs`), Headless (`useTabs` hook with no core dep). `orientation` for vertical layout. Full keyboard navigation with looping.",
+    "domain": "ui",
+    "tags": ["Tabs", "navigation", "keyboard", "headless"]
+  },
+  {
+    "principle": "Switch: toggle with native fallback and three implementation levels",
+    "explanation": "Props: `checked`/`defaultChecked`, `onCheckedChange`, `size`, `activeTheme`, `activeStyle`. `native` prop renders a platform-native switch on mobile. Three levels: Styled (default), Unstyled (`createSwitch`), Headless (`useSwitch` — zero core dep, returns `checkboxProps`, `checkboxRef`, hidden input for forms).",
+    "domain": "ui",
+    "tags": ["Switch", "toggle", "forms", "headless", "native"]
+  },
+  {
+    "principle": "Checkbox: tri-state (true/false/indeterminate), headless available",
+    "explanation": "Supports `checked` values: `true`, `false`, `'indeterminate'`. Indeterminate is useful for select-all patterns. `native` prop renders HTML checkbox. Headless mode via `@tamagui/checkbox-headless` + `useCheckbox` hook returns `checkboxProps`, `checkboxRef`, hidden form input — zero Tamagui dependency.",
+    "domain": "ui",
+    "tags": ["Checkbox", "indeterminate", "forms", "headless", "accessibility"]
+  },
+  {
+    "principle": "Slider: range input with multiple thumbs and keyboard control",
+    "explanation": "Anatomy: `Slider > Slider.Track > Slider.TrackActive + Slider.Thumb`. `defaultValue` is an array — multiple entries = multiple thumbs (range select). `step` controls keyboard increment. On iOS: pass safe area insets to TamaguiProvider or thumb tracking will misalign due to safe area offsets.",
+    "domain": "ui",
+    "tags": ["Slider", "range", "forms", "ios-safe-area"]
+  },
+  {
+    "principle": "Group: automatic border-radius management for button/input rows",
+    "explanation": "Wrap items in `Group.Item`. Group zeros out connecting-side radius between adjacent items. `size` on Group only sets borderRadius — child sizing is controlled by each child directly. `forcePlacement` on `Group.Item` overrides detection: 'first', 'center', 'last'. For dynamic children, use `useGroupItem` hook or map with index.",
+    "domain": "ui",
+    "tags": ["Group", "border-radius", "compound", "layout"]
+  },
+  {
+    "principle": "Accordion: collapsible sections, single or multiple open",
+    "explanation": "Anatomy: `Accordion > Accordion.Item > Accordion.Header > Accordion.Trigger + Accordion.Content`. `type=\"single\"` allows only one open at a time (`collapsible` prop lets you close it); `type=\"multiple\"` allows any number. Set `defaultValue` for initial open items. Full keyboard navigation.",
+    "domain": "ui",
+    "tags": ["Accordion", "collapse", "keyboard", "disclosure"]
+  },
+  {
+    "principle": "Tooltip: hover tooltip, web-only rendering",
+    "explanation": "Doesn't render on native (provides accessibility output instead). `restMs` = time cursor must rest before showing; `delay` = max time. `groupId` — tooltips in same group skip delay after first shows. `TooltipGroup` manages multi-tooltip delay behavior. `placement` has 12 options. Uses `PortalProvider` (modal=true by default).",
+    "domain": "web",
+    "tags": ["Tooltip", "hover", "web-only", "accessibility", "portal"]
+  },
+  {
+    "principle": "Toast: universal feedback notification with native integrations",
+    "explanation": "`useToastController().show('Message', { duration, message })`. `ToastProvider` configures global duration (default 5000ms), swipe direction, native options. `ToastViewport` is a portal with positioning. Native: SPIndicator on iOS, ToastAndroid on Android, Notification API on web. Install `burnt` for native. Custom data via TS module augmentation.",
+    "domain": "ui",
+    "tags": ["Toast", "notifications", "native", "universal"]
+  },
+  {
+    "principle": "Spinner: thin ActivityIndicator wrapper, size limited to small/large",
+    "explanation": "`<Spinner size=\"large\" color=\"$green10\" />`. Extends YStack so accepts all layout props. Size options limited by RN ActivityIndicator API (small/large only). Works on web and native. Include in buttons during loading state, or standalone as a page loader.",
+    "domain": "ui",
+    "tags": ["Spinner", "loading", "ActivityIndicator"]
+  },
+  {
+    "principle": "Card: themeable container with Header, Footer, Background sub-components",
+    "explanation": "`size` prop on Card cascades to padding, border radius, and child sizing. `elevate` boolean adds visual elevation. `Card.Background` renders behind content at lower z-index — useful for images or gradients. All sub-components accept `unstyled` to remove Tamagui defaults.",
+    "domain": "ui",
+    "tags": ["Card", "layout", "elevation", "composable"]
+  },
+  {
+    "principle": "Image: SSR-safe cross-platform with pluggable backend",
+    "explanation": "`<Image src=\"...\" width={200} height={200} objectFit=\"cover\" />`. Supports `loading=\"lazy\"`, `fetchPriority`, `srcSet`/`sizes` on web. `alt` required for accessibility. Use `createImage` to integrate expo-image for blurhash placeholders, transitions, and CDN caching while keeping Tamagui's style API.",
+    "domain": "ui",
+    "tags": ["Image", "ssr", "expo-image", "accessibility", "responsive-images"]
+  },
+  {
+    "principle": "Portal: renders children in a different part of the tree",
+    "explanation": "`stackZIndex` auto-manages layering across nested portals. `passThrough` renders without portal. For native: install `react-native-teleport` and import `@tamagui/native/setup-teleport` at entry to preserve React context inside Sheet/Dialog/Popover. Without it custom contexts aren't available in portaled content. Alternative: use `scope` prop to co-locate trigger and content.",
+    "domain": "arch",
+    "tags": ["Portal", "z-index", "native", "context", "teleport"]
+  },
+  {
+    "principle": "Native integrations are opt-in: gestures, menus, toast, linear-gradient",
+    "explanation": "All native integrations follow the same pattern: install the package, import its setup module before Tamagui in your app entry, optionally pass a `native` prop to the component. Gesture handler: better press detection + smoother Sheet; native menus: iOS/Android system context menus with haptics; native LinearGradient: expo-linear-gradient for GPU-accelerated gradients.",
+    "domain": "mobile",
+    "tags": ["native", "gesture-handler", "context-menu", "linear-gradient", "opt-in"]
+  },
+  {
+    "principle": "FontLanguage: context-based font switching via CSS variables",
+    "explanation": "`<FontLanguage body=\"cn\"><Text fontFamily=\"$body\">你好</Text></FontLanguage>`. Define variant fonts with suffix: `body_cn: createFont({…})`. On web uses CSS vars — no re-renders when switching. Reset to default with `<FontLanguage body=\"default\">`. Works with `styled()` — define `fontFamily=\"$body\"` once and language switches transparently.",
+    "domain": "ui",
+    "tags": ["FontLanguage", "i18n", "fonts", "css-variables"]
+  }
+]

@@ -1,0 +1,122 @@
+[
+  {
+    "principle": "Tamagui is a universal React styling framework with one dep: React",
+    "explanation": "Tamagui core is a React-only styling framework (~28Kb on web) that supports the full React Native View/Text API, a superset of RN StyleSheet, styled(), hooks, and typed design-system helpers. Runs at runtime and compile-time without the usual zero-runtime library limits. Unstyled and styled versions of all components.",
+    "domain": "arch",
+    "tags": ["tamagui", "intro", "cross-platform", "react-native-web", "bundle-size"]
+  },
+  {
+    "principle": "Universal + Compiler solves the frontend trilemma",
+    "explanation": "Cross-platform React historically forces choose-two-of-three: native feel, native+web deploy, code sharing. Tamagui's optimizing compiler extracts styles, evaluates useTheme/useMedia into CSS variables + media queries, and flattens trees — so you can write once, share ~60-90% code, and still feel native. Gains come from atomic CSS + tree-flattening.",
+    "domain": "arch",
+    "tags": ["trilemma", "universal-app", "compiler", "philosophy", "code-sharing"]
+  },
+  {
+    "principle": "Tamagui 2 minimum versions: React 19, RN 0.81, TS 5",
+    "explanation": "Tamagui 2 requires React 19+, React Native 0.81+ with the New Architecture enabled (for native apps), and TypeScript 5+. On web there are no version restrictions. These requirements unlock new RN style features like cross-platform boxShadow, filter, backgroundImage, and border shorthand.",
+    "domain": "arch",
+    "tags": ["install", "requirements", "react-19", "rn-new-arch", "typescript"]
+  },
+  {
+    "principle": "Install core for style-only, tamagui for full UI kit",
+    "explanation": "`yarn add @tamagui/core` gives the styling library alone (~28Kb). `yarn add tamagui` is a superset that adds the full UI kit (Button, Form, Stack, Paragraph, etc.) — anywhere docs say `@tamagui/core` you can swap to `tamagui`. Use `@tamagui/config` for a recommended preset (`defaultConfig` from `@tamagui/config/v5`).",
+    "domain": "arch",
+    "tags": ["install", "packages", "core-vs-kit", "config-preset"]
+  },
+  {
+    "principle": "TamaguiProvider wraps your app with config + defaultTheme",
+    "explanation": "Wrap the root in `<TamaguiProvider config={config} defaultTheme=\"light\">`. Set the root theme via the `defaultTheme` prop rather than an outer `<Theme>` — this enables `fastSchemeChange` on native and lets light/dark use faster media-query updates during SSR on web.",
+    "domain": "arch",
+    "tags": ["provider", "setup", "defaultTheme", "ssr", "fast-scheme-change"]
+  },
+  {
+    "principle": "Tamagui config declares tokens, themes, media, animations, shorthands",
+    "explanation": "`createTamagui({ tokens, themes, media, animations, shorthands, fonts, settings })` returns the typed config passed to TamaguiProvider. Use `declare module '@tamagui/core' { interface TamaguiCustomConfig extends typeof config {} }` so props get strong types. Start from `@tamagui/config/v5` preset for sensible defaults, Tailwind-aligned shorthands, full themes.",
+    "domain": "arch",
+    "tags": ["createTamagui", "config", "types", "preset", "v5"]
+  },
+  {
+    "principle": "tamagui.build.ts is the single source of truth for bundlers",
+    "explanation": "Central config file read by all bundler plugins (metro, babel, vite, webpack) and the CLI — specifies config path, components to optimize, optional constants whitelist, and extraction options. Avoids duplicating the setup across multiple plugin configs.",
+    "domain": "arch",
+    "tags": ["build-config", "bundler", "plugins", "dry"]
+  },
+  {
+    "principle": "Tokens are static variables; themes are dynamic scoped variables",
+    "explanation": "Tokens = base static values that never change (like global CSS vars). Themes = object maps whose values change contextually in the React tree (like scoped CSS vars). Tokens are fallbacks — when a theme lookup misses, Tamagui checks the matching token. Default categories: size, space, color, radius, zIndex, font, fontSize, lineHeight, letterSpace.",
+    "domain": "arch",
+    "tags": ["tokens", "themes", "mental-model", "css-variables"]
+  },
+  {
+    "principle": "createTokens defines the static design-system primitives",
+    "explanation": "`createTokens({ size: { sm: 10 }, color: { black: '#000' }, ... })` returns tokens you pass to createTamagui. Access anywhere with `getTokens().size.small` (returns a Variable with `.val` and `.variable`). Use `getTokens({ prefixed: true })['$size'].small` to get prefixed keys. `getVariable` returns CSS var on web, raw value on native.",
+    "domain": "arch",
+    "tags": ["createTokens", "tokens", "getTokens", "Variable"]
+  },
+  {
+    "principle": "Token categories map to specific style props automatically",
+    "explanation": "`size` → width/height/minWidth/minHeight/maxWidth/maxHeight. `zIndex` → zIndex. `radius` → borderRadius and each corner. `color` → color/backgroundColor/borderColor/per-side borderColor. `space` → everything else (padding, margin, gap, top, left, etc.). So `<View padding=\"$4\">` looks up `space.$4`.",
+    "domain": "arch",
+    "tags": ["tokens", "style-mapping", "$-prefix", "space"]
+  },
+  {
+    "principle": "Tamagui size scale is hybrid: gradual 1-10, exponential 11-16",
+    "explanation": "Most systems use pure exponential (2,4,8,16). Tamagui uses a gradual scale 1-10 so $2 is tiny UI, $4 is average, $5-$6 emphasized, $7+ for hero/CTA. Above 10 it turns exponential for chunky sizes. Three sub-1 quantum tokens ($0.25, $0.5, $0.75) exist for every group. All token groups (size, space, radius, font) align to the same 1-16 keys so components compose.",
+    "domain": "ui",
+    "tags": ["tokens", "scale", "design-system", "sizing"]
+  },
+  {
+    "principle": "Specific tokens let you add custom categories with dotted access",
+    "explanation": "Since v1.34 you can add arbitrary token categories like `icon: { small: 16, medium: 24 }`. Access with the category-first syntax: `<Stack width=\"$icon.small\" />`. Use the `px()` helper from @tamagui/core for custom categories to emit `100px` on web and `100` on native; built-in size/space/radius already add px where needed.",
+    "domain": "arch",
+    "tags": ["tokens", "custom-tokens", "px-helper", "specific-tokens"]
+  },
+  {
+    "principle": "Themes are objects of contextual values resolved upwards",
+    "explanation": "Define themes with any keys: `{ background: '#000', color: '#fff' }`. Style props that use `$key` first look up the theme, then fall back through parent themes, ultimately to tokens. Themes are like scoped CSS variables vs tokens which are global. Use `useTheme()` hook to read values in code.",
+    "domain": "arch",
+    "tags": ["themes", "tokens", "resolution", "$-prefix"]
+  },
+  {
+    "principle": "Sub-themes nest with parent_child naming",
+    "explanation": "Name themes `parentName_subName` and Tamagui lets them nest: `dark_green`, `light_green_subtle`. Wrap with `<Theme name=\"dark\"><Theme name=\"green\"><Button theme=\"subtle\"/></Theme></Theme>`. Sub-themes can be subsets of parents — missing keys resolve upward. Also pass full names directly: `<Button theme=\"green_subtle\"/>`.",
+    "domain": "arch",
+    "tags": ["themes", "sub-themes", "nesting", "Theme-component"]
+  },
+  {
+    "principle": "Component themes: name_ComponentName for targeted overrides",
+    "explanation": "Any `styled(View, { name: 'Circle' })` looks for a theme ending `_Circle`. Define `dark_Circle` or `dark_green_Circle` to change defaults only for Circles. Component-theme names must be capitalized. This lets library authors keep design authority while users customize per-component. Removes the `name` prop from defaultProps at runtime.",
+    "domain": "arch",
+    "tags": ["themes", "component-themes", "styled", "naming"]
+  },
+  {
+    "principle": "tamagui UI kit standardizes theme keys: background, color, borderColor, shadowColor, placeholderColor",
+    "explanation": "Tamagui UI components read a fixed set of keys: background, color, borderColor, shadowColor, placeholderColor. Each has pseudo variants: backgroundHover, backgroundPress, backgroundFocus; same for color and borderColor. Define these in every theme to re-theme the whole UI kit together. All are optional — set `unstyled` on any component to skip them.",
+    "domain": "ui",
+    "tags": ["themes", "convention", "ui-kit", "pseudo-keys"]
+  },
+  {
+    "principle": "Type themes with `satisfies` and a BaseTheme anchor",
+    "explanation": "Put themes in a separate file. Define `const light = { ... }`, derive `type BaseTheme = typeof light`, then declare the rest `const dark: BaseTheme = { ... }`. Export all themes with `satisfies { [key: string]: BaseTheme }` so TypeScript catches missing keys while preserving exact literal types. Requires TS 4.9+.",
+    "domain": "arch",
+    "tags": ["themes", "typescript", "satisfies", "types"]
+  },
+  {
+    "principle": "Dynamic themes: addTheme, updateTheme, replaceTheme",
+    "explanation": "`@tamagui/theme` exports `addTheme`, `updateTheme` (merges values), and `replaceTheme` (replaces whole theme). Dynamic changes apply on the client only — ignored during SSR. Useful for user-controlled palettes or lazy-loaded theme bundles.",
+    "domain": "arch",
+    "tags": ["themes", "dynamic", "runtime", "addTheme", "updateTheme"]
+  },
+  {
+    "principle": "Tree-shake themes JS in prod by relying on CSS hydration",
+    "explanation": "For production client bundles, export an empty themes object: `process.env.TAMAGUI_IS_SERVER ? themesIn : {} as typeof themesIn`. The Next.js plugin sets TAMAGUI_IS_SERVER automatically. Tamagui rehydrates by scanning CSS in the browser (low single-digit ms) and saves significant JS size. Only works when the getCSS output is served on initial load.",
+    "domain": "perf",
+    "tags": ["themes", "tree-shake", "ssr", "bundle-size", "optimization"]
+  },
+  {
+    "principle": "createThemeBuilder for programmatic theme suites",
+    "explanation": "Three progressive helpers: (1) `createV5Theme` — quick defaults with optional palette overrides; (2) `createThemes` — palette-interpolation helpers with base/accent/children levels; (3) `createThemeBuilder` — low-level chainable API for full control over palettes, templates (map prop → palette index), and sub-theme hierarchy. Negative indices count backward. Build at compile time to shrink bundles.",
+    "domain": "arch",
+    "tags": ["themes", "theme-builder", "createThemes", "palettes"]
+  }
+]

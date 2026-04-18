@@ -1,0 +1,158 @@
+[
+  {
+    "principle": "Tamagui styles are a superset of React Native styles",
+    "explanation": "Base style props start from ReactNative ViewStyle/TextStyle and add: cross-platform shadow/filter/backgroundImage/border/outline, web-only CSS features, flat transform props (x, y, scale, rotate…), pseudo states, enter/exit, and parent-based selectors. Works via inline props on View/Text and inside `styled()`. Exported types: ViewStyle, TextStyle.",
+    "domain": "ui",
+    "tags": ["styling", "superset", "style-props", "view-style", "text-style"]
+  },
+  {
+    "principle": "styled(Component, config) creates an optimizable component",
+    "explanation": "Extends any Tamagui component with custom styles: `styled(View, { borderRadius: 20, variants: {...} })`. Gives you typed props, compiler-friendly style shape, and variant merging. `styled(styled())` still yields a single React component in the tree — variants and nested styling compose without adding render depth. Don't wrap Pressable/TouchableOpacity — their event logic conflicts.",
+    "domain": "arch",
+    "tags": ["styled", "components", "design-system", "composition"]
+  },
+  {
+    "principle": "Inline styles are first-class — the compiler flattens them",
+    "explanation": "Tamagui encourages inline style props: `<View mx=\"$sm\" scale={1.2}><Text c=\"$color\" /></View>`. With shorthands it is concise and the optimizing compiler hoists/extracts these into CSS at build time — no runtime cost. You don't have to choose between inline and `styled()`.",
+    "domain": "perf",
+    "tags": ["inline-styles", "compiler", "ergonomics", "flatten"]
+  },
+  {
+    "principle": "Prop order matters: later props override earlier ones",
+    "explanation": "`<View background=\"red\" {...props} width={200} />` means background is default-overridable by props, but width is locked to 200. Same for variants: `<Square scale={3} huge />` applies huge last, so huge wins; `<Square huge scale={3} />` applies scale last. Making order meaningful is what lets variants expand to multiple properties without boilerplate.",
+    "domain": "ui",
+    "tags": ["style-order", "overrides", "variants", "semantics"]
+  },
+  {
+    "principle": "Flat transform props: x, y, scale, rotate — no transform array",
+    "explanation": "Instead of `transform: [{translateX: 10}]` you write `x={10} y={20} scale={1.1} rotate=\"45deg\"`. Supported: x, y, perspective, scale, scaleX, scaleY, skewX, skewY, matrix, rotate, rotateX, rotateY, rotateZ. These compile to the equivalent transform entries. Cleaner ergonomics and animation targets.",
+    "domain": "ui",
+    "tags": ["transforms", "style-props", "ergonomics"]
+  },
+  {
+    "principle": "Pseudo style props: hoverStyle, pressStyle, focusStyle, disabledStyle",
+    "explanation": "Inline pseudo-state objects: `hoverStyle` (web, :hover), `pressStyle` (while pressed), `focusStyle` (:focus), `focusVisibleStyle` (:focus-visible, keyboard), `focusWithinStyle` (:focus-within on descendants), `disabledStyle` (disabled prop true). Each accepts any Tamagui style props. Compiles to atomic CSS on web; runtime on native.",
+    "domain": "ui",
+    "tags": ["pseudo-states", "hoverStyle", "pressStyle", "focusStyle", "disabledStyle"]
+  },
+  {
+    "principle": "enterStyle and exitStyle drive mount/unmount animations",
+    "explanation": "`enterStyle` = initial styles on mount (animate from). `exitStyle` = target styles on unmount (animate to). Tamagui normalizes opacity/scale to 1 and y to 0 on the base when only defined in enter/exitStyle. Use with `<AnimatePresence>` for unmount; direct children need unique `key` props.",
+    "domain": "ui",
+    "tags": ["enterStyle", "exitStyle", "mount-animation", "AnimatePresence"]
+  },
+  {
+    "principle": "$-prefix selectors target parent state: media, theme, platform, group",
+    "explanation": "Use `$` on style keys to apply nested style objects conditionally: `$sm`/`$gtMd` (media queries), `$theme-dark` (top-level theme), `$platform-ios`/`$platform-native` (platform), `$group-*` (parent group state). Each accepts the full style-prop set. Works on native and web through CSS or runtime.",
+    "domain": "ui",
+    "tags": ["selectors", "responsive", "parent-based", "media-queries", "$-prefix"]
+  },
+  {
+    "principle": "Media queries live in createTamagui({ media }), no prefix at use",
+    "explanation": "Define `createTamagui({ media: { sm: { maxWidth: 800 } } })`. Use as `<Text $sm={{ color: 'blue' }} />`. V5 renames 2xl→xxl; max queries use kebab-case (`max-xxl`). Height queries like `height-sm`, `height-md`, `height-lg`, plus `touch` and `hoverable` for device capabilities.",
+    "domain": "ui",
+    "tags": ["media-queries", "responsive", "breakpoints", "config-v5"]
+  },
+  {
+    "principle": "useMedia() is a signal-like hook — only subscribes to accessed keys",
+    "explanation": "`const media = useMedia()` returns a proxy that tracks which keys you access; re-renders only when those keys change. The compiler can fully extract usages and remove the hook from output. Proxy constraints: not iterable, no `in`/Object.keys, no destructuring with renaming. Access keys directly like `media.sm` for best compiler support.",
+    "domain": "perf",
+    "tags": ["useMedia", "hooks", "reactivity", "signals", "compiler"]
+  },
+  {
+    "principle": "useTheme proxies the current theme with per-key tracking",
+    "explanation": "`const theme = useTheme()` returns the current theme resolved up through parents. Values are Variable objects with `.val`, `.variable`, `.name`. On web, `theme.bg.get()` returns the CSS variable reference (no re-render on theme change); on native it returns the value and re-renders. Pass component/theme names as args to target a specific sub-theme.",
+    "domain": "perf",
+    "tags": ["useTheme", "hooks", "reactivity", "css-variables", "fastSchemeChange"]
+  },
+  {
+    "principle": "Groups: name a parent, style children based on its state or size",
+    "explanation": "Set `group` (unnamed) or `group=\"header\"` (named) on a parent. Children target it via `$group-hover`, `$group-press`, `$group-focus` (pseudo), `$group-sm` (container query), or named variants like `$group-header-hover`. Container queries use the same breakpoints from `createTamagui({ media })`. Type named groups with `interface TypeOverride { groupNames(): 'card' | 'header' }`.",
+    "domain": "ui",
+    "tags": ["group", "container-queries", "composition", "parent-state"]
+  },
+  {
+    "principle": "Group containers on native need untilMeasured or fixed dims",
+    "explanation": "Native can't know a component's layout before first render. Add `untilMeasured=\"hide\"` on the parent to start invisible until measured, preventing flicker. Alternatively set explicit width/height on the container so children can match a container query on first paint and avoid the double render altogether.",
+    "domain": "mobile",
+    "tags": ["group", "container-queries", "native", "untilMeasured", "performance"]
+  },
+  {
+    "principle": "Cross-platform CSS shorthand with $variables in strings",
+    "explanation": "`boxShadow`, `backgroundImage`, `filter`, `border`, `outline` accept string shorthand with token refs: `boxShadow=\"0 0 10px $shadowColor\"`, `backgroundImage=\"linear-gradient(to bottom, $background, $color)\"`, `filter=\"blur($2)\"`, `border=\"1px solid $borderColor\"`. Web: emits CSS vars. Native: expands to individual props (borderWidth/Style/Color). url() in backgroundImage is web-only.",
+    "domain": "ui",
+    "tags": ["boxShadow", "backgroundImage", "border", "filter", "cross-platform", "tokens"]
+  },
+  {
+    "principle": "rem units work cross-platform with PixelRatio.getFontScale()",
+    "explanation": "Write `<View padding=\"1rem\" />` — on web browsers handle rem; on native Tamagui multiplies by `PixelRatio.getFontScale()` so the user's accessibility font setting scales everything. Configure base with `createTamagui({ settings: { remBaseFontSize: 16 } })`.",
+    "domain": "ui",
+    "tags": ["rem", "units", "accessibility", "cross-platform"]
+  },
+  {
+    "principle": "Variants are the only sanctioned way to share conditional styles",
+    "explanation": "Variants live inside `styled()` and receive a value + (tokens, theme, props, font, context). They run outside the render function — no hooks, clear contract, type-safe, compiler-friendly. They nest without adding tree depth. Use `as const` on the variant object until TS can infer constant objects. Alternative (free-form logic in a component) de-opts the compiler.",
+    "domain": "arch",
+    "tags": ["variants", "styled", "design-system", "types"]
+  },
+  {
+    "principle": "Typed variant keys: true/false, :string, :boolean, :number",
+    "explanation": "`true`/`false` create a boolean prop. `:string`, `:boolean`, `:number` are type hints — the variant function receives the typed value. `true`/`false` take precedence over `:boolean`. Example: `color: { ':string': (c) => ({ color: c, borderColor: c }) }` accepts any string color.",
+    "domain": "arch",
+    "tags": ["variants", "typed-variants", "styled"]
+  },
+  {
+    "principle": "Spread variants gather values from a token category",
+    "explanation": "Instead of enumerating every size, write `pad: { '...size': (val, { tokens }) => ({ padding: tokens.size[val] }) }`. The `...` prefix is required — it types the prop against that token category and removes per-key boilerplate. Allowed: ...color, ...size, ...space, ...font, ...fontSize, ...lineHeight, ...radius, ...letterSpace, ...zIndex.",
+    "domain": "arch",
+    "tags": ["variants", "spread-variants", "tokens", "typed"]
+  },
+  {
+    "principle": "Catch-all variant: '...' handles any value not matched by others",
+    "explanation": "Mix typed cases with a fallback: `colorful: { true: { color: 'red' }, '...': (val: string) => ({ color: val }) }`. The catch-all runs only when the value doesn't match named keys. Useful for extending a preset set with arbitrary values.",
+    "domain": "arch",
+    "tags": ["variants", "catch-all", "fallback"]
+  },
+  {
+    "principle": "Dynamic variants: a single function instead of object syntax",
+    "explanation": "For maximum flexibility: `variants: { doubleMargin: (val: number) => ({ margin: val * 2 }) }`. Shorter than the object-with-keys form but less compiler-optimizable than typed spread variants. Use when types are complex or the calculation is essential.",
+    "domain": "arch",
+    "tags": ["variants", "dynamic-variants", "functional"]
+  },
+  {
+    "principle": "defaultVariants sets typed defaults for variants",
+    "explanation": "TS can't infer variant types on the object they're defined on (left-to-right parsing). Put defaults in the separate `defaultVariants` key — properly typed: `defaultVariants: { size: '$10' }`. The component renders with those values when the prop is omitted.",
+    "domain": "arch",
+    "tags": ["variants", "defaultVariants", "typescript"]
+  },
+  {
+    "principle": "Variants can include pseudo and media styles",
+    "explanation": "Inside a variant value you can nest media-query and pseudo blocks: `size: { md: { fontSize: '$sm', $gtMd: { fontSize: '$md' }, hoverStyle: {…} } }`. Variants have the full power of Tamagui's style system.",
+    "domain": "ui",
+    "tags": ["variants", "media-queries", "pseudo-states"]
+  },
+  {
+    "principle": "Child variants can trigger parent variants via composition",
+    "explanation": "`styled(ParentStyled, { variants: { hero: { true: { large: true } } } })` — setting hero on the child activates the parent's `large` variant. Variant values can reference parent variants directly, composing styles without duplication.",
+    "domain": "arch",
+    "tags": ["variants", "composition", "styled"]
+  },
+  {
+    "principle": "Functional variants receive a utility bag as 2nd arg",
+    "explanation": "Second argument: `{ theme, tokens, props, font, fontFamily, fonts, context }`. `theme` is a proxy with `$`-prefixed keys; `tokens` has all categories; `props` are the component's current props; `font` is the resolved font object (may be undefined); `context` is the current styledContext for compound components.",
+    "domain": "arch",
+    "tags": ["variants", "utility-args", "api"]
+  },
+  {
+    "principle": "createStyledContext shares variant props across compound components",
+    "explanation": "For compound APIs like `<Button.Icon>`/`<Button.Text>`, `createStyledContext()` scopes shared variants (e.g. `size`) across siblings. Pass the context via `context: ButtonContext` on each `styled()`; wrap with `<Button.Props size=\"$large\">` to set from above. Caveat: using context currently disables compiler flattening — keep it off hot primitives like Stack/Text.",
+    "domain": "arch",
+    "tags": ["createStyledContext", "compound-components", "withStaticProperties", "variants"]
+  },
+  {
+    "principle": "withStaticProperties attaches subcomponents to a parent",
+    "explanation": "`withStaticProperties(ButtonFrame, { Text: ButtonText, Icon: ButtonIcon, Props: Context.Provider })` returns one component you can use as `<Button.Text>` / `<Button.Icon>` / `<Button.Props>`. Standard compound component pattern that keeps import surface small and makes relationships visible in JSX.",
+    "domain": "arch",
+    "tags": ["withStaticProperties", "compound-components", "api-design"]
+  }
+]

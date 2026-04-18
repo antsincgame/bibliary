@@ -1,0 +1,92 @@
+[
+  {
+    "principle": "Animation drivers are swappable per-platform via config",
+    "explanation": "Add animations via a driver passed to `createTamagui({ animations: createAnimations({…}) })`. Four drivers: CSS (smallest, easing only), React Native (Animated, spring), Reanimated (off-thread, advanced), Motion (WAAPI, web). Swap drivers using `.native.ts` file splits, a `<Configuration>` wrapper, or multi-driver configs with the `animatedBy` prop.",
+    "domain": "ui",
+    "tags": ["animations", "drivers", "cross-platform", "createAnimations"]
+  },
+  {
+    "principle": "CSS driver: smallest bundle, transition-based",
+    "explanation": "`@tamagui/animations-css` — `createAnimations({ fast: 'ease-in 150ms', slow: 'cubic-bezier(0.68,-0.55,0.265,1.55) 300ms' })`. At runtime it sets CSS `transition`; at compile time the compiler extracts it. No spring physics. Best for simple web apps wanting maximum perf and smallest JS.",
+    "domain": "web",
+    "tags": ["animations", "css-driver", "transition", "perf"]
+  },
+  {
+    "principle": "React Native driver: spring/timing via Animated, no extra deps",
+    "explanation": "`@tamagui/animations-react-native` — supports spring physics via `{ damping, mass, stiffness }` and timing via `duration`. Works on web and native, no extra native libraries, slightly bigger than CSS. Runs on-thread — less performant than Reanimated for complex gesture animations.",
+    "domain": "ui",
+    "tags": ["animations", "react-native", "spring", "Animated"]
+  },
+  {
+    "principle": "Reanimated driver: off-thread native animations",
+    "explanation": "`@tamagui/animations-reanimated` + `react-native-reanimated`. Animations run on the UI thread via worklets for smooth 60fps. Tamagui can bypass its internal style changes and hand off directly to Reanimated worklets, avoiding re-renders. Best for complex native apps and gesture-driven UI. Larger bundle, needs RN platform setup.",
+    "domain": "mobile",
+    "tags": ["animations", "reanimated", "worklets", "off-thread"]
+  },
+  {
+    "principle": "Motion driver: web-only, GPU via WAAPI",
+    "explanation": "`@tamagui/animations-motion` + `motion` — uses Web Animations API running on the compositor thread. Supports spring `{ type: 'spring', damping, mass, stiffness }` and tween `{ duration }`. Zero re-renders: Tamagui hands style changes directly to Motion. Pair with Reanimated on native via `.native.ts` file split.",
+    "domain": "web",
+    "tags": ["animations", "motion", "waapi", "web-only"]
+  },
+  {
+    "principle": "transition prop activates animations — keep it on once used",
+    "explanation": "The `transition` prop names an animation config key. Spring hooks are expensive so Tamagui only enables them when `transition` is present; if you ever set it, the component keeps the hook for its lifetime. To disable mid-life, pass `null`/`false`/`undefined` — do NOT spread it conditionally. To remove/add after mount, change the component `key`.",
+    "domain": "ui",
+    "tags": ["transition", "animations", "performance", "hooks"]
+  },
+  {
+    "principle": "transition applies to all animatable styles by default",
+    "explanation": "`transition=\"bouncy\"` animates every changed style prop. Like CSS `transition: all`. Combine with `animateOnly={['opacity','scale']}` to restrict the set. On web with the CSS driver, the compiler can fully extract this into class-based transitions.",
+    "domain": "ui",
+    "tags": ["transition", "animations", "animateOnly"]
+  },
+  {
+    "principle": "Granular per-property animations via object syntax",
+    "explanation": "`transition={{ x: 'bouncy', y: { type: 'bouncy', overshootClamping: true } }}` — only x/y animate, each with its own config. Use the array form `transition={['bouncy', { y: 'slow', scale: { type: 'fast', repeat: 2 } }]}` to set a default plus per-prop overrides.",
+    "domain": "ui",
+    "tags": ["transition", "granular", "per-property", "animations"]
+  },
+  {
+    "principle": "Delay animations via the array syntax",
+    "explanation": "`transition={['bouncy', { delay: 200 }]}` — delay in milliseconds, works across all drivers. Stagger children with `transition={['bouncy', { delay: i * 100 }]}`. CSS driver uses `transition-delay`; Motion converts to seconds internally.",
+    "domain": "ui",
+    "tags": ["animations", "delay", "stagger"]
+  },
+  {
+    "principle": "Separate enter/exit transitions via { enter, exit, default }",
+    "explanation": "`transition={{ enter: 'lazy', exit: 'quick', default: 'bouncy' }}` — slow entry, fast exit, medium for regular prop changes. Combines with array form: `transition={['bouncy', { enter: 'lazy', exit: 'quick', delay: 200, x: 'slow' }]}`. Works with all four drivers.",
+    "domain": "ui",
+    "tags": ["animations", "enter-exit", "AnimatePresence"]
+  },
+  {
+    "principle": "Pseudo-state transitions: CSS-like enter/exit semantics",
+    "explanation": "Set `transition` at the base and override inside `hoverStyle`/`pressStyle`/`focusStyle`. Entering the pseudo uses the pseudo's transition; leaving it uses the base transition. Priority follows CSS specificity: press > hover > focus. Works with group-pseudo variants like `$group-card-hover`.",
+    "domain": "ui",
+    "tags": ["animations", "pseudo-states", "hoverStyle", "pressStyle"]
+  },
+  {
+    "principle": "AnimatePresence animates children as they unmount",
+    "explanation": "Wrap conditional children with `<AnimatePresence>` so `exitStyle` runs on unmount. Each child must have a unique `key`. Extra props: `initial` (disable first-mount animation), `custom` (pass data to variants — e.g. directional carousels), `exitBeforeEnter`, `onExitComplete`. Driver-agnostic — works with CSS, RN, Reanimated, Motion.",
+    "domain": "ui",
+    "tags": ["AnimatePresence", "animations", "unmount", "exitStyle"]
+  },
+  {
+    "principle": "animateOnly restricts which style keys animate",
+    "explanation": "Pass an array of prop names: `animateOnly={['transform', 'opacity']}` so the animation driver only handles those. Useful when a component has many changing props but only a few should tween.",
+    "domain": "ui",
+    "tags": ["animateOnly", "animations", "performance"]
+  },
+  {
+    "principle": "V5 ships matching animation keys across all drivers",
+    "explanation": "The v5 preset defines the same keys (fast, medium, slow, bouncy, lazy, quick, …) across CSS/RN/Reanimated/Motion drivers so code written once runs everywhere. Swap drivers by changing an import — no per-component edits needed.",
+    "domain": "arch",
+    "tags": ["animations", "config-v5", "drivers", "cross-platform"]
+  },
+  {
+    "principle": "Use Motion on web + Reanimated on native via platform files",
+    "explanation": "Create `animations.ts` (Motion) and `animations.native.ts` (Reanimated), both exporting the same shape. Bundler picks the right file. Keeps web bundles small while getting off-thread native animations. Works the same for any cross-platform driver pairing (e.g. CSS + RN).",
+    "domain": "arch",
+    "tags": ["animations", "platform-split", "motion", "reanimated"]
+  }
+]
