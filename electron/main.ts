@@ -1,11 +1,12 @@
 import { app, BrowserWindow } from "electron";
 import * as path from "path";
-import { registerIpcHandlers } from "./ipc-handlers";
+import { registerIpcHandlers, abortAllBatches } from "./ipc-handlers";
+import { disposeClient } from "./lmstudio-client";
 
-const WINDOW_WIDTH = 1200;
-const WINDOW_HEIGHT = 800;
-const MIN_WIDTH = 800;
-const MIN_HEIGHT = 600;
+const WINDOW_WIDTH = 1280;
+const WINDOW_HEIGHT = 820;
+const MIN_WIDTH = 960;
+const MIN_HEIGHT = 640;
 const BG_COLOR = "#050508";
 
 let mainWindow: BrowserWindow | null = null;
@@ -25,18 +26,35 @@ function createWindow(): void {
     },
   });
 
-  mainWindow.loadFile(path.join(__dirname, "..", "..", "renderer", "index.html"));
+  mainWindow.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
 
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
 }
 
-app.whenReady().then(() => {
-  registerIpcHandlers();
-  createWindow();
-});
-
-app.on("window-all-closed", () => {
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
   app.quit();
-});
+} else {
+  app.on("second-instance", () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+
+  app.whenReady().then(() => {
+    registerIpcHandlers(() => mainWindow);
+    createWindow();
+  });
+
+  app.on("window-all-closed", () => {
+    app.quit();
+  });
+
+  app.on("before-quit", () => {
+    abortAllBatches("app-quit");
+    disposeClient();
+  });
+}

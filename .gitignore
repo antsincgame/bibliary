@@ -17,9 +17,14 @@ data/*.txt
 # Generated / intermediate data
 data/_*
 data/cleanup/
-data/finetune/
 data/apps/
 
 # Merge artifacts inside concepts
 data/concepts/_*
 data/concepts/merged-dedup.json
+
+# Finetune workspace — игнор всего, кроме seed-данных
+data/finetune/*
+!data/finetune/README.md
+!data/finetune/gold-examples.jsonl
+!data/finetune/source-chunks.json

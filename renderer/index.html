@@ -9,52 +9,71 @@
 </head>
 <body>
   <div class="app">
-    <!-- Top bar -->
-    <div class="top-bar">
-      <div class="app-title">Bibliary</div>
+    <nav class="sidebar" id="sidebar">
+      <button class="sidebar-icon active" data-route="chat" title="Chat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 5h16v11H8l-4 4z"/></svg>
+        <span>Chat</span>
+      </button>
+      <button class="sidebar-icon" data-route="dataset" title="Dataset Generator">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="19" cy="18" r="2"/></svg>
+        <span>Dataset</span>
+      </button>
+      <button class="sidebar-icon" data-route="models" title="Models Workshop">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg>
+        <span>Models</span>
+      </button>
+    </nav>
 
-      <div class="control-group">
-        <span class="control-label">Collection</span>
-        <select id="collection-select">
-          <option value="">loading...</option>
-        </select>
-        <button class="btn-refresh" id="btn-refresh-collections" title="Refresh collections">↻</button>
-      </div>
+    <main class="workspace">
+      <section id="route-chat" class="route route-active">
+        <div class="top-bar">
+          <div class="app-title">Bibliary</div>
+          <div class="control-group">
+            <span class="control-label">Collection</span>
+            <select id="collection-select"><option value="">loading...</option></select>
+            <button class="btn-refresh" id="btn-refresh-collections" title="Refresh collections">↻</button>
+          </div>
+          <div class="control-group">
+            <span class="control-label">Model</span>
+            <select id="model-select"><option value="">loading...</option></select>
+            <button class="btn-refresh" id="btn-refresh-models" title="Refresh models">↻</button>
+          </div>
+          <button class="btn-compare" id="btn-compare" title="Compare RAG vs No-RAG">Compare</button>
+          <div class="status-dot" id="status-dot" title="Offline"></div>
+        </div>
+        <div class="chat-area" id="chat-area">
+          <div class="welcome">
+            <div class="welcome-title">Bibliary</div>
+            <div class="welcome-sub">knowledge base // year 2666</div>
+          </div>
+        </div>
+        <div class="input-bar">
+          <div class="input-wrapper">
+            <textarea id="input" rows="1" placeholder="Enter message..."></textarea>
+          </div>
+          <button class="btn-send" id="btn-send">Send</button>
+        </div>
+      </section>
 
-      <div class="control-group">
-        <span class="control-label">Model</span>
-        <select id="model-select">
-          <option value="">loading...</option>
-        </select>
-        <button class="btn-refresh" id="btn-refresh-models" title="Refresh models">↻</button>
-      </div>
+      <section id="route-dataset" class="route">
+        <div class="route-header">
+          <div class="route-title">Dataset Generator</div>
+          <div class="route-sub">MECHANICUS T1/T2/T3 examples via Qwen3.6-35B-A3B</div>
+        </div>
+        <div id="dataset-root" class="route-body"></div>
+      </section>
 
-      <button class="btn-compare" id="btn-compare" title="Compare RAG vs No-RAG">Compare</button>
-      <div class="status-dot" id="status-dot" title="Offline"></div>
-    </div>
-
-    <!-- Chat area -->
-    <div class="chat-area" id="chat-area">
-      <div class="welcome">
-        <div class="welcome-title">Bibliary</div>
-        <div class="welcome-sub">knowledge base // year 2666</div>
-      </div>
-    </div>
-
-    <!-- Input bar -->
-    <div class="input-bar">
-      <div class="input-wrapper">
-        <textarea
-          id="input"
-          rows="1"
-          placeholder="Enter message..."
-        ></textarea>
-      </div>
-      <button class="btn-send" id="btn-send">Send</button>
-    </div>
+      <section id="route-models" class="route">
+        <div class="route-header">
+          <div class="route-title">Models Workshop</div>
+          <div class="route-sub">LM Studio control plane — load, unload, switch profile</div>
+        </div>
+        <div id="models-root" class="route-body"></div>
+      </section>
+    </main>
   </div>
 
   <script src="marked.umd.js"></script>
-  <script src="renderer.js"></script>
+  <script type="module" src="router.js"></script>
 </body>
 </html>

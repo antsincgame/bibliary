@@ -9,7 +9,7 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "outDir": "./dist-electron",
-    "rootDir": ".",
+    "rootDir": "./electron",
     "declaration": false
   },
   "include": ["electron/**/*.ts"]
