@@ -1,0 +1,8 @@
+[
+  {
+    "principle": "Preserve the visited versus unvisited link distinction — it is free wayfinding information that shows users which paths they have already tried, tracked by URL not by link text",
+    "explanation": "X.ux|visited_links: browser_default: visited_links==different_color(purple); this_is_free_wayfinding: user_sees_which_branches_already_explored; tracked_by_URL_not_text: link_\"Book_a_trip\"_visited -> \"Book_a_flight\"_same_URL_also_shows_visited -> user_knows_same_destination; overriding_to_single_color == removing_spatial_memory; critical_in: search_results + catalogs + deep_navigation_trees + multi-step_research; custom_colors_OK: as_long_as_visited_vs_unvisited_noticeably_different; NO:a:visited{color:same_as_a:link} NO:removing_visited_distinction_for_visual_uniformity; eg: catalog_all_links_same_color -> user_re-explores_same_dead_ends >> visited_links_muted_color -> user_skips_already_tried_paths",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "navigation", "wayfinding", "links", "spatial-memory", "accessibility"]
+  }
+]

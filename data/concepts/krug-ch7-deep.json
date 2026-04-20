@@ -1,0 +1,20 @@
+[
+  {
+    "principle": "A wrong first impression of what a site is poisons every subsequent interpretation — users force-fit their incorrect mental model onto everything they see until they give up",
+    "explanation": "X.ux|wrong_model_cascade: first_seconds: user_forms_hypothesis_about_what_site_is; if_hypothesis_correct -> subsequent_elements_interpreted_correctly -> confidence_builds; if_hypothesis_wrong -> user_tries_to_force_fit_wrong_model_onto_everything -> misinterpretations_compound -> frustration_escalates -> exit; usability_test_evidence: people_form_ideas_about_how_things_work_that_are_just_wrong + use_those_ideas_to_interpret_everything_after; rule: get_user_to_correct_big_picture_in_first_glance_OR_everything_after_costs_10x; NO:assuming_clever_headline_will_be_understood_in_context NO:trusting_users_to_figure_it_out_as_they_explore; eg: ambiguous_hero_interpreted_as_blog >> user_cant_find_product_section_even_though_clearly_labeled >> exits_thinking_products_dont_exist",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "first-impression", "mental-models", "homepage", "misinterpretation", "big-picture"]
+  },
+  {
+    "principle": "Home page clarity is destroyed by the tragedy of the commons — each stakeholder who adds a promo gains all the traffic benefit while the cost of clutter is shared by everyone",
+    "explanation": "X.ux|homepage_commons_tragedy: mechanism: any_prominent_homepage_link -> guaranteed_traffic_increase_for_that_section; each_stakeholder: rational_to_add_promo(private_gain_+1) + irrational_collectively(shared_degradation_divided_by_N); result: gradual_inevitable_overloading_of_most_valuable_real_estate; solution: governance_rules NOT appeals_to_reason + homepage_element_budget_with_explicit_tradeoffs + rotation_system + cross-promote_from_popular_inner_pages_instead; NO:deciding_homepage_content_by_stakeholder_consensus NO:adding_\"just_one_more_thing\" NO:assuming_everyone_will_be_reasonable; eg: clean_hero+nav >> hero+3_banners+5_promos+partner_logos+CEO_message >> nobody_finds_main_CTA",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "homepage", "stakeholders", "information-architecture", "governance", "conversion"]
+  },
+  {
+    "principle": "Everyone inside the organization already knows what the site is — so nobody notices when visitors cannot figure it out, making the big picture the first casualty of every design compromise",
+    "explanation": "X.ux|big_picture_blind_spot: team_members: know_site_deeply -> never_experience_confusion_about_what_it_is; result: internal_review_never_catches_missing_clarity_of_purpose; under_pressure: tagline_cut(too_much_space) + blurb_weakened(too_promotional) + welcome_text_removed -> main_point_gone_unnoticed; test: show_homepage_to_outsiders_unfamiliar_with_org -> ask_what_the_site_is_in_5sec -> ONLY_way_to_catch_this; rule: designate_guardian_of_big_picture_in_every_homepage_design_process; NO:trusting_internal_review_to_catch_clarity_of_purpose NO:removing_tagline_without_outsider_test; eg: team_reviews_homepage_2h_nobody_mentions_missing_value_prop >> outsider_10sec: \"I_have_no_idea_what_this_does\"",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "homepage", "value-proposition", "usability-testing", "big-picture", "team-dynamics"]
+  }
+]

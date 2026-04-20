@@ -1,0 +1,32 @@
+[
+  {
+    "principle": "Build the hero section as the most polished part of every page — bold headline, one accent color, quality image, generous whitespace, single CTA above the fold",
+    "explanation": "X.ux|hero_polish: first_impression_forms_in_50ms -> hero_section == most_critical_area; checklist: bold_headline (clamp_fluid_type) + one_accent_color_for_CTA + quality_hero_image_or_illustration + generous_whitespace (min_padding_64px) + single_primary_CTA_above_fold; system_1_judges_visual_quality_before_reading_text; NO:unstyled_hero NO:multiple_CTAs_above_fold NO:stock_photo_without_editing eg: \"hero: small_text + 3_buttons + busy_background\" >> \"hero: bold_72px_headline + 1_CTA + clean_image + 80px_padding\"",
+    "domain": "ux",
+    "tags": ["aesthetic-usability", "hero-section", "above-the-fold", "first-impression"]
+  },
+  {
+    "principle": "Beautiful interfaces are not just pleasant — users complete tasks faster and rate usability higher on aesthetically pleasing designs even when functionality is identical",
+    "explanation": "X.ux|beauty_is_functional: identical_functionality + different_aesthetics -> beautiful_version: faster_task_completion + higher_usability_ratings; beauty -> positive_emotional_response -> enhanced_cognitive_abilities -> better_performance; visual_quality == functional_investment NOT decoration_budget; NO:treating_design_as_skin_over_functionality NO:ugly_MVP_assuming_users_care_only_about_features eg: \"functional_but_ugly_checkout\" >> \"polished_checkout: same_fields + better_typography+spacing+color -> faster_completion\"",
+    "domain": "ux",
+    "tags": ["aesthetic-usability", "performance", "visual-quality", "cognitive"]
+  },
+  {
+    "principle": "Users tolerate minor usability issues on aesthetically pleasing sites — when shipping MVP prioritize visual polish over feature completeness",
+    "explanation": "X.ux|aesthetic_forgiveness: beautiful_design -> user_believes_it_works_better -> forgives_minor_issues; ugly_design: same_bugs -> perceived_as_broken + untrustworthy; MVP_strategy: polish_core_flow_visually + ship_fewer_features -> better_reception_than_ugly_feature_complete; trust + credibility: correlate_with_perceived_attractiveness; NO:ugly_MVP_with_all_features NO:postponing_design_until_v2 eg: \"MVP_10_features_unstyled\" >> \"MVP_5_features_beautifully_designed -> users_forgive_missing_features\"",
+    "domain": "ux",
+    "tags": ["aesthetic-usability", "mvp-strategy", "forgiveness", "trust"]
+  },
+  {
+    "principle": "Every visual element must serve a functional purpose — decorative clutter without function dilutes the interface and increases cognitive load",
+    "explanation": "X.ux|functional_minimalism: dieter_rams: less_but_better; every_element: must_serve_purpose (inform OR navigate OR act); decorative_noise: competes_with_functional_elements -> dilutes_attention -> increases_cognitive_load; beauty_through: typography + spacing + alignment + color_restraint NOT through_ornament; NO:decorative_elements_without_function NO:visual_complexity_for_complexity_sake eg: \"landing_page_with_15_decorative_shapes+gradients\" >> \"clean_layout: bold_headline + clear_CTA + purposeful_whitespace\"",
+    "domain": "ux",
+    "tags": ["aesthetic-usability", "minimalism", "dieter-rams", "visual-clarity"]
+  },
+  {
+    "principle": "Users scan pages with fast automatic System 1 thinking not deliberate reading — make key information and primary CTA instantly identifiable without conscious effort",
+    "explanation": "X.ux|system1_scanning: system_1: fast + automatic + scans_for_relevant_info; system_2: slow + deliberate + engaged_only_when_needed; design_for_system1: one_primary_CTA_per_viewport + clear_visual_hierarchy + scannable_headings; irrelevant_info: passed_over_instantly; user_goal: find_match_fast -> act -> leave; NO:relying_on_users_reading_paragraphs NO:multiple_equal_weight_CTAs eg: \"page_with_3_buttons_same_size_same_color\" >> \"one_primary_CTA_bold_color + secondary_actions_subtle\"",
+    "domain": "ux",
+    "tags": ["aesthetic-usability", "system-1", "scanning", "visual-hierarchy", "cta"]
+  }
+]

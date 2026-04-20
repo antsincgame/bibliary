@@ -1,0 +1,20 @@
+[
+  {
+    "principle": "Homepage hero must answer three questions in under 5 seconds — what is this site, what can I do here, and where do I start",
+    "explanation": "X.ux|homepage_three_questions: user_lands -> 5_seconds -> must_know: what_site_is + what_to_do + where_to_start; if_any_answer_unclear -> user_leaves; hero_block_required: tagline (what_it_is) + one_sentence_value_prop (why_be_here) + one_obvious_CTA (where_to_start); conveying_big_picture == most_important_homepage_job + most_often_lost_in_stakeholder_negotiations; NO:hero_with_only_decorative_image NO:CTA_without_explanation_of_what_site_does NO:welcome_message_instead_of_value_prop eg: \"Beautiful_hero_image_+_Get_Started_button\" >> \"Tagline+one_sentence_what_+_primary_CTA\"",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "homepage", "hero", "value-proposition", "cta"]
+  },
+  {
+    "principle": "Generate a tagline not a motto — a tagline states specific unique value that only this site can claim, a motto states a generic aspiration anyone could use",
+    "explanation": "X.ux|tagline_vs_motto: motto == inspiring_principle (\"we_bring_good_things_to_life\") -> anyone_could_use_it; tagline == specific_value_only_YOU_can_claim; nielsen_test: good_tagline -> no_other_site_in_world_could_use_it; tagline_rules: 6-8_words + conveys_differentiation + states_clear_benefit + no_corporate_speak; generic_taglines: \"world-class_solutions\" + \"empowering_your_business\" + \"innovation_driven\" -> all_fail_nielsen_test; NO:aspirational_mottos_as_taglines NO:vague_adjectives (\"best\"/\"leading\"/\"powerful\") eg: \"Empowering_teams_to_do_more\" >> \"Project_management_built_for_remote_engineering_teams\"",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "tagline", "homepage", "copywriting", "differentiation"]
+  },
+  {
+    "principle": "Every inner page must identify the site in the header — users land on deep pages from search and social and immediately look for site identity to get their bearings",
+    "explanation": "X.ux|deep_link_entry: most_users_enter_via_deep_links (search/social/email) NOT homepage; first_action_after_reading_deep_page -> visit_homepage_to_understand_site_context; every_inner_page_must: show_logo + site_name + optionally_tagline_in_header; logo_must_link_to_home; user_behavior: reads_article -> clicks_logo -> checks_homepage -> decides_to_explore; NO:inner_pages_without_clear_site_identity NO:logo_not_linking_to_home NO:header_stripped_of_branding_on_inner_pages eg: \"article_page_no_logo_no_nav\" >> \"article_page_full_header_logo+tagline+nav\"",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "homepage", "deep-links", "header", "site-identity"]
+  }
+]

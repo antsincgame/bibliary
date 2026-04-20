@@ -1,0 +1,14 @@
+[
+  {
+    "principle": "Seed onboarding and profile completion at a non-zero value and show empty placeholder slots — users complete partially-done tasks at far higher rates than tasks not yet started",
+    "explanation": "X.ux|zeigarnik_onboarding: 0%_start -> user_feels_task_not_begun -> low_completion; seed_25%_after_name_entry -> cognitive_tension -> higher_completion; show_empty_placeholder_slots_for_missing_content; NO:profile_0%_on_first_login NO:blank_empty_state_without_slots; eg: \"profile_0%_complete_name_only\" >> \"profile_25%_complete + 6_empty_badge_slots_visible\"",
+    "domain": "ux",
+    "tags": ["zeigarnik", "onboarding", "progress", "completion", "engagement"]
+  },
+  {
+    "principle": "Show a resume-incomplete-task banner on return visits to abandoned flows — users recall unfinished tasks 90% better than completed ones",
+    "explanation": "X.ux|zeigarnik_resume: abandoned_flow -> user_subconsciously_remembers; on_return: show_resume_banner + last_completed_step + direct_link_to_continue; NOT generic_homepage_CTA NOT start_over_silently; applies_to: checkout + onboarding + multi_step_form + quiz; eg: \"homepage_no_mention_of_abandoned_cart\" >> \"banner: 'Your order is waiting — 2 items, last step: payment'\"",
+    "domain": "ux",
+    "tags": ["zeigarnik", "abandoned-flow", "re-engagement", "checkout", "onboarding"]
+  }
+]

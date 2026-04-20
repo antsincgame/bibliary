@@ -1,0 +1,20 @@
+[
+  {
+    "principle": "AI picks answer format BEFORE searching for fragments — page structure must match the expected format for its intent type",
+    "explanation": "X.seo|intent_format_match: model_decides_format_first (definition/list/steps/comparison) THEN searches_fragments_fitting_that_format; great_content_in_wrong_format == ignored; 8_intent_types: definition (1-2_paragraphs) + mechanism (step_chain) + problem_solution (cause+fix) + comparison (table/criteria) + choice (criteria_list) + instruction (numbered_steps) + local (geo_context) + analytical (cause_effect); NO:one_format_for_all_intents eg: \"long_essay_for_how_to_query\" >> \"numbered_steps_matching_instruction_intent\"",
+    "domain": "seo",
+    "tags": ["intent", "ai-seo", "content-format", "page-structure"]
+  },
+  {
+    "principle": "Check how AI answers similar queries and mirror that format — AI responses are the best guide to what format the model expects",
+    "explanation": "X.seo|mirror_ai_format: search_your_topic_in_ChatGPT/Google_AI -> observe_answer_format; if_AI_gives_definition -> your_page_needs_short_definition_paragraph; if_AI_gives_criteria_list -> format_as_list_not_essay; if_AI_gives_steps -> use_numbered_sequence; match_structure_not_content; NO:guessing_format NO:ignoring_AI_answers eg: \"AI_answers_with_comparison_table_but_your_page_is_narrative_essay\" >> \"restructure_page_as_comparison_with_criteria_and_differences\"",
+    "domain": "seo",
+    "tags": ["intent-matching", "ai-seo", "content-strategy", "competitive-analysis"]
+  },
+  {
+    "principle": "First 2-3 paragraphs must signal the page intent — if the opening contradicts the intent, AI misinterprets all subsequent fragments",
+    "explanation": "X.seo|intent_signal_opening: opening_paragraphs == where_AI_determines_page_format; definition_page -> start_with_definition; how_it_works_page -> start_with_mechanism; problem_page -> start_with_problem_statement; if_opening_is_marketing_fluff_or_history -> model_loses_structure -> fragments_interpreted_wrong; NO:starting_definition_page_with_story NO:starting_how_to_with_philosophy eg: \"Let_me_tell_you_about_the_history_of_SSL...\" >> \"SSL_certificate_encrypts_data_between_browser_and_server.\"",
+    "domain": "seo",
+    "tags": ["page-opening", "intent-signal", "ai-seo", "content-structure"]
+  }
+]

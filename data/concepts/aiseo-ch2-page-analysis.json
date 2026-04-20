@@ -1,0 +1,32 @@
+[
+  {
+    "principle": "H1 must be a precise topic definition not a marketing phrase — vague H1 loses the semantic vector for the entire page",
+    "explanation": "X.seo|h1_precision: H1 == definition_of_the_area_where_model_searches_for_fragments; precise_direct_H1 -> model_understands_topic_fast; vague_marketing_H1 -> page_loses_semantic_direction; NO:creative_slogans_as_H1 NO:vague_phrases eg: \"Your_dream_kitchen_starts_here\" >> \"Kitchen_renovation:_materials_timeline_and_cost_breakdown\"",
+    "domain": "seo",
+    "tags": ["h1", "headings", "ai-seo", "page-structure"]
+  },
+  {
+    "principle": "Place the core definition or explanation in the first paragraph after the heading — AI attention peaks there and drops on fluff",
+    "explanation": "X.seo|first_paragraph: AI_attention_mechanism_peaks_at_first_paragraph_after_heading; place: definition OR main_explanation OR direct_answer; model_seeks_anchor_point_here; rhetorical_question_or_marketing_warmup -> weak_anchor -> model_shifts_to_secondary_parts; NO:rhetorical_questions_first NO:marketing_intro NO:throat_clearing eg: \"Have_you_ever_wondered_what_SEO_is?\" >> \"SEO_is_the_process_of_improving_page_visibility_in_search_results\"",
+    "domain": "seo",
+    "tags": ["first-paragraph", "attention", "ai-seo", "content-structure"]
+  },
+  {
+    "principle": "AI extracts paragraphs not sentences — each paragraph must contain exactly one complete thought to be citable",
+    "explanation": "X.seo|one_thought_paragraph: model_extracts_paragraphs_as_units; one_idea == one_paragraph; too_long_or_mixed_ideas -> model_cannot_use_as_single_block; NO:multi_idea_paragraphs NO:paragraphs_needing_context_from_neighbors eg: \"paragraph_with_3_topics_and_5_logical_jumps\" >> \"paragraph_1:_definition. paragraph_2:_mechanism. paragraph_3:_example\"",
+    "domain": "seo",
+    "tags": ["paragraph-structure", "ai-seo", "fragment-extraction", "content-clarity"]
+  },
+  {
+    "principle": "Five elements that boost AI attention: direct definitions, clear explanations, concrete examples, concise lists, first paragraphs after headings",
+    "explanation": "X.seo|attention_triggers: 1_first_paragraph_after_heading == model_seeks_topic_anchor; 2_paragraphs_starting_with \"Definition/Cause/Mechanism/Function\" == structural_signal; 3_clear_examples == attention_amplifier + verification_tool; 4_short_precise_definitions == easy_to_place_at_answer_start; 5_lists_where_each_item_is_criterion/step/cause == decomposed_structure; NO:decorative_lists (\"5_reasons_to_choose_us\") eg: \"vague_bulleted_marketing_points\" >> \"list: step_1_cause + step_2_mechanism + step_3_result\"",
+    "domain": "seo",
+    "tags": ["attention-mechanism", "ai-seo", "content-triggers", "structured-content"]
+  },
+  {
+    "principle": "AI systematically ignores: rhetorical questions, unstructured text walls, keyword-stuffed SEO text, heavy metaphors, off-topic insertions",
+    "explanation": "X.seo|ai_ignores: 1_warmup_intros_without_facts == noise; 2_dense_text_walls_without_headings == model_sees_mass_not_structure; 3_keyword_stuffed_SEO_text == no_longer_quality_signal_may_reduce_trust; 4_metaphors_and_imagery == model_reads_literally_meaning_gets_lost; 5_off_topic_insertions_in_sections == ignored + reduce_attention_to_neighbors; NO:creative_writing_style_for_AI NO:seo_keyword_density_approach eg: \"Like_a_phoenix_rising_from_digital_ashes_our_SEO...\" >> \"SSL_certificate_encrypts_data_between_server_and_browser\"",
+    "domain": "seo",
+    "tags": ["ai-ignores", "content-antipatterns", "ai-seo", "noise-reduction"]
+  }
+]

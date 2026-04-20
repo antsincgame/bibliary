@@ -1,0 +1,8 @@
+[
+  {
+    "principle": "Every link text must let users predict what they will find at the destination — vague labels like 'Learn more' or 'Click here' have zero information scent and turn each click into a blind commitment",
+    "explanation": "X.ux|link_scent: information_scent==user_confidence_that_click_leads_toward_goal; strong_scent: specific_destination_description -> user_knows_exactly_what_awaits; zero_scent: action_verbs_without_object (\"click_here\" + \"learn_more\" + \"read_more\" + \"find_out\"); weak_scent: destination_category_only (\"products\" + \"services\"); strong_scent_formula: [what_user_gets]+[qualifier] eg: \"Download_the_pricing_guide_PDF\" NOT \"Learn_more\"; applies_to: nav_links+inline_body_links+CTAs+search_result_titles; NO:\"learn_more\"_as_CTA NO:\"click_here\"_as_link_text NO:CTA_describing_action_only_not_destination; eg: \"Learn_more\" >> \"Read_the_2025_pricing_breakdown\" OR \"Get_30_days_free\"",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "information-scent", "link-text", "cta", "copy", "navigation", "conversion"]
+  }
+]

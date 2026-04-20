@@ -1,0 +1,62 @@
+[
+  {
+    "principle": "Add JSON-LD structured data for every content type that qualifies for a rich result — schema markup is the only lever that expands your SERP real estate without earning more links",
+    "explanation": "X.seo|schema_jsonld: JSON-LD_in_<head>: Google_preferred_format; qualifying_types: Article+FAQPage+HowTo+Product+Review+BreadcrumbList+Event+LocalBusiness; rich_results: stars+price+FAQ_dropdown+How-to_steps -> higher_CTR_than_blue_link; validate: Google_Rich_Results_Test+schema.org_validator; NO:Microdata_over_JSON-LD(harder_to_maintain) NO:schema_without_matching_visible_content NO:faking_review_data; eg: plain_article >> Article_schema+FAQPage_schema -> star_rating+FAQ_accordions_in_SERP",
+    "domain": "seo",
+    "tags": ["schema", "json-ld", "structured-data", "rich-results", "technical-seo"]
+  },
+  {
+    "principle": "Implement breadcrumb schema on every deep page and match it to visible breadcrumbs — breadcrumb rich results replace long URLs in SERP and improve click-through rate",
+    "explanation": "X.seo|breadcrumb_schema: Google_shows_breadcrumb_in_SERP_instead_of_URL; requirement: BreadcrumbList_JSON-LD + matching_visible_breadcrumb_on_page; structure: home->category->subcategory->page; every_item: id+name+url; Next.js: generate_via_generateMetadata+JSON-LD_component; benefits: shorter_cleaner_SERP_listing + site_structure_signal_to_Google; NO:schema_without_visible_breadcrumb NO:breadcrumb_on_homepage_only; eg: long_URL_in_SERP >> \"Home > Blog > SEO > Technical_SEO\" breadcrumb_path",
+    "domain": "seo",
+    "tags": ["breadcrumbs", "schema", "structured-data", "serp", "technical-seo"]
+  },
+  {
+    "principle": "Set a canonical URL on every page including the homepage — without canonicals, URL parameter variants and trailing-slash duplicates silently split PageRank",
+    "explanation": "X.seo|canonical_tags: duplicate_content_causes: split_PageRank+indexing_confusion; sources_of_duplication: (1)trailing_slash(/page vs /page/) (2)query_params(?sort=&filter=) (3)session_IDs (4)HTTP_vs_HTTPS (5)www_vs_non-www; fix: <link_rel=canonical_href=\"https://canonical-url\">_on_every_page; self-canonical: every_page_canonicals_to_itself; NO:missing_canonical_on_paginated_pages NO:canonical_pointing_to_redirected_URL; eg: /products?color=red&sort=price -> canonical_to_/products/red",
+    "domain": "seo",
+    "tags": ["canonical", "duplicate-content", "pagerank", "technical-seo", "indexing"]
+  },
+  {
+    "principle": "Render SEO-critical content server-side or with SSG — client-side JavaScript rendering delays Googlebot indexing by days and causes content to rank below its potential",
+    "explanation": "X.seo|js_seo_rendering: Googlebot_crawls: HTML_first -> queues_JS_for_later_rendering(\"second_wave\"); CSR(client-side_rendering): title+H1+body_content_only_in_JS -> not_in_first_wave -> slower_indexing+possible_ranking_loss; SSR/SSG: full_HTML_in_first_byte -> indexed_immediately; critical_content: hero_text+headings+product_descriptions+meta_tags MUST_be_in_SSR_HTML; NO:Next.js_pages_fetching_copy_client-side NO:H1_rendered_by_JS_only; eg: CSR_product_page >> SSG+ISR_product_page_with_full_HTML",
+    "domain": "seo",
+    "tags": ["javascript-seo", "server-side-rendering", "crawling", "indexing", "technical-seo"]
+  },
+  {
+    "principle": "Generate an XML sitemap with lastmod dates and submit it via Google Search Console — sitemaps cut the discovery lag for new pages from weeks to hours",
+    "explanation": "X.seo|xml_sitemap: sitemap_tells_Google: which_pages_exist+when_last_updated; lastmod: accurate_ISO_8601_date -> Google_uses_for_recrawl_scheduling; include: canonical_URLs_only(no_noindex+no_redirects+no_params); exclude: thin_pages+paginated_pages+filtered_variations; max_50k_URLs_per_sitemap -> use_sitemap_index_for_large_sites; submit: Google_Search_Console+Bing_Webmaster; robots.txt: Sitemap:_directive; NO:lastmod_never_updated NO:noindex_pages_in_sitemap; eg: no_sitemap >> auto-generated_sitemap.xml+robots.txt_pointer+GSC_submission",
+    "domain": "seo",
+    "tags": ["sitemap", "xml-sitemap", "crawl-budget", "indexing", "technical-seo"]
+  },
+  {
+    "principle": "Configure robots.txt to block only crawl-wasteful URLs and never block pages you want indexed — a misplaced Disallow is invisible and silently kills rankings",
+    "explanation": "X.seo|robots_txt: robots.txt: crawl_budget_guard NOT ranking_tool; block: /admin +/api +/search?q= +/cart +?utm_source; NEVER_block: CSS+JS+images Google_needs_to_render; disallow+noindex_together = disallow_prevents_Google_seeing_noindex -> page_stays_indexed_without_canonical_guidance; test: Google_Search_Console_robots_tester; NO:blocking_entire_/static/_folder NO:Disallow:/_on_staging_carried_to_production; eg: production_site_with_Disallow:/ >> robots.txt_audit+unblock_all_public_content",
+    "domain": "seo",
+    "tags": ["robots-txt", "crawl-budget", "technical-seo", "indexing", "crawling"]
+  },
+  {
+    "principle": "Implement hreflang tags for every language and region variant — without them Google guesses which version to serve and regularly serves the wrong language to the wrong country",
+    "explanation": "X.seo|hreflang: hreflang_tells_Google: this_content_is_for_locale_X; format: <link_rel=alternate_hreflang=\"en-US\"_href=\"...\">; rules: (1)every_page_references_ALL_its_variants(including_itself) (2)x-default_for_fallback (3)bidirectional: page_A_points_to_B_AND_B_points_to_A (4)canonical+hreflang_must_not_conflict; implement_in: <head>_OR_HTTP_header_OR_sitemap; NO:hreflang_only_on_one_side NO:mismatched_hreflang+canonical; eg: /en/+/fr/+/de/_without_hreflang >> each_page_with_full_hreflang_set",
+    "domain": "seo",
+    "tags": ["hreflang", "international-seo", "localization", "technical-seo", "multi-language"]
+  },
+  {
+    "principle": "Optimize every image with descriptive alt text, WebP format, and explicit width and height attributes — missing dimensions alone cause measurable CLS on every page load",
+    "explanation": "X.seo|image_seo: alt_text: describes_image_content(not_keyword_stuffed)+empty_alt_for_decorative; format: WebP_or_AVIF_over_JPEG/PNG(-30-50%_size); width+height_attributes: prevents_CLS(browser_reserves_space_before_load); filename: descriptive_kebab-case(\"red-running-shoes.webp\"_NOT_\"IMG_1234.jpg\"); lazy_loading: loading=\"lazy\"_for_below-fold; NO:loading=\"lazy\"_on_LCP_image NO:alt_text_\"image_of\" NO:missing_width+height; eg: <img_src=\"img.png\"> >> <img_src=\"img.webp\"_alt=\"red_running_shoe\"_width=800_height=600_loading=\"lazy\">",
+    "domain": "seo",
+    "tags": ["image-seo", "alt-text", "webp", "cls", "technical-seo", "performance"]
+  },
+  {
+    "principle": "Optimize for featured snippets by answering the query in the first 40-60 words then expanding — snippet selection happens at the paragraph directly below the matching heading",
+    "explanation": "X.seo|featured_snippet_optimization: featured_snippet: position_0 above_all_organic; Google_pulls: first_direct_answer_below_H2_matching_query_intent; format_rules: (1)question_as_H2 (2)direct_answer_in_40-60_words_immediately_below (3)expand_detail_after; types: paragraph(definition)+list(steps)+table(comparison); schema_FAQPage: extra_path_to_FAQ_snippets; NO:answer_buried_mid-paragraph NO:question_heading_with_answer_3_paragraphs_later; eg: no_snippet >> H2:\"What_is_X?\" + 50-word_answer + expanded_detail",
+    "domain": "seo",
+    "tags": ["featured-snippets", "position-zero", "on-page-seo", "content-structure", "technical-seo"]
+  },
+  {
+    "principle": "Audit Core Web Vitals in field data not just lab data — lab tools simulate ideal conditions while field data shows what real users on real devices actually experience",
+    "explanation": "X.seo|cwv_field_data: lab_data(Lighthouse+PageSpeed): simulated_network+CPU -> optimistic_scores; field_data(CrUX): real_users_real_devices_real_networks -> what_Google_uses_for_ranking; sources: (1)Google_Search_Console_Core_Web_Vitals_report (2)PageSpeed_Insights_field_section (3)CrUX_API; 75th_percentile_rule: 75%_of_visits_must_pass_threshold; segment_by_device(mobile_often_fails_while_desktop_passes); NO:optimizing_only_for_Lighthouse_score NO:checking_field_data_once_not_monitoring; eg: Lighthouse_100_score+GSC_showing_CWV_failures >> fix_field_data_issues_first",
+    "domain": "seo",
+    "tags": ["core-web-vitals", "field-data", "crux", "technical-seo", "performance", "ranking-factors"]
+  }
+]

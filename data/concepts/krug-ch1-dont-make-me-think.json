@@ -1,0 +1,32 @@
+[
+  {
+    "principle": "Design every page to be self-evident first, self-explanatory as fallback — anything requiring explanation is a design failure",
+    "explanation": "X.ux|clarity_tiers: 3_levels: (1)self-evident=gets_it_at_glance_zero_thought (2)self-explanatory=little_thought_but_gets_it_quickly (3)requires_explanation=design_failure; goal=tier_1_always; settle_for_tier_2_only_for_genuinely_novel_or_complex_features; tier_2_achieved_by: appearance+naming+layout+minimal_crafted_text_working_together; NO:counting_on_tooltips+FAQs+onboarding_to_compensate_for_unclear_UI NO:\"it_makes_sense_once_you_learn_it\"; eg: feature_nobody_gets_at_glance >> redesign_until_self-evident_or_self-explanatory",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "self-evident", "clarity", "affordance", "learnability"]
+  },
+  {
+    "principle": "Clickable elements must look clickable before hover — discovering interactivity by mousing over is a question mark that erodes confidence",
+    "explanation": "X.ux|clickability_appearance: user_must_never_think_\"is_this_clickable?\"; hover-to-discover=failed_affordance; cursor_change_alone=insufficient_signal; rule: buttons_look_like_buttons(border+color+shadow); links_look_like_links(color+underline); applies_to: nav_items+CTAs+cards+icons+inline_text; NO:flat_text_that_only_reveals_pointer_on_hover NO:fully_clickable_card_that_looks_decorative NO:CTA_styled_as_plain_unstyled_text; eg: grey_flat_\"Learn_more\"_text >> blue_underlined_link_OR_clearly_bordered_button",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "affordance", "clickability", "buttons", "links", "hover"]
+  },
+  {
+    "principle": "Every question mark a user forms adds to cognitive load — individually trivial but cumulatively they drain energy and destroy confidence in the site",
+    "explanation": "X.ux|question_mark_tax: each_forced_thought=tiny_cognitive_cost; typical_triggers: \"where_am_I?\"+\"where_do_I_start?\"+\"why_did_they_call_it_that?\"+\"can_I_click_that?\"+\"are_those_two_links_the_same?\"; small_marks_accumulate->distract_from_actual_task->drain_energy+enthusiasm; cumulative_effect: user_makes_errors+gives_up+loses_confidence+blames_themselves; design_target: zero_question_marks=effortless_flow; NO:clever_names_that_need_one_second_to_parse NO:visual_ambiguity_that_only_resolves_on_hover; eg: \"Job-o-Rama\"(question_mark) vs \"Jobs\"(zero_marks)",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "cognitive-load", "question-marks", "clarity", "mental-effort"]
+  },
+  {
+    "principle": "Accept whatever users type and infer the search type — forcing users to pre-classify input before searching is structural friction",
+    "explanation": "X.ux|search_intent_inference: structural_burden=making_user_choose_HOW_to_search_before_searching; Author/Title/Keyword_dropdown=3_decisions_before_any_value; rule: single_input_box+infer_intent_from_what_user_types; model: Amazon_no_search_type_selector->figures_out_what_user_means; applies_to: search+forms+any_input_requiring_pre-classification; NO:\"Quick_Search\"_vs_\"Advanced_Search\"_as_first_choice NO:required_category_selector_before_text_input NO:\"enter_as_keyword_or_phrase\"_instruction; eg: Author/Title/Keyword_dropdown+field >> single_\"Search_books_for___\"_box",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "search", "cognitive-load", "input-design", "forms", "intent-inference"]
+  },
+  {
+    "principle": "Users blame themselves for confusing interfaces not the designer — bad UX is invisible in metrics until users quietly stop returning",
+    "explanation": "X.ux|self_blame_trap: assumption: frustrated_users_leave_immediately; reality: many_keep_struggling+blame_themselves; reasons: sunk_cost_effect+no_known_alternative+fear_of_looking_incompetent; effect: bad_UX_hides_in_metrics(no_obvious_bounce)+silently_erodes_brand_trust+user_self-confidence; usability_test_signal: testers_apologize_for_\"failing\"; warning: zero_complaints_does_NOT_mean_clear_design; NO:using_low_support_tickets_as_proof_UX_is_fine NO:\"nobody_complained\"; eg: user_abandons_ambiguous_form_thinking_they_made_mistake >> form_actually_had_unclear_error_state",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "user-psychology", "self-blame", "ux-metrics", "hidden-friction"]
+  }
+]

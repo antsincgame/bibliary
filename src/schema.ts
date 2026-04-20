@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const DOMAINS = ["ui", "web", "mobile", "ux", "perf", "arch", "copy", "seo"] as const;
+const DOMAINS = ["ui", "web", "mobile", "ux", "perf", "arch", "copy", "seo", "research"] as const;
 
 export const ConceptSchema = z.object({
   principle: z.string().min(3).max(300),

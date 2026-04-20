@@ -1,0 +1,32 @@
+[
+  {
+    "principle": "Build flat site architecture so any page is reachable in as few clicks as possible — deep hierarchies bleed PageRank before it reaches destination pages and make users abandon before getting there",
+    "explanation": "X.seo|flat_vs_deep: flat_site: every_page_reachable_in_fewer_clicks -> more_link_equity_flows_to_all_pages -> easier_to_crawl; deep_site: link_equity_diluted_at_each_level+users_abandon_before_destination; rule: important_pages_close_to_root; caveat: dont_dump_200+_links_on_home_page(each_gets_tiny_fraction_of_PageRank); balance: flat_architecture+reasonable_link_density_per_page; NO:product_pages_buried_5+_clicks_from_home NO:1000_links_on_homepage_attempting_flatness; eg: /category/product >> /dept/category/sub/type/product -> PageRank_barely_reaches_it",
+    "domain": "seo",
+    "tags": ["site-architecture", "flat-hierarchy", "pagerank", "art-of-seo", "crawlability"]
+  },
+  {
+    "principle": "Use static keyword-targeted URL slugs — dynamic parameter-based URLs give crawlers no semantic signal and make pages harder to find, share, and rank",
+    "explanation": "X.seo|url_structure: static_keyword_urls > dynamic_parameter_urls; benefits: always_at_same_location+semantic_clues_about_content+better_CTR_in_SERP+easier_to_share; url_depth_implies_importance: /dog-food > /pet-store/dogs/dry-food/premium; avoid: session_IDs_in_URL+long_query_strings+numbers-only_slugs; important: deeper_URL_assumed_less_important_by_crawlers; NO:example.com/p?cat=4&id=87 NO:example.com/page_1234; eg: /products?id=9876&session=abc >> /blue-widgets-for-home -> semantic+stable+crawlable",
+    "domain": "seo",
+    "tags": ["url-structure", "url-slugs", "technical-seo", "art-of-seo", "crawlability"]
+  },
+  {
+    "principle": "The title tag is the only meta element that directly influences ranking — write a unique 65-character title for every page with primary keywords near the front and brand name at the end",
+    "explanation": "X.seo|title_tag: only_meta_element_directly_influencing_relevance+ranking; rules: unique_per_page+corresponds_to_actual_page_content+65_chars_max+primary_keyword_near_beginning+brand_at_end; Google_may_rewrite_if_title_doesnt_match_content; test_variants: use_PPC_ad_text_CTR_data_to_improve_organic_titles; keyword_first_best_practice: industry_standard_despite_Google_reps_disputing_it; NO:same_title_on_multiple_pages NO:brand_name_first_pushing_keywords_right; eg: Acme_Inc_-_Blue_Widget >> Blue_Widgets_for_Home_Use_|_Acme -> keywords_first",
+    "domain": "seo",
+    "tags": ["title-tag", "on-page-seo", "ranking-factors", "art-of-seo", "metadata"]
+  },
+  {
+    "principle": "Write a unique meta description for every page as soft-sell copy describing the benefit of clicking — Google bolds keywords from the query in your snippet, which increases CTR and indirectly boosts rankings",
+    "explanation": "X.seo|meta_description: not_a_direct_ranking_factor BUT CTR_affects_ranking; rules: unique_per_page+155-160_chars+include_target_keywords(bolded_in_SERP)+soft_sell_copy+describe_benefit_of_clicking; organic_searchers=research_mode(NOT_buy_mode) -> dont_use_PPC_hard_sell_copy; NO:same_meta_description_across_multiple_pages NO:keyword_stuffing_without_compelling_benefit; eg: Buy_our_widgets_now! >> Discover_lightweight_widgets_trusted_by_50k_homeowners -> more_clicks",
+    "domain": "seo",
+    "tags": ["meta-description", "ctr-optimization", "on-page-seo", "art-of-seo", "snippets"]
+  },
+  {
+    "principle": "Use heading tags as a strict semantic hierarchy — H1 carries the most ranking weight, should contain the primary keyword, and appears once per page; never use headings purely for visual styling",
+    "explanation": "X.seo|heading_tags: hierarchy: H1=page_headline(heaviest_weight)+H2=subheadings+H3=tertiary; if_page_has_only_H2+H3: H2_becomes_heaviest; one_H1_per_page(conventional_best_practice)+include_primary_keyword; sequential_order: H1->H2->H3(no_skipping_levels); crawlers_weight_higher_level_headings_more; headings_reinforce_topical_structure; NO:heading_tags_used_only_for_visual_size_effect NO:multiple_H1_tags_on_one_page NO:skipping_H1_to_start_with_H2; eg: page_about_blue_widgets: H1=Blue_Widgets -> H2=Types_of_Blue_Widgets -> H3=Plastic_Options",
+    "domain": "seo",
+    "tags": ["heading-tags", "h1", "on-page-seo", "art-of-seo", "semantic-html"]
+  }
+]

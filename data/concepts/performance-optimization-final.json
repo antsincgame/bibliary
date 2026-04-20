@@ -1,0 +1,50 @@
+[
+  {
+    "principle": "Eliminate render-blocking resources by inlining critical CSS and deferring everything else — the browser cannot paint until all render-blocking resources in <head> are processed",
+    "explanation": "X.perf|render_blocking: render_blocking_resource: browser_pauses_DOM_parsing_until_downloaded+parsed; CSS_in_<head>: always_blocks; fix: (1)extract_above-fold_CSS->inline_in_<style>_in_<head> (2)remaining_CSS: <link_media=print_onload=this.media='all'> (3)JS: defer_or_async_always; tool: Coverage_tab_Chrome_DevTools_shows_unused_CSS%; NO:<link_rel=stylesheet>_without_strategy NO:<script>_without_defer_in_<head>; eg: 8_CSS_files_in_<head> >> critical_CSS_inlined+rest_loaded_async",
+    "domain": "perf",
+    "tags": ["render-blocking", "critical-css", "lcp", "performance", "core-web-vitals"]
+  },
+  {
+    "principle": "Lazy-load every image below the fold and never lazy-load the LCP element — the LCP image must start loading before the browser finishes parsing the HTML",
+    "explanation": "X.perf|image_lazy_load: LCP_image: must_load_ASAP -> loading=\"eager\"(default)+rel=preload_in_<head>; below-fold_images: loading=\"lazy\" -> not_fetched_until_scroll; preload_LCP: <link_rel=preload_as=image_href=hero.webp_fetchpriority=high>; fetchpriority=high: signals_browser_priority; NO:loading=\"lazy\"_on_LCP_image NO:no_preload_for_LCP_image_discovered_late_in_CSS; eg: all_images_lazy >> hero_img:eager+preload+fetchpriority=high; below_fold:lazy",
+    "domain": "perf",
+    "tags": ["lazy-loading", "lcp", "images", "performance", "preload"]
+  },
+  {
+    "principle": "Split JavaScript bundles by route and lazy-load non-critical features — a monolithic bundle parsed on every page forces users to pay the CPU cost of code they never run",
+    "explanation": "X.perf|code_splitting: monolith_bundle: one_JS_file_all_features -> parse+compile_all_on_every_page; route_splitting: each_route_gets_own_chunk -> only_current_route_parsed; dynamic_import: import(\"./heavy-modal\")_on_interaction -> zero_cost_until_needed; Next.js: automatic_route_splitting; metrics: check_Coverage_DevTools+unused_JS%; NO:importing_entire_library_for_one_function NO:loading_chart_library_on_pages_with_no_charts; eg: 400kb_bundle_every_page >> 60kb_shell+lazy_chunks_per_route",
+    "domain": "perf",
+    "tags": ["code-splitting", "bundle-size", "javascript", "performance", "lazy-loading"]
+  },
+  {
+    "principle": "Set immutable cache headers on versioned static assets and short max-age on HTML — static assets never change at the same URL, HTML must reflect fresh content",
+    "explanation": "X.perf|caching_strategy: two_categories: (1)versioned_static(JS+CSS+images_with_hash): Cache-Control:public,max-age=31536000,immutable -> browser_never_re-fetches (2)HTML+API_responses: Cache-Control:no-cache OR max-age=0,must-revalidate -> always_validates; CDN: Stale-While-Revalidate: serves_stale+revalidates_async; NO:long_max-age_on_HTML NO:no_cache_on_static_assets_with_content_hash; eg: styles.css_no_cache >> styles.a3f2b1c.css_Cache-Control:immutable",
+    "domain": "perf",
+    "tags": ["caching", "cache-control", "cdn", "performance", "http-headers"]
+  },
+  {
+    "principle": "Serve images at the exact rendered size and in next-gen formats — an image 3x larger than its display container wastes bandwidth on every single page load",
+    "explanation": "X.perf|responsive_images: srcset+sizes: browser_picks_smallest_sufficient_image; format_priority: AVIF > WebP > JPEG/PNG; size_rule: largest_displayed_size +20% max; <picture>_element: serve_AVIF_with_JPEG_fallback; compression: lossy_JPEG_at_80%_quality ~ lossless_at_40%_size; NO:serving_2000px_image_in_300px_container NO:PNG_for_photos NO:no_srcset_on_responsive_images; eg: single_large_src >> <picture><source_srcset=img.avif><img_srcset=img-400.webp_800w_img-800.webp_1600w_sizes=\"(max-width:768px)_400px,800px\">",
+    "domain": "perf",
+    "tags": ["images", "responsive-images", "webp", "avif", "performance", "bandwidth"]
+  },
+  {
+    "principle": "Reduce JavaScript execution time by deferring non-essential third parties until after first user interaction — the main thread cost of loading analytics and chat on page load is paid by every user",
+    "explanation": "X.perf|main_thread_budget: total_JS_execution_budget: ~3-4s_on_midrange_mobile; every_third_party_script_consumes_budget; defer_strategy: (1)analytics: load_after_first_interaction OR_on_idle (2)chat_widgets: facade_on_load -> real_on_click (3)A/B_test: synchronous_in_<head>_is_worst -> move_to_edge (4)social_embeds: facade_pattern; tool: measure_with_WebPageTest_filmstrip; NO:4+_third-party_scripts_synchronously_in_<head>; eg: 6_scripts_in_<head> >> 1_sync(critical_analytics)+5_deferred_to_idle",
+    "domain": "perf",
+    "tags": ["javascript", "third-party", "main-thread", "performance", "inp"]
+  },
+  {
+    "principle": "Reserve space for every dynamically loaded element with explicit CSS dimensions — late-injected ads and images without reserved space are the most common source of CLS failures",
+    "explanation": "X.perf|cls_space_reservation: CLS_sources: (1)images_without_width+height (2)ad_slots_without_min-height (3)web_fonts_causing_FOUT (4)dynamically_injected_content_above_existing_content; fix: (1)aspect-ratio_CSS_on_image_containers (2)min-height_on_ad_slots (3)font-display:optional (4)inject_content_only_below_fold; CLS_budget:0.1; measure: Cumulative_Layout_Shift_in_GSC+Lighthouse; NO:ad_container_no_dimensions NO:injecting_banner_above_nav_on_load; eg: ad_slot_no_height -> layout_jump >> ad_slot_min-height:90px_reserved",
+    "domain": "perf",
+    "tags": ["cls", "layout-shift", "ads", "performance", "core-web-vitals"]
+  },
+  {
+    "principle": "Preconnect to every critical third-party origin in the document head — DNS lookup, TCP handshake and TLS negotiation add 150-500ms per new origin before a single byte downloads",
+    "explanation": "X.perf|preconnect_origins: new_origin_cost: DNS(20-120ms)+TCP(1_RTT)+TLS(1-2_RTT) = 150-500ms_before_first_byte; preconnect: <link_rel=preconnect_href=https://fonts.googleapis.com>_resolves_this_early; dns-prefetch: lighter_version(DNS_only); use_preconnect_for: fonts+CDN+analytics+API_origins_used_in_first_paint; max_4-6_preconnects(each_holds_socket); NO:preconnecting_to_10+_origins NO:no_preconnect_on_font_CDN; eg: font_loaded_late -> FOUT >> <link_rel=preconnect_href=https://fonts.gstatic.com_crossorigin>",
+    "domain": "perf",
+    "tags": ["preconnect", "dns-prefetch", "latency", "performance", "resource-hints"]
+  }
+]

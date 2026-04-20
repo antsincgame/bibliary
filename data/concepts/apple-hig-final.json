@@ -1,0 +1,62 @@
+[
+  {
+    "principle": "Use iOS system navigation patterns instead of custom ones — swipe-to-go-back, tab bars, and back buttons are learned behaviors that custom navigation forces users to re-learn",
+    "explanation": "X.mobile|ios_system_nav: custom_nav_pattern -> learning_overhead + gesture_conflicts; system_patterns: UINavigationController_push (drill-down), UITabBarController (context_switch), UIPageViewController (sequential); swipe_back: always_enabled_on_pushed_screens; NO:custom_swipe_gesture_that_conflicts_with_system_back NO:replacing_tab_bar_with_custom_floating_dock; eg: custom_back_button_with_no_swipe >> UINavigationController_standard_back+system_swipe_back",
+    "domain": "mobile",
+    "tags": ["ios", "navigation", "apple-hig", "patterns", "native-ui"]
+  },
+  {
+    "principle": "Support Dynamic Type for all text in your app — users who set Accessibility Large Text sizes need content to scale or the app is unusable",
+    "explanation": "X.mobile|dynamic_type: fixed_font_sizes -> inaccessible_for_large_text_users(up_to_310%_scale); implementation: semantic_text_styles(UIFont.TextStyle.body+headline+caption) NOT fixed_pt_sizes; SwiftUI: .font(.body)+.dynamicTypeSize(.xSmall..._.accessibility5); test: run_at_XXXLarge_accessibility_size; NO:hardcoded_UIFont.systemFont(ofSize:14) NO:truncating_all_text_at_max_size; eg: UIFont.systemFont(ofSize:16) >> UIFont.preferredFont(forTextStyle:.body)",
+    "domain": "mobile",
+    "tags": ["ios", "accessibility", "typography", "dynamic-type", "apple-hig"]
+  },
+  {
+    "principle": "Use SF Symbols for all in-app icons — they inherit text weight, scale with Dynamic Type, adapt to dark mode, and support all 11 rendering modes automatically",
+    "explanation": "X.mobile|sf_symbols: custom_icons: fixed_size+weight+color -> misaligned_with_system_font; SF_Symbols: vector+semantic_weight(ultralight_to_heavy)+multicolor+hierarchical+palette+monochrome; SwiftUI: Image(systemName:\"star.fill\")+.imageScale(.large); match_symbol_weight_to_adjacent_text_weight; NO:PNG_icons_next_to_SF_Symbol_text NO:custom_icons_for_concepts_covered_by_SF_Symbols; eg: custom_32px_star_PNG >> Image(systemName:\"star.fill\")+.fontWeight(.semibold)",
+    "domain": "mobile",
+    "tags": ["ios", "icons", "sf-symbols", "apple-hig", "accessibility"]
+  },
+  {
+    "principle": "Always lay out content within safe area insets — ignoring safe areas clips content under the Dynamic Island, notch, status bar, or home indicator",
+    "explanation": "X.mobile|safe_area_insets: status_bar+notch+dynamic_island+home_indicator == unsafe_zones; UIKit: constraintToSafeAreaLayoutGuide NOT superview; SwiftUI: default_behavior_respects_safe_area; override_carefully: background_colors_can_extend_behind_unsafe_zones(ignoresSafeArea(.all,edges:.top)); interactive_elements: must_stay_in_safe_zone; NO:constraining_buttons_to_superview_bottom NO:text_starting_at_y:0; eg: button_fixed_to_screen_bottom >> button_constrained_to_safeAreaLayoutGuide.bottomAnchor",
+    "domain": "mobile",
+    "tags": ["ios", "layout", "safe-area", "apple-hig", "iphone", "notch"]
+  },
+  {
+    "principle": "Use sheets for modal presentations on iOS — center-screen dialogs are a desktop pattern and conflict with thumb-based dismissal via swipe-down",
+    "explanation": "X.mobile|ios_sheets: UIAlertController: only_for_brief_alerts(1-2_actions); full_modal_content: UISheetPresentationController(.medium OR .large detent); SwiftUI: .sheet()+.presentationDetents([.medium,.large]); dismiss: swipe_down OR explicit_button; medium_detent: shows_partial_content(~50%_screen); full_detent: full_screen_form/flow; NO:custom_center_dialog_overlays NO:bottom_sheet_with_no_drag_indicator; eg: UIViewController_presented_fullscreen >> UISheetPresentationController_medium_detent",
+    "domain": "mobile",
+    "tags": ["ios", "sheets", "modal", "apple-hig", "interaction-patterns"]
+  },
+  {
+    "principle": "Use semantic system colors not hardcoded hex values — semantic colors like label, secondaryLabel, systemBackground automatically adapt to dark mode and accessibility contrast modes",
+    "explanation": "X.mobile|ios_semantic_colors: hardcoded_hex: #000000 -> black_in_dark_mode(invisible); semantic_colors: UIColor.label(text)+UIColor.secondaryLabel(supporting)+UIColor.systemBackground+UIColor.systemFill; SwiftUI: .foregroundStyle(.primary)+.background(.regularMaterial); dark_mode: automatic; high_contrast: automatic; NO:Color(#1A1A1A)_for_body_text NO:UIColor.black_for_any_text; eg: UIColor(red:0.1,green:0.1,blue:0.1,alpha:1) >> UIColor.label",
+    "domain": "mobile",
+    "tags": ["ios", "color", "dark-mode", "apple-hig", "accessibility", "semantic-colors"]
+  },
+  {
+    "principle": "Add haptic feedback at the moment of confirmation and error — haptics confirm actions that have no visible instant feedback and reduce user uncertainty",
+    "explanation": "X.mobile|haptic_feedback: silent_actions -> user_wonders_if_tap_registered; haptic_types: UINotificationFeedbackGenerator(.success/.warning/.error); UIImpactFeedbackGenerator(.light/.medium/.heavy); UISelectionFeedbackGenerator; use_cases: form_submit_success=.success; destructive_confirm=.warning; validation_error=.error; selection_change=.selection; NO:haptics_on_every_tap NO:heavy_impact_for_subtle_actions; eg: silent_form_submit >> UINotificationFeedbackGenerator.notificationOccurred(.success)",
+    "domain": "mobile",
+    "tags": ["ios", "haptics", "feedback", "apple-hig", "interaction", "ux"]
+  },
+  {
+    "principle": "Use tab bars for top-level context switching and navigation controllers for hierarchical drilling — mixing the two patterns creates unresolvable navigational confusion",
+    "explanation": "X.mobile|ios_nav_model: tab_bar: switches_between_independent_sections(Home/Search/Profile); each_tab_has_own_nav_stack; nav_controller: push_into_detail -> pop_back; mix_antipattern: tab_that_pushes_into_another_tab_content; rule: tapping_tab_returns_to_root_of_that_tab(double-tap); max_tabs: 5(use_More_for_overflow); NO:nav_push_that_switches_tab NO:tabs_within_pushed_detail_screen; eg: settings_pushed_from_home_tab >> settings_as_its_own_tab_with_own_nav_stack",
+    "domain": "mobile",
+    "tags": ["ios", "navigation", "tab-bar", "apple-hig", "information-architecture"]
+  },
+  {
+    "principle": "Never intercept or override iOS system gestures — blocking swipe-from-edge, pinch-to-zoom, or notification-center-swipe breaks user expectations formed across all iOS apps",
+    "explanation": "X.mobile|ios_system_gestures: swipe_from_left_edge == system_back; swipe_from_top == notification_center; pinch == zoom_on_web/maps; intercepting: conflict_with_system -> user_confusion+frustration; custom_gesture: must_NOT_overlap_with_system_gesture_regions; UIScrollView_edge_pan: configure_with_interactivePopGestureRecognizer_NOT_override; NO:custom_leftEdgePan_overriding_system_back NO:disabling_UIScrollView_bouncing; eg: custom_drawer_on_left_edge >> use_right_edge_or_button_instead",
+    "domain": "mobile",
+    "tags": ["ios", "gestures", "apple-hig", "interaction", "system-integration"]
+  },
+  {
+    "principle": "Design loading states with skeleton screens not spinner overlays — skeleton screens preserve layout structure and feel faster even at identical load times",
+    "explanation": "X.mobile|skeleton_screens: spinner_overlay: blocks_entire_UI -> perceived_freeze; skeleton: shows_layout_with_placeholder_shapes -> brain_predicts_content_before_it_arrives; implementation: use_shimmer_animation_on_gray_placeholder_shapes; match_skeleton_to_actual_content_layout_exactly; when_to_use: content_loading_over_500ms; below_500ms: no_loading_state_needed(flash_feels_worse); NO:full_screen_activity_indicator_for_content_loads NO:skeleton_that_differs_from_real_layout; eg: UIActivityIndicatorView_full_screen >> skeleton_cells_with_shimmer",
+    "domain": "mobile",
+    "tags": ["ios", "loading-states", "skeleton-screens", "apple-hig", "performance-perception"]
+  }
+]

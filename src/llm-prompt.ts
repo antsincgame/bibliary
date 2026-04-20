@@ -5,7 +5,7 @@ async function promptLLM(): Promise<void> {
   const { points } = await qdrant.scroll(COLLECTION_NAME, { limit: 100 });
 
   const concepts = points
-    .map((p) => p.payload.explanation)
+    .map((p) => (p.payload as Record<string, unknown>).explanation)
     .join("\n");
 
   const prompt = `You are an expert copywriter analyzing foundational writing principles from a Russian book "Пиши, сокращай" (Write, Shorten).

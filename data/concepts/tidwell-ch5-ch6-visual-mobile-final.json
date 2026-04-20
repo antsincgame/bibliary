@@ -1,0 +1,32 @@
+[
+  {
+    "principle": "Visual design quality is the #1 factor in website credibility — users decide whether to trust content by its appearance before reading a single word",
+    "explanation": "X.ui|visual_trust: Stanford_Web_Credibility_Project: appearance_#1_credibility_factor(above_reputation+customer_service+sponsorships); implication: poor_visual_design -> user_distrusts_content_regardless_of_quality; visual_language: conveys_brand_attitude+spirit+professionalism; never: treat_visual_design_as_cosmetic_afterthought; NO:launching_with_placeholder_visual_design_and_real_content; eg: identical_content_amateur_site+professional_site -> users_trust_professional_immediately -> read_more+convert",
+    "domain": "ui",
+    "tags": ["visual-trust", "credibility", "brand", "designing-interfaces", "aesthetics"]
+  },
+  {
+    "principle": "Visual hierarchy must make actionability and affordance self-evident — users should glance at a screen and immediately know what to do without reading any instructions",
+    "explanation": "X.ui|visual_hierarchy: five_properties: clarity+actionability+affordance(looks_like_what_it_does)+consistency+alignment; affordance_example: slightly_3D_button -> signals_clickability; color_accessibility: 10%_men_colorblind -> reinforce_critical_distinctions_with_shape+text(never_color_alone); contrast: dark_on_light+light_on_dark; nothing_random_in_layout; NO:relying_on_color_alone_for_critical_distinctions; eg: OK_grayed_vs_enabled >> OK_with_checkmark+green_both -> accessible",
+    "domain": "ui",
+    "tags": ["visual-hierarchy", "affordance", "accessibility", "designing-interfaces", "visual-design"]
+  },
+  {
+    "principle": "Mobile touch targets must be at least 48x48dp (Android) or 44x44pt (iOS) — fingertips are imprecise and undersized targets cause errors that erode user trust faster than any other mobile mistake",
+    "explanation": "X.mobile|touch_target: minimum: 48x48_dp_Android+44x44_pt_iOS; reason: finger_imprecise -> small_target -> missed_taps -> errors+frustration; applies_to: all_links+buttons+nav_items+form_controls; adjacent_targets_need_gap; most_mobile_errors_traced_to_target_too_small; NO:desktop_link_density_on_mobile NO:icon-only_buttons_smaller_than_44px; eg: small_text_links_on_touch_screen -> constant_wrong_taps >> large_tap_target_48dp -> accurate_every_time",
+    "domain": "mobile",
+    "tags": ["touch-target", "tap-size", "mobile-design", "designing-interfaces", "accessibility"]
+  },
+  {
+    "principle": "Mobile users are interrupted and multitasking — design for one-handed thumb reach, minimal input, and instant value on launch; never assume a user's full attention",
+    "explanation": "X.mobile|limited_attention: context: walking+riding+talking+meeting while_using_phone; implications: minimize_required_input+reduce_steps_to_goal+support_interruption_recovery(restore_state)+one-handed_thumb_reach_for_primary_actions; design_for: Microbreaks(2_min)+immediate_value+no_required_setup_before_first_value; NO:desktop_feature_parity_ported_directly_to_mobile NO:long_forms_requiring_sustained_attention; eg: 7-step_mobile_checkout >> 3-step+autofill -> completion_rate_doubles",
+    "domain": "mobile",
+    "tags": ["mobile-attention", "one-handed", "microbreaks", "designing-interfaces", "mobile-ux"]
+  },
+  {
+    "principle": "Use infinite scroll for bottomless lists like feeds and search results — appending content as the user scrolls avoids the context shift of paginated navigation and keeps desired items always reachable",
+    "explanation": "X.mobile|infinite_list: use_when: long_list_where_desired_items_likely_near_top+but_sometimes_deeper(email+search+feed); how: load_1-2_screenfuls_initially -> append_more_as_user_reaches_bottom; benefit: fast_initial_load+no_page_navigation_context_shift+under_user_control; caveat: NOT_for_tasks_where_user_needs_to_bookmark_position; NO:infinite_scroll_for_task-completion_flows NO:no_feedback_when_more_items_are_loading; eg: paginated_search_results -> new_page_resets_scroll >> infinite_scroll -> results_appear_seamlessly",
+    "domain": "mobile",
+    "tags": ["infinite-list", "infinite-scroll", "feeds", "designing-interfaces", "mobile-patterns"]
+  }
+]

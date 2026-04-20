@@ -1,9 +1,8 @@
 import * as readline from "node:readline";
-import { qdrant } from "./qdrant.client.js";
+import { qdrant, COLLECTION_NAME } from "./qdrant.client.js";
 import { embedQuery } from "./embed.js";
 import "dotenv/config";
 
-const COLLECTION = process.env.QDRANT_COLLECTION ?? "text-and-seo";
 const LM_STUDIO_URL = process.env.LM_STUDIO_URL ?? "http://localhost:1234";
 const TOP_K = 5;
 
@@ -16,7 +15,7 @@ const history: Message[] = [];
 
 async function searchConcepts(query: string): Promise<string[]> {
   const vector = await embedQuery(query);
-  const results = await qdrant.search(COLLECTION, {
+  const results = await qdrant.search(COLLECTION_NAME, {
     vector,
     limit: TOP_K,
     with_payload: true,
@@ -81,7 +80,7 @@ Rules:
 async function main(): Promise<void> {
   console.log("╔══════════════════════════════════════════╗");
   console.log("║  BIBLIARY RAG Chat                       ║");
-  console.log("║  Collection: " + COLLECTION.padEnd(28) + "║");
+  console.log("║  Collection: " + COLLECTION_NAME.padEnd(28) + "║");
   console.log("║  Type 'exit' to quit                     ║");
   console.log("╚══════════════════════════════════════════╝\n");
 

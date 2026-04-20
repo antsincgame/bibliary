@@ -1,0 +1,32 @@
+[
+  {
+    "principle": "Group related items into close proximity to create one visual unit — scattered equal-spaced elements imply no relationships and force the reader to figure out the organization themselves",
+    "explanation": "X.ui|proximity_grouping: equal_spacing_between_all -> no_implied_relationships -> reader_must_figure_out_hierarchy; group_related: items_that_belong_together -> close_proximity; unrelated_items -> physically_separated; result: organized_white_space+clear_reading_path+defined_start+defined_end; test: squint_and_count_visual_units -> more_than_3-5 -> group_some; NO:hit_Return_between_every_element NO:equal_space_above_and_below_headlines; eg: business_card_5_scattered_items >> name_group+contact_group_with_clear_separation",
+    "domain": "ui",
+    "tags": ["proximity", "grouping", "visual-design", "non-designers-design-book", "crap-principles"]
+  },
+  {
+    "principle": "Place a headline closer to the text below it than to the text above it — equal spacing traps white space between head and body and makes them appear unconnected",
+    "explanation": "X.ui|headline_proximity: equal_space_above_and_below_headline -> head_floats_unconnected -> reader_must_guess_what_it_belongs_to; rule: space_above_headline > space_below_headline; trapped_white_space: white_space_between_head_and_body -> visually_pushes_them_apart; mechanism: closer_proximity_implies_relationship; NO:same_Return_above_and_below_heads NO:auto_spacing_without_checking; eg: rack_card_equal_returns_everywhere >> head_closer_to_its_own_body_copy+more_space_above",
+    "domain": "ui",
+    "tags": ["proximity", "typography", "headline", "non-designers-design-book", "layout"]
+  },
+  {
+    "principle": "Squint your eyes and count where they stop — if more than three to five visual stopping points exist, group elements into fewer visual units",
+    "explanation": "X.ui|squint_test: squint_eyes -> count_where_eye_stops == count_visual_elements; if_count > 5 -> find_elements_that_belong_together -> group_into_proximity; side_effect: white_space_becomes_organized_automatically; purpose: fewer_visual_units -> clearer_organization+easier_reading_path; NO:counting_individual_text_items NO:grouping_unrelated_things_just_to_reduce_count; eg: resume_12_equal-spaced_sections >> 4_grouped_units(header+experience+education+contact)",
+    "domain": "ui",
+    "tags": ["proximity", "layout", "visual-design", "non-designers-design-book", "readability"]
+  },
+  {
+    "principle": "Proximity communicates relationship — elements close together imply connection, so never place unrelated items near each other just to fill space",
+    "explanation": "X.ui|proximity_implies_relationship: elements_close -> reader_assumes_relationship; filling_space_by_pushing_things_together -> creates_false_relationships; check: is_bullet_closer_to_its_text_or_to_next_item?; test: remove_element_and_see_if_remaining_group_still_makes_sense; NO:sticking_items_in_corners_because_space_is_empty NO:bullet_closer_to_previous_item_than_to_its_own_text; eg: newsletter_banner_random_placement >> vol_number+date_together_separate_from_tagline",
+    "domain": "ui",
+    "tags": ["proximity", "layout", "visual-design", "non-designers-design-book", "white-space"]
+  },
+  {
+    "principle": "Use paragraph space-before and space-after settings — not the Return key — to control exact spacing between elements and achieve precise visual groupings",
+    "explanation": "X.ui|paragraph_spacing_control: using_Return_key -> only_full_line_increments -> no_precise_control; style_sheets: set_exact_space_before+after_each_element_type; benefit: tight_leading_within_group + more_space_between_groups; tightening_leading: brings_list_items_together -> creates_room_for_space_above_headings; eg: menu_dish_name_close_to_description_but_more_space_before_next_dish; NO:double_Return_between_every_item NO:guessing_spacing_without_style_sheets; eg: all-caps_menu_double_returns >> lowercase+tight_within+space_between_sections",
+    "domain": "ui",
+    "tags": ["proximity", "typography", "layout", "non-designers-design-book", "paragraph-spacing"]
+  }
+]

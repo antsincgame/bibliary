@@ -1,0 +1,26 @@
+[
+  {
+    "principle": "Add low-stock badge and countdown timer as scarcity signals — show remaining units when below threshold and a live timer when offers have a deadline",
+    "explanation": "X.ux|scarcity_indicators: low_stock -> show_badge_on_card: \"Only 3 left\"; time_limited_offer -> countdown_timer_hh:mm:ss; stock_badge_threshold: <=5_units; timer_appears: <=24h_before_expiry; NO:false_scarcity_that_resets NO:permanent_\"limited_offer\"_without_real_deadline; eg: \"product_card_no_stock_info\" >> \"product_card + 'Only 2 left' badge + sale_timer\"",
+    "domain": "ux",
+    "tags": ["scarcity", "ecommerce", "urgency", "product-card", "conversion"]
+  },
+  {
+    "principle": "Include a customer photo upload section in reviews — real user photos of the product in use build more trust than model shots or text reviews alone",
+    "explanation": "X.ux|social_proof_ugc: model_photos == aspirational_but_distant; real_buyer_photos == relatable + trustworthy; add_to_reviews_section: photo_upload + verified_purchase_label; NO:text_only_reviews_section NO:brand_photos_in_review_area; eg: \"review_section_stars+text_only\" >> \"review_section: stars + text + customer_photos + 'Verified Purchase'\"",
+    "domain": "ux",
+    "tags": ["social-proof", "ugc", "reviews", "ecommerce", "trust"]
+  },
+  {
+    "principle": "Place 'cancel anytime' and 'no credit card required' text directly beneath the primary CTA — visible reassurance doubles trial signup rates",
+    "explanation": "X.ux|reciprocation_anxiety: paywall_or_trial_cta -> user_fears_commitment; add_reassurance_text_below_cta: 'Cancel anytime' OR 'No credit card required' OR 'Free for X days'; font_size: readable_NOT_fine_print; NO:bury_cancellation_policy_in_footer NO:cta_with_no_reassurance_on_subscription_pages; eg: \"CTA: 'Start Free Trial' alone\" >> \"CTA: 'Start Free Trial' + 'Cancel anytime, no questions asked'\"",
+    "domain": "ux",
+    "tags": ["reciprocation", "conversion", "cta", "subscription", "anxiety-reduction"]
+  },
+  {
+    "principle": "Every key action must return an explicit success state with a next step — a blank or unchanged screen after submit triggers anxiety and erodes trust",
+    "explanation": "X.ux|positive_reinforcement_success: key_action(payment+submit+save+delete) -> show: visual_confirmation + success_message + next_step_or_CTA; success_state: icon(checkmark) + headline + body_text + action; NO:blank_page_after_form_submit NO:silent_save_with_no_feedback; eg: \"form_submit -> same_page_blank\" >> \"form_submit -> checkmark + 'We got it! Expect a reply in 24h' + 'Back to home'\"",
+    "domain": "ux",
+    "tags": ["positive-reinforcement", "success-state", "feedback", "forms", "trust"]
+  }
+]

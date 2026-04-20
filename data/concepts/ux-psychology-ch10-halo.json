@@ -1,0 +1,20 @@
+[
+  {
+    "principle": "Reduce onboarding to the fewest steps needed to reach first value — every extra screen before the home screen erodes the halo the product may never recover",
+    "explanation": "X.ux|halo_onboarding: each_extra_step_before_value -> negative_first_impression -> distrust_of_entire_product; optimal: phone+OTP -> home_screen (skip profile_setup + tutorial + preferences); collect_extra_data_progressively_after_first_value; NO:full_profile_required_before_home NO:forced_tutorial_screens; eg: \"name+email+dob+preferences+tutorial -> home\" >> \"phone+OTP -> home (profile fills later)\"",
+    "domain": "ux",
+    "tags": ["halo-effect", "onboarding", "first-impression", "conversion", "mobile"]
+  },
+  {
+    "principle": "A single broken component triggers the Horns Effect — one bad search, broken form, or slow image makes users distrust the entire product; degrade gracefully or hide rather than show a broken state",
+    "explanation": "X.ux|halo_horns: broken_feature -> user_generalizes_to_entire_brand; logic: bad_search -> bad_products -> bad_company; NO:show_broken_search_results NO:empty_error_state_with_no_fallback; rule: if_feature_unreliable -> hide_behind_flag OR show_graceful_fallback; eg: \"search_returns_0_results_no_fallback\" >> \"search_shows_popular_categories_as_fallback\"",
+    "domain": "ux",
+    "tags": ["halo-effect", "horns-effect", "error-states", "fallback", "trust"]
+  },
+  {
+    "principle": "Maintain consistent visual quality across every screen — one low-quality screen breaks the halo built by all the polished ones",
+    "explanation": "X.ux|halo_visual_consistency: premium_home + degraded_settings_screen -> halo_broken; visual_quality_must_be_uniform_across_all_screens NOT only_hero+home; applies_to: error_pages + empty_states + loading_screens + settings; NO:polish_only_key_screens NO:placeholder_visuals_in_secondary_screens; eg: \"beautiful_home + unstyled_404_page\" >> \"same_design_system_applied_to_all_screens_incl_404\"",
+    "domain": "ux",
+    "tags": ["halo-effect", "visual-consistency", "design-system", "empty-states", "trust"]
+  }
+]

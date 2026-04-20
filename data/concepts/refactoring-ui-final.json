@@ -1,0 +1,62 @@
+[
+  {
+    "principle": "Create visual hierarchy by de-emphasizing secondary content rather than inflating primary content — making less important elements lighter achieves focus without size wars",
+    "explanation": "X.ui|deemphasis_hierarchy: primary_emphasis_trap -> inflate_font_size -> cramped_competing_elements; de-emphasis: secondary_color: gray-400_vs_gray-900 + weight: regular_vs_semibold -> primary_reads_first; test: cover_primary -> secondary_should_visually_recede; NO:making_everything_bold_to_compete NO:same_text_color_for_all_content; eg: all_card_items_same_weight >> title_gray-900_semibold+meta_gray-400_regular+timestamp_gray-300_small",
+    "domain": "ui",
+    "tags": ["visual-hierarchy", "typography", "refactoring-ui", "emphasis", "color"]
+  },
+  {
+    "principle": "Design in grayscale before adding color — if hierarchy is not clear in black and white, color will decorate the problem not solve it",
+    "explanation": "X.ui|grayscale_first: color_layered_on_broken_hierarchy -> problem_persists; correct_order: size+weight+spacing -> grayscale_hierarchy_solid -> add_color_for_personality+meaning; test: desaturate_design -> primary_CTA_must_still_dominate_all_competitors; NO:relying_on_color_as_only_hierarchy_signal NO:adding_color_before_layout_validated; eg: blue_button_hierarchy >> same_size_weight_white_button_failing >> fix_size+weight THEN add_color",
+    "domain": "ui",
+    "tags": ["visual-hierarchy", "color", "refactoring-ui", "design-process", "contrast"]
+  },
+  {
+    "principle": "Start every layout with more whitespace than you think you need and remove it selectively — cramped layouts result from building into already-tight containers",
+    "explanation": "X.ui|whitespace_first: assemble_in_tight_container -> squeeze_to_fit -> ugly_forced; correct: generous_padding(section:64-80px, card:32px, inline:16-24px) -> add_elements -> tighten_selectively; rule: if_it_feels_like_too_much -> probably_right; whitespace_signal: premium; NO:8px_padding_everywhere NO:tighten_first_then_breathe; eg: card_padding_8px_cramped >> card_padding_32px_then_reduce_where_justified",
+    "domain": "ui",
+    "tags": ["whitespace", "spacing", "refactoring-ui", "layout", "design-process"]
+  },
+  {
+    "principle": "Build a 9-shade color scale per hue before designing any component — picking shades on the fly produces multiple slightly-different versions of the same color fighting each other",
+    "explanation": "X.ui|palette_first: ad_hoc_shade_picking -> 7_competing_blues_in_one_UI; correct: define_before_design: 50(bg)+100+200+300+400+500(default)+600(hover)+700(active)+800+900(text); Tailwind_palette == validated_reference; mid-design_additions -> only_within_defined_scale; NO:hex_picked_per_component NO:fewer_than_5_shades_for_any_primary_color; eg: random_shades_per_card >> single_9-shade_scale_applied_consistently",
+    "domain": "ui",
+    "tags": ["color", "color-palette", "refactoring-ui", "design-system", "ui-tokens"]
+  },
+  {
+    "principle": "Never place neutral gray text on a colored background — use a color that shares the background hue at lower saturation to keep text visually connected to the surface",
+    "explanation": "X.ui|colored_bg_text: pure_gray_on_colored_bg -> text_appears_detached+muddy; fix: text_color_shares_hue_of_bg + higher_lightness + lower_saturation; eg: hsl(220,15%,75%) on hsl(220,60%,30%) == harmonious; white_text: valid_on_dark_surfaces; test: does_text_feel_like_it_belongs_to_this_surface? NO:#888_on_blue_card NO:opacity_hack_on_white; eg: gray-500_text_on_blue_card >> hsl(220,20%,70%)_text_on_blue_card",
+    "domain": "ui",
+    "tags": ["color", "text-on-color", "refactoring-ui", "contrast", "color-harmony"]
+  },
+  {
+    "principle": "Layer two box-shadows to simulate realistic depth — a single shadow reads as CSS, two shadows (one tight directional and one large ambient) read as light",
+    "explanation": "X.ui|two_layer_shadow: single_shadow == artificial_feel; two_layers: (1)directional: 0_1px_3px_rgba(0,0,0,0.06) + (2)ambient: 0_8px_24px_rgba(0,0,0,0.04) -> light_simulation; shadow_color: never_pure_black -> tint_with_surface_hue; elevation_scale: 3_sizes(card/modal/dropdown) each with own two-shadow pair; NO:box-shadow_single_dark_heavy NO:identical_shadow_on_all_elements; eg: 0_4px_6px_rgba(0,0,0,0.5) >> 0_1px_2px_rgba(0,20,60,0.05)+0_8px_20px_rgba(0,20,60,0.04)",
+    "domain": "ui",
+    "tags": ["shadows", "depth", "elevation", "refactoring-ui", "visual-design"]
+  },
+  {
+    "principle": "Set each form input width to match the expected length of its value — an oversized input for a short fixed-length value communicates designer misunderstanding and undermines form credibility",
+    "explanation": "X.ui|input_width_affordance: input_width == implicit_signal_of_expected_value_length; full_width: name+email+address(variable); fixed_narrow: phone+zip+CVV+date(known_length); implementation: width_in_ch_units OR fixed_px; principle: user_should_not_wonder_how_much_to_type; NO:full_width_inputs_for_all_fields NO:tiny_inputs_for_long_free_text; eg: 100%_width_input_for_4-digit_PIN >> 64px_fixed_width_for_PIN+full_width_for_address",
+    "domain": "ui",
+    "tags": ["forms", "input-design", "affordance", "refactoring-ui", "usability"]
+  },
+  {
+    "principle": "Design the empty state of every component before designing the full version — empty states are the first-run experience and components designed only with data look broken when empty",
+    "explanation": "X.ui|empty_state_first: design_with_data -> empty_state_afterthought -> onboarding_broken; empty_state_formula: (1)illustration_or_icon_for_context (2)why_it_is_empty (3)primary_CTA_to_fill_it; required_states: 0_items+1_item+many_items+loading; NO:blank_white_area_with_no_guidance NO:designing_only_with_perfect_dummy_data; eg: empty_list_shows_nothing >> icon_+_\"Add_your_first_project\"_+_CTA_button",
+    "domain": "ui",
+    "tags": ["empty-states", "onboarding", "refactoring-ui", "component-design", "ux"]
+  },
+  {
+    "principle": "Create hierarchy within a single font size using weight and color — same-size elements at different weights and shades create rhythm without breaking the type scale",
+    "explanation": "X.ui|within_size_hierarchy: size_cascade_problem: different_size_per_label -> broken_scale+chaotic_layout; same_size_3_levels: primary: weight_600+color_gray-900; secondary: weight_400+color_gray-500; tertiary: weight_400+color_gray-400; test: 3_levels_readable_at_same_size? -> hierarchy_working; NO:using_only_size_for_all_emphasis NO:more_than_3_text_sizes_in_a_card_component; eg: all_16px_gray_text >> 16px_semibold_gray-900 + 16px_regular_gray-500 + 16px_regular_gray-400",
+    "domain": "ui",
+    "tags": ["typography", "visual-hierarchy", "font-weight", "refactoring-ui", "color"]
+  },
+  {
+    "principle": "Add a 3–4px colored left or top border to a plain white card to elevate it without shadows — a single accent line replaces the need for elevation or colored backgrounds",
+    "explanation": "X.ui|accent_border_card: plain_white_card == bland+indistinct+floating; accent_border: border-left:4px_solid_primary OR border-top:3px_solid; effect: instant_hierarchy+personality without shadow or bg-color; use_for: status_cards+feature_items+highlighted_sections; color_meaning: success=green,warning=amber,info=blue,feature=primary; NO:heavy_shadows_everywhere_for_interest NO:full_card_bg_color_for_all_states; eg: white_card_with_no_identity >> white_card+4px_left_border_in_accent_color",
+    "domain": "ui",
+    "tags": ["cards", "accent", "border", "refactoring-ui", "visual-design", "component-design"]
+  }
+]

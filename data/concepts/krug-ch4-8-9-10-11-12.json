@@ -1,0 +1,56 @@
+[
+  {
+    "principle": "Make every navigation choice mindless and unambiguous — three effortless clicks equal one click that requires thought",
+    "explanation": "X.ux|mindless_choice: krug_law_2: click_count_irrelevant BUT cognitive_cost_per_click_matters; mindless_click=user_sees_one_obviously_correct_option; 3_unambiguous_clicks==1_click_requiring_thought; rule: each_branch_point_must_have_one_clearly_correct_answer; NO:binary_split_where_user_fits_both(\"Home/Office\") NO:internal_codename_in_nav(\"NAV_for_Win95/98\"_instead_of_\"Norton_AntiVirus\") NO:synonyms_presented_as_choices; eg: \"Products/Solutions/Services\"_ambiguous_overlap >> single_clear_category_user_already_uses",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "navigation", "cognitive-load", "mindless-choice", "information-scent"]
+  },
+  {
+    "principle": "There is no average user — replace design debates about what people like with direct observation of what specific people actually do",
+    "explanation": "X.ux|no_average_user: team_pattern: \"people_like_X\" == religious_debate(strongly_held_belief+no_proof_possible); truth: all_web_users_unique+all_web_use_idiosyncratic; myth_frames_design_as_preference_polling -> wrong_question; right_question: \"does_THIS_feature+words+context_work_for_OUR_users?\"; only_answer=watch_real_people_use_it; NO:design_meeting_vote_on_pulldowns_vs_links NO:\"everyone_loves_X\"_as_argument NO:focus_group_to_decide_UI_pattern; eg: 2_week_debate_on_nav_style >> 30min_watching_3_users_reveals_actual_blocker",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "usability-testing", "design-decisions", "average-user-myth", "religious-debates"]
+  },
+  {
+    "principle": "Focus groups reveal what users say they want — usability tests reveal whether users can actually complete the task",
+    "explanation": "X.ux|focus_vs_usability: focus_group=5-8_people_reacting_to_ideas -> learns_opinions+feelings+value_prop_appeal; usability_test=1_user_doing_real_task -> learns_whether_site_works; focus_groups_good: EARLY(before_building)+concept_testing+competitor_perception; NOT_good_for: \"does_checkout_work?\"; teams_often_test_drapes_and_discover_no_windows_in_room; NO:using_focus_group_to_verify_flow_clarity NO:switching_to_focus_group_when_budget_cut; eg: focus_group_loves_design >> usability_test_shows_nobody_finds_checkout_button",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "usability-testing", "focus-groups", "research-methodology", "user-research"]
+  },
+  {
+    "principle": "Test three users early and iterate rather than eight users once near launch — frequency of testing beats sample size every time",
+    "explanation": "X.ux|test_early_often: 3_users_early >> 50_users_late; first_3_users_surface_nearly_all_significant_problems; after_fix_round1->round2_users_find_NEW_layer_of_problems; 1_test_8_users_finds_5_problems; 2_tests_3_users_finds_9_problems; testing_one_user=100%_better_than_testing_none; NO:saving_testing_for_pre-launch_disaster_check NO:\"we_need_statistically_significant_N\"; make_testing_smallest_deal_possible_so_it_actually_happens; eg: 1_big_test_at_end >> 4_lightweight_rounds_throughout_dev_cycle",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "usability-testing", "iterative-design", "research-methodology", "testing-frequency"]
+  },
+  {
+    "principle": "Recruit any web user for usability tests — finding perfect participants causes fewer tests, and fewer tests costs more than imperfect participants",
+    "explanation": "X.ux|recruit_loosely: secret: participant_demographic_match_matters_far_less_than_test_frequency; rule: recruit_loosely+grade_on_curve(make_allowances_for_differences); reasons: (1)experts_appreciate_clarity_too (2)grandmother_can_use_it->expert_can (3)muddling_through_happens_at_every_expertise_level; exception: domain_knowledge_required(e.g._cardiologist_site)->test_at_least_1_round_with_real_users; NO:waiting_6_weeks_for_exact_persona_match_and_testing_once; eg: 6_week_wait_for_target_demographic >> 3_willing_colleagues_tested_next_Tuesday",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "usability-testing", "participant-recruitment", "research-methodology", "testing-frequency"]
+  },
+  {
+    "principle": "Every site starts each visit with a limited goodwill reservoir — mistakes drain it faster than good design refills it",
+    "explanation": "X.ux|goodwill_reservoir: user_arrives_with_limited_credit; drainers: hiding_phone+prices, punishing_format_errors(no_spaces_in_card), asking_unnecessary_personal_data, fake_sincerity(\"your_call_is_important\"), sizzle_before_content, amateurish_appearance; rebuilders: obvious_top_tasks_first, transparent_pricing+shipping, save_user_steps, visible_effort, real_candid_FAQs, graceful_error_recovery, honest_apology_when_failing; one_mistake_can_empty_full_reservoir; NO:hiding_support_number_to_reduce_calls NO:blank_page_after_form_submit NO:pushing_promotions_when_user_is_worried; eg: no_strike_info_on_airline_homepage >> status_banner+FAQ_about_rebooking",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "trust", "goodwill", "transparency", "error-recovery", "ux-ethics"]
+  },
+  {
+    "principle": "Screen reader users scan with their ears — front-load the meaningful word in every link and heading so they can skip irrelevant items at speed",
+    "explanation": "X.ux|screen_reader_scanning: blind_users=as_impatient_as_sighted+skip_forward_same_way; method: listen_first_few_words->if_irrelevant->skip_to_next; keyword_buried_at_end=may_never_be_heard; rules: (1)front_load_meaningful_word_in_links+headings+list_items (2)add_\"Skip_to_main_content\"_link_at_page_start(saves_20sec_nav_repeat) (3)make_all_content_keyboard_accessible (4)associate_form_labels_with_inputs_via_HTML_label_element; NO:\"Click_here_for_pricing\"(click=meaningless_first_word) NO:nav_without_keyboard_access; eg: \"Click_here_to_read_about_pricing\" >> \"Pricing_and_plans\"",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "accessibility", "screen-readers", "keyboard-navigation", "links"]
+  },
+  {
+    "principle": "Splash pages and gratuitous animations are a conversion tax — they signal you do not respect user time and every second of intro loses measurable completions",
+    "explanation": "X.ux|sizzle_tax: user_mindset=in_a_hurry; splash_page+long_animation=obstacle_before_value; signal_received: \"they_dont_understand_im_busy\"; executive_pizazz_push=judging_aesthetics_without_conversion_data; skip_link_on_splash=proof_you_know_it_wastes_time; NO:splash_page_even_with_skip_link NO:autoplay_audio_or_video NO:full_screen_interstitial_before_main_content NO:logo_animation_longer_than_300ms; eg: 5sec_animated_brand_intro >> static_logo+immediate_above_fold_content",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "conversion", "splash-page", "animation", "performance", "respect-time"]
+  },
+  {
+    "principle": "Ask only for the data needed to complete this exact transaction — every extra field yields fewer submissions and more fake data",
+    "explanation": "X.ux|minimum_data_ask: each_unnecessary_field_signals: (a)clueless_about_web OR (b)harvesting_for_other_purpose; both_damage_trust; three_harms: (1)users_lie(10%_subscribers_named_\"Barney_Rubble\") (2)fewer_completions(even_slight_length_increase_kills_submit_rate) (3)impression_damage_even_for_compliant_users; rules: only_ask_what_this_transaction_requires+no_optional_fishing_fields+show_value_user_receives_before_asking; NO:postal_address_on_newsletter_signup NO:phone_number_on_product_inquiry NO:occupation_on_free_sample_request; eg: 8_field_registration >> 2_fields(email+password)+explain_what_user_gets",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "forms", "conversion", "trust", "registration", "data-minimization"]
+  }
+]

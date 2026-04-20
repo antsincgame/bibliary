@@ -1,0 +1,32 @@
+[
+  {
+    "principle": "Define a visual framework once and apply it to every screen — colors, fonts, spacing, and writing style specified in a single system mean any new screen automatically looks on-brand",
+    "explanation": "X.ui|visual_framework: all_screen_templates_share: layout_grid+background+accent_colors+font_scale+writing_style+spacing; implementation: CSS_design_tokens+stylesheet -> change_once_applies_everywhere; benefit: separates_style_from_content -> tweak_independently; user_never_needs_to_relearn_layout_on_new_screens; NO:each_screen_designed_independently NO:ad-hoc_fonts_and_colors_per_page; eg: TED_site_limited_color+layout_grid -> any_new_page_immediately_looks_on_brand >> mismatched_per-page_styles -> inconsistent_experience",
+    "domain": "ui",
+    "tags": ["visual-framework", "design-system", "consistency", "designing-interfaces", "layout"]
+  },
+  {
+    "principle": "Place the primary content in the largest area with secondary tools clustered around it — users assess peripheral elements in relation to what's center, which eliminates the scanning effort of figuring out what comes first",
+    "explanation": "X.ui|center_stage: layout_rule: primary_content_2x_wider_than_side_margins+2x_taller_than_top_bottom; eye_flow: user_goes_to_center_first -> then_assesses_periphery_relative_to_center; use_when: single_unit_of_content+document_editing+primary_task+article_pages+maps; NO:equal-weight_two-column_layout_for_primary_task_screen; eg: two_equal_columns -> user_unsure_where_to_start >> large_canvas+small_side_tools -> primary_task_is_obvious",
+    "domain": "ui",
+    "tags": ["center-stage", "visual-hierarchy", "layout", "designing-interfaces", "composition"]
+  },
+  {
+    "principle": "Divide dense pages into named sections with strong visual titles — if you cannot give a section a short memorable name, the grouping itself is wrong and needs restructuring",
+    "explanation": "X.ui|titled_sections: purpose: structure_dense_content_into_scannable_chunks; benefit: IA_obvious_at_glance+eye_guided_through_page; diagnostic: cannot_name_section_briefly -> grouping_is_wrong(not_a_naming_problem); Miscellaneous_category -> sign_of_poor_grouping; pair_with: Module_Tabs+Accordion_when_still_overwhelming; NO:long_unsectioned_page_of_mixed_content NO:unlabeled_content_blocks; eg: settings_page_one_long_scroll >> settings_grouped_Security/Notifications/Account -> instantly_scannable",
+    "domain": "ui",
+    "tags": ["titled-sections", "content-grouping", "scanability", "designing-interfaces", "layout"]
+  },
+  {
+    "principle": "Use module tabs when users need only one content section at a time and sections are of similar height — make selected state visually unambiguous through more than color alone",
+    "explanation": "X.ui|module_tabs: use_when: heterogeneous_content+no_room_for_all+one_section_at_a_time+similar_height+fewer_than_10+static_set; selection_indicator: tab_contiguous_with_panel(not_color_alone); tabs_can_be: left_column+below+turned_sideways; vs_accordion: tabs=mutually_exclusive >> accordion=user_can_open_multiple_simultaneously; NO:color_only_to_show_selection NO:too_many_tabs_to_fit_in_one_row; eg: product_Description/Reviews/Specs_tabs -> one_shown_at_a_time",
+    "domain": "ui",
+    "tags": ["module-tabs", "content-switching", "layout", "designing-interfaces", "components"]
+  },
+  {
+    "principle": "Use accordions when users might need to view multiple content sections at once — unlike tabs they allow any combination to remain open, which makes them ideal for tool palettes users customize to their workflow",
+    "explanation": "X.ui|accordion: collinear_stack+panels_open_close_independently; vs_tabs: tabs=one_visible >> accordion=any_combination_open; best_for: tool_palettes+two-level_menus+user-customizable_workspaces; varying_heights_per_section: works_well; user_opens_preferred_tools_and_leaves_them_open -> personal_workspace_emerges; NO:accordion_when_only_one_section_should_ever_be_visible(use_tabs) NO:accordion_for_equal-height_uniform_content; eg: Photoshop_Layers+Color+Adjustments_panels -> any_combination_open",
+    "domain": "ui",
+    "tags": ["accordion", "collapsible", "tool-palette", "designing-interfaces", "layout"]
+  }
+]

@@ -1,11 +1,7 @@
-import { QdrantClient } from "@qdrant/js-client-rest";
+import { qdrant } from "./qdrant.client.js";
 import "dotenv/config";
 
-const qdrant = new QdrantClient({
-  url: process.env.QDRANT_URL ?? "http://localhost:6333",
-});
-
-const COLLECTION = process.argv[2] ?? "text-and-seo";
+const COLLECTION = process.argv[2] ?? process.env.QDRANT_COLLECTION ?? "concepts";
 
 async function init(): Promise<void> {
   const cols = await qdrant.getCollections();

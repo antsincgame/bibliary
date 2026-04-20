@@ -1,0 +1,44 @@
+[
+  {
+    "principle": "Offer exactly three pricing tiers and visually elevate the middle one — three options satisfy choice without paralysis, and the elevated middle tier captures the majority of conversions",
+    "explanation": "X.copy|pricing_three_tiers: psychology: three_options_optimal(two=no_context; four+=paralysis); middle_tier_effect: upper_option_makes_middle_seem_reasonable; lower_option_makes_middle_seem_quality; visual_elevation: border+badge(\"Most_popular\")+color_highlight+slight_scale; price_ratio: middle_should_be_~2-3x_basic; NO:two_tiers_only(no_anchor) NO:four+_tiers NO:all_tiers_same_visual_weight; eg: Basic$29+Pro$79+Enterprise_quote >> Basic$29+Pro$79(highlighted)+Enterprise$199",
+    "domain": "copy",
+    "tags": ["pricing", "pricing-page", "conversion", "persuasion", "three-tiers"]
+  },
+  {
+    "principle": "Lead with annual pricing as the default and show the savings explicitly — users anchored to annual first see monthly as a premium upgrade, not the other way around",
+    "explanation": "X.copy|annual_monthly_toggle: toggle_default_matters: monthly_default -> annual_feels_expensive_commitment; annual_default -> monthly_feels_convenient_but_costlier; annual_savings_display: show_both_% (\"Save_20%\") AND_$ saved; billing_label: \"per_month,_billed_annually\"_not_\"$X/year\"; toggle_placement: above_pricing_cards; NO:monthly_as_default_toggle NO:annual_savings_hidden_or_only_in_fine_print; eg: monthly_default_toggle >> annual_default+\"Save_20%\"_badge_on_toggle",
+    "domain": "copy",
+    "tags": ["pricing", "annual-pricing", "pricing-page", "conversion", "toggle"]
+  },
+  {
+    "principle": "Position the free plan as a gateway not a goal — free plan users who see what they cannot do convert to paid, free plan users who see all they can do never upgrade",
+    "explanation": "X.copy|freemium_gate_strategy: free_plan_purpose: convert_to_paid NOT serve_indefinitely; gate_strategy: free_plan includes_core_value(proves_product_works) + gates_growth_features(team+integrations+advanced_reports); upgrade_trigger: show_locked_features_prominently_when_user_hits_them; upgrade_nudge: contextual(\"Upgrade_to_unlock_this\"_at_point_of_need) > general_pricing_page; NO:free_plan_so_generous_no_reason_to_upgrade NO:gating_features_before_user_sees_value; eg: free_plan_with_all_features_limited_to_5 >> free_unlimited+gate_team_features",
+    "domain": "copy",
+    "tags": ["pricing", "freemium", "free-plan", "conversion", "upgrade"]
+  },
+  {
+    "principle": "Reframe annual price as a daily or weekly cost — $365/year triggers loss aversion, $1/day triggers comparison to coffee and feels negligible",
+    "explanation": "X.copy|price_framing_small: large_number_anchor: $365_feels_expensive; equivalent_small: $1/day_feels_trivial; comparison_frame: \"less_than_your_daily_coffee\"; Weber-Fechner: people_evaluate_proportionally_not_absolutely; use_alongside_real_price: \"$365/year_($1/day)\"; best_for: mid-market_B2C_and_prosumer; NOT_for: enterprise(procurement_doesn't_think_in_daily_coffee); NO:showing_only_annual_total NO:comparison_to_irrelevant_items; eg: \"$29/month\" >> \"$29/month — less_than_$1/day\"",
+    "domain": "copy",
+    "tags": ["pricing", "price-framing", "persuasion", "conversion", "copywriting"]
+  },
+  {
+    "principle": "Add a money-back guarantee badge adjacent to every primary pricing CTA — risk reversal converts fence-sitters who want the product but fear making a mistake",
+    "explanation": "X.copy|risk_reversal: buyer_hesitation: \"what_if_it_doesn't_work?\" = primary_objection_at_purchase; risk_reversal: remove_downside_risk -> lower_decision_barrier; types: (1)30/60-day_money_back_guarantee (2)free_trial_no_credit_card (3)cancel_anytime; placement: immediately_adjacent_to_CTA_button; wording: \"30-day_money-back_guarantee — no_questions_asked\"; NO:guarantee_buried_in_footer NO:guarantee_with_vague_conditions(\"at_our_discretion\"); eg: CTA_button_alone >> CTA_button+\"30-day_money-back_guarantee\"_below",
+    "domain": "copy",
+    "tags": ["pricing", "risk-reversal", "guarantee", "conversion", "trust"]
+  },
+  {
+    "principle": "Show the number of customers on each plan as social proof — per-plan counts anchor the 'most popular' tier with real evidence rather than a marketing badge",
+    "explanation": "X.copy|per_plan_social_proof: \"most_popular\"_badge: can_feel_arbitrary+marketing; real_count: \"Chosen_by_2,400_teams\"_on_pro_plan = verifiable_evidence; variant: logos_of_known_customers_under_enterprise_tier; per_plan_testimonial: one_specific_quote_matching_plan_type(\"Solo\" testimonial_under_basic; \"team\" testimonial_under_pro); NO:most_popular_badge_without_any_evidence NO:generic_testimonials_not_matched_to_plan; eg: \"Most_popular\"_badge >> \"Most_popular — used_by_3,200_teams\" [logo_strip]",
+    "domain": "copy",
+    "tags": ["pricing", "social-proof", "pricing-page", "trust", "conversion"]
+  },
+  {
+    "principle": "List features from the customer's most desired outcome down to operational details — pricing tables read top to bottom and most visitors decide on the first three feature lines",
+    "explanation": "X.copy|feature_list_order: pricing_table_scan: top_to_bottom; most_decisions: first_3_features; order_rule: (1)core_outcome_feature(what_they_came_for) (2)key_differentiator_between_tiers (3)support_level (4)limits(users+storage) (5)operational_details_last; NO:leading_with_storage_limits NO:alphabetical_feature_ordering NO:operational_items_above_value_items; eg: pricing_table_starting_with_\"5GB_storage\" >> pricing_table_starting_with_\"Unlimited_projects+team_collaboration\"",
+    "domain": "copy",
+    "tags": ["pricing", "pricing-table", "feature-list", "copywriting", "conversion"]
+  }
+]

@@ -1,0 +1,20 @@
+[
+  {
+    "principle": "Format every content block for scanning not reading — use headings every 2-3 paragraphs, bullet lists instead of comma-separated series, bold key terms on first mention, and keep paragraphs under 4 lines",
+    "explanation": "X.ux|scan_format: users_scan_at_60mph NOT read_like_literature; format_rules: heading_every_2-3_paragraphs + bulleted_list_for_any_series + bold_key_terms_first_occurrence + paragraphs_max_4_lines + single_sentence_paragraphs_OK; heading_spacing: closer_to_section_below NOT floating_between; generator_must: auto_break_long_text + convert_comma_series_to_list + inject_subheadings; NO:wall_of_text NO:floating_headings_equidistant_from_sections NO:long_paragraphs_without_visual_entry_points eg: \"dense_paragraph_with_embedded_list\" >> \"short_intro + bulleted_items + bold_key_terms\"",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "scanning", "content-formatting", "headings", "readability"]
+  },
+  {
+    "principle": "Users pick the first reasonable option not the best one — make the primary action win the scanning race through size, position, color and label clarity",
+    "explanation": "X.ux|satisficing: users_dont_compare_all_options -> click_first_reasonable_match; back_button == most_used_button; implication: primary_path_must_be_found_first_during_scan; winning_scan_race: top-left_placement_for_LTR + largest_clickable_element + high_contrast_color + label_matching_user_intent_words; secondary_options: visually_recessed + smaller + muted_color; NO:equal_weight_choices_hoping_user_reads_all NO:correct_path_same_size_as_alternatives NO:primary_CTA_below_fold eg: \"5_equal_nav_links_user_guesses_wrong\" >> \"primary_path_prominent_top + secondary_recessed_below\"",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "satisficing", "cta", "visual-hierarchy", "scanning"]
+  },
+  {
+    "principle": "Users muddle through interfaces without understanding how they work — every element must be self-evident from appearance alone with no learning required",
+    "explanation": "X.ux|muddle_through: users_never_read_instructions + never_learn_interface_model + use_things_wrong_but_cope; implication_for_generator: every_element_must_communicate_via_appearance NOT documentation; clickable_things: look_clickable (button_shape + underline + pointer_cursor); inputs: show_expected_format_via_placeholder; toggles: show_current_state_visually; icons: always_pair_with_text_label; if_user_must_learn_how_it_works == design_failure; NO:icon_only_without_label NO:custom_interaction_patterns NO:links_that_look_like_plain_text eg: \"flat_text_that_is_actually_clickable\" >> \"underlined_link + color_distinct_from_body_text\"",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "self-evident", "affordance", "muddling-through", "learnability"]
+  }
+]

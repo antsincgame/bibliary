@@ -1,0 +1,38 @@
+[
+  {
+    "principle": "Size touch targets at minimum 44px CSS and aim larger — small targets damage usability perception even when users manage to hit them",
+    "explanation": "X.ux|target_size: min_44x44_css_px (apple_48dp_google_60pt_spatial); bigger == faster_acquisition + perceived_ease_of_use; small_target: user_hits_it BUT perceives_interface_as_hard -> trust_drops; NO:relying_on_minimum_only NO:tiny_icons_without_padding eg: \"24px_icon_button_no_padding\" >> \"24px_icon + padding_to_48px_touch_area\"",
+    "domain": "ux",
+    "tags": ["fitts-law", "touch-targets", "sizing", "usability-perception"]
+  },
+  {
+    "principle": "Space interactive elements at least 8dp apart — fingertips are 16-20mm wide and adjacent actions without gaps cause accidental selection",
+    "explanation": "X.ux|target_spacing: min_8dp_between_touch_targets; human_fingertip == 16-20mm_diameter -> partial_touch_outside_target_inevitable; close_actions: accept+deny_side_by_side -> wrong_tap -> frustration + undo_flow; NO:cramming_actions_together NO:relying_on_user_precision eg: \"accept_deny_buttons_touching\" >> \"accept_deny_separated_8dp+_or_opposite_sides\"",
+    "domain": "ux",
+    "tags": ["fitts-law", "spacing", "touch-targets", "accidental-selection"]
+  },
+  {
+    "principle": "Place primary mobile actions in screen center and bottom half — users naturally view and touch center most accurately while upper corners require two hands",
+    "explanation": "X.ux|thumb_zone: smartphone_accuracy: center > bottom > sides > top_corners; one_hand_use: thumb_reaches_center+bottom_easily, top == stretch_or_switch_hands; primary_CTA -> center_or_lower_half; secondary -> sides; rare_actions -> top; NO:primary_action_in_top_corners NO:assuming_two_hand_grip eg: \"delete_account_top_right_easy_to_hit\" >> \"primary_CTA_center_bottom + destructive_action_top_requiring_effort\"",
+    "domain": "ux",
+    "tags": ["fitts-law", "thumb-zone", "mobile", "touch-placement"]
+  },
+  {
+    "principle": "Expand form hit areas by associating labels with inputs and place submit button adjacent to the last field to minimize travel distance",
+    "explanation": "X.ux|form_fitts: label_for_input -> click_label == focus_input -> doubles_hit_area; submit_btn: place_directly_after_last_field NOT far_away; proximity: related_action_near_active_element -> less_mouse_thumb_travel -> faster_completion; NO:orphan_labels NO:submit_far_from_form eg: \"label_text_not_linked + submit_at_page_bottom\" >> \"label[for=id] + submit_immediately_after_last_input\"",
+    "domain": "ux",
+    "tags": ["fitts-law", "forms", "labels", "proximity"]
+  },
+  {
+    "principle": "Place frequent actions at screen edges — edges act as infinite targets where cursor stops automatically so users cannot overshoot",
+    "explanation": "X.ux|infinite_targets: screen_edge == wall -> cursor_stops -> zero_overshoot -> target_effectively_infinite_width; place_at_edges: app_dock_bottom + menu_bar_top + scrollbar_right; acquisition_speed: edge_target >> floating_target_same_size; NO:floating_toolbar_away_from_edges NO:offset_menu_from_screen_edge eg: \"app_menu_10px_from_top_edge\" >> \"app_menu_pinned_to_top_edge -> infinite_target\"",
+    "domain": "ux",
+    "tags": ["fitts-law", "infinite-targets", "screen-edges", "desktop"]
+  },
+  {
+    "principle": "When users make repeated errors blame the design not the user — differentiate controls by shape size and position so mistakes are impossible even under stress",
+    "explanation": "X.ux|design_for_error: repeated_user_error == design_failure NOT user_failure; fix: differentiate_controls_by_shape+size+position+feel; stress_test: if_user_confused_rushing_dark -> can_they_still_pick_right_control?; NO:blaming_pilot_error NO:identical_controls_for_different_actions eg: \"identical_save_and_delete_buttons_side_by_side\" >> \"save_green_primary + delete_red_text_with_confirm_dialog\"",
+    "domain": "ux",
+    "tags": ["fitts-law", "human-factors", "error-prevention", "control-differentiation"]
+  }
+]

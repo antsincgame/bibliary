@@ -1,0 +1,32 @@
+[
+  {
+    "principle": "Optimize your Google Business Profile as the foundation of local SEO — without a verified GBP listing in the correct primary category, your business cannot appear in the map pack regardless of website quality",
+    "explanation": "X.seo|gbp_optimization: GBP=most_important_local_SEO_element; verify_via_postcard_PIN(10-14_days); primary_category=strongest_ranking_signal -> select_most_specific_matching_category; additional_categories=secondary_services; photos+videos: real_photos -> higher_engagement -> indirect_ranking_boost; hours: not_direct_ranking_factor+affects_user_engagement -> indirect_signal; business_name: never_stuff_keywords -> against_guidelines; NO:keyword_stuffing_in_business_name NO:selecting_unrelated_categories_for_wider_reach; eg: plumber_with_no_photos >> plumber_with_20+_real_job_photos -> higher_map_pack_position",
+    "domain": "seo",
+    "tags": ["google-business-profile", "local-seo", "map-pack", "art-of-seo", "gbp"]
+  },
+  {
+    "principle": "Local ranking is driven by proximity, GBP relevance, and reviews — the geographic radius of the map pack shrinks as market competition increases, and ranking in a new city requires physical presence there",
+    "explanation": "X.seo|local_ranking: three_pillars: proximity(distance_from_searcher)+GBP_relevance(category+keyword_match)+review_authority(volume+rating+recency+response_rate); implicit_local_intent: user_types_plumber_without_city -> Google_infers_location_from_GPS/IP -> shows_map_pack; radius: dense_market=neighborhood_level >> sparse_market=city-wide; new_city_ranking: only_solution=open_physical_office_there; map_pack=3_results_under_map -> Local_Finder=expanded_list; NO:trying_to_rank_locally_without_physical_address NO:service_area_setting_as_ranking_strategy(myth); eg: law_firm_Dallas_targeting_Houston >> opens_Houston_office -> appears_in_Houston_map_pack",
+    "domain": "seo",
+    "tags": ["local-ranking", "map-pack", "proximity", "art-of-seo", "local-seo"]
+  },
+  {
+    "principle": "Maintain a 4.0-plus star rating and respond to every review — dropping below 4.0 auto-excludes your listing from many query filters, and response rate is itself a ranking signal in the local algorithm",
+    "explanation": "X.seo|local_reviews: threshold: below_4.0_stars -> automatically_filtered_out_for_range_of_queries; signals: rating+volume+recency+owner_response_rate -> all_factor_in_local_algorithm; response_strategy: negative_reviews -> acknowledge+offer_resolution+no_defensive_language -> positive_UX_signal; keywords_in_customer_reviews: YES_ranking_signal; keywords_in_owner_replies: NO_ranking_value+keyword_stuffing_in_replies_hurts_UX; NO:ignoring_negative_reviews NO:stuffing_keywords_in_your_own_responses; eg: 3.8_avg_rating -> filtered_from_results >> resolve_complaints+solicit_reviews -> 4.3_stars -> map_pack_eligible",
+    "domain": "seo",
+    "tags": ["reviews", "local-seo", "reputation-management", "art-of-seo", "gbp"]
+  },
+  {
+    "principle": "Keep Name, Address, and Phone identical across every citation source — Google aggregates NAP data from dozens of directories and inconsistent data reduces entity confidence and suppresses local rankings",
+    "explanation": "X.seo|nap_consistency: NAP=Name+Address+Phone; Google_aggregates_from_many_sources -> conflicting_data -> lower_entity_confidence -> lower_local_ranking; fix_process: submit_to_data_aggregators_first(Neustar+Acxiom+Localeze) -> they_feed_hundreds_of_directories -> audit_Google_results_for_business_name -> fix_remaining_incorrect_listings; local_links: local_sponsorships+events+volunteer_organizations = geo-relevant_links; NO:different_phone_number_formats_across_sites NO:old_address_remaining_in_directories_after_relocation; eg: (555)123-4567_Yelp + 555.123.4567_YP + 5551234567_website >> unified_format_everywhere -> stronger_entity_signal",
+    "domain": "seo",
+    "tags": ["nap-consistency", "citations", "local-seo", "art-of-seo", "data-aggregators"]
+  },
+  {
+    "principle": "Add LocalBusiness structured data with address, hours, geo-coordinates, and phone to every location page — it gives Google direct structured access to your NAP data and reinforces your GBP listing signals",
+    "explanation": "X.seo|local_schema: schema_type: LocalBusiness(or_subtype: Restaurant+Plumber+MedicalBusiness+LegalService); required_fields: name+address(@type:PostalAddress)+telephone+openingHoursSpecification+geo(@type:GeoCoordinates)+url; implementation: JSON-LD_in_<head>(same_as_other_schema); benefit: Google_reads_structured_NAP_directly+eligible_for_rich_results+reinforces_GBP_data; rule: address_in_schema_MUST_match_GBP+website+all_citations; NO:local_schema_on_non-location_pages NO:schema_address_differing_from_GBP; eg: restaurant_no_schema >> restaurant_RestaurantSchema+hours+menu_URL -> rich_local_SERP_result",
+    "domain": "seo",
+    "tags": ["local-schema", "structured-data", "local-seo", "art-of-seo", "localbusiness"]
+  }
+]

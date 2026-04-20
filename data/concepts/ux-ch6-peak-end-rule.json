@@ -1,0 +1,38 @@
+[
+  {
+    "principle": "Celebrate user milestones with personalization, animation and brand character — these positive peaks become the snapshots users remember and share",
+    "explanation": "X.ux|milestone_peaks: achievement_moment == peak_opportunity; amplify_with: personalization + illustration + animation + humor + shareability; spotify_wrapped: year_end_listening_stats -> personal + shareable -> viral_brand_moment; duolingo: streak_milestones + legendary_level_unlock -> theme_reward + celebration_animation; NO:plain_progress_bar NO:generic_congrats_text eg: \"level_complete_text_only\" >> \"level_complete + custom_illustration + unlocked_theme + share_button\"",
+    "domain": "ux",
+    "tags": ["peak-end-rule", "milestones", "gamification", "personalization"]
+  },
+  {
+    "principle": "Design completion and success screens with the same care as landing pages — order confirmations and thank-you pages are the emotional end that defines how users remember the entire flow",
+    "explanation": "X.ux|completion_as_peak: completion == emotional_peak + end_of_flow -> defines_memory_of_entire_journey; invest_in: confirmation_pages + success_states + thank_you_screens; include: clear_status + next_steps + personalized_detail + celebration_visual; NO:plain_text_thank_you NO:generic_success_without_next_action eg: \"thank_you_for_your_order_period\" >> \"order_confirmed + delivery_ETA + tracking_link + related_products + confetti_animation\"",
+    "domain": "ux",
+    "tags": ["peak-end-rule", "completion-screens", "confirmation-pages", "emotional-design"]
+  },
+  {
+    "principle": "Make achievement moments shareable by generating personalized visual summary cards — users spread your brand when they share their own stats and milestones",
+    "explanation": "X.ux|shareable_peaks: personal_stats + visual_design + share_button -> user_generated_viral_marketing; create: personalized_summary_cards with_stats + visuals + subtle_branding; spotify_wrapped: listening_stats_as_stories -> shared_millions_of_times; key: content_about_USER not_brand -> user_shares_because_it_reflects_them; NO:generic_share_our_app_button NO:brand_centric_share_content eg: \"share_our_app_with_friends\" >> \"your_2024_stats: 50_purchases + top_category + savings_total -> shareable_card\"",
+    "domain": "ux",
+    "tags": ["peak-end-rule", "shareability", "personalization", "viral-marketing"]
+  },
+  {
+    "principle": "Transform wait times from negative peaks into perceived progress using animation, transparency and goal gradient — idle waiting kills experience ratings",
+    "explanation": "X.ux|wait_neutralize: waiting == potential_negative_peak -> cancellation + bad_memory; three_cures: 1.idleness_aversion: animation_keeps_user_engaged; 2.operational_transparency: show_ETA + explain_how_calculated; 3.goal_gradient: show_steps_completed_toward_goal -> sense_of_progress; uber: applied_all_three -> reduced_post-request_cancellation_rate; NO:spinner_with_no_context NO:blank_loading_screen eg: \"loading_spinner_no_text\" >> \"finding_driver + map_animation + ETA_3min + step_2_of_3\"",
+    "domain": "ux",
+    "tags": ["peak-end-rule", "wait-times", "loading", "perceived-performance"]
+  },
+  {
+    "principle": "Prevent negative emotional peaks by guiding users in real time before errors occur — do not wait until form submission to reveal validation failures",
+    "explanation": "X.ux|prevent_negative_peak: error_after_submit == frustration_spike == negative_peak; real_time_validation: show_rules + check_as_user_types -> user_succeeds_first_try; especially_critical: account_creation (user_is_excited -> password_rejection_kills_momentum); negativity_bias: negative_events_remembered_more_vividly_than_positive; NO:error_list_after_submit NO:rigid_rules_without_inline_feedback eg: \"submit -> 5_red_errors_at_top\" >> \"mailchimp: password_rules_visible + green_checks_as_criteria_met_in_real_time\"",
+    "domain": "ux",
+    "tags": ["peak-end-rule", "negativity-bias", "validation", "error-prevention"]
+  },
+  {
+    "principle": "Design every error and empty state as a helpful navigation moment — 404 pages, empty carts, no search results all need brand personality and clear next steps",
+    "explanation": "X.ux|error_empty_states: every_site_needs: designed_404 + empty_search + empty_cart + error_screens; each_must_have: brand_illustration + helpful_text + search_bar + home_link + popular_content_links; empty_state == onboarding_opportunity (empty_cart -> show_bestsellers); humor: ok_for_404 NOT for_payment_failure; NO:white_page_with_error_code NO:dead_end_without_navigation eg: \"404_not_found_no_links\" >> \"404_with_brand_illustration + search_bar + popular_pages + home_link\"",
+    "domain": "ux",
+    "tags": ["peak-end-rule", "error-states", "empty-states", "404", "site-generation"]
+  }
+]

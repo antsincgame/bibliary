@@ -1,0 +1,20 @@
+[
+  {
+    "principle": "Test with three users monthly rather than waiting for a formal study — three well-observed users reveal 85% of a site's usability problems",
+    "explanation": "X.ux|cheap_usability_testing: Nielsen: 3-5_users_reveal_85%_of_usability_problems; formal_study_once_a_year << 3_users_every_month; recruit: anyone_willing(hallway+friends+Craigslist) NOT_panel; cost: 2h_prep+2h_testing+1h_debrief; task_selection: 3-4_most_critical_tasks_users_actually_do; venue: any_room+laptop+screenshare+screen_recorder; NO:waiting_for_budget NO:testing_only_at_end_of_project; eg: $0_hallway_test_monthly >> $30k_research_firm_once_a_year",
+    "domain": "ux",
+    "tags": ["usability-testing", "dont-make-me-think", "research", "hallway-testing", "krug", "user-research"]
+  },
+  {
+    "principle": "Replace design team debates with a morning of user observation — HiPPO opinion is the most expensive way to make product decisions, and the least accurate",
+    "explanation": "X.ux|debates_to_testing: team_debates: endless+political+HiPPO_wins(Highest_Paid_Person_Opinion); testing_alternative: 1_morning+3_users -> answers_same_questions_without_politics; Krug: most_debates_are_about_edge_cases_nobody_encounters; observation_rule: watch_real_user_hit_problem_ONCE -> team_stops_defending_design; NO:months_of_debate_about_dropdown_vs_radio NO:HiPPO_making_UX_calls NO:A/B_test_before_basic_usability_confirmed; eg: 3hr_meeting_about_nav_labels >> 2hr_test_3_users -> clear_winner_observed",
+    "domain": "ux",
+    "tags": ["usability-testing", "dont-make-me-think", "team-dynamics", "hippo", "krug", "decision-making"]
+  },
+  {
+    "principle": "Ask users to narrate what they are thinking while they work — post-task surveys reveal what users remember feeling, think-aloud reveals what they actually experience",
+    "explanation": "X.ux|think_aloud_protocol: think_aloud: user_narrates_continuous_stream_of_thought_while_doing_task; reveals: where_they_look_first+what_they_expect_click_to_do+when_they_feel_lost+what_they_misread; post-task_survey_captures_memory NOT_experience(memory_is_distorted); moderator_rule: do_NOT_answer_questions_or_explain_interface; if_stuck: \"what_are_you_looking_for?\" NOT \"see_this_button?\"; NO:post-task_\"was_it_easy?\"_as_only_data NO:explaining_UI_when_user_struggles; eg: user_silent_clicking >> \"please_narrate_what_you_expect_each_click_to_do\"",
+    "domain": "ux",
+    "tags": ["usability-testing", "think-aloud", "dont-make-me-think", "krug", "user-research", "moderation"]
+  }
+]

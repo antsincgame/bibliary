@@ -1,0 +1,26 @@
+[
+  {
+    "principle": "Match content format to keyword intent — informational gets answers, transactional gets buy buttons",
+    "explanation": "X.seo|keyword_intent: four_types: informational == how/what/why -> direct_answer + FAQ + unique_data; navigational == brand_search -> ensure_pages_findable + HTML_sitemap_in_footer; commercial == best/review -> unbiased_comparison + pros_cons + testimonials; transactional == buy/order/delivery -> simple_checkout + shipping_info + returns_policy; NO:same_page_format_for_all_intents eg: \"best_gaming_laptops\" == commercial -> write_comparison_table >> NOT product_landing_page",
+    "domain": "seo",
+    "tags": ["keyword-intent", "content-format", "search-intent", "on-page"]
+  },
+  {
+    "principle": "Surround main keyword with its semantic family to prove topical depth to Google",
+    "explanation": "X.seo|semantic_depth: semantic_keywords == related_terms_around_topic; find_via: People_Also_Ask + Related_Searches + Wikipedia; weave_naturally NOT force; page_without_related_terms == probably_not_relevant; NO:keyword_stuffing NO:only_main_keyword eg: \"coffee_page_only_says_coffee\" >> \"coffee + cafe + latte + espresso + arabica + fair_trade == proves_topical_authority\"",
+    "domain": "seo",
+    "tags": ["semantic-seo", "topical-depth", "entities", "content-optimization"]
+  },
+  {
+    "principle": "Use AI tools for keyword ideas but never trust their traffic or difficulty estimates",
+    "explanation": "X.seo|ai_keyword_caveat: ChatGPT/Gemini == excellent_for_generating_keyword_lists; BUT traffic_numbers_from_AI == fabricated; difficulty_scores_from_AI == unreliable; always_validate_with: Google_Ads_Keyword_Planner OR Ahrefs OR SEMRush; NO:planning_SEO_strategy_on_AI_estimates eg: \"AI_says_keyword_has_50k_searches\" >> \"validate: actual_volume_is_200_searches\"",
+    "domain": "seo",
+    "tags": ["ai-tools", "keyword-research", "data-validation", "antipattern"]
+  },
+  {
+    "principle": "Target low-difficulty keywords first for quick wins — Google Ads competition score is not SEO difficulty",
+    "explanation": "X.seo|easy_wins_first: use_SEO_difficulty_score (Ahrefs/SEMRush) NOT Google_Ads_competition_score; Ads_competition == how_many_ADVERTISERS_bid != how_hard_to_RANK_organically; start_with: low_difficulty + decent_traffic == fast_results; NO:chasing_head_terms_against_giants eg: \"book_store_online\" == competing_vs_Amazon >> \"antique_book_stores_online\" == low_competition_easy_win",
+    "domain": "seo",
+    "tags": ["keyword-difficulty", "quick-wins", "strategy", "antipattern"]
+  }
+]

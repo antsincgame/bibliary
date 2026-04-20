@@ -1,0 +1,20 @@
+[
+  {
+    "principle": "Build forms that minimize manual input — add same-as-billing checkboxes, address autocomplete, payment service buttons, browser autofill attributes and smart defaults for every field",
+    "explanation": "X.ux|absorb_complexity: every_manual_field == friction -> lower_completion; generator_must_add: autocomplete_attributes (name/email/address/cc) + same_as_billing_checkbox + one_tap_payment_buttons (apple_pay/google_pay) + country_auto_detect_from_locale + smart_defaults (most_common_option_pre-selected); tesler: complexity_shifts_from_user_to_system; NO:empty_forms_without_autocomplete_attrs NO:separate_billing_shipping_without_checkbox eg: \"checkout: 12_empty_fields_no_autocomplete\" >> \"checkout: autocomplete_attrs + same_as_billing + apple_pay_button + country_pre-selected\"",
+    "domain": "ux",
+    "tags": ["teslers-law", "forms", "auto-fill", "complexity-reduction"]
+  },
+  {
+    "principle": "Users never read documentation — embed guidance as tooltips, inline hints and contextual help directly where the action happens",
+    "explanation": "X.ux|active_user_paradox: users_skip_manuals -> start_using_immediately -> hit_errors -> get_frustrated; paradox: reading_docs_saves_time_long_term BUT users_want_immediate_action; solution: guidance_in_context: tooltips_on_hover + placeholder_text + inline_hints + first_use_callouts; help_must_be: where_user_IS NOT where_docs_ARE; NO:relying_on_FAQ_page NO:onboarding_video_user_skips NO:help_center_for_basic_flows eg: \"complex_form_with_link_to_help_center\" >> \"form_fields_with_inline_hints + tooltip_icons + smart_placeholder_text\"",
+    "domain": "ux",
+    "tags": ["teslers-law", "active-user", "tooltips", "contextual-help"]
+  },
+  {
+    "principle": "Hide secondary content and advanced options behind dropdowns, accordions and toggles — show only what matters for the primary task by default",
+    "explanation": "X.ux|disclosure_ui: primary_actions: always_visible; secondary_content: behind_dropdown + accordion + toggle + hover_menu; reduces: visual_clutter + cognitive_load + intimidation; stripe_nav: clean_top_nav -> hover_reveals_categorized_links; advanced_settings: collapsed_by_default -> expanded_on_demand; NO:showing_all_options_at_once NO:advanced_features_alongside_basic eg: \"settings_page_50_options_flat_list\" >> \"settings: 5_primary_visible + advanced_in_collapsible_accordion\"",
+    "domain": "ux",
+    "tags": ["teslers-law", "progressive-disclosure", "accordions", "ui-patterns"]
+  }
+]

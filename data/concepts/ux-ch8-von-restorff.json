@@ -1,0 +1,26 @@
+[
+  {
+    "principle": "Make primary actions visually dominant over secondary ones using color, size and weight — identical buttons cause accidental wrong selections especially in destructive modals",
+    "explanation": "X.ux|action_contrast: primary_action: filled_button + accent_color + larger_size; secondary_action: outlined_or_text_button + muted_color; destructive_action: red_filled + warning_icon_in_header; FAB_pattern: google_material -> one_floating_primary_action_per_screen; contrast_via: color + size + weight + shape NOT color_alone; NO:two_identical_buttons_side_by_side NO:destructive_action_same_style_as_cancel eg: \"delete_and_cancel_both_gray_outlined\" >> \"delete_red_filled + cancel_text_link + warning_icon\"",
+    "domain": "ux",
+    "tags": ["von-restorff", "buttons", "cta", "action-hierarchy"]
+  },
+  {
+    "principle": "Highlight the recommended pricing plan using center position, enlarged card, accent-colored CTA and a most-popular label — visual isolation drives plan selection",
+    "explanation": "X.ux|pricing_emphasis: recommended_plan: center_position + slightly_larger_card + accent_color_on_CTA + most_popular_badge_on_top; other_plans: muted_buttons + same_card_size; von_restorff: isolated_element_among_similar -> remembered + selected; notion_pricing: plus_plan: darker_button + larger_card + popular_tag + centered; NO:all_plans_identical_styling NO:recommended_plan_on_left_edge eg: \"3_pricing_cards_same_size_same_buttons\" >> \"center_card_10%_larger + accent_CTA + most_popular_tag\"",
+    "domain": "ux",
+    "tags": ["von-restorff", "pricing-table", "conversion", "visual-emphasis"]
+  },
+  {
+    "principle": "Use visual emphasis sparingly — too many highlighted elements compete and cancel each other out, and content that resembles ads gets ignored via banner blindness",
+    "explanation": "X.ux|emphasis_restraint: one_focal_point_per_context -> maximum_impact; too_many_accents: compete -> dilute -> user_sees_noise NOT hierarchy; banner_blindness: content_styled_like_ad -> ignored_even_if_legitimate; change_blindness: user_focused_on_task -> misses_changes_elsewhere; NO:5_colored_badges_on_one_page NO:CTA_that_looks_like_banner_ad NO:every_feature_marked_as_new eg: \"homepage_with_3_badges+2_banners+animated_CTA\" >> \"one_primary_CTA + one_badge_on_key_feature + clean_whitespace\"",
+    "domain": "ux",
+    "tags": ["von-restorff", "emphasis", "banner-blindness", "restraint"]
+  },
+  {
+    "principle": "Never rely on color alone for visual contrast — combine color with shape, size, stroke and position to ensure accessibility for color blind and low vision users",
+    "explanation": "X.ux|accessible_contrast: color_blind: 8%_of_men -> cannot_distinguish_certain_colors; use_multiple_signals: color + shape + size + stroke + icon + text_label; text_contrast: min_4.5:1_ratio (WCAG_AA); large_text_18pt+: min_3:1; focus_indicators: thick_outline_ring -> keyboard_navigation; motion_for_contrast: use_carefully -> vestibular_disorders_cause_dizziness+nausea; prefers-reduced-motion: always_respect; NO:red_vs_green_only NO:color_coded_status_without_icons eg: \"error_state_only_red_border\" >> \"error: red_border + error_icon + text_message + aria-invalid\"",
+    "domain": "ux",
+    "tags": ["von-restorff", "accessibility", "color-contrast", "wcag", "color-blindness"]
+  }
+]

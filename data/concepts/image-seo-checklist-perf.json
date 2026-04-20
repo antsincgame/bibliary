@@ -1,0 +1,26 @@
+[
+  {
+    "principle": "Serve AVIF with WebP fallback via <picture> element — AVIF cuts file size 50% vs JPEG while <picture> guarantees full browser compatibility",
+    "explanation": "X.perf|image_format_stack: AVIF(50%_smaller_than_jpeg) -> best_compression; WebP -> fallback_Safari<16+older_Android; JPEG/PNG -> final_fallback; implement_via_<picture>: <source type=image/avif> + <source type=image/webp> + <img>; Next.js_next/image -> automatic_format_negotiation; NO:serve_jpeg_only_when_tooling_supports_avif NO:webp_without_avif_as_primary; eg: \"<img src='photo.jpg'>\" >> \"<picture><source type='image/avif' srcset='photo.avif'><source type='image/webp' srcset='photo.webp'><img src='photo.jpg' alt='...'></picture>\"",
+    "domain": "perf",
+    "tags": ["image-format", "avif", "webp", "picture-element", "compression"]
+  },
+  {
+    "principle": "Declare srcset with breakpoint descriptors and set fetchpriority='high' on the LCP image — missing srcset wastes mobile bandwidth, missing priority delays the largest paint",
+    "explanation": "X.perf|responsive_image_lcp: single_src -> full_size_on_mobile(bandwidth_waste); srcset: 480w+800w+1200w_descriptors + sizes_attribute; LCP_image -> fetchpriority='high' + <link rel=preload>_in_<head>; only_ONE_fetchpriority_high_per_page; NO:srcset_without_sizes_attribute NO:fetchpriority_on_below_fold_images; eg: \"<img src='hero.jpg'>\" >> \"<img srcset='hero-480.jpg 480w, hero-1200.jpg 1200w' sizes='100vw' fetchpriority='high' src='hero-1200.jpg' alt='...'>\"",
+    "domain": "perf",
+    "tags": ["srcset", "responsive-images", "lcp", "fetchpriority", "core-web-vitals"]
+  },
+  {
+    "principle": "Compress the LCP image below 100 KB and preload it in <head> — lazy-loading the hero image is the single most common LCP regression pattern",
+    "explanation": "X.perf|lcp_image_budget: LCP_image_target <100KB(AVIF_or_WebP); preload: <link rel=preload as=image href=lcp.avif fetchpriority=high>_in_<head>; host_on_CDN_with_edge_caching; good_LCP: <2.5s; NO:loading='lazy'_on_hero_image(delays_discovery) NO:LCP_image_as_CSS_background(not_preloadable); if_responsive_srcset: use_imagesrcset+imagesizes_on_preload_link; eg: \"<img src='hero.jpg' loading='lazy'>\" >> \"<img src='hero.avif' fetchpriority='high'> + <link rel=preload> in head\"",
+    "domain": "perf",
+    "tags": ["lcp", "core-web-vitals", "preload", "image-optimization", "performance-budget"]
+  },
+  {
+    "principle": "Always declare explicit width and height on every <img> — omitting dimensions causes layout shift as images load, directly worsening CLS score",
+    "explanation": "X.perf|cls_image_dimensions: <img>_without_width+height -> browser_cant_reserve_space -> layout_shift -> CLS_penalty; set_width+height_matching_natural_dimensions; CSS_aspect-ratio:auto_uses_these_for_space_reservation; for_responsive: width+height_attrs + CSS_max-width:100%;height:auto; NO:<img>_CSS_only_sizing_without_attrs NO:width_height_0_or_1_as_placeholder; CLS_target:<0.1; eg: \"<img src='photo.jpg'>\" >> \"<img src='photo.jpg' width='800' height='600' style='max-width:100%;height:auto'>\"",
+    "domain": "perf",
+    "tags": ["cls", "core-web-vitals", "image-dimensions", "layout-shift", "aspect-ratio"]
+  }
+]

@@ -1,0 +1,14 @@
+[
+  {
+    "principle": "Use schema markup as a fragment selection instruction for AI models — Article, FAQPage, and HowTo schemas reduce AI uncertainty about page function, making it easier to identify and extract the right fragments",
+    "explanation": "X.seo|schema_ai_instruction: schema_function_for_AI: not_ranking_signal -> uncertainty_reduction(tells_model:_what_page_is+what_function_it_serves+which_elements_are_key); Article=declares_informational_content; FAQPage=signals_structured_Q&A_fragments; HowTo=signals_step_sequence; LocalBusiness=geo_identity+trust_confirmation; FAQPage_rules: real_questions(AI_detects_stuffed_as_manipulation)+1-3_sentence_answers+no_duplicate_FAQ_blocks_across_site; Speakable: must_be_short+autonomous(large_Speakable_block -> AI_ignores_it); NO:conflicting_schema_types(Article+NewsArticle_together_without_reason) NO:invented_FAQ_questions; eg: page_with_no_schema >> AI_must_infer_function >> Article+FAQPage_added -> model_finds_fragments_faster",
+    "domain": "seo",
+    "tags": ["ai-seo", "schema-markup", "faqpage", "ai-extraction", "structured-data"]
+  },
+  {
+    "principle": "Build AI authority through a verifiable confirmation system — AI models trust domains with stable topical focus, deep coverage, external citations, and author presence outside the site; domain age and DA are irrelevant",
+    "explanation": "X.seo|ai_authority: AI_reputation=verifiable_confirmation_system NOT_domain_weight; five_signals: stable_thematic_focus(one_topic_area) + deep_topic_coverage(not_surface_breadth) + consistent_author_logic(same_voice+POV) + external_context(industry_portals+catalogs+citations+author_publications_elsewhere) + structural_fragments_on_page; mechanism: all_five_aligned -> model_perceives_project_as_predictable_source -> cites_even_commercial_pages; NO:multi-topic_site_without_clear_niche NO:counting_on_old_domain_or_high_DA_for_AI_visibility; eg: 10yr_DA60_generalist_site >> young_niche_site_with_deep_topic+author_in_industry_portals -> AI_cites_niche_site_more",
+    "domain": "seo",
+    "tags": ["ai-seo", "ai-authority", "topical-authority", "llm-optimization", "eeat"]
+  }
+]

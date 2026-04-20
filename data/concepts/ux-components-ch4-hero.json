@@ -1,0 +1,14 @@
+[
+  {
+    "principle": "Choose F-pattern layout for text-heavy heroes and Z-pattern for visual-dominant heroes",
+    "explanation": "X.ux|hero_layout_pattern: text_heavy -> F_pattern: left_aligned + top_to_bottom_reading + CTA_left; visual_dominant -> Z_pattern: center_aligned + diagonal_eye_flow + CTA_center; F_pattern: user_reads_most_of_text; Z_pattern: quick_scan + strong_single_message; NO:center_align_text_heavy_hero NO:left_align_visual_minimal_hero eg: \"feature-list_hero_center_aligned\" >> \"feature-list_hero_left_aligned (F_pattern)\"",
+    "domain": "ux",
+    "tags": ["hero", "layout", "f-pattern", "z-pattern", "alignment"]
+  },
+  {
+    "principle": "Always tease content below the fold using a downward arrow, a partially visible section, or a cut-off headline",
+    "explanation": "X.ux|hero_continuation_tease: users_assume_page_ends_at_fold_without_cue; fix: arrow_pointing_down OR next_section_partially_visible_at_bottom OR headline_cut_off_by_viewport_edge; signals: scroll_for_more; NO:hero_that_fills_100vh_with_no_scroll_cue NO:next_section_starting_exactly_at_fold eg: \"full_screen_hero_no_hint_below\" >> \"hero + arrow_down + 60px_of_next_section_peeking\"",
+    "domain": "ux",
+    "tags": ["hero", "scroll", "above-fold", "continuation", "landing-page"]
+  }
+]

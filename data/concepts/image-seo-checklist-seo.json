@@ -1,0 +1,38 @@
+[
+  {
+    "principle": "Name every image file with a keyword-rich hyphenated description — crawlers read filenames as contextual signals for image indexing",
+    "explanation": "X.seo|image_filename: file_name -> crawler_context_signal; formula: primary_keyword-secondary_keyword-descriptor.ext; hyphens_only(crawler_reads_hyphen_as_word_separator); match_filename_to_surrounding_page_topic; NO:DSC_0042.jpg NO:image1.png NO:spaces_or_underscores_in_filename; eg: \"IMG_2031.jpg\" >> \"red-running-shoes-nike-air-women.jpg\"",
+    "domain": "seo",
+    "tags": ["image-seo", "filename", "crawlers", "keyword-optimization", "indexing"]
+  },
+  {
+    "principle": "Add a visible caption beneath every editorial image — captions are read 3x more than body text and carry keyword weight for image search",
+    "explanation": "X.seo|image_caption: caption_text -> read_3x_more_than_body + keyword_signal_for_image_search; write_as_sentence_describing_image_in_context; include_primary_keyword_naturally; use_<figcaption>_for_semantic_markup; NO:skip_caption_on_informational_images NO:generic_\"photo_of_product\"_caption; eg: \"<img> with no caption\" >> \"<figure><img alt='...'><figcaption>Nike Air Women running shoe coral colorway, side view</figcaption></figure>\"",
+    "domain": "seo",
+    "tags": ["image-seo", "captions", "figcaption", "keyword-placement", "semantic-html"]
+  },
+  {
+    "principle": "Embed IPTC metadata and display photographer credit on every original image — E-E-A-T signals authorship and Google's guidelines penalize undisclosed AI-generated visuals",
+    "explanation": "X.seo|eeat_image_authorship: original_photo -> embed_IPTC: creator+copyright+description; display_credit_near_image; AI_generated -> add_disclosure_label(Google_2024_policy); schema: ImageObject.author + ImageObject.license; NO:stock_photos_without_attribution_on_YMYL_pages NO:undisclosed_AI_images_in_news_or_health; eg: \"<img> no credit\" >> \"<img> + <figcaption>Photo: Jane Doe</figcaption> + ImageObject schema with author\"",
+    "domain": "seo",
+    "tags": ["eeat", "authorship", "ai-disclosure", "iptc", "image-schema"]
+  },
+  {
+    "principle": "Add image namespace entries to your XML sitemap for every page with SEO-critical images — Google reliably discovers images listed in sitemaps, not just crawled in HTML",
+    "explanation": "X.seo|image_sitemap: xml_sitemap -> add_image:image_block_per_url; required: image:loc + image:title + image:caption; max_1000_images_per_sitemap_file; submit_via_search_console; NO:images_only_in_JS_galleries_without_sitemap_entry NO:sitemap_without_xmlns:image_namespace; eg: \"<url><loc>/product</loc></url>\" >> \"<url><loc>/product</loc><image:image><image:loc>img.avif</image:loc><image:title>Red Nike Air Women</image:title></image:image></url>\"",
+    "domain": "seo",
+    "tags": ["image-seo", "sitemap", "xml", "indexing", "google-search-console"]
+  },
+  {
+    "principle": "Set og:image, og:image:width, og:image:height, and og:image:alt on every page — incomplete OG tags cause platforms to crop or reject the share preview",
+    "explanation": "X.seo|og_image_complete: og:image_alone -> platform_may_crop_or_reject; required_set: og:image(absolute_URL_1200x630) + og:image:width(1200) + og:image:height(630) + og:image:alt; add: twitter:card=summary_large_image + twitter:image; NO:og:image_relative_URL NO:missing_dimensions NO:og:image_without_alt; eg: \"<meta property='og:image' content='/img.jpg'>\" >> \"og:image(absolute) + og:image:width(1200) + og:image:height(630) + og:image:alt + twitter:card\"",
+    "domain": "seo",
+    "tags": ["open-graph", "social-sharing", "og-image", "twitter-card", "meta-tags"]
+  },
+  {
+    "principle": "Never embed important text inside images — crawlers cannot read pixel-rendered text, making headlines and CTAs invisible to search and inaccessible to screen readers",
+    "explanation": "X.seo|no_text_in_images: text_baked_into_image -> crawler_blind + translation_impossible + screen_reader_fails; move_to: HTML_overlay_on_hero OR CSS_text_on_background; exception: logos_and_decorative_badges_only; if_unavoidable: duplicate_text_in_alt+nearby_heading; NO:CTA_text_in_banner_image NO:headline_as_image_text; eg: \"hero.jpg_with_'Free_Shipping'_baked_in\" >> \"hero.jpg + <h2 class='overlay'>Free Shipping</h2> in HTML\"",
+    "domain": "seo",
+    "tags": ["image-seo", "text-in-images", "accessibility", "crawlability", "hero-image"]
+  }
+]

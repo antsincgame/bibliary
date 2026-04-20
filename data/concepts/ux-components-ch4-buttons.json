@@ -1,0 +1,32 @@
+[
+  {
+    "principle": "Set button text to 14-20px, horizontal padding to double the vertical, height 32-40px desktop and 48px minimum on mobile",
+    "explanation": "X.ux|button_anatomy: text_14-20px; horizontal_padding == 2x_vertical (eg: v:10px -> h:16px+); height: desktop_32-40px + mobile_min_48px; button_height+font_size must_be_round_numbers -> text_centers_correctly; NO:button_32px+font_17px (won't_center) eg: \"btn_h:32px_font:17px\" >> \"btn_h:40px_font:16px_v:10px_h:16px\"",
+    "domain": "ux",
+    "tags": ["buttons", "anatomy", "sizing", "padding", "mobile"]
+  },
+  {
+    "principle": "Use filled button for primary CTA only, ghost for secondary, text-link for tertiary — align multiple buttons left-to-right by descending importance",
+    "explanation": "X.ux|button_hierarchy: filled == primary_CTA (one_per_screen); ghost/outlined == secondary; text_link == tertiary; inline_row: left=most_important -> right=cancel; distance_from_reach == lower_prominence; NO:two_filled_buttons_side_by_side NO:cancel_on_the_left eg: \"Delete | Cancel\" >> \"Cancel | Delete (destructive_right)\"",
+    "domain": "ux",
+    "tags": ["buttons", "hierarchy", "cta", "layout", "primary-secondary"]
+  },
+  {
+    "principle": "Design all five button states as visually distinct and wrap every interactive element including text links in a minimum 44px tall container",
+    "explanation": "X.ux|button_states: 5_states: enabled + hover + pressed + disabled + loading; each_visually_distinct BUT no_drastic_changes (avoid_visual_noise); tappable_area: ALL_interactive_elements min_44px_height incl_tertiary_links+nav_items; NO:text_link_without_44px_container NO:disabled_same_as_enabled eg: \"nav_link_22px_tall\" >> \"nav_link_in_44px_min-height_container\"",
+    "domain": "ux",
+    "tags": ["buttons", "states", "accessibility", "tappable-area", "hover"]
+  },
+  {
+    "principle": "Label destructive confirmation buttons with specific verbs — Cancel and Delete not No and Yes",
+    "explanation": "X.ux|button_copy: text == action_verb NOT device_action; NO:\"click_here\" (mobile_users_tap); destructive_dialog: \"Cancel\"+\"Delete\" NOT \"No\"+\"Yes\"; user_must_understand_consequence_without_reading_dialog_title; NO:vague_confirmations NO:\"OK\"+\"Cancel\" for_irreversible_actions eg: \"No | Yes\" >> \"Cancel | Delete account\"",
+    "domain": "ux",
+    "tags": ["buttons", "copy", "cta", "destructive", "confirmation"]
+  },
+  {
+    "principle": "Place primary CTAs at thumb reach on mobile and keep destructive buttons out of the natural thumb zone",
+    "explanation": "X.ux|mobile_button_placement: primary_CTA -> bottom_of_screen (thumb_reach); destructive_buttons (delete/unsubscribe/remove) -> top_or_outside_thumb_zone; prevents_accidental_taps; NO:destructive_CTA_at_bottom_center NO:primary_CTA_at_top_of_screen eg: \"Delete_button_bottom_center\" >> \"Delete_top_right + Confirm_bottom\"",
+    "domain": "ux",
+    "tags": ["buttons", "mobile", "placement", "thumb-zone", "destructive"]
+  }
+]

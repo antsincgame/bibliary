@@ -1,0 +1,8 @@
+[
+  {
+    "principle": "Create visual groups through spacing differentials alone — tighter gap groups elements, larger gap separates them — no borders or backgrounds required",
+    "explanation": "X.ux|gestalt_proximity: visual_grouping == gap_differential NOT borders+backgrounds; small_gap(8px) -> same_group; large_gap(32-48px) -> new_group; proximity_overrides_color+shape; eg: \"label+input gap:8px, sections gap:40px\" vs \"all_gaps:16px_everywhere_no_groups\"",
+    "domain": "ux",
+    "tags": ["gestalt", "proximity", "spacing", "layout", "visual-grouping"]
+  }
+]

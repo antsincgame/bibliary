@@ -1,0 +1,32 @@
+[
+  {
+    "principle": "Build AI search visibility through brand mentions across Wikipedia, Reddit, and Quora rather than just links — LLMs surface brands cited repeatedly on third-party authority sources, not just sites with high domain authority",
+    "explanation": "X.seo|llm_visibility: how_LLMs_know_you: Wikipedia+Reddit+Quora+YouTube_transcripts+authority_roundups -> mention_frequency = LLM_recognition; links_matter_less_for_AI_search -> text_mentions_matter_more; strategy: get_cited_in_Wikipedia_references+Reddit_threads+Quora_answers+niche_authority_guides; topic_coverage_required: if_site_doesnt_discuss_topic -> LLM_omits_brand_in_answer; NO:relying_only_on_link_building_for_AI_visibility NO:thin_brand_presence_on_third_party_platforms; eg: brand_not_mentioned_on_Reddit+Wikipedia >> ChatGPT_omits_it >> brand_cited_repeatedly_in_multiple_contexts -> appears_in_AI_answers",
+    "domain": "seo",
+    "tags": ["ai-seo", "llm-optimization", "brand-mentions", "seo-2026", "ai-search"]
+  },
+  {
+    "principle": "Explicitly allow LLM crawlers in robots.txt and create an LLMS.txt file — blocking GPTBot or ClaudeBot makes your content invisible to AI search engines, and LLMS.txt gives AI tools a condensed map of what your site covers",
+    "explanation": "X.seo|llm_crawl_access: robots.txt_must_allow: GPTBot+CCBot+Google-Extended+PerplexityBot+ClaudeBot; blocking_any = excluded_from_that_AI_engines_answers; LLMS.txt: /llms.txt_file -> site_overview+key_pages+summaries -> for_real_time_AI_query_answering(NOT_sitemap NOT_robots.txt); structure: brief_description+list_of_important_pages+what_each_covers; NO:robots.txt_blocking_GPTBot_on_public_content NO:no_llms.txt_on_sites_wanting_AI_visibility; eg: robots.txt_Disallow_GPTBot >> invisible_to_ChatGPT >> explicit_Allow+/llms.txt_added -> AI_tools_cite_your_pages",
+    "domain": "seo",
+    "tags": ["ai-seo", "llms-txt", "robots-txt", "seo-2026", "ai-crawlers"]
+  },
+  {
+    "principle": "Structure every content section as a self-contained answer — AI models fan out queries into sub-questions and extract individual paragraphs, so each H2 block must be readable and meaningful without surrounding context",
+    "explanation": "X.seo|ai_content_structure: query_fan-out: LLM_breaks_question -> sub-questions -> fetches_answers_separately -> assembles_response; paragraph_must_be_self_contained: readable_without_prior_context -> extractable_and_citable; structure: H2=exact_question_form + 30-50_word_direct_answer_immediately_below + anticipate_follow-up_subtopics; coverage: page_about_hiking_shoes >> also_H2: How_much_do_they_cost? H2:_Are_they_waterproof? etc; NO:long_intro_before_answering NO:paragraph_requiring_context_from_above; eg: generic_article >> per-question_H2+self_contained_answer -> AI_lifts+cites_exact_passage",
+    "domain": "seo",
+    "tags": ["ai-seo", "content-structure", "query-fan-out", "seo-2026", "featured-snippets"]
+  },
+  {
+    "principle": "Optimize for voice search with question-based H2 headings and 30-word answer blocks — 40% of voice results come from rich snippets, and voice queries are conversational questions that require immediate direct answers",
+    "explanation": "X.seo|voice_search: 40%_voice_results_from_featured_snippets; voice_queries=conversational+longer+question-phrased; structure: H1=main_topic + H2s=question_form(What_is...+How_to...+Why_does...) + 30-50_word_direct_answer_per_H2; add_FAQ_schema+HowTo_schema_for_step-by-step; speed+mobile_critical(voice=always_mobile_device); NO:no_question_headings_on_content_targeting_voice NO:300-word_preamble_before_the_answer; eg: recipe_page_without_question_H2s -> voice_result_goes_to_competitor >> add_H2: How_do_I_make_salad_dressing? + 40-word_answer -> eligible_for_voice_snippet",
+    "domain": "seo",
+    "tags": ["voice-search", "featured-snippets", "question-keywords", "seo-2026", "conversational-search"]
+  },
+  {
+    "principle": "Improve CTR, bounce rate, and time-on-site as direct ranking inputs — RankBrain recalculates rankings in real time from behavioral signals, and Core Web Vitals now use INP (under 200ms) instead of FID since March 2024",
+    "explanation": "X.seo|ubo: RankBrain_observes: CTR+bounce_rate+time_on_site -> recalculates_rankings_in_real_time; tactics: improve_title+meta_for_CTR + rich_snippets(30%_more_clicks) + video_content(boosts_time_on_site) + scannable_short_paragraphs + fast_load; CWV_update_2024: FID_replaced_by_INP(Interaction_to_Next_Paint)<200ms -> fix_via_reduce_heavy_JavaScript; GSC_low-CTR_report -> identify_pages_to_fix_titles; NO:high_traffic_pages_with_no_engagement_hooks NO:treating_INP_as_FID(metric_is_outdated); eg: high_traffic_page_2min_avg_session >> add_explainer_video -> 6min_avg -> RankBrain_boosts_ranking",
+    "domain": "seo",
+    "tags": ["rankbrain", "user-behavior", "ctr-optimization", "inp", "core-web-vitals"]
+  }
+]

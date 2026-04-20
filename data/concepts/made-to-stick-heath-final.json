@@ -1,0 +1,50 @@
+[
+  {
+    "principle": "Find the single core message and cut everything else — a message trying to say three things says nothing, and the curse of knowledge makes experts unable to see what they are burying",
+    "explanation": "X.copy|commander_intent: Heath: military_concept: commander_gives_ONE_intent_not_10_orders -> soldiers_improvise_toward_it; curse_of_knowledge: expert_cannot_remember_not_knowing -> over-explains -> buries_core; find_core: keep_asking_\"what's_the_most_important?\"_until_one_thing_remains; lead_with_core_not_caveats; NO:three_headlines_competing_for_attention NO:burying_the_point_in_paragraph_4; eg: \"We_offer_quality_service_with_expertise_and_value\" >> \"Southwest_is_THE_low-fare_airline\"",
+    "domain": "copy",
+    "tags": ["simplicity", "core-message", "made-to-stick", "messaging", "copywriting"]
+  },
+  {
+    "principle": "Open with an unexpected gap in the reader's knowledge — curiosity is the feeling of a hole, and the brain cannot rest until the hole is filled",
+    "explanation": "X.copy|curiosity_gap: Heath+Loewenstein: curiosity = gap_between_what_I_know + what_I_want_to_know; method: (1)identify_assumption_audience_holds (2)violate_it (3)show_the_gap (4)offer_to_fill_it; teaser_formula: \"You_think_X... but_actually_Y\" -> creates_gap -> \"here's_why\"; headlines: question_headlines_create_gap(but_must_answer_it); NO:leading_with_conclusion(no_gap) NO:opening_with_context_before_surprise; eg: \"5_tips_for_email\" >> \"The_word_most_email_marketers_never_use — and_why_it_doubles_replies\"",
+    "domain": "copy",
+    "tags": ["unexpected", "curiosity-gap", "made-to-stick", "headlines", "copywriting"]
+  },
+  {
+    "principle": "Replace abstract benefits with concrete sensory details — concrete information sticks in memory because the brain encodes experiences, not categories",
+    "explanation": "X.copy|concreteness_velcro: Heath: memory = Velcro; more_hooks(concrete_details) -> sticks_better; abstract: \"high_performance\" -> nothing_to_attach_to; concrete: specific+sensory+measurable -> hooks_to_existing_memory; test: \"can_I_see/hear/touch_this_in_my_mind?\"; NO:abstract_category_words(\"solution\"+\"platform\"+\"performance\") NO:benefit_without_specific_number_or_scenario; eg: \"improves_team_performance\" >> \"Engineers_ship_on_Friday_and_stop_dreading_Monday_standup\"",
+    "domain": "copy",
+    "tags": ["concreteness", "sensory-language", "made-to-stick", "messaging", "copywriting"]
+  },
+  {
+    "principle": "Use a vivid single example to establish credibility — one specific true detail outperforms a page of statistics because the brain uses simulation not calculation to judge truth",
+    "explanation": "X.copy|credibility_detail: Heath: statistical_credibility vs vivid_detail_credibility; vivid_detail: one_unexpected_true_specificity signals_\"they_know_this_deeply\"; Sinatra_test: if_you_can_do_X_in_hard_conditions_you_can_do_it_anywhere; anti-authority: credibility_from_insider_who_has_lived_it NOT_from_title; NO:page_of_statistics_with_no_story NO:credentials_without_a_vivid_proof_moment; eg: \"Subway_lowered_fat_intake_of_customers\" >> \"Jared_lost_245_lbs_eating_Subway_every_day\"",
+    "domain": "copy",
+    "tags": ["credibility", "vivid-detail", "made-to-stick", "social-proof", "copywriting"]
+  },
+  {
+    "principle": "Make readers care about your message by connecting it to something they already care about — self-interest and identity are the two reliable wires to emotion",
+    "explanation": "X.copy|emotional_connection: Heath: people_don't_care_about_your_message -> connect_to_something_they_already_care_about; two_wires: (1)self-interest: WIIFY(What's_In_It_For_You) -> concrete_personal_benefit (2)identity: this_is_who_you_are_or_want_to_be; Maslow_trap: most_copy_targets_higher_needs_but_concrete_lower_needs_more_reliable; don't_sell_the_product_sell_the_person_they_become; NO:\"our_platform_is_important\" NO:abstract_mission_statement_appeal; eg: \"Better_productivity_software\" >> \"For_the_person_who_keeps_the_team_on_track_when_no_one_else_will\"",
+    "domain": "copy",
+    "tags": ["emotional-appeal", "self-interest", "identity", "made-to-stick", "copywriting"]
+  },
+  {
+    "principle": "Tell a story instead of giving advice — stories create mental simulations that let readers rehearse the solution before they need it, making them remember and act",
+    "explanation": "X.copy|story_as_simulation: Heath: story = flight_simulator_for_the_brain; reader_mentally_simulates_events -> emotional_response = almost_real; advice_tells_WHAT_to_do; story_SHOWS_what_it_feels_like_to_do_it; three_story_types: (1)challenge_plot(overcoming_obstacle) (2)connection_plot(bridge_between_people) (3)creativity_plot(surprising_solution); story_placement: case_study+about_page+email+hero_section; NO:bullet_list_of_benefits_where_a_story_fits NO:story_without_a_clear_lesson; eg: \"Our_software_has_great_support\" >> \"Maria_was_3h_from_a_client_demo_when_her_import_failed — here's_what_happened\"",
+    "domain": "copy",
+    "tags": ["storytelling", "narrative", "made-to-stick", "case-studies", "copywriting"]
+  },
+  {
+    "principle": "Strip jargon by asking whether a ten-year-old could understand your message — if they could not, the words are hiding the idea not expressing it",
+    "explanation": "X.copy|jargon_strip: Heath_curse_of_knowledge: jargon = shorthand_experts_use; outsider_hears_jargon -> cannot_build_mental_model -> disengages; test: \"could_a_10-year-old_understand_this_sentence?\"; translation_method: for_each_jargon_term -> ask_\"what_problem_does_this_solve?\"+\"what_does_it_feel_like_to_need_it?\"; concrete_analogy: \"it_works_like_X\" bridges_known_to_unknown; NO:feature_names_as_benefits NO:buzzwords_stacked: \"AI-powered_synergistic_omnichannel\"; eg: \"cloud-native_microservices_orchestration\" >> \"each_part_of_the_app_scales_on_its_own_so_one_bug_can't_crash_everything\"",
+    "domain": "copy",
+    "tags": ["jargon", "plain-language", "curse-of-knowledge", "made-to-stick", "copywriting"]
+  },
+  {
+    "principle": "Combine the unexpected opener with the concrete payoff — surprise earns attention for one sentence, concrete sensory detail converts that attention into memory",
+    "explanation": "X.copy|unexpected_plus_concrete: Heath_SUCCESs: U+C_combo: unexpected_alone -> attention_but_no_retention; concrete_alone -> memorable_but_unread; together: unexpected_gap_OPENS -> concrete_detail_FILLS_AND_STICKS; pattern: violation_of_expectation(\"you_think_X\") + specific_sensory_payoff(\"actually_Y: [concrete_detail]\"); ad_formula: counterintuitive_headline + vivid_specific_proof; NO:unexpected_without_concrete_followup NO:concrete_opening_of_expected_topic; eg: generic_tip_article >> \"Why_the_worst_copywriters_write_more\" + \"Every_deleted_draft_is_a_3-minute_attention_span_sharpener\"",
+    "domain": "copy",
+    "tags": ["unexpected", "concreteness", "made-to-stick", "headlines", "message-design", "copywriting"]
+  }
+]

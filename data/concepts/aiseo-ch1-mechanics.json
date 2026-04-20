@@ -1,0 +1,26 @@
+[
+  {
+    "principle": "AI models select fragments not pages — write self-contained paragraphs that can be lifted into an answer without editing",
+    "explanation": "X.seo|fragment_selection: AI_overview_picks_fragments NOT whole_pages; fragment_must_be: thematically_relevant + internally_consistent + structurally_transparent; one_complete_thought_per_paragraph; NO:long_paragraphs_mixing_multiple_ideas NO:meaning_that_depends_on_surrounding_context eg: \"paragraph_needing_3_previous_paragraphs_for_context\" >> \"self_contained_paragraph: definition + reason + example_in_one_block\"",
+    "domain": "seo",
+    "tags": ["ai-seo", "fragment-selection", "content-structure", "ai-overview"]
+  },
+  {
+    "principle": "Google AI Overview evaluates fragments on three criteria: topical relevance, content consistency, and structural transparency",
+    "explanation": "X.seo|google_ai_criteria: 1_relevance == content_matches_query + chosen_answer_format; 2_consistency == no_contradictions + no_outdated_data + no_internal_conflicts; 3_transparency == paragraph_is_quotable_as_complete_thought; Google_first_picks_answer_FORMAT (definition/list/steps/summary) THEN finds_fragments_fitting_that_format; NO:contradictory_data NO:mixing_current_and_outdated_info eg: \"page_says_both_yes_and_no_on_same_topic\" >> \"clear_single_position_with_evidence\"",
+    "domain": "seo",
+    "tags": ["ai-overview", "google", "content-quality", "fragment-criteria"]
+  },
+  {
+    "principle": "Format each paragraph as a criterion, step, reason, definition, or conclusion — these patterns get cited by all three AI systems",
+    "explanation": "X.seo|citable_formats: Bing_prefers: criteria + steps + causes + definitions + concise_conclusions; Google_prefers: structured_explanations + lists + summaries; all_three_systems_select_fragments_easy_to_embed_in_explanation; NO:rhetorical_questions NO:marketing_fluff_openings NO:vague_narrative eg: \"Our_company_has_always_believed_in_quality...\" >> \"Criterion:_SSL_certificate_confirms_site_ownership_and_encrypts_data_transfer\"",
+    "domain": "seo",
+    "tags": ["ai-seo", "paragraph-format", "bing", "citation-patterns"]
+  },
+  {
+    "principle": "High search position no longer guarantees traffic — AI answer absorbs clicks even from top-ranked pages not cited in it",
+    "explanation": "X.seo|position_vs_traffic: AI_answer_at_top == absorbs_user_attention; page_at_position_1_but_not_in_AI_answer == loses_clicks; page_at_position_5_but_cited_in_AI_answer == gets_attention; new_metric: not_rank_but_fragment_inclusion_in_AI_response; NO:assuming_rank_equals_traffic NO:ignoring_AI_overview_impact eg: \"rank_1_stable_but_traffic_dropped_30%\" >> \"check: is_AI_overview_active_for_this_query + is_your_fragment_included\"",
+    "domain": "seo",
+    "tags": ["ai-seo", "traffic", "rankings", "ai-overview", "visibility"]
+  }
+]

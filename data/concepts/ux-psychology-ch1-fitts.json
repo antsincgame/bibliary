@@ -1,0 +1,14 @@
+[
+  {
+    "principle": "Always add text labels to navigation icons — icon alone reduces tappable area and leaves action meaning ambiguous",
+    "explanation": "X.ux|fitts_icon_label: icon_only -> small_tappable_area + ambiguous_meaning; icon+text -> larger_target + clear_affordance_before_tap; applies_to: bottom_nav + tab_bar + toolbar; NO:icon_only_bottom_navigation NO:unlabeled_action_icons eg: \"bottom_nav: 4_icons_no_labels\" >> \"bottom_nav: icon+label_each (Home/Search/Orders/Profile)\"",
+    "domain": "ux",
+    "tags": ["fitts-law", "navigation", "icons", "tappable-area", "mobile"]
+  },
+  {
+    "principle": "Place confirmation dialogs and next-step actions near the element that triggered them — never force finger travel across the screen",
+    "explanation": "X.ux|fitts_next_action: trigger_at_bottom -> next_action_must_be_near_bottom NOT at_top; top->bottom->top_finger_travel -> adds_time + frustration; use_bottom_sheet_or_inline_confirmation; NO:trigger_bottom_dialog_top NO:action_at_bottom_result_at_top eg: \"delete_btn_bottom_right -> confirm_dialog_top_center\" >> \"delete_btn_bottom_right -> confirm_sheet_slides_from_bottom\"",
+    "domain": "ux",
+    "tags": ["fitts-law", "mobile", "dialogs", "placement", "finger-travel"]
+  }
+]

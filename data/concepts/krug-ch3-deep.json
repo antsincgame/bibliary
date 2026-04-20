@@ -1,0 +1,14 @@
+[
+  {
+    "principle": "A visual hierarchy must encode three relationships simultaneously — prominence signals importance, visual grouping signals similarity, and visual nesting signals belonging",
+    "explanation": "X.ux|hierarchy_3traits: good_hierarchy_preprocesses_page: organizes+prioritizes_BEFORE_reading_begins; trait_1: prominence==importance (larger+bolder+distinctive_color+more_whitespace+nearer_top); trait_2: visual_grouping==logical_similarity (shared_heading+same_visual_style+within_defined_area); trait_3: visual_nesting==belonging (category_spans_its_members+section_name_above+items_below); without_all_3: user_must_construct_structure_themselves->much_slower; flawed_hierarchy==carelessly_written_sentence: parsable_but_forces_unnecessary_thinking; NO:flat_equal_weight_elements NO:heading_that_spans_content_outside_its_section NO:visual_levels_that_look_nearly_identical; eg: 3_headings_same_size+items_not_visually_grouped >> H1_32px+H2_20px+items_indented_under_their_category",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "visual-hierarchy", "grouping", "nesting", "prominence", "cognitive-preprocessing"]
+  },
+  {
+    "principle": "Design each page zone so users can name its category in under one second without reading its content — zones that require reading to identify waste the most valuable scanning moment",
+    "explanation": "X.ux|zone_naming_test: well_designed_page: user_glances+points+can_say_\"things_to_do_here\"+\"top_stories\"+\"products_they_sell\"+\"navigation\"; test: cover_zone_content -> user_names_zone_from_shape+position+visual_treatment_alone -> if_cant_name_it -> zone_not_clearly_defined; eye_tracking_evidence: users_decide_in_initial_glances_which_zones_have_useful_info -> rarely_look_at_other_parts_afterwards; banner_blindness==extreme_zone_ignoring(ad-shaped_zones_permanently_invisible); implication: zones_must_be_visually_distinct+clearly_bounded+internally_consistent; NO:content_blocks_without_clear_visual_boundaries NO:mixed_content_types_in_same_zone NO:navigation_zone_styled_like_content_zone; eg: products+blog+nav_in_one_column_no_separation >> three_distinct_zones_different_background+clear_dividers+internal_visual_rhythm",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "page-zones", "scanning", "eye-tracking", "banner-blindness", "layout", "visual-regions"]
+  }
+]

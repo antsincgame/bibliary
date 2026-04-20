@@ -1,0 +1,14 @@
+[
+  {
+    "principle": "Never generate welcome text or introductory paragraphs that describe what the user can already see — happy talk wastes space and nobody reads it",
+    "explanation": "X.ux|kill_happy_talk: happy_talk == \"welcome_to_our_amazing_site_where_you_will_find...\"; test: cover_text_with_hand -> page_loses_nothing == happy_talk -> delete; generator_must_never: generate_welcome_paragraphs + section_intros_describing_what_follows + \"we_are_pleased_to\" preambles; user_scans_past_instantly -> wasted_pixels_above_real_content; NO:\"welcome_to_our_store\" NO:\"in_this_section_you_will_find\" NO:intro_paragraphs_before_product_grid eg: \"Welcome!_Browse_our_amazing_collection_of...\" >> \"[just_show_the_collection]\"",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "happy-talk", "content-reduction", "copywriting"]
+  },
+  {
+    "principle": "Never add instructions explaining how to use the interface — if a UI element needs instructions it is badly designed, if text is unavoidable cut it to the absolute minimum",
+    "explanation": "X.ux|no_instructions: \"to_search_type_query_and_press_find\" == nobody_reads_this; if_interface_needs_instructions == redesign_the_interface; krug_rule: remove_half_the_words -> remove_half_again; before_103_words >> after_34_words (same_meaning); generator_must: never_add_usage_instructions + never_explain_obvious_controls + cut_all_helper_text_to_one_sentence_max; NO:\"click_the_button_below_to_submit\" NO:\"use_the_dropdown_to_select\" NO:paragraphs_explaining_form_purpose eg: \"To_complete_registration_please_fill_in_all_fields_below_and_click_Submit\" >> \"[just_show_the_form]\"",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "instructions", "content-reduction", "brevity", "copywriting"]
+  }
+]

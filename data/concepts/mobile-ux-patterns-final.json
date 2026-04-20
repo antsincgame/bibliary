@@ -1,0 +1,50 @@
+[
+  {
+    "principle": "Make every touch target at least 44×44px with 8px spacing between adjacent targets — fingers are not pointers, and small targets cause tap errors that destroy the perceived quality of a product",
+    "explanation": "X.ux|touch_target_size: Apple_HIG: 44x44pt_minimum; Google_Material: 48x48dp_recommended; finger_pad: ~10mm(38px); spacing_between_targets: min_8px(prevents_adjacent_mis-taps); common_failures: (1)icon_buttons_24px (2)tight_nav_items (3)checkboxes_without_label_tap_area; hit_area_can_exceed_visual_size(padding+invisible_tap_zone); NO:24px_icon_buttons_in_mobile_nav NO:form_checkboxes_16px; eg: 24px_close_icon >> 44px_tap_area_around_24px_icon(via_padding)",
+    "domain": "ux",
+    "tags": ["mobile", "touch-targets", "mobile-ux", "accessibility", "usability"]
+  },
+  {
+    "principle": "Design for thumb reach zones and place primary actions in the bottom half of the screen — the top third of a phone screen is a stretch zone that users avoid one-handed",
+    "explanation": "X.ux|thumb_reach_zones: one_handed_use: significant_share_of_sessions(Hoober_2013_study); reach_zones: bottom_third=natural+comfortable; middle=OK_with_stretch; top_third=difficult_one_handed; implications: (1)primary_CTA: bottom_of_viewport_or_sticky_bottom_bar (2)navigation: bottom_tab_bar_better_than_hamburger_top (3)destructive_actions: deliberately_in_stretch_zone; desktop_pattern_in_mobile: top_nav+CTA_above_fold -> wrong; NO:primary_CTA_fixed_top_right_on_mobile NO:bottom_sheet_action_at_very_top; eg: CTA_sticky_top >> CTA_sticky_bottom",
+    "domain": "ux",
+    "tags": ["mobile", "thumb-zones", "navigation", "mobile-ux", "usability"]
+  },
+  {
+    "principle": "Replace hamburger menus with bottom tab navigation for apps with more than two core destinations — hamburger menus hide navigation and measurably reduce feature discoverability",
+    "explanation": "X.ux|bottom_tab_navigation: hamburger: hidden_navigation -> users_explore_less(NNG_eyetracking_studies); bottom_tabs: always_visible -> higher_feature_discoverability+faster_switching; tab_count: 3-5_items(fewer->unnecessary; more->crowded); tab_labels: always_visible_text+icon(not_icon_only); active_state: clear_visual_indicator; progressive_disclosure: if_5+_sections -> bottom_tabs+\"More\"_overflow; NO:hamburger_for_primary_destinations NO:icon-only_tabs_without_labels; eg: hamburger_top_left >> bottom_tab_bar_5_labeled_tabs",
+    "domain": "ux",
+    "tags": ["mobile", "navigation", "hamburger-menu", "bottom-tabs", "mobile-ux"]
+  },
+  {
+    "principle": "Show a sticky call-to-action bar at the bottom of mobile landing pages — users who scroll past the fold on mobile lose sight of the CTA and experience no re-trigger to act",
+    "explanation": "X.ux|mobile_sticky_cta: mobile_scroll_behavior: user_scrolls_down -> above_fold_CTA_disappears -> needs_re-trigger; sticky_bottom_bar: always_in_thumb_zone+always_visible; content: CTA_button+optional_one_trust_signal(\"4.9★\"+\"Free_trial\"); height: max_56-64px(not_eat_screen); dismiss: allow_close_if_non-critical; desktop: not_needed(CTA_stays_visible); NO:CTA_only_above_fold_on_mobile NO:sticky_bar_with_3+_items; eg: CTA_only_at_top >> sticky_bottom_bar:\"Get_started_free\"+dismiss",
+    "domain": "ux",
+    "tags": ["mobile", "cta", "sticky", "landing-page", "mobile-ux", "conversion"]
+  },
+  {
+    "principle": "Use bottom sheets instead of modals for mobile overlays — center-screen modals violate mobile interaction patterns and are harder to dismiss with one thumb",
+    "explanation": "X.ux|bottom_sheet_pattern: modal_on_mobile: appears_center_screen -> close_button_top_right_hard_to_reach; bottom_sheet: slides_up_from_bottom -> dismiss_via_swipe_down+backdrop_tap; types: (1)action_sheet: list_of_actions (2)form_sheet: inline_form (3)info_sheet: details+expanded_content; handle: visible_drag_indicator_at_top; height: partial(40-60%_screen) for_actions; full_height_for_complex_forms; NO:alert_dialogs_for_non-critical_mobile_content NO:modal_with_close_at_top_right_on_mobile; eg: center_modal_filter >> bottom_sheet_filter_panel",
+    "domain": "ux",
+    "tags": ["mobile", "bottom-sheet", "modal", "mobile-ux", "interaction-patterns"]
+  },
+  {
+    "principle": "Defer to native mobile input methods and never suppress the system keyboard — custom virtual keyboards and blocked autocomplete increase form abandonment on mobile",
+    "explanation": "X.ux|mobile_input_native: native_keyboard_types: type=email(@ shown); type=tel(numeric_pad); type=number(numpad); type=search(Search_button); inputmode=decimal(decimal_numpad); autocomplete_attributes: enable_autofill(name+email+address+cc); never: suppress_OS_autocomplete; never: block_copy-paste; mobile_form_rule: fewest_fields_possible + native_input_for_each; NO:custom_OTP_keyboard NO:autocomplete=off_on_standard_fields; eg: text_field_for_phone >> <input_type=tel_autocomplete=tel>",
+    "domain": "ux",
+    "tags": ["mobile", "forms", "keyboard", "autocomplete", "mobile-ux", "input"]
+  },
+  {
+    "principle": "Optimize all tap interactions for 300ms zero-delay response — adding touch-action:manipulation removes the 300ms click delay browsers insert on unoptimized mobile pages",
+    "explanation": "X.ux|mobile_tap_delay: legacy_300ms_delay: browser_waits_to_detect_double_tap; feels_laggy; fix: (1)meta_viewport_width=device-width(modern_browsers_auto-remove_delay) (2)touch-action:manipulation_on_interactive_elements(explicit_opt-out) (3)CSS:cursor:pointer_on_non-link_interactives; NO:missing_viewport_meta NO:javascript_touchstart_as_click_workaround(wrong); eg: 300ms_tap_lag_on_buttons >> meta_viewport+touch-action:manipulation -> instant_response",
+    "domain": "ux",
+    "tags": ["mobile", "performance", "tap-delay", "touch-action", "mobile-ux"]
+  },
+  {
+    "principle": "Test every critical user flow on a real mid-range Android device — flagship iPhone tests hide performance and touch issues that affect the majority of global mobile users",
+    "explanation": "X.ux|mobile_test_device: testing_on_flagship_only: CPU_4-8x_faster_than_median_device -> JS_passes_that_would_fail_on_real_device; global_market: Android_~72%_global_share+median_device_2019-era_CPU; test_devices: Moto_G_Power+Samsung_A_series+2019_mid_range; test_conditions: throttled_CPU(4x_slowdown_Chrome_DevTools)+slow_3G; Chrome_DevTools_device_emulation: screen_size_only NOT_CPU; NO:testing_only_on_latest_iPhone+Chrome_desktop NO:emulator_only_without_real_device; eg: iPhone_14_Pro_only >> +Moto_G_throttled_4x_CPU_test",
+    "domain": "ux",
+    "tags": ["mobile", "testing", "devices", "performance", "mobile-ux"]
+  }
+]

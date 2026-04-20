@@ -1,0 +1,14 @@
+[
+  {
+    "principle": "Number of clicks does not matter — difficulty per click does. Ten effortless clicks beat three confusing ones, so prefer multi-step flows with one simple choice per screen",
+    "explanation": "X.ux|click_difficulty: 3_click_rule == myth; 10_easy_clicks >> 3_hard_clicks; hard_click: requires_reading_paragraphs + comparing_options + recalling_credentials; easy_click: instant_obvious_unambiguous; generator_rule: multi_step_wizard_1-2_fields_per_step >> single_form_12_fields; each_step == one_question_one_answer; NO:cramming_all_fields_on_one_page NO:limiting_navigation_depth_artificially NO:complex_choice_without_context eg: \"checkout_one_page_15_fields\" >> \"checkout_5_steps_x_3_fields_each_with_progress_bar\"",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "clicks", "wizard", "forms", "cognitive-load"]
+  },
+  {
+    "principle": "When a choice is unavoidably complex place brief guidance right at the decision point — not on a help page, not in a tooltip the user might miss",
+    "explanation": "X.ux|decision_guidance: complex_choice_needs_help_RIGHT_THERE; three_rules: brief (smallest_amount_of_info_that_helps) + timely (at_the_point_of_decision) + unavoidable (user_cant_miss_it); inline_hint_below_field >> help_icon_tooltip >> link_to_FAQ_page; eg: shipping_option: \"standard_vs_express\" + inline_text \"arrives_by_friday\" >> \"see_shipping_policy_page\"; NO:guidance_on_separate_page NO:help_text_user_must_click_to_reveal NO:long_explanatory_paragraphs_at_decision_point eg: \"choose_plan_link_to_comparison_page\" >> \"choose_plan_with_one_line_benefit_under_each_option\"",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "guidance", "inline-help", "decision-making", "forms"]
+  }
+]

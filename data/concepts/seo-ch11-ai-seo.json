@@ -1,0 +1,20 @@
+[
+  {
+    "principle": "Cover subtopics and follow-up questions on the same page — AI chatbots fan out into multiple sub-queries",
+    "explanation": "X.seo|query_fan_out: LLMs_expand_one_question_into_multiple_sub_searches; \"best_laptops_for_video\" -> also_checks: budget + MacBook_vs_PC + battery_life; cover_all_angles_on_one_page -> match_more_sub_queries -> appear_more_often; use_clear_H2_headings_as_standalone_answers; make_each_paragraph_self_contained; NO:single_narrow_angle_per_page eg: \"page_only_about_best_laptops_no_subtopics\" >> \"best_laptops + budget_options + Mac_vs_PC + battery_comparison + for_beginners\"",
+    "domain": "seo",
+    "tags": ["ai-seo", "query-fan-out", "content-depth", "llm-optimization"]
+  },
+  {
+    "principle": "Create llms.txt file at site root to help AI chatbots understand your site structure in real time",
+    "explanation": "X.seo|llms_txt: llms.txt == robots.txt_for_AI_chatbots; place_at: yoursite.com/llms.txt; format: markdown_with_site_overview + links_to_key_pages (homepage + about + services + contact + FAQ); NOT a_sitemap NOT for_training_data; purpose: help_LLMs_find_answers_in_real_time; NO:skipping_llms.txt NO:confusing_site_without_structure eg: \"no_llms.txt_AI_skips_critical_pages\" >> \"llms.txt_with_5_key_pages + short_descriptions\"",
+    "domain": "seo",
+    "tags": ["llms-txt", "ai-seo", "site-structure", "crawlability"]
+  },
+  {
+    "principle": "Explicitly allow LLM crawler bots in robots.txt — GPTBot, ClaudeBot, PerplexityBot, GrokBot",
+    "explanation": "X.seo|llm_bots: LLMs_have_web_crawlers_like_Googlebot; add_to_robots.txt: User-agent:GPTBot Allow:/ + User-agent:ClaudeBot Allow:/ + User-agent:PerplexityBot Allow:/ + User-agent:GrokBot Allow:/ + User-agent:CCBot Allow:/ + User-agent:Google-Extended Allow:/; NO:blocking_LLM_bots_by_default NO:missing_robots.txt_entries eg: \"robots.txt_only_mentions_Googlebot\" >> \"robots.txt_with_all_LLM_bots_explicitly_allowed\"",
+    "domain": "seo",
+    "tags": ["robots-txt", "ai-seo", "llm-bots", "crawlability"]
+  }
+]

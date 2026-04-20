@@ -1,0 +1,14 @@
+[
+  {
+    "principle": "Use the most obvious conventional label for every navigation item and button — clever or branded names make users think",
+    "explanation": "X.ux|obvious_labels: users_scan_not_read -> label_must_be_instantly_recognized; conventional_beats_clever: \"Jobs\" >> \"Job-o-Rama\" + \"Employment_Opportunities\"; \"Sign_in\" >> \"Access_Your_Account\"; \"Cart\" >> \"My_Shopping_Experience\"; every_unclear_label == question_mark_in_user_head == cognitive_load; NO:marketing_names_for_nav NO:branded_jargon_for_common_actions NO:clever_wordplay_on_buttons eg: \"Job-o-Rama + Employment_Opportunities\" >> \"Jobs\"",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "labels", "naming", "conventions", "cognitive-load"]
+  },
+  {
+    "principle": "Break visual or structural consistency when it makes the interface significantly clearer — clarity always wins over uniformity",
+    "explanation": "X.ux|clarity_over_consistency: consistency == good_default BUT NOT absolute_rule; if_slightly_inconsistent == significantly_clearer -> choose_clarity; eg: form_with_one_wider_field_breaking_grid BUT making_purpose_obvious >> all_fields_same_width_but_confusing; applies_to: nav_item_styled_differently_to_signal_current_section + button_breaking_color_pattern_for_emphasis; NO:blind_consistency_that_hides_meaning NO:same_style_when_different_behavior eg: \"all_nav_items_identical_styling\" >> \"current_section_visually_distinct_even_if_inconsistent\"",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "clarity", "consistency", "visual-hierarchy"]
+  }
+]

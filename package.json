@@ -8,9 +8,11 @@
     "init": "tsx src/init-collection.ts",
     "load": "tsx src/load.ts",
     "search": "tsx src/search.ts",
-    "decode": "tsx src/decode-hdsk.ts",
     "llm": "tsx src/llm-prompt.ts",
     "chat": "tsx src/rag-chat.ts",
+    "export": "tsx scripts/export-all.ts",
+    "duplicates": "tsx scripts/find-duplicates.ts",
+    "inventory": "tsx scripts/inventory.ts",
     "electron:compile": "tsc -p tsconfig.electron.json",
     "electron:dev": "node scripts/prepare-electron.js && tsc -p tsconfig.electron.json && electron dist-electron/electron/main.js",
     "electron:build": "node scripts/prepare-electron.js && tsc -p tsconfig.electron.json && electron-builder"

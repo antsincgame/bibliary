@@ -1,0 +1,44 @@
+[
+  {
+    "principle": "Design habit loops as four-phase cycles — Trigger initiates, Action executes, Variable Reward satisfies, Investment primes the next trigger",
+    "explanation": "X.ux|hook_model: Trigger->Action->Variable_Reward->Investment->next_Trigger; 4_phases_form_closed_loop_NOT_funnel; loop_repetition -> habit_formation -> internal_trigger_replaces_external; NO:treating_engagement_as_one-time_event NO:reward_without_investment_step; eg: LinkedIn: email_notification(T)->login(A)->see_who_viewed_profile(VR)->update_info+add_connections(I)->more_data_fuels_next_notification",
+    "domain": "ux",
+    "tags": ["hook-model", "habit-formation", "engagement", "nir-eyal", "behavior-design", "retention"]
+  },
+  {
+    "principle": "Design external triggers to create internal ones — the goal is users thinking of your product when they feel a specific emotion, not when they see your notification",
+    "explanation": "X.ux|trigger_progression: external: paid(ads)+earned(PR)+relationship(referral)+owned(notifications); goal: external->repeated_use->emotion+product_association->internal_trigger_formed; internal: boredom->Instagram; loneliness->Facebook; uncertainty->Google; NO:designing_only_for_external_triggers NO:app_that_requires_notification_every_session; eg: Twitter_push_notif(external)->habit->internal: \"wondering_what's_happening\"->opens_without_trigger",
+    "domain": "ux",
+    "tags": ["triggers", "habit-formation", "engagement", "nir-eyal", "notifications", "behavior-design"]
+  },
+  {
+    "principle": "Raise action probability by cutting the six ability costs — time, money, effort, cognitive load, social risk, and habit disruption each block behavior independently",
+    "explanation": "X.ux|fogg_ability_model: B=MAT: Behavior=Motivation×Ability×Trigger; 6_ability_factors: (1)Time: task_too_long (2)Money: costs_too_much (3)Physical_effort: too_hard (4)Brain_cycles: too_confusing (5)Social_deviance: others_judge (6)Non-routine: breaks_habit; fix_each_independently; one_factor_removed_can_flip_behavior_even_with_low_motivation; NO:only_increasing_motivation_when_ability_is_blocker; eg: \"register_to_comment\"(non-routine+effort) >> \"reply_as_guest\"",
+    "domain": "ux",
+    "tags": ["fogg-model", "friction", "ability", "behavior-design", "nir-eyal", "onboarding", "conversion"]
+  },
+  {
+    "principle": "Match your variable reward type to what users fundamentally seek — social validation, discovery, or mastery each requires different UI patterns",
+    "explanation": "X.ux|variable_rewards: 3_types: (1)TRIBE: social_validation -> likes+comments+followers; unpredictable_social_response=dopamine (2)HUNT: info_discovery -> infinite_scroll+pull_to_refresh+random_feed; Pinterest/Twitter_model (3)SELF: mastery+completion -> progress_bars+badges+streaks; Duolingo_streaks; variability_key: predictable_reward_kills_engagement; NO:fixed_reward_schedule NO:same_feed_order_every_session; eg: scroll->sometimes_great_post+sometimes_not -> variable_ratio=strongest_habit_loop",
+    "domain": "ux",
+    "tags": ["variable-rewards", "engagement", "gamification", "nir-eyal", "habit-formation", "retention"]
+  },
+  {
+    "principle": "End each session with a small investment that loads the next trigger — stored data, preferences, and created content make the product more valuable and switching more costly",
+    "explanation": "X.ux|investment_phase: investment == user_effort_that_improves_product_for_them; forms: (1)data_stored: playlists+history+preferences (2)content_created: posts+replies+reviews (3)social_graph_built: followers_inside_product (4)skills_learned: workflow_mastery; investment -> switching_cost + primes_next_trigger; AFTER_reward_NOT_before; NO:asking_investment_before_delivering_value; eg: Spotify: listen->discover(reward)->save_to_playlist->recommendations_improve->next_session_better",
+    "domain": "ux",
+    "tags": ["investment", "retention", "switching-cost", "nir-eyal", "habit-formation", "engagement"]
+  },
+  {
+    "principle": "Earn notification permission by demonstrating value first — asking after a meaningful win converts far better than asking on first launch",
+    "explanation": "X.ux|owned_trigger_timing: owned: push_notifications+email+app_icon+widget; highest_conversion_of_all_trigger_types (user_opted_in); timing_rule: request_AFTER_aha_moment NOT_on_first_screen; pattern: onboard->deliver_first_value->THEN_ask; frequency: enough_to_build_habit NOT_enough_to_annoy; NO:notification_permission_on_first_open NO:daily_blast_without_relevance; eg: \"enable_notifications\"_on_launch >> onboard->first_win->\"Want_to_know_when_you_get_a_reply?\"",
+    "domain": "ux",
+    "tags": ["notifications", "triggers", "permission", "nir-eyal", "onboarding", "engagement"]
+  },
+  {
+    "principle": "Find the internal trigger your product should attach to by asking why five times — surface the underlying emotion, not the stated reason for use",
+    "explanation": "X.ux|five_whys_trigger: internal_trigger == negative_emotion_product_relieves; method: ask_\"why_would_user_use_this?\"_5x_until_emotion_found; eg: why_use_news_app?->stay_informed->why?->seem_smart->why?->fear_irrelevance->why?->anxiety_about_status; design_for_THAT_emotion NOT_stated_reason; NO:designing_only_for_surface_use_case NO:ignoring_emotional_layer; apply_to: onboarding_copy+notification_text+empty_state+value_prop",
+    "domain": "ux",
+    "tags": ["internal-triggers", "behavior-design", "nir-eyal", "emotion", "user-research", "product-strategy"]
+  }
+]

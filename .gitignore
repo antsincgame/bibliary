@@ -5,3 +5,21 @@ release/
 .env
 .cache/
 *.blockmap
+
+# IDE / AI local config
+.claude/
+
+# Source texts (copyrighted books — not for redistribution)
+data/*.pdf
+data/*.txt
+*.txt
+
+# Generated / intermediate data
+data/_*
+data/cleanup/
+data/finetune/
+data/apps/
+
+# Merge artifacts inside concepts
+data/concepts/_*
+data/concepts/merged-dedup.json

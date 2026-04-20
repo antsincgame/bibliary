@@ -1,0 +1,38 @@
+[
+  {
+    "principle": "Choose www or non-www and stick with one — search engines treat them as two separate sites",
+    "explanation": "X.seo|www_canonical: www.site.com != site.com in_Google_eyes; pick_one_format -> set_canonical -> redirect_other; same_applies: subdomains_treated_as_independent -> link_juice_not_shared; NO:both_www_and_non-www_active NO:overusing_subdomains eg: \"site_accessible_via_www_AND_non-www\" >> \"301_redirect_www_to_non-www + canonical_set\"",
+    "domain": "seo",
+    "tags": ["www", "canonical", "redirects", "technical-seo"]
+  },
+  {
+    "principle": "Use dashes not underscores in URLs — search engines read dashes as word separators",
+    "explanation": "X.seo|url_dashes: dashes == word_separators_for_search_engines; underscores == joined_words; industry_standard == dashes; NO:underscores_in_urls eg: \"yoursite.com/seo_tips\" >> \"yoursite.com/seo-tips\"",
+    "domain": "seo",
+    "tags": ["urls", "dashes", "technical-seo", "site-structure"]
+  },
+  {
+    "principle": "Use semantic HTML tags (nav, article, footer, header) — they help search engines map your page structure",
+    "explanation": "X.seo|semantic_html: use: <nav> for_navigation + <article> for_main_content + <footer> for_footer + <header> for_header + <section> for_sections; headings: H1_for_main_idea + H2_for_subtopics + H3_for_details; add_alt_text_to_all_images; validate_HTML: W3C_Validator; follow_WCAG_accessibility_guidelines; NO:div_soup NO:images_without_alt eg: \"<div class=nav>\" >> \"<nav role=navigation>\"",
+    "domain": "seo",
+    "tags": ["semantic-html", "accessibility", "html-structure", "on-page"]
+  },
+  {
+    "principle": "Ensure main content is readable without JavaScript — JS-heavy sites can hide content from search engines",
+    "explanation": "X.seo|js_seo: JavaScript_can_obscure_content_from_crawlers; best_practice: main_content + navigation == readable_with_JS_disabled; test: disable_JS_in_browser -> check_if_content_visible; NO:rendering_all_content_via_client_side_JS eg: \"SPA_with_empty_HTML_all_content_rendered_by_React\" >> \"server_rendered_HTML_with_main_content + JS_for_interactivity\"",
+    "domain": "seo",
+    "tags": ["javascript-seo", "ssr", "crawlability", "technical-seo"]
+  },
+  {
+    "principle": "Ecommerce pages must link to return policy, shipping info, and terms — missing trust pages hurt quality rating",
+    "explanation": "X.seo|ecommerce_trust: Google_Search_Quality_Guidelines: transaction_pages MUST link_to: refund_policy + return_policy + delivery_info + terms_and_conditions; clear_payment_security + visible_contact_info; falls_under_YMYL (Your_Money_Your_Life); NO:checkout_without_policy_links NO:hidden_contact_info eg: \"product_page_no_return_policy_no_contact\" >> \"product_page + footer: returns + shipping + terms + contact + secure_payment_badge\"",
+    "domain": "seo",
+    "tags": ["ecommerce", "trust-signals", "ymyl", "quality-guidelines"]
+  },
+  {
+    "principle": "Thin content damages your entire domain score — Google AI systems assess overall site helpfulness not just individual pages",
+    "explanation": "X.seo|thin_content: Google_Helpful_Content_System == AI_that_grades_whole_domain; many_thin_pages -> drags_down_entire_site; SpamBrain == AI_that_detects_spam_across_site; fix: remove_or_improve_thin_pages + ensure_every_page_has_depth_and_value; NO:mass_producing_shallow_content NO:keeping_outdated_pages eg: \"200_pages_of_300_word_generic_content\" >> \"50_pages_of_deep_helpful_content_with_original_insights\"",
+    "domain": "seo",
+    "tags": ["thin-content", "helpful-content", "site-quality", "content-audit"]
+  }
+]

@@ -1,0 +1,38 @@
+[
+  {
+    "principle": "Make the primary completion action the most visually prominent button on the screen — a clear, obvious last step gives users closure and prevents them from abandoning a transaction that's already done",
+    "explanation": "X.ui|prominent_done: use_when: any_form_submission+transaction_completion+settings_commit+wizard_end; visual_treatment: contrasting_color+generous_surrounding_space+clear_label(Done/Submit/Install/Search); position: near_last_field_or_control(not_far_away); secondary_actions(Reset+Help): visually_deemphasized; NO:done_button_same_visual_weight_as_secondary_actions NO:primary_CTA_far_from_last_input; eg: Submit_button_buried_below_secondary_links >> large_contrasting_Submit_button_near_last_field -> user_finds_and_clicks",
+    "domain": "ui",
+    "tags": ["prominent-done", "cta", "form-submission", "designing-interfaces", "actions"]
+  },
+  {
+    "principle": "Show action buttons only on hover to avoid cluttering list interfaces with repeated controls — but always provide keyboard and context-menu alternatives since hover is invisible on touch screens",
+    "explanation": "X.ui|hover_tools: use_when: list_items_with_2+_actions+showing_all_would_clutter; implementation: buttons_invisible_until_mouseover -> appear_on_hover; critical_caveat: hover_doesnt_exist_on_touch -> keyboard_shortcuts+context_menu_alternatives_required; critical_primary_action_must_be_visible_always(not_hidden_in_hover); NO:hover-only_for_the_only_way_to_perform_an_action_on_mobile NO:critical_action_discoverable_only_via_hover; eg: email_list_cluttered_with_reply+archive_per_row >> hover_on_row -> actions_appear_cleanly",
+    "domain": "ui",
+    "tags": ["hover-tools", "progressive-disclosure", "list-actions", "designing-interfaces", "interactions"]
+  },
+  {
+    "principle": "Show a loading indicator the moment a user submits an action — users with visible feedback wait measurably longer without frustration than those watching a frozen interface",
+    "explanation": "X.ui|spinners: trigger: user_submits_action -> show_immediately_before_response; spinner=stateless_animation(unknown_duration); loading_indicator=progress_meter+percentage(known_duration); rule: also_change_cursor; research: users_with_feedback_wait_longer+without_frustration; unknown_wait -> spinner; known_wait -> progress_bar+cancel_button; NO:UI_frozen_with_no_feedback_during_operation NO:spinner_that_never_resolves_without_error; eg: form_submit_freezes_5s_silently -> user_clicks_again >> spinner_appears_immediately -> user_waits_patiently",
+    "domain": "ui",
+    "tags": ["spinners", "loading-indicators", "feedback", "designing-interfaces", "system-status"]
+  },
+  {
+    "principle": "Accept multiple input formats and normalize to the correct format silently — never reject a credit card number because the user typed spaces or hyphens between digit groups",
+    "explanation": "X.ui|forgiving_format: principle: be_liberal_in_what_you_accept -> normalize_to_canonical_format_silently; applies_to: credit_card_numbers+phone_numbers+dates+zip_codes; implementation: strip_spaces+hyphens+dashes -> validate_underlying_digits; normalize_and_echo_back_to_user_in_standard_format; NO:rejecting_valid_data_for_formatting_reasons NO:forcing_user_to_know_exact_expected_format; eg: credit_card_rejects_4444_4444_4444_4444(with_spaces) >> PayPal_accepts_any_separator -> normalizes_automatically",
+    "domain": "ui",
+    "tags": ["forgiving-format", "input-validation", "forms", "designing-interfaces", "data-entry"]
+  },
+  {
+    "principle": "Place form error messages inline next to the originating field — modal error dialogs and separate error screens both force users to dismiss or navigate before fixing the problem they can no longer see",
+    "explanation": "X.ui|error_messages: placement: inline_on_form+next_to_originating_field; content: which_field+why_wrong+how_to_fix; avoid: modal_error_dialog(dismiss_to_fix -> error_message_gone) + error_screen_after_submit(Back_button -> errors_gone); best: real-time_inline_validation_as_user_types; reinforce_with: color+icon+text(never_color_alone); NO:modal_dialog_for_form_errors NO:separate_error_page_requiring_Back_button; eg: submit -> separate_error_page -> click_Back -> errors_gone >> inline_red_field_with_fix_hint -> fix_without_losing_context",
+    "domain": "ui",
+    "tags": ["error-messages", "form-validation", "inline-validation", "designing-interfaces", "forms"]
+  },
+  {
+    "principle": "Place a short example or explanation beside every text field whose expected format is not obvious — visually separate it from the label so expert users can ignore hints without breaking their scanning rhythm",
+    "explanation": "X.ui|input_hints: what: phrase_or_example_beside_or_below_text_field; why: frees_user_from_guessing_format+context_label_alone_cant_provide; placement: below_or_beside+visually_distinct_from_label; visibility_options: always_visible OR on_focus_only OR on_condition; length: as_short_as_possible -> long_hints_clutter; placeholder_text_alone_insufficient(disappears_on_focus); NO:no_hint_on_ambiguous_fields(phone+date+username+password_rules); eg: Date_field_no_hint -> format_errors >> Date_field+(MM/DD/YYYY_hint) -> zero_format_errors",
+    "domain": "ui",
+    "tags": ["input-hints", "placeholder", "form-labels", "designing-interfaces", "forms"]
+  }
+]

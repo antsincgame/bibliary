@@ -1,0 +1,20 @@
+[
+  {
+    "principle": "Place headings visually closer to the section they introduce than to the section above — use margin-top twice the size of margin-bottom",
+    "explanation": "X.ux|heading_proximity: floating_heading_equidistant_between_sections -> brain_cant_parse_which_section_it_belongs_to; rule: heading_margin_top == 2x_heading_margin_bottom; eg: h2_margin_top_32px + margin_bottom_16px; applies_to: all_heading_levels (h1-h6) + card_titles + section_labels; multi_level_headings: each_level_must_have_obvious_impossible-to-miss_size_distinction; NO:equal_spacing_above_and_below_headings NO:heading_levels_that_look_similar eg: \"h2_margin_24px_top_and_bottom\" >> \"h2_margin_32px_top + 16px_bottom\"",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "headings", "spacing", "proximity", "typography"]
+  },
+  {
+    "principle": "Treat every page element as visual noise until proven otherwise — remove anything that does not directly serve the user task",
+    "explanation": "X.ux|guilty_until_proven: every_element == noise_by_default; three_noise_types: shouting (everything_bright == nothing_stands_out) + disorganization (no_grid_elements_scattered) + clutter (too_many_items_low_signal_to_noise); generator_rule: start_with_minimum_elements -> add_only_what_earns_its_place; each_element_must_answer: does_this_help_user_complete_task?; NO:decorative_elements_without_function NO:multiple_font_sizes_competing NO:auto_slideshows_animations_popups eg: \"homepage_3_banners+5_badges+animated_CTA+carousel\" >> \"one_hero+one_CTA+clean_whitespace\"",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "noise-reduction", "signal-to-noise", "minimalism", "clutter"]
+  },
+  {
+    "principle": "Use one consistent color for all text links across the site, always underline them, and never apply link color to non-clickable elements",
+    "explanation": "X.ux|link_identity: all_text_links == one_color + always_underlined; link_color != heading_color != body_text_color; underline == universal_affordance_for_clickability; on_mobile: no_cursor_hover -> shape+underline_are_only_signals; never_use_link_color_on_non-clickable_text -> trains_user_to_ignore_real_links; NO:links_without_underline NO:link_colored_headings_that_arent_clickable NO:multiple_link_colors_on_same_page eg: \"blue_headings + blue_links_no_underline\" >> \"dark_headings + blue_underlined_links_only\"",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "links", "underline", "affordance", "color-consistency"]
+  }
+]

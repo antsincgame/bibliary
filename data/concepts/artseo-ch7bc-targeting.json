@@ -1,0 +1,26 @@
+[
+  {
+    "principle": "Place target keyword at the beginning of the title tag and brand name at the end — users see content value before brand",
+    "explanation": "X.seo|title_keyword_first: keyword_at_start_of_title == most_visible_to_user_in_SERP; brand_at_end; format: \"Keyword_Phrase - Secondary | Brand_Name\"; dividers: pipe | dash - colon :; max_65_chars; Google_uses_your_title_87%_of_time; NO:brand_first NO:vague_titles eg: \"Best_Buy | PS4\" >> \"PS4_Games_and_Consoles_for_PlayStation_4 - Best_Buy\"",
+    "domain": "seo",
+    "tags": ["title-tag", "keyword-placement", "serp", "ctr"]
+  },
+  {
+    "principle": "Never target the same keyword phrase on multiple pages — keyword cannibalization forces Google to guess which page to rank",
+    "explanation": "X.seo|cannibalization: two_pages_targeting_same_keyword == competing_against_yourself; Google_picks_one_and_may_pick_wrong_one; each_page == one_unique_primary_keyword; if_overlap_exists: merge_pages OR differentiate_keywords; NO:same_keyword_in_title_of_multiple_pages eg: \"page_1_title='running_shoes' + page_2_title='best_running_shoes'\" >> \"page_1='running_shoes_for_beginners' + page_2='trail_running_shoes_comparison'\"",
+    "domain": "seo",
+    "tags": ["keyword-cannibalization", "content-planning", "on-page", "antipattern"]
+  },
+  {
+    "principle": "URL case sensitivity on Linux servers creates duplicate content — enforce lowercase with server config or 301 redirects",
+    "explanation": "X.seo|url_lowercase: Linux/Apache_servers == case_sensitive: /Products/ != /products/; same_content_at_different_URLs == duplicate_content; fix: implement_tolower_in_server_config OR 301_redirect_uppercase_to_lowercase; Windows_IIS == case_insensitive (no_problem); NO:mixed_case_urls NO:uppercase_in_any_url eg: \"domain.com/Products/Widgets\" >> \"domain.com/products/widgets + 301_redirect_from_uppercase\"",
+    "domain": "seo",
+    "tags": ["url-case", "duplicate-content", "server-config", "technical-seo"]
+  },
+  {
+    "principle": "Contradictory canonical tags are silently ignored — page A pointing to B while B points to A means no canonical at all",
+    "explanation": "X.seo|canonical_conflicts: two_canonical_tags_on_same_page_pointing_to_different_targets == both_ignored; page_A_canonical_to_B + page_B_canonical_to_A == circular_loop_both_ignored; Google_treats_canonical_as_suggestion_not_directive; one_page == one_canonical_pointing_to_one_target; NO:multiple_canonical_tags NO:circular_canonical_chains eg: \"page_A->canonical_B + page_B->canonical_A\" >> \"page_A->canonical_A (self) + page_B->canonical_A (duplicate_points_to_original)\"",
+    "domain": "seo",
+    "tags": ["canonical", "duplicate-content", "technical-seo", "antipattern"]
+  }
+]

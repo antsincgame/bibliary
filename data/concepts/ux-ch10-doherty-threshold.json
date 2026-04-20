@@ -1,0 +1,20 @@
+[
+  {
+    "principle": "Use skeleton screens for content layout and blur-up placeholders for images — both create instant perceived loading and prevent layout shifts",
+    "explanation": "X.ux|perceived_loading: skeleton_screen: show_placeholder_blocks_instantly -> replace_with_real_content_progressively; prevents: layout_jumping + blank_white_page + disorientation; blur_up: load_tiny_image (20px) -> scale_up + gaussian_blur -> swap_to_full_res_with_fade; next_js: placeholder_blur built_in; both_techniques: reserve_space_upfront -> zero_CLS; NO:blank_page_while_loading NO:images_popping_in_causing_layout_shift eg: \"white_page_3sec -> content_appears_all_at_once\" >> \"skeleton_blocks_instant -> text_fills_in -> blurred_images_sharpen\"",
+    "domain": "ux",
+    "tags": ["doherty-threshold", "skeleton-screen", "blur-up", "perceived-performance", "cls"]
+  },
+  {
+    "principle": "Show action results immediately before server confirmation and roll back only on failure — optimistic UI makes apps feel instant even on slow connections",
+    "explanation": "X.ux|optimistic_ui: user_action -> show_result_immediately -> process_in_background -> rollback_only_on_error; instagram: comment_appears_instantly_before_actually_posted; perceived_response: 0ms instead_of_500-2000ms; works_for: likes + comments + toggles + saves + cart_additions; error_handling: show_subtle_error + retry_option IF server_rejects; NO:waiting_for_server_to_show_result NO:spinner_for_every_micro_action eg: \"click_like -> spinner -> 800ms -> heart_fills\" >> \"click_like -> heart_fills_instantly -> server_confirms_in_background\"",
+    "domain": "ux",
+    "tags": ["doherty-threshold", "optimistic-ui", "perceived-performance", "instant-feedback"]
+  },
+  {
+    "principle": "Add intentional delay to trust-sensitive processes like payments, security scans and data analysis — instant completion feels untrustworthy and cheap",
+    "explanation": "X.ux|trust_friction: too_fast == user_doubts_thoroughness; payment_processed_in_50ms -> feels_like_nothing_happened; security_scan_instant -> feels_like_fake; technique: add_300-2000ms_delay + show_what_is_being_done (checking_payment + scanning_vulnerabilities + analyzing_data); google_privacy_checkup: adds_delay + educates_user_during_wait; confirmation_modal: friction -> activates_system_2_thinking -> fewer_mistakes; NO:instant_payment_with_no_processing_feedback NO:security_scan_that_finishes_before_user_reads eg: \"payment_confirmed_instantly\" >> \"processing_payment_animation_1.5s + checking_card + confirming_order + done_checkmark\"",
+    "domain": "ux",
+    "tags": ["doherty-threshold", "intentional-friction", "trust", "perceived-value"]
+  }
+]

@@ -1,0 +1,20 @@
+[
+  {
+    "principle": "A citable paragraph has four properties: one thought, clear opening that states its function, completeness without context, neutral tone without imagery",
+    "explanation": "X.seo|citable_paragraph: 1_one_thought_per_paragraph == model_uses_as_single_block; 2_opening_states_function: \"Cause_is...\" / \"Definition:\" / \"This_mechanism_works_by...\"; 3_self_contained == no_dependency_on_previous_paragraphs; 4_neutral_literal_tone == no_metaphors_no_jokes_no_emotional_language; NO:mixing_explanation+example+conclusion_in_one_paragraph eg: \"long_paragraph_with_definition_then_story_then_advice\" >> \"paragraph_1:_definition. paragraph_2:_example. paragraph_3:_advice\"",
+    "domain": "seo",
+    "tags": ["citable-fragments", "ai-seo", "paragraph-structure", "content-quality"]
+  },
+  {
+    "principle": "Write six types of AI-preferred paragraphs: definition, mechanism, cause-effect, criteria, example, conclusion — each with a strict template",
+    "explanation": "X.seo|paragraph_types: definition == \"Term_is_X._Used_for_Y.\"; mechanism == \"Process_works:_first_A_then_B_result_C.\"; cause_effect == \"X_happens_because_Y._This_leads_to_Z.\"; criteria == \"When_choosing_X_consider:_A_B_C.\"; example == \"For_example:_brief_concrete_case.\"; conclusion == \"This_means_that:_practical_consequence.\"; each_type == one_paragraph_one_function; NO:hybrid_paragraphs eg: \"definition_mixed_with_history_and_opinion\" >> \"Definition:_SSL_encrypts_data. Example:_banking_sites_require_SSL.\"",
+    "domain": "seo",
+    "tags": ["paragraph-templates", "ai-seo", "content-structure", "citation-patterns"]
+  },
+  {
+    "principle": "Six errors that make fragments invisible to AI: double logic, vague opening, 8+ sentences, metaphors, logic jumps, wrong emphasis",
+    "explanation": "X.seo|fragment_killers: 1_double_logic == mixing_explanation+example_in_one_paragraph; 2_vague_opening == \"It_should_be_noted...\" / \"As_of_today...\" -> model_ignores; 3_overlong == 8-10_sentences -> model_sees_mass_not_unit; 4_metaphors == model_reads_literally -> meaning_lost; 5_logic_jumps == definition->sudden_advice->example->conclusion -> incoherent; 6_wrong_emphasis == detail_first_instead_of_main_point; NO:any_of_these_six eg: \"Stoit_otmetit_chto_na_segodnyashniy_den...\" >> \"SSL_certificate_confirms_site_ownership.\"",
+    "domain": "seo",
+    "tags": ["content-antipatterns", "ai-seo", "fragment-quality", "attention-mechanism"]
+  }
+]

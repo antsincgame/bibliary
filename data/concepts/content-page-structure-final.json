@@ -1,0 +1,62 @@
+[
+  {
+    "principle": "Structure an About page as origin story, mission, team, and single CTA — a company history dump with no narrative arc fails to build the human connection that About pages exist to create",
+    "explanation": "X.copy|about_page_structure: company_history_dump: no_emotional_connection+no_action; narrative_arc: (1)origin_story: what_problem_we_personally_faced (2)mission: one_sentence_what_we_exist_to_do (3)team: real_humans_with_faces+short_human_bios (4)CTA: work_with_us+contact; tone: first_person_plural_\"we\"; NO:list_of_founding_years_and_office_locations NO:stock_photo_team_without_names; eg: boring_history_tab >> founder_story+mission_statement+team_grid+\"Work_with_us\"_CTA",
+    "domain": "copy",
+    "tags": ["about-page", "page-structure", "storytelling", "conversion", "copywriting"]
+  },
+  {
+    "principle": "Build each service on a services page as a mini-landing page: problem it solves, how you deliver it, who it is for, and a specific CTA — a bullet list of service names answers none of the visitor's questions",
+    "explanation": "X.copy|services_page_structure: service_name_only: visitor_cannot_evaluate_fit; mini_LP_per_service: (1)problem_name: \"Struggling_with_X?\" (2)solution_mechanism: how_you_deliver (3)ideal_client: \"perfect_for_companies_that...\" (4)outcome: specific_result (5)CTA: specific_to_service; layout: accordion_or_separate_sections_per_service; NO:services_as_flat_icon_grid NO:no_CTA_per_service; eg: \"Web_Design / SEO / Branding\" grid >> each_service_with_problem+method+CTA",
+    "domain": "copy",
+    "tags": ["services-page", "page-structure", "copywriting", "b2b", "conversion"]
+  },
+  {
+    "principle": "Structure a case study as situation, complication, resolution, and quantified result — a project description without a before-and-after narrative is a portfolio piece, not a sales tool",
+    "explanation": "X.copy|case_study_structure: project_description: what_we_built; no_tension_no_resolution; SCR_structure: (1)situation: who_the_client_is+their_context (2)complication: what_was_broken_and_why_it_mattered (3)resolution: what_we_specifically_did+why_that_approach (4)result: quantified_outcome+timeline; result_format: \"increased_X_by_Y_in_Z_weeks\"; include_client_quote; NO:listing_deliverables_without_outcome NO:generic_\"great_results\"_without_numbers; eg: \"We_redesigned_their_website\" >> problem+approach+\"conversion_up_40%_in_6_weeks\"",
+    "domain": "copy",
+    "tags": ["case-study", "page-structure", "social-proof", "copywriting", "b2b"]
+  },
+  {
+    "principle": "Open every blog post with the reader's problem or question, not with context-setting — writers who establish background before stating the point lose readers in the first paragraph",
+    "explanation": "X.copy|article_opening: context_first: \"Since_the_dawn_of_time...\" -> reader_leaves; reader_problem_first: state_problem_reader_recognizes -> hook_landed; structure: (1)hook: problem_or_counterintuitive_claim (2)promise: what_reader_will_know_by_end (3)evidence: one_proof_of_claim (4)body: organized_by_reader_questions; TL;DR_summary: optional_at_top_for_scanners; NO:throat_clearing_intro NO:\"In_this_article_we_will_cover\"; eg: \"Marketing_has_many_definitions\" >> \"Most_landing_pages_fail_because_of_one_fixable_mistake\"",
+    "domain": "copy",
+    "tags": ["article", "blog-post", "opening", "hook", "copywriting", "content-structure"]
+  },
+  {
+    "principle": "Design the article reading experience with a progress bar, estimated read time, and sticky table of contents — long-form readers need orientation cues that short-form readers never see",
+    "explanation": "X.ux|article_reading_ux: long_article_no_orientation: reader_doesn't_know_how_much_remains -> abandonment; progress_bar: thin_line_at_top_of_viewport_showing_scroll_progress; read_time: \"8_min_read\"_below_headline; sticky_TOC: left_sidebar_on_desktop+collapsible_drawer_on_mobile; anchor_links: every_H2/H3_has_copy_link; NO:long_article_without_any_navigation_aids NO:TOC_only_at_top_of_page; eg: wall_of_text >> progress_bar+5min_read+sticky_TOC",
+    "domain": "ux",
+    "tags": ["article", "reading-experience", "content-ux", "long-form", "navigation"]
+  },
+  {
+    "principle": "Give the 404 page three recovery paths: search, popular pages, and a single primary CTA — a dead-end 404 with only an error message loses the visitor permanently",
+    "explanation": "X.ux|404_page_design: dead_end_404: visitor_arrived_with_intent -> loses_intent_on_error_page; three_exits: (1)search_bar(most_flexible_recovery) (2)list_of_popular_or_recent_pages (3)primary_CTA_matching_site_goal; tone: human+slightly_playful NOT robotic; technical_message: hide_it(URL_not_found_is_sufficient); NO:404_with_no_navigation NO:technical_server_error_as_user_message; eg: \"404_Not_Found\" page >> search+popular_pages+\"Go_to_homepage\"_CTA",
+    "domain": "ux",
+    "tags": ["404-page", "error-page", "navigation", "conversion", "ux"]
+  },
+  {
+    "principle": "Redirect thank-you pages to the next logical action instead of ending the journey — a 'Thank you, we'll be in touch' page with nothing to do is a missed conversion",
+    "explanation": "X.copy|thankyou_page: bare_thank_you: journey_ends -> lead_cools; next_action_options: (1)high_value_content_download (2)book_a_call (3)join_community (4)follow_on_social (5)share_referral_link; match_to_conversion_context: lead_magnet_download -> offer_consultation; event_registration -> add_to_calendar+share; order_confirmation -> upsell+loyalty_program; NO:thank_you_page_with_no_action NO:redirect_to_homepage; eg: \"Thanks!_We'll_be_in_touch.\" >> \"Your_report_is_on_the_way._While_you_wait,_book_a_30min_strategy_call.\"",
+    "domain": "copy",
+    "tags": ["thank-you-page", "conversion", "lead-generation", "copywriting", "funnel"]
+  },
+  {
+    "principle": "Keep contact forms to five fields or fewer and place them above the fold — every additional required field reduces submission rate, and a contact form below the fold is missed by most visitors",
+    "explanation": "X.ux|contact_form: long_contact_form: 10_required_fields -> high_abandonment; minimum_fields: name+email+message(3_fields); optional_extension: phone+company+budget(only_if_required_for_routing); above_fold: form_visible_without_scroll; alternative_contact: phone+email_as_fallback; response_time_promise: \"We_respond_within_24h\" adjacent_to_form; NO:contact_form_below_footer NO:8+_required_fields; eg: 8-field_form_below_fold >> 3-field_form_above_fold+\"Reply_in_24h\"",
+    "domain": "ux",
+    "tags": ["contact-page", "forms", "conversion", "above-fold", "ux"]
+  },
+  {
+    "principle": "Structure a homepage as a progressive commitment sequence: problem recognition, solution glimpse, social proof, feature depth, final CTA — visitors need to see each layer before they trust the next",
+    "explanation": "X.copy|homepage_sequence: feature_dump_homepage: no_narrative -> visitor_unsure_if_product_is_for_them; progressive_commitment: (1)hero: WHO_this_is_for+WHAT_they_get (2)problem: name_the_pain (3)solution: how_it_works (4)proof: logos+testimonials (5)features: details_for_interested (6)final_CTA: for_those_who_scrolled_all_the_way; SAME_structure_as_landing_page_but_less_aggressive; NO:features_in_hero_section NO:social_proof_below_features; eg: product_feature_grid_homepage >> problem+solution+proof+features+CTA_sequence",
+    "domain": "copy",
+    "tags": ["homepage", "page-structure", "conversion", "copywriting", "narrative"]
+  },
+  {
+    "principle": "End every article with a contextual CTA tied to the article topic, not a generic newsletter signup — a reader who just finished an SEO article converts better on an SEO audit offer than on a generic email list",
+    "explanation": "X.copy|article_end_cta: generic_newsletter_at_end: disconnected_from_what_reader_just_learned -> low_conversion; contextual_CTA: match_the_offer_to_the_article_topic; implementation: relevant_lead_magnet+inline_before_last_paragraph+repeat_after; position: above_comments+related_articles; copy: references_problem_covered_in_article; NO:same_CTA_on_every_article NO:CTA_only_in_sidebar; eg: SEO_article_ends_with_\"Subscribe_to_newsletter\" >> SEO_article_ends_with_\"Get_our_free_SEO_audit_checklist\"",
+    "domain": "copy",
+    "tags": ["article", "cta", "lead-generation", "conversion", "content-strategy", "copywriting"]
+  }
+]

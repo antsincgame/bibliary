@@ -1,0 +1,32 @@
+[
+  {
+    "principle": "Use color wheel relationships to guarantee working palettes — complementary (opposites), triads (equidistant thirds), split complements, and analogous (neighbors) all produce harmonious combinations",
+    "explanation": "X.ui|color_wheel_relationships: random_color_picking -> unpredictable_results; relationships: (1)complementary: exact_opposites(blue+orange) -> best_as_main+accent (2)triad: equidistant_three(red+yellow+blue) -> share_underlying_connection (3)split_complement: color+two_sides_of_its_complement -> more_sophisticated_than_pure_complement (4)analogous: neighbors_on_wheel(aqua+green+lime) -> harmonious+share_undertone; NO:random_color_selection NO:more_than_3-4_hues_without_tint_variation; eg: random_colors >> identify_wheel_relationship -> guaranteed_to_work",
+    "domain": "ui",
+    "tags": ["color", "color-theory", "visual-design", "non-designers-design-book", "color-wheel"]
+  },
+  {
+    "principle": "Expand any color relationship by using tints and shades — adding black creates shades and adding white creates tints, dramatically increasing palette options while preserving harmony",
+    "explanation": "X.ui|tints_and_shades: pure_hues_only -> limited_options+sometimes_too_intense; shade: hue+black; tint: hue+white; expansion: any_color_relationship -> use_tints+shades_of_those_colors -> rich_combinations; eg: red+green_hues == Christmas; dark_red+dark_green_shades == sophisticated; monochromatic: one_hue+multiple_tints+shades -> full_range_in_one_color; print_trick: tints_of_black_printed_in_one_color_ink; NO:only_pure_hues NO:complementary_pair_at_same_tone; eg: primary_triad_pure_hues_look_childish >> tints+shades_of_same_triad == sophisticated",
+    "domain": "ui",
+    "tags": ["color", "tints-shades", "color-theory", "non-designers-design-book", "visual-design"]
+  },
+  {
+    "principle": "Never place two colors of similar tone adjacent — when tones are too close the contrast disappears and text becomes unreadable even if the hues are technically different",
+    "explanation": "X.ui|color_tone_contrast: similar_tones: dark_red_on_black -> insufficient_contrast+text_lost; wildflower_theory: field_of_wildflowers_never_looks_bad -> variety_of_tones; problem: tones_too_similar -> muddy+washed_out; test: reproduce_on_copy_machine -> text_gets_lost == tones_too_similar; fix: vary_tone(light_vs_dark) even_if_hues_are_different; NO:dark_text_on_dark_background NO:similar_saturation_adjacent_elements; eg: dark_brown_on_black >> lighten_text_dramatically OR switch_to_white",
+    "domain": "ui",
+    "tags": ["color", "contrast", "accessibility", "non-designers-design-book", "readability"]
+  },
+  {
+    "principle": "Use warm colors as small accents and cool colors as larger fields — warm colors advance and cool recede, so equal amounts of each create unbalanced visual weight",
+    "explanation": "X.ui|warm_cool_colors: warm(red+yellow+orange): come_forward+jump_into_eyes -> use_less; cool(blue+green+purple): recede -> need_more_to_make_impact; balance_rule: dont_equal_amounts_hot+cool; hot_accent: small_amount_of_red -> large_visual_impact; application: cool_background+warm_accent -> natural_visual_hierarchy; excess_red: overwhelming+annoying; NO:equal_areas_warm+cool NO:cool_accent_on_warm_background_expecting_prominence; eg: red+blue_newsletter_equal_areas >> more_blue_ground+small_red_accent",
+    "domain": "ui",
+    "tags": ["color", "warm-cool", "color-theory", "non-designers-design-book", "visual-hierarchy"]
+  },
+  {
+    "principle": "Start color selection from a logical anchor — season, brand colors, a photograph in the piece, or target emotion — then build the palette from that starting point",
+    "explanation": "X.ui|color_selection_strategy: overwhelming_to_choose -> use_logical_anchor; strategies: (1)season: summer=warm_reds+yellows, winter=cool_blues (2)brand_colors: use_tints+shades_of_existing (3)photograph: eyedropper_from_image -> build_analogous_or_complementary (4)emotional_target: calm=analogous, exciting=complementary; recurring_projects: define_palette_before_starting -> use_consistently; NO:random_favorite_colors NO:choosing_without_reference_point; eg: random_colors_for_seasonal_brochure >> pick_autumn_analogous_colors_from_photo",
+    "domain": "ui",
+    "tags": ["color", "color-selection", "branding", "non-designers-design-book", "design-process"]
+  }
+]

@@ -1,0 +1,20 @@
+[
+  {
+    "principle": "Add Article schema with precise headline, real author name, and dates — it stabilizes AI perception of page topic and credibility",
+    "explanation": "X.seo|article_schema: Article_markup == not_ranking_signal_but_uncertainty_reducer; helps_model_understand: topic + author + freshness + focus; required_fields: headline (precise_no_marketing) + description (factual) + author (real_name) + datePublished + dateModified + mainEntityOfPage; regular_date_updates -> increased_trust; NO:vague_headline NO:missing_author NO:outdated_dates eg: \"article_without_schema_model_guesses_topic\" >> \"Article_schema: headline='SSL_setup_guide' + author='Jane_Smith' + dateModified='2026-03'\"",
+    "domain": "seo",
+    "tags": ["article-schema", "structured-data", "ai-seo", "microdata"]
+  },
+  {
+    "principle": "Use FAQPage schema only with real user questions and 1-3 sentence answers — fake or duplicate FAQ blocks get ignored",
+    "explanation": "X.seo|faq_schema: FAQPage_format == question+short_answer == ready_micro_fragments_for_AI; each_answer: 1-3_sentences + functional + no_marketing; questions_must_be_real_user_questions NOT manufactured; NO:duplicate_FAQ_on_multiple_pages (Google_treats_as_abuse) NO:artificial_questions NO:long_promotional_answers eg: \"FAQ_with_5_reasons_to_choose_us\" >> \"FAQ: Q='What_documents_needed?' A='Passport_and_driver_license._International_permit_optional.'\"",
+    "domain": "seo",
+    "tags": ["faq-schema", "structured-data", "ai-seo", "rich-results"]
+  },
+  {
+    "principle": "Mark 2-3 key paragraphs with Speakable schema — AI treats them as ready-to-use answer fragments for voice and overview",
+    "explanation": "X.seo|speakable: Speakable_markup == signal_to_AI: these_fragments_are_standalone_answers; originally_for_voice_assistants BUT AI_overviews_use_as_citation_hint; mark: definitions + key_explanations + opening_paragraphs; optimal_size: 1-2_paragraphs_300-400_chars_each; NO:marking_large_blocks NO:marking_promotional_text eg: \"no_speakable_AI_picks_randomly\" >> \"speakable_on_definition_paragraph + speakable_on_key_mechanism_paragraph\"",
+    "domain": "seo",
+    "tags": ["speakable", "voice-search", "structured-data", "ai-seo"]
+  }
+]

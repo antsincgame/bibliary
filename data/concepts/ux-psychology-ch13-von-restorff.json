@@ -1,0 +1,14 @@
+[
+  {
+    "principle": "Apply visual distinction to elements in strict priority order — highlighting multiple items at equal weight cancels all of them out",
+    "explanation": "X.ux|von_restorff_hierarchy: multiple_highlighted_elements -> compete_for_attention -> none_remembered; one_distinct_element_per_group -> guaranteed_recall; apply_contrast_by_priority: primary_action > secondary_info > supporting_detail; NO:three_bold_banners_in_same_section NO:every_feature_card_with_badge; eg: \"3_cards_each_with_badge+color+border\" >> \"1_card_highlighted + 2_cards_neutral\"",
+    "domain": "ux",
+    "tags": ["von-restorff", "visual-hierarchy", "attention", "contrast", "layout"]
+  },
+  {
+    "principle": "Combine at least two contrast axes to make an element stand out — color alone fails for color-blind users and low-vision contexts",
+    "explanation": "X.ux|von_restorff_multiaxis: color_only_distinction -> invisible_to_8%_colorblind_users; combine: color+size OR color+shape OR color+motion OR size+position; applies_to: alerts + badges + highlighted_plans + CTAs + form_errors; NO:error_state_red_color_only NO:active_tab_color_only_no_shape_change; eg: \"error: red_border_only\" >> \"error: red_border + error_icon + helper_text\"",
+    "domain": "ux",
+    "tags": ["von-restorff", "accessibility", "contrast", "color-blind", "error-states"]
+  }
+]

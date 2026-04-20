@@ -1,0 +1,62 @@
+[
+  {
+    "principle": "Confirm every user action with immediate visible feedback — a system that goes silent after a click leaves users clicking again and breaking state",
+    "explanation": "X.ux|system_status_visibility: Nielsen_H1: user_must_always_know_what_system_is_doing; timing: <100ms=instant(no_indicator); 100ms-1s=spinner; 1s+=progress_bar+%; action_types: submit->\"Saving...\"->\"Saved\"; delete->undo_toast; upload->progress_bar; async->skeleton_UI; NO:button_click_with_zero_feedback NO:long_operation_with_no_progress NO:silent_failure; eg: form_submit_no_response >> button_disabled+spinner+\"Saving...\"->success_toast",
+    "domain": "ux",
+    "tags": ["system-status", "feedback", "nielsen-heuristics", "loading-states", "ux"]
+  },
+  {
+    "principle": "Use words and mental models from the user's real world — interface language users do not recognize forces translation instead of action",
+    "explanation": "X.ux|real_world_match: Nielsen_H2: user_mental_model must_match_system_model; language_rule: user's_vocabulary NOT developer_vocabulary; metaphor_rule: map_digital_concepts_to_physical(shopping_cart+folder+trash); icon_rule: icon+label_for_unfamiliar_actions; test: \"would_non-technical_user_recognize_this_term?\"; NO:\"null_results\" NO:\"500_error\"_to_end_users NO:icons_without_labels; eg: \"authentication_failed\" >> \"Wrong_password — try_again_or_reset_it\"",
+    "domain": "ux",
+    "tags": ["real-world-match", "language", "mental-models", "nielsen-heuristics", "ux"]
+  },
+  {
+    "principle": "Provide an obvious escape from every state and make destructive actions undoable — users who feel trapped abandon rather than proceed",
+    "explanation": "X.ux|user_control_freedom: Nielsen_H3: user_makes_mistakes -> needs_emergency_exit; undo_rule: every_destructive_action(delete+send+publish)->undo_OR_confirmation; cancel: every_modal+multi-step_flow has_visible_cancel; Escape_key: always_closes_modal; NO:modal_with_no_close_button NO:delete_with_no_undo NO:multi-step_form_with_no_back; eg: \"Are_you_sure?\"_modal_only >> delete -> \"Deleted. Undo\"_toast(30s_window)",
+    "domain": "ux",
+    "tags": ["user-control", "undo", "escape-hatch", "nielsen-heuristics", "ux"]
+  },
+  {
+    "principle": "Follow platform conventions for every common pattern — users who encounter a non-standard pattern must learn it, and most will not bother",
+    "explanation": "X.ux|consistency_standards: Nielsen_H4: users_transfer_expectations_from_other_apps; two_levels: (1)internal: same_action=same_result_everywhere (2)external: follow_platform_norms(web:logo-home+links-blue; forms:submit-right; modals:X-top-right); reinventing_standard_pattern -> learning_cost -> abandonment; NO:custom_close_icon_bottom-right NO:same_action_different_result_in_different_contexts; eg: custom_nav_that_ignores_conventions >> standard_pattern_user_already_knows",
+    "domain": "ux",
+    "tags": ["consistency", "conventions", "platform-standards", "nielsen-heuristics", "ux"]
+  },
+  {
+    "principle": "Prevent errors before they happen with constraints and confirmations — the best error message is one that never fires",
+    "explanation": "X.ux|error_prevention: Nielsen_H5: two_levels: (1)eliminate_error-prone_conditions: date_picker_over_free_text; phone_mask; disable_submit_until_required_fields_valid (2)confirm_irreversible_actions: \"You're_about_to_send_to_500_contacts\"; inline_validation: real-time_on_blur > submit-time; NO:catching_format_error_only_on_submit NO:free_text_where_picker_is_possible; eg: email_validated_on_submit >> inline_format_check_on_blur_with_hint",
+    "domain": "ux",
+    "tags": ["error-prevention", "validation", "constraints", "nielsen-heuristics", "ux"]
+  },
+  {
+    "principle": "Show options rather than requiring users to remember them — working memory holds 4±1 items and every extra thing users must recall raises error rate",
+    "explanation": "X.ux|recognition_over_recall: Nielsen_H6: recognition(see+choose) < recall(remember+type); working_memory_limit: 4±1_chunks; implementation: (1)dropdowns_over_free_text_for_known_options (2)visible_search_history+autocomplete (3)breadcrumbs_for_location (4)always-visible_primary_actions_not_buried_in_menus (5)persist_form_data_across_steps; NO:user_must_remember_info_from_previous_screen NO:all_actions_hidden_under_\"More\"; eg: blank_search >> search_history+suggestions_on_focus",
+    "domain": "ux",
+    "tags": ["recognition-recall", "cognitive-load", "memory", "nielsen-heuristics", "ux"]
+  },
+  {
+    "principle": "Layer accelerators beneath the novice path — expert users who cannot find shortcuts route around your interface entirely",
+    "explanation": "X.ux|flexibility_efficiency: Nielsen_H7: novice_needs_guided_path; expert_needs_shortcuts; both_coexist; accelerators: keyboard_shortcuts+bulk_actions+saved_templates+command_palette(Cmd+K)+API_access; progressive_disclosure: advanced_options_collapsed_but_reachable; power_user_signal: same_task_3+_times -> offer_automation; NO:expert_features_buried_in_settings_only NO:no_keyboard_nav NO:wizard_every_time_for_experts; eg: no_shortcuts >> Cmd+K_palette+keyboard_nav+bulk_select",
+    "domain": "ux",
+    "tags": ["efficiency", "shortcuts", "expert-users", "nielsen-heuristics", "ux", "progressive-disclosure"]
+  },
+  {
+    "principle": "Remove every interface element that does not help the user complete their current task — every extra element competes with every other element for limited attention",
+    "explanation": "X.ux|minimalist_design: Nielsen_H8: every_added_element_dilutes_all_others; signal_to_noise: more_elements -> lower_signal; audit_test: \"does_removing_this_make_the_task_harder?\" NO->remove; declutter_order: (1)marketing_copy_on_functional_screens (2)decorative_graphics_no_info_value (3)duplicate_navigation (4)empty_states_with_no_action; NO:promotional_banners_on_checkout NO:5+_competing_CTAs_on_one_screen; eg: dashboard_12_widgets >> 3_core_metrics+progressive_reveal_for_rest",
+    "domain": "ux",
+    "tags": ["minimalism", "signal-noise", "visual-hierarchy", "nielsen-heuristics", "ux"]
+  },
+  {
+    "principle": "Write every error message with three parts: what went wrong, why, and the exact next step — an error that gives no fix is just punishment",
+    "explanation": "X.ux|error_message_formula: Nielsen_H9: three_parts: (1)what_went_wrong(plain_language) (2)why(if_helpful) (3)exact_fix(specific_action); rules: no_error_codes NO:blame_language(\"you_entered\") NO:negative_framing(\"don't\"); placement: adjacent_to_source+page_summary_for_multi-field_forms; NO:\"Error_422\" NO:\"Invalid_input\" NO:\"Something_went_wrong\"_alone; eg: \"Error_422\" >> \"Email_already_in_use — sign_in_instead_or_reset_your_password\"",
+    "domain": "ux",
+    "tags": ["error-messages", "error-recovery", "plain-language", "nielsen-heuristics", "ux"]
+  },
+  {
+    "principle": "Place critical content along the F-pattern — users scan the first line fully, the second partially, then skim only the left edge, never reading evenly across the page",
+    "explanation": "X.ux|f_pattern_scanning: Nielsen_eyetracking: content_scan = F_shape; (1)first_horizontal: full_width (2)second_horizontal: shorter (3)vertical: left_edge_only; implications: (1)most_important_content_in_first_2_lines (2)key_words_must_START_sentences (3)left-align_primary_CTA (4)never_bury_critical_info_mid-paragraph_or_right_column; NO:centered_CTA_in_paragraph_5 NO:key_info_right-column_only; eg: centered_CTA_paragraph_5 >> left-aligned_CTA_within_first_2_lines",
+    "domain": "ux",
+    "tags": ["f-pattern", "eye-tracking", "scanning", "reading-patterns", "nielsen", "ux"]
+  }
+]

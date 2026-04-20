@@ -1,0 +1,50 @@
+[
+  {
+    "principle": "Trap keyboard focus inside open modals and return it to the trigger on close — keyboard users lost outside a modal cannot find their way back",
+    "explanation": "X.ux|modal_focus_trap: modal_open -> focus_must_cycle_inside(Tab+Shift+Tab_stay_within); Escape -> close_modal+return_focus_to_trigger_element; autofocus -> first_interactive_element_inside_modal; aria-modal=\"true\"+role=\"dialog\"+aria-labelledby=heading_id; NO:focus_escaping_behind_modal NO:close_without_returning_focus NO:modal_without_Escape_key; eg: modal_opens->Tab_goes_to_page_behind >> modal_opens->focus_trapped:[btn_A][btn_B][X_close]->Tab_cycles_within",
+    "domain": "ux",
+    "tags": ["accessibility", "keyboard-navigation", "modals", "focus-management", "wcag", "aria"]
+  },
+  {
+    "principle": "Disable decorative animations when the OS requests reduced motion — vestibular disorders make parallax and large transforms cause physical nausea",
+    "explanation": "X.ux|reduced_motion: vestibular_disorder: ~35%_adults; triggers: parallax+auto-scroll+large_transforms+infinite_loops; CSS_hook: @media(prefers-reduced-motion:reduce){animation:none;transition:none_OR_fade_only}; functional_animations(spinner+progress)->keep_but_simplify; decorative->disable; NO:same_animation_regardless_of_user_pref NO:relying_on_skip_button; eg: hero_parallax_always_on >> @media(prefers-reduced-motion:reduce){background-attachment:scroll}",
+    "domain": "ux",
+    "tags": ["accessibility", "animation", "prefers-reduced-motion", "wcag", "vestibular", "inclusive-design"]
+  },
+  {
+    "principle": "Announce dynamic content changes with aria-live — status updates and async results are completely invisible to screen readers without it",
+    "explanation": "X.ux|aria_live: screen_reader: reads_page_once_then_waits; dynamic_DOM_change -> silent_unless_aria-live_set; aria-live=\"polite\": wait_for_user_pause (search_results+cart_count+form_status); aria-live=\"assertive\": interrupt_immediately (errors+critical_alerts); role=\"status\": success; role=\"alert\": errors; NO:updating_DOM_without_aria-live_on_async_responses NO:assertive_for_non-urgent; eg: cart_count_DOM_updates -> screen_reader_silent >> <div_aria-live=\"polite\">Cart:_3_items</div>",
+    "domain": "ux",
+    "tags": ["accessibility", "aria", "screen-readers", "dynamic-content", "wcag", "inclusive-design"]
+  },
+  {
+    "principle": "Use exactly one H1 per page and never skip heading levels — assistive technology users navigate by heading outline and skipped levels break their map",
+    "explanation": "X.ux|heading_hierarchy: screen_reader_users: jump_between_headings_like_table_of_contents; rules: (1)one_H1_per_page==page_title (2)H2_for_major_sections (3)H3_for_subsections_of_H2 (4)never_skip:H1->H3_without_H2; visual_size_selected_NOT_semantic_role==broken_outline; NO:multiple_H1 NO:H1->H3_skip NO:heading_tags_for_visual_styling_only; eg: H1:\"Product\"+H3:\"Features\"+H3:\"Pricing\" >> H1:\"Product\"+H2:\"Features\"+H2:\"Pricing\"",
+    "domain": "ux",
+    "tags": ["accessibility", "headings", "semantic-html", "screen-readers", "wcag", "document-structure"]
+  },
+  {
+    "principle": "Connect form error messages to their fields via aria-describedby and mark invalid inputs with aria-invalid — visual proximity alone is not accessible association",
+    "explanation": "X.ux|form_error_aria: visual_proximity != accessible_association; pattern: input[aria-invalid=\"true\" aria-describedby=\"err-id\"]+<span_id=\"err-id\">error_text</span>; sequence: (1)aria-invalid=\"true\"_on_error (2)aria-describedby_points_to_error_id (3)move_focus_to_first_invalid_field; aria-required=\"true\"_marks_required; NO:error_text_only_visually_near_field NO:aria-invalid_without_linked_message; eg: <input>+<p_class=\"error\"> >> <input_aria-invalid=\"true\"_aria-describedby=\"e1\">+<p_id=\"e1\">",
+    "domain": "ux",
+    "tags": ["accessibility", "forms", "aria", "error-messages", "wcag", "screen-readers"]
+  },
+  {
+    "principle": "Provide captions for all video and transcripts for all audio — never autoplay media with sound, which drowns out screen readers and violates WCAG 1.4.2",
+    "explanation": "X.ux|media_accessibility: WCAG_1.2.2: captions_required_for_prerecorded_video; WCAG_1.2.1: transcript_for_audio-only; autoplay_with_sound -> WCAG_1.4.2_failure: screen_reader_audio_drowned_out; autoplay_rule: video_OK_only_if_muted; caption_quality: synchronized+accurate+speaker_identified; NO:video_without_captions NO:autoplay_with_audio NO:audio-only_without_transcript; eg: hero_video_autoplay_with_music >> hero_video_autoplay_muted+captions_available",
+    "domain": "ux",
+    "tags": ["accessibility", "video", "captions", "wcag", "autoplay", "inclusive-design"]
+  },
+  {
+    "principle": "Never suppress the focus outline — replace browser defaults with a custom high-contrast ring using :focus-visible, keyboard users cannot navigate without seeing their cursor",
+    "explanation": "X.ux|focus_visible: keyboard_user_needs_visible_cursor; outline:none -> invisible -> user_lost; :focus-visible: keyboard_ONLY_NOT_mouse; custom: outline:2px_solid_[accent];outline-offset:2px; contrast_min_3:1_vs_adjacent_color; NO:*{outline:none} NO:outline_only_on_:focus(fires_on_mouse_clicks_too); eg: a,button{outline:none} >> a:focus-visible,button:focus-visible{outline:2px_solid_#0066cc;outline-offset:2px}",
+    "domain": "ux",
+    "tags": ["accessibility", "focus", "keyboard-navigation", "css", "wcag", "focus-visible"]
+  },
+  {
+    "principle": "Set the html lang attribute and mark inline language switches — screen readers load the wrong pronunciation engine and mangle every word without it",
+    "explanation": "X.ux|lang_attribute: screen_reader: uses_lang -> load_pronunciation_engine; missing_lang -> foreign_words_mispronounced; inline_switch: <span_lang=\"fr\">Bonjour</span>; HTML: <html_lang=\"en\">; SPA: update_lang_attribute_on_route_change; lang_code: ISO_639-1(en,fr,de,es,zh); NO:<html>_without_lang NO:foreign_phrases_without_inline_lang; eg: <html>...<p>Merci_beaucoup</p> >> <html_lang=\"en\">...<p><span_lang=\"fr\">Merci_beaucoup</span></p>",
+    "domain": "ux",
+    "tags": ["accessibility", "lang-attribute", "screen-readers", "wcag", "internationalization", "html"]
+  }
+]

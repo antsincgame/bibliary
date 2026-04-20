@@ -1,0 +1,14 @@
+[
+  {
+    "principle": "Use familiar UI conventions for navigation, search, and checkout — innovate in visuals and content, not in core interaction patterns",
+    "explanation": "X.ux|jakobs_law: users_have_mental_models_from_other_sites; standard: nav_top + search_header + logo_home + cart_top_right + catalog>card>cart>checkout; familiar == zero_learning -> user_focuses_on_content; innovate_in: brand + visuals + storytelling NOT navigation_or_forms; NO:unconventional_nav_without_testing NO:hiding_search eg: \"search_in_hamburger_on_desktop\" >> \"search_visible_in_header\"",
+    "domain": "ux",
+    "tags": ["jakobs-law", "conventions", "mental-models", "navigation"]
+  },
+  {
+    "principle": "When redesigning offer opt-in to the new version with revert option — sudden total redesigns destroy user mental models",
+    "explanation": "X.ux|redesign_gradual: sudden_overhaul == mental_model_mismatch -> confusion + abandonment; gradual: preview_new + collect_feedback + allow_revert + migrate_when_ready; NO:total_redesign_overnight NO:removing_familiar_patterns_without_warning eg: \"snapchat_2018_total_redesign -> users_fled_revenue_dropped\" >> \"youtube_2017_opt-in_new_design -> users_switch_when_ready\"",
+    "domain": "ux",
+    "tags": ["jakobs-law", "redesign", "migration", "antipattern"]
+  }
+]

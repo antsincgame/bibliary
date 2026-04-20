@@ -1,0 +1,20 @@
+[
+  {
+    "principle": "Touch screens have no cursor and therefore no hover — every affordance that was previously revealed on mouseover must now be permanently visible or it simply does not exist for mobile users",
+    "explanation": "X.ux|no_hover_mobile: capacitive_touchscreen: can_sense_touch_only NOT hover; lost_affordances: tooltips + button_state_changes_on_hover + dropdown_menus_that_preview_without_commitment + underline_on_link_hover; pre-touch_design: affordances_can_hide_until_hover; post-touch_design: every_affordance_must_be_visible_BEFORE_interaction; rule: if_affordance_only_visible_on_hover -> redesign_as_permanently_visible_cue; applies_to: navigation_submenus + inline_action_buttons + edit_controls + swipe_hints; NO:designing_hover_states_without_equivalent_static_state NO:tooltip_as_primary_instruction_vehicle NO:button_that_only_looks_clickable_on_cursor_approach; eg: link_underline_only_on_hover >> always_underlined_link OR button_shape_with_border",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "mobile", "affordance", "touch", "hover", "interaction-design"]
+  },
+  {
+    "principle": "Flat design removes the dimensional signals that tell users what is interactive — when you flatten borders, shadows and gradients compensate by doubling down on position, formatting, labels and color",
+    "explanation": "X.ux|flat_design_tradeoff: affordances_require_visual_distinctions; flat_design: removes_3D_cues(shadows+borders+gradients+bevels) -> cleaner_look BUT fewer_signals_for_clickability+editability+hierarchy; what_gets_lost: button_3D=obvious_click_target + input_border=obvious_editable + depth=obvious_layer_structure; compensation_required: position_in_layout + bold_formatting + explicit_text_labels + strong_color_contrast + size_difference; flat_is_not_wrong_if_compensated; NO:flat_design_without_any_substitute_signals NO:ghost_button_no_border_on_white_background NO:assuming_users_click_flat_text; eg: ghost_button_flat_white_background >> ghost_button_with_visible_border OR filled_color_button",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "flat-design", "affordance", "mobile", "visual-hierarchy", "interaction-design"]
+  },
+  {
+    "principle": "Making a site clearer for average users is the single most effective accessibility improvement — confusion that affects most users hits users with disabilities even harder",
+    "explanation": "X.ux|usability_equals_accessibility: common_framing: accessibility==separate_add-on_for_disabled; reality: confusion_that_affects_most_users -> hits_users_with_disabilities_even_harder; reverse_also_true: fix_confusion_for_average_user -> simultaneously_helps_users_with_cognitive+visual+motor_disabilities; implication: usability_work==accessibility_work; WCAG_compliance_alone != good_accessibility (can_pass_validator_and_still_be_confusing); most_effective_accessibility_improvement: clear_navigation+clear_labels+clear_error_messages+clear_hierarchy; NO:running_accessibility_checker_and_calling_it_done NO:treating_accessibility_as_separate_track_from_ux; eg: confusing_form_flow+aria_labels >> clear_logical_form_flow+aria_labels (both_groups_benefit_from_clarity)",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "accessibility", "usability", "wcag", "inclusive-design", "cognitive-accessibility"]
+  }
+]

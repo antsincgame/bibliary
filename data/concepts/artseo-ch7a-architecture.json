@@ -1,0 +1,32 @@
+[
+  {
+    "principle": "Build flat site architecture — every page reachable in max 4 clicks from homepage even on sites with 10000+ pages",
+    "explanation": "X.seo|flat_architecture: flat == few_clicks_to_any_page; deep == long_link_chains_to_content; rule: under_10000_pages == max_4_clicks; million_pages == max_5-6_clicks_with_proper_navigation; flat -> easier_crawling + lower_abandonment + repeat_visits; NO:deep_chains_of_10+_clicks NO:orphan_pages_unreachable_by_links eg: \"product_buried_8_clicks_deep_behind_category>subcategory>filter>sort>page3\" >> \"home>category>product == 3_clicks\"",
+    "domain": "seo",
+    "tags": ["site-architecture", "flat-structure", "crawlability", "internal-linking"]
+  },
+  {
+    "principle": "Use contextual in-content links between related pages — they pass more value than navigation-only links and guide both users and crawlers",
+    "explanation": "X.seo|contextual_interlinking: users_spend_75%_of_time_browsing_or_searching; global_nav + search_box == not_enough; add_2-3_contextual_links_within_content_text; link_to_related_deeper_pages_from_within_paragraphs; contextual_links == semantic_signal_to_search_engines + user_path_to_related_content; NO:relying_only_on_nav_menu NO:zero_links_in_body_text eg: \"article_with_no_internal_links_in_text\" >> \"article_with_2_links_to_related_guides_within_paragraphs\"",
+    "domain": "seo",
+    "tags": ["internal-linking", "contextual-links", "site-architecture", "user-flow"]
+  },
+  {
+    "principle": "Use subfolders not subdomains for content — subfolders inherit all domain authority while subdomains may get none",
+    "explanation": "X.seo|subfolder_wins: subfolder == shares_all_link_equity + authority + trust_with_main_domain; subdomain == may_inherit_very_little_from_root_domain; subfolder_works_90%_of_cases; subdomain_only_when: content_is_unrelated_to_main_domain OR separate_audience (B2B_vs_B2C); NO:blog.yoursite.com NO:shop.yoursite.com (when_subfolder_works) eg: \"blog.example.com_gets_no_authority_from_example.com\" >> \"example.com/blog/_inherits_full_domain_authority\"",
+    "domain": "seo",
+    "tags": ["subfolders", "subdomains", "domain-authority", "site-structure"]
+  },
+  {
+    "principle": "Avoid excessive pagination — paginated pages create thin content and spider traps; use view-all page with canonical instead",
+    "explanation": "X.seo|pagination_fix: pagination_problems: thin_content + duplicate_topics + spider_traps + shifting_content_on_recrawl; fix_option_1: simple_HTML_links_between_paginated_pages (rel=next/prev_no_longer_used_by_Google); fix_option_2: create_view-all_page + canonical_from_each_paginated_page_to_view-all; if_view-all_too_slow -> use_option_1; NO:hundreds_of_paginated_thin_pages NO:infinite_pagination_loops eg: \"50_paginated_category_pages_with_identical_titles\" >> \"view-all_page_with_canonical + paginated_pages_point_to_it\"",
+    "domain": "seo",
+    "tags": ["pagination", "thin-content", "canonical", "crawl-efficiency"]
+  },
+  {
+    "principle": "Content loaded only after user clicks is invisible to Google — links and text must be in the initial rendered page",
+    "explanation": "X.seo|initial_render: Googlebot_renders_initial_page_load_only; content_behind_click_accordion_tab_or_button == not_crawled; links_in_submission_forms == not_followed; test: Chrome_Inspector_F12 -> Elements_tab -> if_content_visible_there == Google_sees_it; for_dynamic_content: build_alternative_link_structure_for_crawlers; NO:hiding_content_behind_user_interactions NO:critical_links_in_forms eg: \"FAQ_answers_hidden_in_accordions_loaded_on_click\" >> \"FAQ_answers_rendered_in_initial_HTML_visible_to_crawler\"",
+    "domain": "seo",
+    "tags": ["javascript-seo", "rendering", "crawlability", "initial-render"]
+  }
+]

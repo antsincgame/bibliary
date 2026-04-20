@@ -1,0 +1,44 @@
+[
+  {
+    "principle": "Choose a primary brand color that matches the emotional promise of the product category — color triggers category associations before a single word is read",
+    "explanation": "X.ux|color_category_association: color_associations(Western_market): blue=trust+stability(finance+tech); green=growth+health+safety; orange=energy+affordability+urgency; red=passion+danger+urgency; purple=luxury+creativity; yellow=optimism+caution; black=premium+sophistication; category_test: does_color_match_category_expectation? deviation_requires_strong_brand_rationale; NO:red_for_financial_services(danger_signal) NO:gray_as_primary_for_wellness; eg: SaaS_fintech_bright_orange_primary >> blue_primary+orange_accent_CTA",
+    "domain": "ux",
+    "tags": ["color", "color-psychology", "brand-color", "trust", "design"]
+  },
+  {
+    "principle": "Build a UI color palette with exactly one primary, one neutral scale, one semantic set, and one accent — more colors without a system create visual chaos that erodes perceived quality",
+    "explanation": "X.ux|palette_structure: minimal_palette: (1)primary: brand_color(one_hue_multiple_shades_50-900) (2)neutral: gray_scale_for_text+backgrounds+borders (3)semantic: success(green)+error(red)+warning(amber)+info(blue) (4)accent: high_energy_color_for_CTAs; source: HSL_color_model -> rotate_hue_keep_saturation+lightness; NO:6+_unrelated_brand_colors NO:semantic_colors_conflicting_with_brand_primary; eg: ad_hoc_colors_per_component >> design_token_palette_with_4_roles",
+    "domain": "ux",
+    "tags": ["color", "color-palette", "design-tokens", "design-system", "ux"]
+  },
+  {
+    "principle": "Make the CTA button color visually pop against its background by reserving it for that one element — a CTA color that appears elsewhere on the page loses its action-signaling power",
+    "explanation": "X.ux|cta_color_isolation: CTA_button: must_be_instantly_recognizable_as_the_action; technique: use_accent_color_ONLY_on_primary_CTA+nowhere_else; high_contrast_with_surrounding_background; size+weight+color_all_signal_\"click_here\"; A/B_evidence: isolated_high_contrast_CTA > matching_brand_scheme; NO:CTA_same_color_as_header NO:CTA_color_repeated_in_nav_icons+text_links; eg: blue_CTA_on_blue_header >> orange_CTA_on_white_section_with_white_space_isolation",
+    "domain": "ux",
+    "tags": ["color", "cta", "conversion", "contrast", "design"]
+  },
+  {
+    "principle": "Use dark mode as an additive layer over a light-mode base, not a separate design — light text on dark backgrounds reduces reading speed for body copy and should be reserved for UI chrome",
+    "explanation": "X.ux|dark_mode_strategy: dark_mode_research: long_form_reading -> light_bg_faster_for_most_users; dark_bg_optimal: coding_tools+media_consumption+low_ambient_light; web_implementation: CSS_prefers-color-scheme_media_query+CSS_custom_properties; token_swap: --color-bg+--color-text+--color-border_swap_values; avoid: inverting_images+charts; NO:dark_only_site_with_heavy_body_copy NO:hard-coded_hex_values_instead_of_tokens; eg: separate_dark_CSS_file >> CSS_variables_swapped_via_@media(prefers-color-scheme:dark)",
+    "domain": "ux",
+    "tags": ["dark-mode", "color", "readability", "css", "design"]
+  },
+  {
+    "principle": "Never communicate meaning through color alone — 8% of men have color vision deficiency, and UI states that rely only on red versus green will be indistinguishable",
+    "explanation": "X.ux|color_not_sole_signal: WCAG_1.4.1: color_alone_insufficient_to_convey_information; compound_signals: color+icon+label+position; error_state: red_border+error_icon+error_text(not_just_red_border); success: green+checkmark+text(not_just_green); form_required: label+asterisk+color(not_just_asterisk_in_red); test: simulate_deuteranopia(green_blind) -> UI_must_still_work; NO:red_cells_for_negative+green_for_positive_in_data_table_only NO:link_color_only_differentiator; eg: red_border_only >> red_border+error_icon+inline_message",
+    "domain": "ux",
+    "tags": ["color", "accessibility", "color-blindness", "wcag", "ux"]
+  },
+  {
+    "principle": "Desaturate backgrounds and saturate interactive elements — high saturation on backgrounds competes with content while low saturation on buttons makes them feel inactive",
+    "explanation": "X.ux|saturation_distribution: saturation_rule: backgrounds->low_saturation(0-15%); text->medium(body_gray_scale); interactive_elements->high_saturation(CTAs+links+badges); this_creates_visual_pull_toward_actions; neutral_backgrounds: near-white_with_slight_warm_or_cool_tint NOT_pure_#ffffff(too_harsh); surface_hierarchy: page_bg->card_bg->elevated_component_bg(each_step_lighter_or_darker); NO:saturated_colorful_background_behind_CTA NO:gray_CTA_on_white_background; eg: teal_hero_background >> off-white_bg+teal_CTA_button",
+    "domain": "ux",
+    "tags": ["color", "saturation", "visual-hierarchy", "design-system", "ux"]
+  },
+  {
+    "principle": "Test color choices in the actual deployment context — a color that looks premium on a design tool canvas can look garish on a calibrated monitor or washed out on a phone in sunlight",
+    "explanation": "X.ux|color_context_testing: display_variation: sRGB+Display_P3+uncalibrated_monitor+OLED -> same_hex_looks_different; ambient_light: phone_in_sunlight -> low_contrast_colors_disappear; testing_checklist: (1)real_device_in_bright_light (2)grayscale_view(hierarchy_check) (3)deuteranopia_simulator(color_blind_check) (4)dark_room_OLED(oversaturation_check); NO:approving_color_palette_only_in_Figma NO:ignoring_OLED_oversaturation; eg: color_approved_in_Figma_only >> tested_on_iPhone+Android+MacBook+external_monitor",
+    "domain": "ux",
+    "tags": ["color", "testing", "devices", "color-accuracy", "design"]
+  }
+]

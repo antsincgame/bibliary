@@ -1,0 +1,38 @@
+[
+  {
+    "principle": "Use platform-native loading indicators to shift blame for delays from your app to the operating system — a branded spinner makes users blame the product; an OS-style spinner makes them blame the device or network",
+    "explanation": "X.ux|delay_attribution: user_attributes_slowness_based_on_what_they_see; branded_preloader -> blame_the_app; OS-style_spinner -> blame_device+network+connectivity; attribution_shapes_negative_experience_intensity; NO:branded_spinner_during_long_backend_operations; eg: Facebook_replaced_branded_animation_with_iOS_spinner -> users_stopped_blaming_app -> attributed_delays_to_OS+hardware",
+    "domain": "ux",
+    "tags": ["loading-states", "perception", "mobile-ux", "ux"]
+  },
+  {
+    "principle": "Definite preloaders reduce perceived wait more than indefinite ones — showing 67% loaded gives users a mental model of completion; a spinning indicator only confirms the system has not crashed",
+    "explanation": "X.ux|preloader_types: definite=shows_progress_value_or_percentage -> user_models_time_remaining -> lower_perceived_wait; indefinite=confirms_activity_only -> no_time_model -> higher_anxiety; skeleton_placeholders=show_layout_before_content -> reduce_layout_shift_perception; use_definite_when_duration_is_predictable; NO:indefinite_spinner_for_operations_with_known_duration; eg: file_upload_bar(definite) >> spinning_circle(indefinite) -> users_abandon_less",
+    "domain": "ux",
+    "tags": ["loading-states", "preloader", "perceived-performance", "ux"]
+  },
+  {
+    "principle": "Error messages need three components to prevent journey abandonment — actionable text telling what to do next, validator placement adjacent to the failing field, and validation hints appearing before form submission not after",
+    "explanation": "X.ux|error_message_anatomy: 1_actionable_text: user_must_understand_how_to_fix_without_help(even_try_again_later_reduces_frustration); 2_placement: validator_adjacent_to_field -> fewer_retry_attempts; 3_timing: tips_appear_before_submit(domain_taken+weak_password) NOT_after; NO:error_only_at_form_top+generic_text+post-submit_only; eg: MVP_launched_without_error_handling -> registration_conversion_collapsed -> added_3_components -> conversion_recovered",
+    "domain": "ux",
+    "tags": ["forms", "error-handling", "ux", "conversion"]
+  },
+  {
+    "principle": "Service tunnel structure places the most likely next-step item in the preceding category to eliminate navigation steps — french fries in the burger section saves steps at a frozen touchscreen; airline upsells insurance the moment after ticket purchase",
+    "explanation": "X.ux|service_tunnel: place_high-probability_next_action_item_in_current_context NOT_in_its_taxonomically_correct_category; reduces_journey_steps_for_majority_flow; NO:structuring_IA_purely_by_scientific_taxonomy; eg: fastfood_kiosk: fries+cola_in_burger_section -> user_builds_meal_without_navigating_away; airlines: insurance+seat_upgrade_immediately_after_ticket -> no_separate_upsell_visit_required",
+    "domain": "ux",
+    "tags": ["information-architecture", "ux", "conversion", "navigation"]
+  },
+  {
+    "principle": "Narrative tone is a UX factor — each product establishes a communication role model and users feel alienated when tone breaks it; a friendly product using formal address loses users just as a formal product using informal address does",
+    "explanation": "X.ux|tone_as_ux_factor: product_establishes_role_model(friend/assistant/authority) -> tone_must_match_that_model_consistently; wrong_tone=user_alienation+reduced_engagement; NO:switching_tone_across_channels_of_same_product; eg: Alfa-Sense(friend_model)->informal_address -> users_rejected_formal_address; Alfa-Mobile(bank_model)->formal -> users_rejected_informal -> same_operator_different_channels=different_tone_required",
+    "domain": "ux",
+    "tags": ["microcopy", "voice-tone", "ux", "brand-personality"]
+  },
+  {
+    "principle": "Distinguish product functions from features — users install a product for its functions; features reduce friction within a function but cannot substitute for one; no one installs an app solely for fingerprint authentication",
+    "explanation": "X.ux|function_vs_feature: function=core_capability_user_hires_product_for; feature=implementation_detail_reducing_load_within_function; feature_alone!=install_motivation; when_two_products_have_same_function: lower_energy_cost_wins -> features_decide_the_winner; NO:building_features_without_core_function; eg: top-up_phone_balance=function; select_from_address_book=feature_of_that_function; fingerprint_auth=feature_not_function -> nobody_installs_for_it_alone",
+    "domain": "ux",
+    "tags": ["product-design", "ux", "feature-prioritization", "cognitive-load"]
+  }
+]

@@ -1,0 +1,32 @@
+[
+  {
+    "principle": "Use typographer's curly quotes and true apostrophes — straight typewriter marks are an instant signal of amateur work that professionals notice immediately even in million-dollar ads",
+    "explanation": "X.ui|typographers_quotes: straight_quotes -> typewriter_marks+amateurish; true_quotes: opening=shaped_like_6s, closing=shaped_like_9s; apostrophe: single_closing_quote(shape_of_9); once_aware -> cannot_stop_noticing_wrong_marks; us_standard: commas+periods inside_quotes; em_dash: no_spaces_on_either_side; en_dash: for_ranges_and_duration(October-December); NO:straight_apostrophe_in_any_published_work NO:typewriter_double_hyphen_for_dash; eg: \"Save yourself,\" she said >> \u201cSave yourself,\u201d she said (proper_curled_marks)",
+    "domain": "ui",
+    "tags": ["typography", "typographic-details", "non-designers-design-book", "professionalism", "punctuation"]
+  },
+  {
+    "principle": "Never set extended body text in all caps — lowercase words are recognized by their overall shape but all-cap words are uniformly rectangular and must be read letter by letter, dramatically slowing reading",
+    "explanation": "X.ui|avoid_all_caps: lowercase_readability: recognize_words_by_shape+coastline; all_caps: every_word == same_rectangular_form -> letter_by_letter_reading -> slower+tiring; acceptable_all_caps: short_word+logo_acronym+deliberate_design_statement+when_lower_readability_consciously_justified; NOT_acceptable: body_copy+menu_items+bullet_lists; test: read_all-cap_block -> notice_slowdown_and_fatigue; NO:all_caps_for_emphasis_in_body NO:long_menus_in_all_caps; eg: menu_ALL_CAPS >> caps+lowercase -> more_readable+takes_less_space",
+    "domain": "ui",
+    "tags": ["typography", "all-caps", "readability", "non-designers-design-book", "body-text"]
+  },
+  {
+    "principle": "Never use the underline button for emphasis — underlines were typewriter instructions to typesetters and signal amateur work; use bold, italic, size change, or color instead",
+    "explanation": "X.ui|no_underlines: underline_origin: typewriter_instruction_to_typesetter -> \"make_this_italic\"; today: you_ARE_the_typesetter -> set_italic_directly; emphasis_alternatives: bold+larger_size+different_font+color+set_apart_spatially; if_you_must_have_line: customize_thickness+distance+length -> do_not_use_default_underline_button; NO:underline_button_for_emphasis NO:default_underline_cutting_through_descenders; eg: \"Important Notice\" underlined >> \"Important Notice\" in bold_italic",
+    "domain": "ui",
+    "tags": ["typography", "emphasis", "non-designers-design-book", "professionalism", "typographic-details"]
+  },
+  {
+    "principle": "Manually kern display type at large sizes — automatic kerning is insufficient above display size because optical inconsistency between letter pairs becomes clearly visible and looks unprofessional",
+    "explanation": "X.ui|manual_kerning: large_type: awkward_letterspacing -> naive+unprofessional; kerning: removing_tiny_space_between_specific_character_pairs(WA_LO_AT_To); goal: make_space_appear_VISUALLY_consistent NOT_physically_equal; reason: circle_appears_smaller_than_same-size_square -> white_space_tricks_eye -> must_kern_to_compensate; auto_kerning: insufficient_for_display_type; NO:relying_on_auto_kern_for_headlines NO:ignoring_angled+rounded_letter_combinations; eg: WATERMELON_no_kern -> awkward_W-A_gap >> WATERMELON_hand_kerned -> visually_even",
+    "domain": "ui",
+    "tags": ["typography", "kerning", "display-type", "non-designers-design-book", "professionalism"]
+  },
+  {
+    "principle": "Signal paragraph breaks with either indent OR extra space, never both — and never indent the first paragraph after a heading since the heading already signals a new section",
+    "explanation": "X.ui|paragraph_break_signals: indent_means: new_paragraph; space_between_means: new_paragraph; both_together: redundant+messy; rule: choose_ONE; first_paragraph_after_heading: no_indent_needed -> heading_already_signals_new_section; paragraph_indent_size: one_em(not_5_spaces_not_half_inch); em_space: equals_point_size(12pt_type -> 12pt_indent -> ~2_spacebar_spaces); NO:indent_AND_extra_space NO:first_paragraph_after_heading_indented NO:half_inch_tabs_from_typewriter_habit; eg: indented+extra_space_both >> indented_only_OR_spaced_only+no_indent_after_heading",
+    "domain": "ui",
+    "tags": ["typography", "paragraph-formatting", "non-designers-design-book", "typographic-details", "professionalism"]
+  }
+]

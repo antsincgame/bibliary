@@ -1,0 +1,38 @@
+[
+  {
+    "principle": "Users bring lifetime print-scanning habits to web — structure with H1 → H2 → bold → captions hierarchy because that pattern is already wired into every reader",
+    "explanation": "X.ux|print_scan_transfer: scanning_is_NOT_degraded_reading==well-honed_rational_skill; trained_from_lifetime_newspapers+magazines; brain_auto-applies_same_hierarchy_to_web: H1->H2->bold_key_terms->captions->first_sentence; implication: do_NOT_fight_this_pattern->amplify_it; if_content_has_no_hierarchy -> brain_has_no_skip_targets -> full_read_or_abandon; NO:body_text_without_any_headings NO:headings_that_dont_signal_what_section_contains NO:bold_applied_decoratively_not_informationally; eg: paragraph_with_bold_random_words >> H2_section_title+bold_only_key_term_that_changes_behavior",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "scanning", "visual-hierarchy", "typography", "print-conventions", "readability"]
+  },
+  {
+    "principle": "The Back button is the most-used browser control because wrong guesses are cheap — slow pages and broken back-navigation turn exploration into a trap and destroy confidence",
+    "explanation": "X.ux|back_button_safety: back==most_used_browser_control; why: users_guess+explore+retreat_as_primary_strategy; back_is_cheap -> wrong_guess_costs_nothing -> exploration_is_safe; two_things_destroy_safety_net: (1)slow_page_load(back_means_waiting_again) (2)broken_back(new_window+redirect_loop+form_resubmit_warning); when_back_fails: every_forward_click_feels_like_commitment -> user_freezes -> stops_exploring; rule: NEVER open_in_new_tab_without_warning; links_in_same_site==same_tab; NO:_blank_on_internal_links NO:form_that_warns_on_back NO:redirect_chains_that_eat_history eg: internal_link_opens_new_tab >> same_tab+user_back_works_normally",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "back-button", "navigation", "exploration", "trust", "performance"]
+  },
+  {
+    "principle": "The first workaround a user discovers becomes their permanent strategy — they never search for the right way once a wrong way works well enough",
+    "explanation": "X.ux|workaround_lock: satisficing_applies_to_HOW_to_use_not_just_WHAT_to_do; user_finds_any_path_that_works -> locks_in_immediately -> never_revisits; consequence: users_permanently_use_inefficient_paths(long_menu_path_instead_of_search+ctrl+f_scroll_instead_of_nav); design_implication: PRIMARY_path_must_be_obvious_first_time -> second_chance_rarely_comes; also_applies_to_errors: user_learns_workaround_for_bug -> reports_nothing; NO:assuming_users_will_discover_better_ways_over_time NO:hiding_primary_action_in_advanced_features; eg: user_finds_homepage_via_logo_click_instead_of_HOME_link >> HOME_link_must_be_most_obvious_path_or_remove_it",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "satisficing", "workaround", "first-impressions", "discoverability", "mental-models"]
+  },
+  {
+    "principle": "Bad design punishes careful users most — people who read instructions and try to do things right hit more errors than users who click randomly and back out",
+    "explanation": "X.ux|careful_user_penalty: counterintuitive_pattern: careful_users_try_harder -> follow_directions_literally -> hit_edge_cases_that_clickers_skip; careful_user_path: read_label -> interpret_literally -> follow_precisely -> hit_unexpected_behavior; random_clicker: guesses_correct_interpretation_by_chance; implication: fix_ambiguous_labels+instructions_NOT_just_error_messages; if_label_says_X_but_means_Y -> careful_reader_fails; NO:writing_labels_that_need_context_to_interpret_correctly NO:instructions_that_assume_user_knows_system_vocabulary; eg: \"Enter_registration_date\" (unclear: date_you_registered_OR_today's_date?) >> \"Enter_today's_date_to_register\"",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "labels", "instructions", "edge-cases", "literal-interpretation", "error-prevention"]
+  },
+  {
+    "principle": "Users care about completing tasks not understanding systems — they want to drive the car, not know how the engine works",
+    "explanation": "X.ux|doing_over_understanding: user_goal==complete_task; NOT==understand_how_site_works; consequence: (1)users_skip_onboarding (2)users_ignore_documentation (3)users_resent_forced_tutorials; design_implication: make_the_DOING_obvious_without_needing_to_learn_anything; on-boarding_good_only_if: skippable+rewards_engagement+doesnt_block_task; mental_model_mismatch: designers_explain_system -> users_just_want_button_that_does_thing; rule: one_obvious_action_per_state_of_the_interface; NO:feature_tours_before_first_use NO:\"how_this_works\"_text_before_CTA NO:modal_explaining_the_interface_on_first_load eg: \"Here's how our editor works [4-step_modal]\" >> empty_canvas_+_one_obvious_\"Start_here\"_element",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "task-completion", "onboarding", "mental-models", "cognitive-load", "feature-discovery"]
+  },
+  {
+    "principle": "Scanning eyes stop at trigger words that signal personal relevance — Free, Sale, the user's own name, and task-completion verbs catch attention in a wall of text",
+    "explanation": "X.ux|scan_triggers: eye_doesnt_scan_every_word -> stops_only_on_pattern_matches; proven_scan_triggers: (1)FREE+SALE+SAVE (2)user_name+\"you\"+\"your\" (3)task_verbs_matching_user_intent(Download+Start+Get+Find) (4)numbers+$_signs (5)bold_formatting; implication_for_copy: put_key_info_AT_or_AFTER_trigger_word_not_before; if_key_info_precedes_trigger -> never_noticed; NO:burying_price_after_paragraphs_of_benefits NO:CTA_text_that_doesnt_match_user_task_verb NO:\"Click_here\"_as_CTA_text(click==trigger_word_but_irrelevant_to_task); eg: \"Learn_more\" >> \"Download_the_guide\" OR \"Start_free_trial\"",
+    "domain": "ux",
+    "tags": ["dont-make-me-think", "scanning", "trigger-words", "cta", "copy", "attention", "satisficing"]
+  }
+]

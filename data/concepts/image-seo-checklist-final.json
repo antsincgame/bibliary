@@ -1,0 +1,26 @@
+[
+  {
+    "principle": "Write descriptive image captions that reveal non-obvious details — captions keep users on the page longer and generate RankBrain usability signals that reinforce image search ranking",
+    "explanation": "X.seo|image_captions: captions=most_read_text_on_page_after_headlines; mechanism: captions -> users_pause+read -> longer_on_page -> RankBrain_usability_signal; what_to_describe: non-obvious_details_only -> location+time_of_day+event_taking_place (NOT re-state_what_is_visible); distinction: alt_text=accessibility+crawler_signal vs caption=human_engagement_signal; NO:no_captions_on_important_content_images NO:captions_that_just_repeat_alt_text; eg: photo_of_product >> caption: product_in_use_at_trade_show_NYC_Jan_2025 -> engagement_signal",
+    "domain": "seo",
+    "tags": ["image-captions", "image-seo", "rankbrain", "user-engagement", "on-page-seo"]
+  },
+  {
+    "principle": "Use SVG for all icons, logos, and diagrams — SVGs are vector-based, scale to any size with zero quality loss, load instantly, and are fully crawlable as XML text without needing alt text",
+    "explanation": "X.seo|svg_format: SVG=vector(XML_text) vs JPEG/PNG=raster(pixel_grid); benefits: infinite_scale_zero_quality_loss+instant_load(tiny_file)+animatable+crawlable_text_content; format_selection: SVG -> icons+logos+charts+diagrams; JPEG -> photos_of_people+places+things; PNG -> screenshots+gradients+transparency; GIF -> short_animations(prefer_WebP_or_CSS_animation); NO:using_PNG_for_logos_at_multiple_sizes NO:raster_for_icons_that_need_to_scale; eg: company_logo_as_PNG_1200px >> SVG_logo -> scales_to_16px+1200px+any_size_perfectly",
+    "domain": "seo",
+    "tags": ["svg", "image-format", "image-seo", "performance", "web-graphics"]
+  },
+  {
+    "principle": "Add Open Graph and Twitter Card meta tags to every page — og:image, og:title, og:description control how your content appears when shared on social platforms, directly driving referral traffic and link discovery",
+    "explanation": "X.seo|open_graph: required_tags: og:image+og:title+og:description+og:url+og:type; twitter_card: twitter:card(summary_large_image)+twitter:image+twitter:title+twitter:description; og:image: min_1200x630px(FB+LinkedIn preview)+distinct_from_page_images; mechanism: social_shares_with_rich_preview -> higher_CTR -> more_site_visitors -> more_link_opportunities; NO:no_og_tags -> platform_picks_random_image+truncated_title -> poor_CTR; NO:same_og:image_on_every_page; eg: link_shared_without_og >> blank_preview -> ignored >> link_with_og:image+title -> card_rendered -> clicks_increase",
+    "domain": "seo",
+    "tags": ["open-graph", "twitter-cards", "social-meta", "ctr-optimization", "metadata"]
+  },
+  {
+    "principle": "Never embed important text inside image files — search engines cannot reliably read rasterized text in JPEGs or PNGs, screen readers skip it entirely, and it cannot be indexed or translated",
+    "explanation": "X.seo|text_in_images: rasterized_text: crawlers_cannot_read+screen_readers_skip+not_translatable+not_selectable+not_indexable; rule: all_meaningful_text -> HTML; decoration_only_text -> may_be_in_image_if_also_in_alt_or_caption; apply_to: CTA_buttons+headlines+prices+contact_info+navigation_labels; SVG_exception: SVG_text_elements_are_real_XML_text -> readable_by_crawlers; NO:hero_section_headline_as_PNG NO:contact_info_embedded_in_image; eg: hero_image_with_text_Our_best_price_2025 >> HTML_h1_overlay_on_CSS_background -> crawlable+accessible",
+    "domain": "seo",
+    "tags": ["text-in-images", "image-seo", "accessibility", "crawlability", "on-page-seo"]
+  }
+]

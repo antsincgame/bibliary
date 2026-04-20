@@ -1,0 +1,38 @@
+[
+  {
+    "principle": "Use multiples of 8 for all spacing and dimensions to ensure consistent scaling across screen densities",
+    "explanation": "X.ux|8pt_grid: all_spacing + margins + component_dimensions == multiples_of_8 (8/16/24/32/40/48px); fine_details: 4px_increments; aligns_with_screen_pixel_density -> scales_cleanly_across_all_devices; NO:arbitrary_values (11px/13px/17px) NO:mixing_5px_and_8px_in_same_system eg: \"padding_top:10px_margin:15px\" >> \"padding:8px_margin:16px\"",
+    "domain": "ux",
+    "tags": ["grid", "spacing", "8pt", "layout", "consistency"]
+  },
+  {
+    "principle": "Set desktop layout to 1440px frame with 1240px safe zone, 100px side margins, 12 columns, and 20px gutters",
+    "explanation": "X.ux|desktop_grid: frame_1440px + safe_zone_1240px + margins_100px + 12_columns + gutters_20px; max-width:1240px_centered; at_1200px -> remove_side_margins; 2k+: content_stays_at_max_width_never_stretches; NO:full_width_without_max_width NO:margins_under_80px eg: \"width:100%_no_max-width\" >> \"max-width:1240px_margin:0_auto\"",
+    "domain": "ux",
+    "tags": ["grid", "desktop", "layout", "1440", "columns", "responsive"]
+  },
+  {
+    "principle": "Start mobile layout from 375px with 16px side margins, 8px gutters, and a 4-column grid",
+    "explanation": "X.ux|mobile_grid: min_frame_375px (iPhone_mini); side_margins_min_16px; gutters_8px; 4_columns; iOS+Android: same_grid; design_smallest_first -> scale_up -> covers_more_devices; NO:designing_mobile_from_414px+ NO:margins_under_16px eg: \"mobile_390px_margin_8px\" >> \"mobile_375px_16px_margins_4col_8px_gutters\"",
+    "domain": "ux",
+    "tags": ["grid", "mobile", "layout", "375px", "responsive"]
+  },
+  {
+    "principle": "Space elements by proximity: 8-20px between title and description, 20-40px between groups, 12-20px container padding",
+    "explanation": "X.ux|vertical_rhythm: title->description: 8-20px; element_groups: 20-40px; container_padding: 12-20px; interactive_elements_spacing: min_16-20px (prevents_miss_taps); closer_related -> less_space; further_apart -> more_space; NO:uniform_spacing_everywhere eg: \"all_gaps:16px\" >> \"heading+text:12px + card_group:32px + container:20px_padding\"",
+    "domain": "ux",
+    "tags": ["spacing", "vertical-rhythm", "layout", "proximity", "padding"]
+  },
+  {
+    "principle": "Always meet WCAG contrast ratios: 4.5:1 for small text, 3:1 for large text and UI components",
+    "explanation": "X.ux|wcag_contrast: small_text_<18px -> min_4.5:1; large_text_>24px -> min_3:1; buttons+inputs -> min_3:1; check_during_design NOT at_handoff; tools: A11Y_Contrast_Checker + Stark; NO:aesthetics_over_legibility NO:checking_contrast_after_design eg: \"gray_#999_on_white (2.8:1)\" >> \"text_#595959_on_white (4.5:1)\"",
+    "domain": "ux",
+    "tags": ["accessibility", "contrast", "wcag", "legibility", "color"]
+  },
+  {
+    "principle": "Structure every UI color palette with 60% primary, 30% neutral, and 10% accent — use tints for backgrounds and shades for emphasis",
+    "explanation": "X.ux|60_30_10: primary_60% (tints -> backgrounds + secondary_buttons; shades -> CTAs + emphasis); neutral_30% (text + borders + dividers); accent_10% (highlights + badges + links); tints == primary+white; shades == primary+black; NO:equal_weight_colors NO:more_than_2_accents eg: \"5_equal_brand_colors\" >> \"blue_60%+gray_30%+orange_10%\"",
+    "domain": "ux",
+    "tags": ["color", "palette", "60-30-10", "hierarchy", "tints-shades"]
+  }
+]

@@ -1,0 +1,56 @@
+[
+  {
+    "principle": "Place form labels above their inputs, never to the right — top-aligned labels reduce eye movement distance by half and allow longer label text without breaking layout",
+    "explanation": "X.ux|label_placement: Wroblewski_eyetracking: top_label -> 1_fixation(label+input_in_single_glance); right_label -> 2_fixations(label_right+input_left); left_label -> max_fixations+horizontal_scan+breaks_at_long_labels; exception: very_short_forms(2_fields) where_inline_ok; mobile: top_label_always(no_horizontal_space); NO:right-aligned_labels_on_long_forms NO:placeholder_text_as_label_replacement; eg: label_right_of_input >> label_top_of_input",
+    "domain": "ux",
+    "tags": ["forms", "labels", "eye-tracking", "wroblewski", "ux", "form-design"]
+  },
+  {
+    "principle": "Use inline validation on blur not on keystroke — validating while typing interrupts the user mid-thought, validating on blur catches errors at the natural pause point",
+    "explanation": "X.ux|inline_validation_timing: on_keystroke: fires_while_user_typing -> error_on_partial_input -> false_positive -> frustration; on_submit: user_fills_everything -> finds_5_errors -> has_to_scroll_up -> rage; on_blur: field_loses_focus = natural_break -> correct_timing; success_state: show_green_checkmark_on_blur_too(not_only_errors); NO:keystroke_validation_on_format_fields NO:submit-only_validation_on_long_forms; eg: email_error_on_every_keystroke >> email_validated_on_blur",
+    "domain": "ux",
+    "tags": ["forms", "inline-validation", "blur", "wroblewski", "ux", "form-design"]
+  },
+  {
+    "principle": "Mark optional fields, not required ones — when most fields are required, marking the few optional ones is less noise than drowning the form in asterisks",
+    "explanation": "X.ux|required_vs_optional: convention: asterisk_on_required; problem: if_80%_fields_required -> asterisks_everywhere -> visual_noise; Wroblewski_rule: when_most_fields_required -> mark_\"(optional)\"_on_exceptions; reduces_visual_weight; filter_first: do_you_need_this_field_at_all? -> remove_if_not_essential; NO:asterisk_on_every_required_field_in_long_form NO:collecting_fields_you_don't_use; eg: 8_fields_with_8_asterisks >> 8_fields_with_2_\"(optional)\"_labels",
+    "domain": "ux",
+    "tags": ["forms", "required-fields", "optional", "wroblewski", "ux", "form-design"]
+  },
+  {
+    "principle": "Write error messages adjacent to the field that caused them, never only in a summary at the top — users scan back to the field, not upward to a summary they already passed",
+    "explanation": "X.ux|error_placement: scroll_behavior_on_error: user_looks_at_the_field_they_were_filling NOT_upward_to_summary; correct_pattern: error_message_immediately_below_invalid_input+red_border_on_field; if_form_is_long: BOTH inline_errors+scroll-to-top_summary(link_to_each_field); color_alone_insufficient(color_blindness)->icon+text+border; NO:error_summary_only_at_top NO:color_only_without_text; eg: errors_shown_in_top_box >> errors_shown_inline_below_each_field",
+    "domain": "ux",
+    "tags": ["forms", "error-messages", "error-placement", "wroblewski", "ux", "form-design"]
+  },
+  {
+    "principle": "Match input type to data type — a date picker for dates, a phone keyboard for phone numbers, a dropdown for known finite options, never a text field for everything",
+    "explanation": "X.ux|input_type_matching: Wroblewski: input_type_determines_cognitive_effort; rules: (1)finite_known_options -> dropdown/radio/checkbox (2)date -> date_picker NOT free_text (3)phone -> input[type=tel](mobile_numeric_keyboard) (4)email -> input[type=email](@ on_keyboard) (5)number_ranges -> slider; wrong_input_type = parsing_burden_on_user; NO:text_field_for_phone_or_date NO:dropdown_with_200+_options(use_search); eg: text_field_for_date >> date_picker+input[type=date]",
+    "domain": "ux",
+    "tags": ["forms", "input-types", "mobile", "wroblewski", "ux", "form-design"]
+  },
+  {
+    "principle": "Provide format hints before the field, not after an error — showing the expected format as placeholder or hint text prevents the error instead of recovering from it",
+    "explanation": "X.ux|format_hints: Wroblewski: format_hint_preempts_error; hint_types: (1)placeholder_text: show_example_value(\"e.g._+1_555_123_4567\") (2)hint_text_below_label: \"MM/DD/YYYY\" (3)input_mask: auto-formats_as_user_types; placeholder_limitation: disappears_on_focus -> use_hint_below_label_for_complex_formats; NO:format_error_only_on_submit NO:placeholder_as_label(disappears) NO:hint_after_the_user_fails; eg: phone_field_blank+format_error_on_submit >> phone_field+hint:\"Include_country_code\"",
+    "domain": "ux",
+    "tags": ["forms", "format-hints", "placeholder", "wroblewski", "ux", "form-design"]
+  },
+  {
+    "principle": "Chunk long forms into clearly named steps with a visible progress indicator — a form with no end in sight is abandoned before the first field",
+    "explanation": "X.ux|multi_step_forms: Wroblewski: perceived_length -> abandonment_intention; chunking: group_related_fields_into_named_steps(\"About_you\" \"Your_address\" \"Payment\"); progress_indicator: numbered_steps+current_highlighted+count(\"Step_2_of_4\"); back_button: always_available+preserves_data; step_size: max_5-7_fields_per_step; NO:single_scroll_form_with_20+_fields NO:progress_indicator_with_no_step_names NO:back_clears_previous_step_data; eg: 20_field_single_scroll >> 4_steps_5_fields_each+named_steps",
+    "domain": "ux",
+    "tags": ["forms", "multi-step", "progress-indicator", "wroblewski", "ux", "form-design"]
+  },
+  {
+    "principle": "Style the primary action button to stand out and the secondary action to recede — visual parity between Submit and Cancel causes mis-clicks that lose completed form data",
+    "explanation": "X.ux|primary_secondary_actions: Wroblewski: two_actions_equal_weight = user_guesses; primary_action: filled_button+brand_color+prominent; secondary(Cancel/Reset): text_link_or_ghost_button; distance: place_Cancel_away_from_Submit_to_reduce_mis-clicks; label_rule: primary_label=outcome(\"Create_account\" \"Send_message\")+NOT_\"Submit\"; NO:Cancel_and_Submit_same_visual_weight NO:\"Reset\"_button_on_long_form(data_loss) NO:\"Submit\"_as_button_label; eg: [Submit][Cancel]_equal_buttons >> [Create_account]_filled + Cancel_text_link",
+    "domain": "ux",
+    "tags": ["forms", "primary-action", "button-design", "wroblewski", "ux", "form-design"]
+  },
+  {
+    "principle": "Set smart defaults for every field where a correct answer can be predicted — a pre-filled correct value requires one fewer decision, and decisions cause drop-off",
+    "explanation": "X.ux|smart_defaults: Wroblewski: each_decision = cognitive_load = drop-off_risk; smart_default_sources: (1)user_account_data(name+address+card) (2)locale_detection(country+currency+phone_prefix) (3)most_common_choice_in_user_segment (4)previous_session_data; auto-fill: support_HTML_autocomplete_attributes; NO:forcing_known_data_re-entry NO:no_autocomplete_attributes_on_known_fields NO:most_risky_option_as_default(\"opt_in_to_all_marketing\"); eg: empty_country_field >> country_pre-filled_from_IP_with_option_to_change",
+    "domain": "ux",
+    "tags": ["forms", "smart-defaults", "autocomplete", "cognitive-load", "wroblewski", "ux"]
+  }
+]

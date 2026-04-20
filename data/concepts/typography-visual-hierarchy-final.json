@@ -1,0 +1,50 @@
+[
+  {
+    "principle": "Build type size from a modular scale with a ratio not arbitrary pixel values — a consistent ratio creates visual harmony because every size relates mathematically to every other",
+    "explanation": "X.ux|modular_type_scale: arbitrary_sizes: 13+17+22+31_feel_random; modular_scale: base_size * ratio^step; common_ratios: 1.25(Major_Third)+1.333(Perfect_Fourth)+1.5(Perfect_Fifth); fluid_type: clamp(min,preferred,max) -> scales_without_breakpoints; tools: typescale.com+utopia.fyi; implementation: CSS_custom_properties(--text-sm/base/lg/xl/2xl); NO:font_sizes_chosen_by_feel NO:px_fixed_sizes_for_body; eg: random_px_sizes >> --text-base:clamp(1rem,1vw+0.75rem,1.125rem) with_1.333_ratio",
+    "domain": "ux",
+    "tags": ["typography", "type-scale", "modular-scale", "visual-hierarchy", "design"]
+  },
+  {
+    "principle": "Keep body text line length between 45 and 75 characters — shorter lines fragment reading rhythm, longer lines force the eye to hunt for the start of the next line",
+    "explanation": "X.ux|line_length: Bringhurst: optimal_45-75_chars_per_line; too_short(<45): choppy_rhythm+too_many_line_breaks; too_long(>75): eye_loses_return_point -> reading_speed_drops; CSS_implementation: max-width:65ch_on_prose_containers; multi-column: use_columns_to_split_wide_containers; NO:full_width_body_text_on_1400px_screens NO:content_container_wider_than_800px_without_columns; eg: article_width:100% >> article_max-width:65ch+mx-auto",
+    "domain": "ux",
+    "tags": ["typography", "line-length", "readability", "measure", "design"]
+  },
+  {
+    "principle": "Set body copy line height at 1.4–1.6 and headings at 1.1–1.2 — default line height of 1.2 crushes body text and 1.8 makes headings look disconnected from their content",
+    "explanation": "X.ux|line_height: body_text: line_height_1.4-1.6_for_comfortable_reading; small_text(<14px): higher_line_height(1.6-1.8); large_headings(>32px): tight_line_height(1.0-1.2); rule: larger_font_size -> smaller_line_height_ratio; paragraph_spacing: 1em_between_paragraphs_minimum; NO:line_height:1.2_on_16px_body_text NO:line_height:1.6_on_48px_heading; eg: body{line-height:1.2} >> body{line-height:1.6}+h1{line-height:1.1}",
+    "domain": "ux",
+    "tags": ["typography", "line-height", "readability", "spacing", "design"]
+  },
+  {
+    "principle": "Establish visual hierarchy with size and weight before color — readers without color perception must still be able to identify the most important element on the page",
+    "explanation": "X.ux|visual_hierarchy_priority: hierarchy_tools_in_order: (1)size: biggest=most_important (2)weight: bold=emphasis (3)position: top-left=read_first (4)contrast: high_contrast=draws_eye (5)color: last_layer; color_as_only_hierarchy_signal -> fails_for_color_blind_users(8%_male); test: view_in_grayscale -> hierarchy_must_still_be_clear; primary_CTA: large+bold+high_contrast NOT only_bright_color; NO:two_elements_same_size+weight_competing NO:color_only_to_indicate_importance; eg: same-size_nav+CTA >> CTA_larger+bolder+positioned_prominently",
+    "domain": "ux",
+    "tags": ["visual-hierarchy", "typography", "contrast", "accessibility", "design"]
+  },
+  {
+    "principle": "Limit a design to two typefaces with contrasting personalities — more than two creates visual noise, and similar personalities create unresolved tension",
+    "explanation": "X.ux|font_pairing: two_font_rule: max_2_typefaces_per_design(exceptions:monospace_for_code); pairing_principle: contrast_NOT_conflict; good_contrast: serif_heading+sans_body; geometric_sans+humanist_sans; NO:two_serifs_similar_weight(conflict) NO:3+_display_fonts; variable_fonts: one_font_family_covers_all_weights+widths -> reduces_to_one_typeface; popular_pairings: Playfair+Source_Sans; DM_Serif+DM_Sans; NO:font_pairing_by_random_visual_feel; eg: 4_fonts_on_page >> 1_display_font+1_body_font",
+    "domain": "ux",
+    "tags": ["typography", "font-pairing", "typeface", "visual-design", "design"]
+  },
+  {
+    "principle": "Use whitespace as an active design element not empty space to fill — adequate breathing room between elements is what makes content scannable and layouts feel premium",
+    "explanation": "X.ux|whitespace_as_design: whitespace_function: (1)groups_related_elements(Gestalt_proximity) (2)isolates_important_elements (3)improves_scan_speed (4)signals_quality(luxury_brands_use_more) (5)reduces_cognitive_load; implementation: spacing_scale(4+8+16+24+32+48+64+96px); rule: section_padding_min_80px; card_internal_padding_min_24px; NO:cramming_elements_to_use_all_space NO:inconsistent_spacing_outside_scale; eg: tight_section_padding_16px >> section_padding_min_80px_vertical",
+    "domain": "ux",
+    "tags": ["whitespace", "spacing", "design", "visual-design", "layout"]
+  },
+  {
+    "principle": "Align text left for body copy in left-to-right languages — centered body text forces the eye to find a new starting point on every line, consistently reducing reading speed",
+    "explanation": "X.ux|text_alignment: left_align: consistent_starting_point_per_line -> fastest_reading; centered: variable_starting_point -> slower; justified: creates_word-spacing_rivers_in_narrow_columns; centered_acceptable: short_headings(1-3_words)+display_text+pull_quotes; rule: if_text_wraps_to_3+_lines -> left_align_it; NO:centered_body_paragraphs NO:justified_without_hyphenation; eg: centered_body_text_in_features_section >> left-aligned_body_text",
+    "domain": "ux",
+    "tags": ["typography", "text-alignment", "readability", "design", "body-copy"]
+  },
+  {
+    "principle": "Maintain minimum 4.5:1 contrast ratio for body text and 3:1 for large text — low contrast is the single most common accessibility failure and reduces readability for all users in bright environments",
+    "explanation": "X.ux|text_contrast: WCAG_AA: body_text(4.5:1)+large_text_18px+bold/24px(3:1); WCAG_AAA: body(7:1); affects_all: not_just_visually_impaired -> bright_sunlight+aging_eyes; tool: WebAIM_contrast_checker+Chrome_DevTools_accessibility_panel; common_failure: light_gray_on_white(#999_on_#fff=2.85:1_fails); NO:#999_on_#fff_for_body NO:low_contrast_placeholder_text NO:watermark_text_over_image_without_overlay; eg: #767676_on_#fff(4.48:1_barely) >> #595959_on_#fff(7.0:1_AAA)",
+    "domain": "ux",
+    "tags": ["contrast", "accessibility", "typography", "wcag", "design", "color"]
+  }
+]

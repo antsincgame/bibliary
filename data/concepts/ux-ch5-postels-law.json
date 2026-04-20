@@ -1,0 +1,26 @@
+[
+  {
+    "principle": "Ask only for information you absolutely need in forms — every extra field adds decision fatigue and reduces completion rate",
+    "explanation": "X.ux|form_minimalism: more_fields -> more_cognitive_energy -> decision_fatigue -> lower_completion; never_re-ask: info_you_already_have (email_when_logged_in, password_on_edit_profile); each_field == micro_decision -> depletes_willpower; NO:optional_fields_that_look_required NO:asking_phone_when_only_email_needed eg: \"signup: name+email+phone+company+role+password+confirm\" >> \"signup: email+password (rest_collected_later_when_needed)\"",
+    "domain": "ux",
+    "tags": ["postels-law", "forms", "decision-fatigue", "conversion"]
+  },
+  {
+    "principle": "Accept variable input formats in forms — never reject valid names addresses or data because they do not match your rigid pattern",
+    "explanation": "X.ux|flexible_input: humans != machines -> input_varies_by_culture+context; names: hyphens + spaces + single_letters + family_name_first; addresses: not_all_countries_have_zip+state_format; validation: translate_input_to_meet_requirements NOT reject_what_doesnt_fit; error_msg: never_say_name_is_wrong; NO:rejecting_hyphenated_names NO:requiring_western_name_order eg: \"form_rejects_O'Brien_says_invalid_name\" >> \"form_accepts_any_unicode_name_normalizes_internally\"",
+    "domain": "ux",
+    "tags": ["postels-law", "forms", "input-validation", "inclusivity"]
+  },
+  {
+    "principle": "Build core functionality that works for everyone first then layer enhancements based on detected capabilities — never gate basic content behind advanced features",
+    "explanation": "X.ux|progressive_enhancement: base_layer: content+html -> works_everywhere_including_screen_readers; style_layer: css -> visual_enhancement; interaction_layer: js+apis -> rich_features_when_supported; detect_capability -> add_enhancement NOT remove_fallback; NO:requiring_js_for_basic_content NO:mobile_site_as_separate_product eg: \"search_requires_voice_api_to_function\" >> \"search_box_for_all + voice_icon_added_when_speech_api_detected\"",
+    "domain": "ux",
+    "tags": ["postels-law", "progressive-enhancement", "accessibility", "resilience"]
+  },
+  {
+    "principle": "Design layouts that survive 300 percent text expansion for i18n and custom font sizes — test with longest translations and maximum font settings",
+    "explanation": "X.ux|text_resilience: english -> italian == up_to_300%_text_expansion; text_direction: ltr + rtl + vertical_per_region; custom_font_size: user_increases_system_font -> layout_must_adapt; technique: flexible_containers + priority_ordering (amazon: hides_less_important_nav_links_as_font_grows); NO:fixed_width_buttons_that_clip NO:layouts_that_break_at_large_font eg: \"nav_links_overflow_hidden_at_large_font\" >> \"nav_prioritized: important_links_stay + secondary_collapse_into_more_menu\"",
+    "domain": "ux",
+    "tags": ["postels-law", "i18n", "text-expansion", "font-size", "resilience"]
+  }
+]

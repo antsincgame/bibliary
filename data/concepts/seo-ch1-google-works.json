@@ -1,0 +1,20 @@
+[
+  {
+    "principle": "Make EEAT signals visible on the site — hidden expertise does not count for rankings",
+    "explanation": "X.seo|eeat_signals: experience == show_firsthand_product_use; expertise == display_credentials + qualifications_on_about_page; authority == earn_links_from_industry_sources + publish_expert_content; trust == visible_business_address + phone + real_team_profiles + SSL + security_badges; NO:expertise_exists_but_invisible_on_site eg: \"qualified_doctor_no_bio_no_credentials\" >> \"doctor_page_with_hospital_affiliation_+_photo_+_publications_+_contact\"",
+    "domain": "seo",
+    "tags": ["eeat", "trust-signals", "authority", "on-page", "ranking-factors"]
+  },
+  {
+    "principle": "Audit site against Google's top ranking factors as a checklist before launch",
+    "explanation": "X.seo|ranking_audit: check_12_factors: relevant_content + site_traffic + keyword_presence + external_links + core_web_vitals + content_quality + heading_tags_H1-H4 + HTTPS + mobile_friendly + page_speed + local_relevance; competitor_with_more_factors == ranks_higher; NO:ignoring_technical_factors eg: \"great_content_but_no_HTTPS_slow_load_no_H1\" >> \"great_content_+_HTTPS_+_fast_+_proper_H1-H4_structure\"",
+    "domain": "seo",
+    "tags": ["ranking-factors", "audit", "checklist", "technical-seo"]
+  },
+  {
+    "principle": "Build responsive design first — Google indexes mobile version as primary ranking signal",
+    "explanation": "X.seo|mobile_first: google_crawls_mobile_version_first_for_ranking; 70-80%_of_traffic == mobile; responsive_design == same_content + same_structured_data_on_all_devices; NO:desktop_only_site NO:separate_mobile_site_with_less_content eg: \"desktop_site_with_rich_content_+_stripped_mobile_version\" >> \"single_responsive_site_full_content_on_all_breakpoints\"",
+    "domain": "seo",
+    "tags": ["mobile-first", "responsive-design", "technical-seo", "ranking-factors"]
+  }
+]

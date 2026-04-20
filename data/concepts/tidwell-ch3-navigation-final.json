@@ -1,0 +1,44 @@
+[
+  {
+    "principle": "Present only 2-4 task-oriented entry points to first-time visitors — a homepage trying to serve all user types simultaneously paralyzes users who don't yet know what's possible",
+    "explanation": "X.ux|clear_entry_points: problem: many_options_at_start -> paralysis_for_new_users; solution: 2-4_task-oriented_entry_points+clear_CTA_labels; caveat: expert_users_irritated_by_forced_intro -> provide_expert_bypass; contrast: Menu_Page(for_returning_users_who_know_what_they_want); NO:homepage_addressing_all_user_types_at_equal_weight; eg: Dropbox_hero: Get_started+Sign_in+Demo -> 3_clear_entries >> homepage_40_equal_links -> new_user_paralyzed",
+    "domain": "ux",
+    "tags": ["clear-entry-points", "onboarding", "homepage", "designing-interfaces", "navigation"]
+  },
+  {
+    "principle": "Every page that traps users in limited navigation must have a clearly labeled exit to a known place — missing escape hatches on error pages and wizards are the primary cause of user rage-quitting",
+    "explanation": "X.ux|escape_hatch: use_when: wizard_steps+modal_panels+404_pages+deep-linked_pages_without_nav; minimum: link_to_homepage+Cancel_button_clearly_labeled; error_pages: always_have_working_Home_link(user_may_have_no_other_nav); NO:wizard_with_no_Cancel_option NO:error_page_with_no_navigation; eg: user_arrives_at_404_from_Google >> no_nav -> closes_tab_and_leaves >> Home_link_present -> continues_browsing",
+    "domain": "ux",
+    "tags": ["escape-hatch", "error-pages", "wizard", "designing-interfaces", "navigation"]
+  },
+  {
+    "principle": "Expand nav items into fat menus showing all subcategories at once — users discover pages that drill-down navigation buries behind multiple clicks and wrong-category guesses",
+    "explanation": "X.ux|fat_menus: problem: single_nav_word -> user_must_guess_contents -> drill_down_to_find; solution: drop-down_reveals_all_subpages+Titled_Sections+horizontal_spread; can_include: featured_content+images; organization: subcategory_headers+generous_whitespace; also_called: mega-menu; NO:unorganized_50-link_dump NO:fat_menu_for_5-page_site; eg: Products_nav_item >> fat_menu_reveals_10_categories -> user_sees_what_exists_without_drilling",
+    "domain": "ux",
+    "tags": ["fat-menus", "mega-menu", "navigation", "designing-interfaces", "discoverability"]
+  },
+  {
+    "principle": "Use modals only for small self-contained subtasks requiring full attention — modals for multi-step flows or tasks needing reference to the page underneath cause disorientation",
+    "explanation": "X.ux|modal_panel: structure: overlay+gray_layer_behind+no_nav_except_close; use_when: confirm+login+filename+one_focused_question; rule: task_must_be_completable_without_seeing_what_is_underneath; failure_mode: multi-step_flow_in_modal -> user_gets_lost; always_have: X_close+Cancel_button; NO:wizard_inside_modal NO:modal_requiring_reference_to_page_below; eg: delete_confirmation_Cancel+Delete_button >> 3-step_signup_flow_in_modal -> disorienting",
+    "domain": "ux",
+    "tags": ["modal-panel", "lightbox", "overlay", "designing-interfaces", "navigation"]
+  },
+  {
+    "principle": "Show a labeled step map with current position on every page of a multi-step process — users who can see how far they've come will tolerate much longer flows without abandoning",
+    "explanation": "X.ux|progress_indicator: use_when: wizard+checkout+any_linear_multi-step_flow; content: all_steps_labeled(short_names)+current_step_highlighted; allow_click-back_to_previous_steps; benefit: user_anticipates_upcoming_steps+prepares_info; vs_breadcrumbs: linear_process_not_hierarchy; NO:unlabeled_step_N_of_M_only NO:progress_bar_with_no_step_names; eg: checkout_Cart>Shipping>Payment>Review_clickable >> step_3_of_4_no_labels -> user_unsure_what_information_is_needed_next",
+    "domain": "ux",
+    "tags": ["progress-indicator", "wizard", "checkout", "designing-interfaces", "navigation"]
+  },
+  {
+    "principle": "Breadcrumbs show hierarchy position not navigation history — clicking them lets users jump to any parent level and see what else exists at that level for comparison",
+    "explanation": "X.ux|breadcrumbs: purpose: WHERE_you_are_in_hierarchy(NOT_browser_history); value: user_arriving_via_search_can_see_context+navigate_to_siblings; each_crumb_is_clickable_link_to_that_level; vs_progress_indicator: hierarchy_not_linear_sequence; NO:non-clickable_breadcrumbs NO:using_breadcrumbs_to_replay_browser_back_history; eg: user_finds_product_via_Google -> breadcrumb_Home>Electronics>TVs -> clicks_TVs_to_compare_models",
+    "domain": "ux",
+    "tags": ["breadcrumbs", "hierarchy", "wayfinding", "designing-interfaces", "navigation"]
+  },
+  {
+    "principle": "Place all account and sign-in tools in the upper-right corner — this is pure convention, and following it gives users instant findability through spatial memory alone",
+    "explanation": "X.ux|sign_in_tools: location: upper-right_corner(pure_convention+spatial_memory); show: username+avatar+cart+settings+help+sign-out; when_signed_out: sign-in_form_or_link_in_same_corner; search_box: often_adjacent+consistent_regardless_of_auth_state; NO:profile_icon_bottom-left NO:account_tools_hidden_deep_in_hamburger_menu; eg: user_looks_top-right_for_account_by_reflex -> finds_it_immediately >> sign-in_link_only_in_footer -> user_cannot_find_it",
+    "domain": "ux",
+    "tags": ["sign-in-tools", "conventions", "spatial-memory", "designing-interfaces", "navigation"]
+  }
+]

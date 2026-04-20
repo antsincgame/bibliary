@@ -1,0 +1,44 @@
+[
+  {
+    "principle": "Every page must pass the trunk test — at a squint it should instantly expose site ID, page name, sections, local nav, where-I-am indicator, and search",
+    "explanation": "X.ux|trunk_test: QA_rule_for_any_page: user_blindfolded+dumped_on_page >> within_3sec_identify: site_ID+page_name+sections+local_nav+you_are_here+search_entry; test_method: print_page -> squint_or_arm_length -> circle_each_element; if_any_element_invisible_at_squint -> redesign(not_tweak); applies_to_EVERY_page(not_just_home) because_traffic_enters_deep_via_search_engines; NO:designing_only_for_users_arriving_via_homepage NO:subtle_you_are_here_that_requires_close_reading; eg: page_has_breadcrumbs_but_no_H1_page_name >> add_prominent_H1_matching_breadcrumb_leaf",
+    "domain": "ux",
+    "tags": ["trunk-test", "page-audit", "navigation-qa", "visual-hierarchy", "landing-from-search"]
+  },
+  {
+    "principle": "Strip persistent navigation on form pages — every extra nav link is a bail-out exit from a task the user already committed to",
+    "explanation": "X.ux|form_nav_strip: persistent_nav_on_every_page EXCEPT: (1)home_page(different_burdens) (2)form_pages(checkout+registration+feedback+preferences); form_page_keeps_ONLY: site_ID + home_link + form-relevant_utilities(help+cart); removing_distractions -> higher_completion_rate; NO:full_header_nav_on_checkout NO:sidebar_with_unrelated_links_during_signup; eg: 8-field_signup_form_with_full_9-item_top_nav >> same_form_with_just_logo+back_to_home => +completion",
+    "domain": "ux",
+    "tags": ["forms", "navigation", "conversion", "checkout", "task-focus"]
+  },
+  {
+    "principle": "Page H1 must match the link text that brought the user there — any mismatch forces a micro-pause of doubt that compounds into lost trust",
+    "explanation": "X.ux|link_label_match: implicit_contract: link_text_clicked == destination_page_H1; mismatch -> user_thinks_for_milliseconds \"why_different?\" -> trust_erodes; acceptable_compromise: near-match_with_obvious_reason(space_limit); rule: if_button_says_\"Gifts_for_Him\" -> page_H1_must_be_\"Gifts_for_Him\"_or_\"Gifts_for_Men\"(obvious_synonym) NOT_\"Male_Product_Selection\"; NO:clever_creative_rename_between_link_and_destination NO:link_\"Pricing\"_lands_on_H1_\"Plans_And_Packages\"; eg: nav_link=\"Pricing\" + page_H1=\"Our_Plans\" >> nav_link=\"Pricing\" + page_H1=\"Pricing\"",
+    "domain": "ux",
+    "tags": ["consistency", "navigation", "trust", "labeling", "information-scent"]
+  },
+  {
+    "principle": "Home page hero must answer four questions at a glance — what is this, what can I do here, what do they have, why here and not somewhere else",
+    "explanation": "X.ux|home_4questions: above_fold_must_answer: (1)what_is_this? (2)what_can_I_do_here? (3)what_do_they_have_here? (4)why_here_not_competitor?; if_user_cant_answer_in_5sec -> everything_else_on_page_misinterpreted; channels: site_ID+tagline(Q1+Q4) + welcome_blurb(Q2+Q3) + primary_nav(Q3) + primary_CTA(Q2); NO:mission_statement_as_hero_copy NO:clever_metaphor_without_plain_explanation NO:assuming_visitors_know_from_ads; eg: hero=\"Welcome_to_XYZ\"+stock_photo >> hero=tagline_stating_differentiator + 2-line_blurb_answering_what+why + single_primary_CTA",
+    "domain": "ux",
+    "tags": ["home-page", "hero-section", "value-proposition", "first-impression", "conversion"]
+  },
+  {
+    "principle": "Tagline is six to eight words conveying differentiation plus concrete benefit — longer becomes text, shorter becomes motto, neither does the job",
+    "explanation": "X.copy|tagline_formula: length: 6-8_words(absorb_easily+full_thought); must_convey: differentiation + concrete_benefit; position: adjacent_to_site_ID(top_of_page); NOT_motto(expresses_ideal) != tagline(conveys_value_prop); NO:\"We_bring_good_things_to_life\"(motto+vague) NO:\"Saving_time_money_and_sanity\"(generic_no_differentiator) NO:2-word_clever_phrase_that_needs_context; eg: \"Work.Wisely\"(too_short_uninformative) >> \"Help_for_the_business_of_running_your_small_business\"(clear_audience+benefit)",
+    "domain": "copy",
+    "tags": ["tagline", "value-proposition", "home-page", "brand-messaging", "differentiation"]
+  },
+  {
+    "principle": "Breadcrumbs ship with six non-negotiable properties or they create more confusion than they solve",
+    "explanation": "X.ux|breadcrumb_spec: (1)top_of_page_above_everything(marginalizes_as_accessory) (2)separator=\">\"(suggests_forward_motion NOT_\"/\"_NOT_\":\") (3)tiny_type(accessory_not_primary) (4)prefix_\"You_are_here:\"(self-explanatory) (5)last_item_bold(current_page_marker) (6)NEVER_replaces_page_H1(breadcrumb_leaf_is_not_a_heading); breadcrumb_alone != navigation_system(too_blinder-like); use_as_accessory_to_primary_nav_on_sites_with_deep_hierarchy; NO:breadcrumb_with_same_font_size_as_body NO:largest_breadcrumb_item_acting_as_H1 NO:breadcrumbs_as_only_nav_on_large_site; eg: \"Home/Products/Widgets\" >> \"You_are_here: Home > Products > **Widgets**\"(tiny_type_above_H1_Widgets)",
+    "domain": "ux",
+    "tags": ["breadcrumbs", "navigation", "hierarchy", "wayfinding", "deep-sites"]
+  },
+  {
+    "principle": "If a designer thinks a visual cue sticks out like a sore thumb it probably needs to be twice as prominent — users scan at speed designers never match",
+    "explanation": "X.ui|visual_cue_doubling: designer_taste = subtle(sophistication_bias); user_reality = hurry+scan+miss_subtle; rule: when_tuning_prominence_of_active_state+you_are_here+error_highlight+primary_CTA -> if_it_feels_obvious_to_you -> double_it; apply_multiple_visual_distinctions_simultaneously(color+bold+icon NOT_just_one); NO:relying_on_single_subtle_cue(thin_bottom-border_for_active_tab) NO:using_only_color_for_active_state(colorblindness+inattention_miss_it); eg: active_nav_item=slightly_darker_grey_text >> active_nav_item=bold + accent_color + left_border_stripe",
+    "domain": "ui",
+    "tags": ["visual-hierarchy", "active-state", "prominence", "designer-bias", "accessibility"]
+  }
+]

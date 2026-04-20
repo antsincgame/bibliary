@@ -1,0 +1,50 @@
+[
+  {
+    "principle": "Match your headline entry point to the customer's awareness level — leading with the product name to an unaware audience is the most expensive mistake in advertising",
+    "explanation": "X.copy|awareness_5levels: (1)MOST_AWARE: knows+uses_product->headline=price/deal (2)PRODUCT_AWARE: knows_product_not_bought->headline=differentiation (3)SOLUTION_AWARE: knows_solution_type_not_brand->headline=mechanism (4)PROBLEM_AWARE: feels_pain_no_solution_yet->headline=name_pain_first (5)COMPLETELY_UNAWARE: no_felt_pain->headline=story+desire+identification; misalignment: product_headline_to_unaware -> zero_resonance; NO:leading_with_brand_name_for_cold_audience NO:problem_headline_for_most_aware; eg: SaaS_cold_ad: \"Introducing_OurCRM\" >> \"Still_losing_deals_because_your_notes_are_scattered?\"",
+    "domain": "copy",
+    "tags": ["awareness-levels", "headlines", "direct-response", "copywriting", "market-awareness"]
+  },
+  {
+    "principle": "Escalate your claim type as the market matures — direct product claims only work when your category is new, a saturated market demands a novel mechanism or identity frame",
+    "explanation": "X.copy|sophistication_5stages: (1)FIRST_IN_MARKET: direct_claim_works(\"lose_weight_fast\") (2)COMPETITORS_COPY: bigger_claim(\"lose_30lbs_in_30_days\") (3)CLAIMS_EXHAUSTED: introduce_mechanism(\"HGH-activating_formula\") (4)MECHANISMS_COPIED: elaborate_mechanism(\"7-stage_thermogenic_cascade\") (5)ALL_EXHAUSTED: identification+sensation(\"for_women_over_40_who_gave_up\"); NO:direct_claim_in_stage4+_market NO:mechanism_in_stage1_market(overcomplicates); eg: crowded_CRM: \"best_CRM\" >> \"The_only_CRM_built_around_how_sales_reps_actually_think\"",
+    "domain": "copy",
+    "tags": ["market-sophistication", "copywriting", "positioning", "direct-response", "claims"]
+  },
+  {
+    "principle": "Tap the mass desire already flowing in your market — advertising cannot create desire, it can only channel pre-existing desire toward your product",
+    "explanation": "X.copy|mass_desire_tap: Schwartz: desire_pre-exists_in_market -> copywriter_channels_it NOT creates_it; method: identify_dominant_mass_desire_of_target(financial_security+recognition+health+belonging) -> connect_product_as_the_vehicle; desire_must_be: mass(millions_feel_it)+urgent+already_acknowledged; NO:educating_market_into_wanting_your_product NO:product_features_as_opening; eg: selling_project_mgmt: don't_explain_features >> tap_\"I_want_my_team_to_respect_my_decisions\" -> \"The_tool_that_makes_you_the_organized_one\"",
+    "domain": "copy",
+    "tags": ["mass-desire", "desire-tapping", "copywriting", "breakthrough-advertising", "persuasion"]
+  },
+  {
+    "principle": "The headline makes the opening bid on desire — every line of body copy must expand that bid, never introduce a new promise that was not opened by the headline",
+    "explanation": "X.copy|headline_opening_bid: headline = first_contract_with_reader; body_copy = series_of_expansions_of_that_promise; new_promise_in_body = broken_contract -> reader_feels_misled; expansion_modes: deepen(more_detail_on_same_outcome) + broaden(more_outcomes_of_same_desire) + substantiate(proof_of_same_claim); test: every_body_paragraph_traces_back_to_headline_promise; NO:bait-and-switch_headline NO:headline_promise_abandoned_in_body; eg: headline:\"Double_your_close_rate\" -> body_expands_HOW+PROOF+WHEN NOT introduces_\"also_saves_time\" as_new_promise",
+    "domain": "copy",
+    "tags": ["headlines", "copy-structure", "promise-expansion", "direct-response", "copywriting"]
+  },
+  {
+    "principle": "Lead copy with the desire, name the mechanism that satisfies it, then introduce the product as the best vehicle for that mechanism — opening with the product reverses the psychological sequence",
+    "explanation": "X.copy|desire_mechanism_product: Schwartz_sequence: desire(emotional_want) -> mechanism(process_that_delivers_result) -> product(best_instance_of_mechanism); reader_cares_about_desire_first NOT product_name; mechanism: the_ingredient_or_process_bridging_desire_to_product; NO:product_first_copy(\"introducing_X_software\") NO:desire_with_no_mechanism(empty_promise); eg: \"Our_AI_writes_emails\" >> \"Get_replies_in_24h(desire) -> neural_send-time_optimization(mechanism) -> powered_by_Reachly(product)\"",
+    "domain": "copy",
+    "tags": ["desire-mechanism-product", "copy-structure", "copywriting", "direct-response", "breakthrough-advertising"]
+  },
+  {
+    "principle": "Show readers their own face in the copy — recognition of self precedes desire, and readers buy from copy that mirrors their exact situation back at them",
+    "explanation": "X.copy|identification_technique: Schwartz_stage5: reader_sees_themselves_in_copy -> feels_\"this_was_written_for_me\" -> trust+desire_spike; method: name_specific_identity_marker(role+frustration+failed_attempt+aspiration) -> mirror_it_in_headline_or_lead; vague_ICP -> nobody_identifies; most_powerful_in_stage4+5_markets_where_claims_are_exhausted; NO:generic_demographic(\"business_owners\") NO:aspiration_without_identity_anchor; eg: \"For_entrepreneurs\" >> \"For_solo_founders_on_their_second_SaaS_tired_of_context-switching\"",
+    "domain": "copy",
+    "tags": ["identification", "copywriting", "persona", "direct-response", "breakthrough-advertising"]
+  },
+  {
+    "principle": "Write body copy as a chain of expanding commitments — each sentence must deepen the desire opened by the previous, every sideways pivot breaks the chain and loses the reader",
+    "explanation": "X.copy|expanding_commitment_chain: Schwartz: copy = series_of_micro-yeses; each_sentence: deepens+confirms+expands_previous_commitment; pivot_to_new_idea = chain_break -> reader_disengages; test_per_sentence: \"does_this_move_the_same_desire_forward?\" NO->rewrite_or_cut; expansion_modes: deepen(more_detail) expand(more_outcomes) substantiate(proof); NO:topic_hopping_in_body_paragraphs NO:feature_list_breaking_desire_momentum; eg: paragraph_on_speed->pivot_to_pricing >> paragraph_on_speed->HOW_fast->PROOF->WHO_benefited",
+    "domain": "copy",
+    "tags": ["copy-structure", "commitment-chain", "copywriting", "direct-response", "breakthrough-advertising"]
+  },
+  {
+    "principle": "Use awareness level to choose your entry point and sophistication level to choose your claim type — mismatching either makes copy invisible regardless of craft quality",
+    "explanation": "X.copy|awareness_sophistication_matrix: awareness_axis: HOW_MUCH_reader_knows_about_problem+solution(5_levels:unaware->most_aware); sophistication_axis: HOW_TIRED_market_is_of_existing_claims(5_stages:fresh->exhausted); entry_point=set_by_awareness(problem-lead_vs_deal-lead); claim_framing=set_by_sophistication(direct_claim_vs_mechanism_vs_identification); both_must_match; audit_method: scan_top_SERP_ads+competitors -> determine_stage+level -> match_both_in_headline; NO:fresh_claim_in_exhausted_market NO:complex_mechanism_for_unaware_audience",
+    "domain": "copy",
+    "tags": ["awareness-levels", "market-sophistication", "copywriting", "positioning", "direct-response"]
+  }
+]

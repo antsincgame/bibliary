@@ -1,0 +1,44 @@
+[
+  {
+    "principle": "Design interfaces where users can freely explore and undo any action — fear of irreversible mistakes suppresses exploration more than actual bad outcomes",
+    "explanation": "X.ux|safe_exploration: dire_consequences(even_annoyance) -> users_stop_exploring+learn_less; solution: undo_available+back_button_predictable+no_unexpected_popups+cancel_always_offered; NO:links_opening_new_trapped_windows NO:destructive_actions_without_undo; eg: image_filter+Undo_available -> try_many_filters_freely >> no_undo_on_filter -> user_stops_experimenting+feels_negative",
+    "domain": "ux",
+    "tags": ["safe-exploration", "undo", "user-behavior", "designing-interfaces", "cognition"]
+  },
+  {
+    "principle": "Users pick the first option that looks good enough — they scan rather than read, so the correct path must be the most visually prominent element in the scan order",
+    "explanation": "X.ux|satisficing: users_scan_not_read -> pick_first_plausible_option(not_best); learned_path: even_if_better_path_exists -> ignored(relearning_costs_energy); design_response: correct_action_most_prominent+first_in_scan_order+obvious_label; NO:hiding_primary_CTA_among_equal-weight_options NO:expecting_users_to_read_carefully_before_acting; eg: search_box_top-center -> used_even_if_browse_better >> search_buried_in_menu -> users_struggle",
+    "domain": "ux",
+    "tags": ["satisficing", "scanning", "user-behavior", "designing-interfaces", "cognition"]
+  },
+  {
+    "principle": "Let task-focused users skip optional questions and finish their primary goal first — forcing irrelevant decisions mid-task causes more abandonment than any other friction type",
+    "explanation": "X.ux|deferred_choices: forced_upfront_questions -> task-focused_user_abandons; solution: mark_fields_optional+allow_skip+invite_completion_later; ecommerce: allow_purchase_without_account -> offer_account_creation_after_payment; NO:mandatory_profile_setup_before_first_use NO:registration_wall_before_experiencing_value; eg: bulletin_board_requires_full_profile_before_posting >> post_first_register_later -> user_completes_task",
+    "domain": "ux",
+    "tags": ["deferred-choices", "progressive-disclosure", "onboarding", "designing-interfaces", "cognition"]
+  },
+  {
+    "principle": "Repeated UI actions become reflexive — respect platform gesture conventions and never rearrange confirmation dialog buttons, or habituated users will click the wrong action without reading",
+    "explanation": "X.ux|habituation: repeated_actions -> reflexive+no_conscious_thought; benefit: efficiency+flow; trap: changed_button_position -> habituated_click_fires_wrong; same_dialog_buttons_always -> user_clicks_without_reading; fix: follow_platform_conventions+keep_button_positions_consistent; NO:random_button_order_in_dialogs NO:gesture_conflicting_with_OS_standard; eg: ctrl+S_saves_everywhere -> reflex >> ctrl+S_means_something_else_here -> expert_user_makes_error",
+    "domain": "ux",
+    "tags": ["habituation", "muscle-memory", "conventions", "designing-interfaces", "cognition"]
+  },
+  {
+    "principle": "Users remember where controls are located spatially — moving UI elements between versions or screens destroys expert muscle memory and forces full relearning of a familiar tool",
+    "explanation": "X.ux|spatial_memory: users_remember_location_not_label -> find_without_reading; expertise_built_on: consistent_positions+predictable_layout; cross-platform: similar_functions_in_similar_places; user-arranged_spaces(pinned_tabs+desktop) exploit_spatial_memory; NO:reorganizing_nav_in_major_version_update NO:different_control_positions_on_similar_screens; eg: settings_always_top-right -> instant_reflex >> settings_moved_to_hamburger -> expert_user_searches_frustrated",
+    "domain": "ux",
+    "tags": ["spatial-memory", "consistency", "layout", "designing-interfaces", "cognition"]
+  },
+  {
+    "principle": "Users leave windows open and flag items as reminders for future intentions — support this by restoring previous state on relaunch and showing badges for pending items rather than forcing fresh starts",
+    "explanation": "X.ux|prospective_memory: users_use_UI_as_external_memory(open_windows+flagged_items+bookmarks+desktop_files); design_response: restore_last_state_on_relaunch+show_unread_badges+retain_auth_between_sessions+support_annotations; NO:clearing_all_state_on_close NO:requiring_user_to_manually_re-navigate_to_previous_context; eg: ebook_opens_at_cover_every_time >> ebook_restores_to_page_27 -> user_continues_immediately",
+    "domain": "ux",
+    "tags": ["prospective-memory", "state-restoration", "notifications", "designing-interfaces", "cognition"]
+  },
+  {
+    "principle": "When users must repeat an operation many times, reduce it to one click per repetition or a single batch action — repetitive manual work is where good tools earn the loyalty of power users",
+    "explanation": "X.ux|streamlined_repetition: repetitive_tasks -> tedium+errors+time_waste; solution: Find_Replace(one_click_per_match)+macro_recording+batch_operations+repeat_last_command_shortcut; goal: N_manual_clicks -> 1_action_for_all_N; NO:forcing_identical_action_N_times_with_no_shortcut NO:no_batch_select-and-apply; eg: rename_100_files_manually_one_by_one >> batch_rename_with_pattern -> all_100_in_one_action",
+    "domain": "ux",
+    "tags": ["streamlined-repetition", "batch-operations", "power-users", "designing-interfaces", "efficiency"]
+  }
+]

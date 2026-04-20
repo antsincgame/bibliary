@@ -1,0 +1,38 @@
+[
+  {
+    "principle": "Target long-tail keywords first on new sites — head terms have 1000x the competition but long-tail converts at the same rate or higher",
+    "explanation": "X.seo|long_tail_strategy: head_term:\"shoes\"(10M_searches+thousands_competitors); long_tail:\"best_running_shoes_flat_feet_women\"(500_searches+few_optimized_pages); new_site: head_term_ranking_takes_3-5_years; long_tail: rankable_in_months; higher_intent_clarity->higher_CVR; find_via: People_Also_Ask+Google_autocomplete+AnswerThePublic+Semrush_phrase_match; NO:starting_with_head_terms_on_new_site NO:ignoring_long_tail_as_low_volume; eg: targeting_\"SEO\" >> targeting_\"on-page_SEO_checklist_for_small_business\"",
+    "domain": "seo",
+    "tags": ["long-tail", "keyword-research", "search-volume", "competition", "new-sites", "on-page-seo"]
+  },
+  {
+    "principle": "Match content format to one of four search intents — Google only ranks pages whose format matches what users expect for that query",
+    "explanation": "X.seo|search_intent_4types: (1)INFORMATIONAL: learn -> article/guide/tutorial (2)NAVIGATIONAL: find_specific_site -> brand_page (3)COMMERCIAL: comparing_before_buying -> listicle/review/comparison (4)TRANSACTIONAL: ready_to_buy -> product_page/signup; detect: check_top_10_SERP_for_query -> dominant_format_IS_the_intent; NO:product_page_for_informational_query NO:article_for_transactional_query; eg: \"best_CRM_software\"_SERP_shows_listicles >> write_listicle_NOT_product_page",
+    "domain": "seo",
+    "tags": ["search-intent", "content-format", "informational", "transactional", "commercial", "on-page-seo"]
+  },
+  {
+    "principle": "Audit for and eliminate orphan pages — pages with no internal links receive no PageRank and are often not indexed despite strong content",
+    "explanation": "X.seo|orphan_pages: orphan == page_with_zero_internal_links_pointing_to_it; consequence: Googlebot_doesnt_find_via_crawl -> not_indexed OR indexed_but_no_PageRank; fix: (1)audit_via_Screaming_Frog+Semrush: crawl_vs_sitemap_diff (2)link_from_3+_relevant_pages_per_orphan; prevent: every_new_page_gets_min_3_contextual_links_on_publish; NO:publishing_pages_without_planning_internal_links; eg: 20_blog_posts_nobody_links_to >> each_linked_from_category+2_related_articles",
+    "domain": "seo",
+    "tags": ["orphan-pages", "internal-linking", "crawl", "pagerank", "indexing", "technical-seo"]
+  },
+  {
+    "principle": "Group pages into thematic silos where every cluster page links to the pillar and each other — topical isolation concentrates authority where it matters",
+    "explanation": "X.seo|silo_structure: silo: group_of_semantically_related_pages; link_pattern: pillar<->cluster_pages(bidirectional); cluster_pages->link_each_other_within_silo; cross-silo_links: only_via_pillar NOT_directly_between_silos; result: topical_authority_concentrates+Google_understands_structure; NO:random_linking_without_topical_relevance NO:cluster_linking_outside_silo; eg: SEO_site: pillar=\"SEO_guide\"+clusters=\"on-page\"+\"link-building\"+\"technical\" -> each_links_to_pillar+each_other",
+    "domain": "seo",
+    "tags": ["silo-structure", "internal-linking", "topical-authority", "pillar-page", "site-architecture", "on-page-seo"]
+  },
+  {
+    "principle": "Keep every important page within three clicks from the homepage — pages buried deeper get crawled less and pass less equity regardless of content quality",
+    "explanation": "X.seo|link_depth: crawl_frequency: proportional_to_depth_from_home; depth_4+: crawled_rarely -> fresh_content_indexed_late; rule: home->category(1)->subcategory(2)->page(3)=max; high_priority_pages: link_from_homepage_OR_prominent_category; audit: Screaming_Frog_shows_click_depth_per_URL; NO:revenue_pages_buried_5+_clicks_deep NO:blog_posts_reachable_only_via_sitemap; eg: product_page_depth_7 >> promoted_to_category_nav+linked_from_homepage_feature",
+    "domain": "seo",
+    "tags": ["link-depth", "crawl-budget", "internal-linking", "site-architecture", "indexing", "technical-seo"]
+  },
+  {
+    "principle": "Place the primary keyword in the first 100 words — Google weights opening paragraphs more heavily and often uses them as the SERP snippet",
+    "explanation": "X.seo|keyword_first_100: Google_relevance: first_paragraph_weighted_higher_than_mid-page; SERP_snippet: often_extracted_from_first_paragraph; rule: primary_keyword_appears_naturally_within_first_2_paragraphs; pair_with_related_term_in_same_paragraph; NO:first_paragraph_about_history_or_context_before_keyword NO:keyword_first_appearing_on_second_screen; eg: 80_word_intro_zero_keyword >> keyword_naturally_in_sentence_1_or_2_of_intro",
+    "domain": "seo",
+    "tags": ["keyword-placement", "first-paragraph", "on-page-seo", "serp-snippet", "relevance-signal"]
+  }
+]

@@ -1,0 +1,8 @@
+[
+  {
+    "principle": "Match loader type to expected wait duration — spinner for under 2s, labeled progress bar for over 2s",
+    "explanation": "X.ux|doherty_loader_type: wait<400ms -> no_loader_needed; wait<2s -> spinner_or_pulse_animation; wait>2s -> progress_bar + percentage + current_step_label; eg: \"file_upload_spinner_only\" >> \"file_upload: 67% + 'Compressing images...'\"; NO:spinner_for_10s_operations NO:progress_bar_for_instant_actions",
+    "domain": "ux",
+    "tags": ["doherty-threshold", "loading", "feedback", "progress", "micro-interactions"]
+  }
+]
