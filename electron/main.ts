@@ -2,7 +2,6 @@ import { app, BrowserWindow, session, type OnHeadersReceivedListenerDetails } fr
 import * as path from "path";
 import {
   registerAllIpcHandlers,
-  abortAllBatches,
   abortAllIngests,
   abortAllDatasetV2,
   abortAllBookhunter,
@@ -157,7 +156,6 @@ if (!gotLock) {
     if (isQuitting) return;
     if (!coordinator.isAnyActive()) {
       stopWatchdog();
-      abortAllBatches("app-quit");
       abortAllIngests("app-quit");
       abortAllDatasetV2("app-quit");
       abortAllBookhunter("app-quit");
@@ -191,11 +189,6 @@ if (!gotLock) {
       } finally {
         try {
           stopWatchdog();
-        } catch {
-          // ignore
-        }
-        try {
-          abortAllBatches("app-quit");
         } catch {
           // ignore
         }

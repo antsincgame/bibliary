@@ -50,124 +50,12 @@ interface ServerStatus {
   version?: string;
 }
 
-interface SamplingPartial {
-  temperature?: number;
-  top_p?: number;
-  top_k?: number;
-  min_p?: number;
-  presence_penalty?: number;
-  max_tokens?: number;
-}
-
-interface BatchSettings {
-  profile: "BIG" | "SMALL";
-  contextLength: number;
-  batchSize: number;
-  delayMs: number;
-  fewShotCount: number;
-  sampling: SamplingPartial;
-  samplingOverrides?: {
-    T1?: SamplingPartial;
-    T2?: SamplingPartial;
-    T3?: SamplingPartial;
-  };
-}
-
-interface DatasetRoleSpec {
-  role: string;
-  system: string;
-  voice: string;
-  format: string;
-  exemplar: string;
-  anti_examples: string[];
-  sampling: SamplingPartial;
-}
-
-interface DatasetRoles {
-  T1: DatasetRoleSpec;
-  T2: DatasetRoleSpec;
-  T3: DatasetRoleSpec;
-}
+type TelemetryEvent = Record<string, unknown> & { type: string; ts: string };
 
 interface UnfinishedBatch {
   pipeline: string;
   id: string;
   snapshot: unknown;
-}
-
-interface DatasetBatchState {
-  batchName: string;
-  batchFile: string;
-  startedAt: string;
-  lastSavedAt: string;
-  processedChunkIds: string[];
-  appendedLineCount: number;
-  linesPerChunk: number;
-  config: BatchSettings;
-  status: "running" | "paused" | "completed";
-}
-
-type TelemetryEvent = Record<string, unknown> & { type: string; ts: string };
-
-interface ChunkProgressEvent {
-  batchId: string;
-  index: number;
-  total: number;
-  chunkId: string;
-  domain: string;
-  principleHead: string;
-  phase: "T1" | "T2" | "T3" | "done" | "error";
-  preview?: string;
-  error?: string;
-  elapsedMs?: number;
-}
-
-interface BatchResult {
-  batchId: string;
-  batchName: string;
-  batchFile: string;
-  examplesCount: number;
-  processedCount: number;
-  failedCount: number;
-  progress: ProgressInfo;
-}
-
-interface ProgressInfo {
-  total_chunks: number;
-  processed_count: number;
-  remaining_count: number;
-  processed_chunk_ids: string[];
-  batches: Array<{
-    name: string;
-    file: string;
-    chunk_ids: string[];
-    example_count: number;
-    examples_per_chunk: number;
-    created_at: string;
-    notes: string;
-  }>;
-  next_batch_index: number;
-}
-
-interface ValidationReport {
-  total: number;
-  valid: number;
-  errors: string[];
-}
-
-interface DatasetReadiness {
-  lmStudioOnline: boolean;
-  lmStudioVersion?: string;
-  bigModelLoaded: boolean;
-  bigModelKey: string;
-  sourceChunkCount: number;
-  unprocessedCount: number;
-  goldExampleCount: number;
-  sourcePath: string;
-  goldPath: string;
-  finetuneDir: string;
-  sourceExists: boolean;
-  goldExists: boolean;
 }
 
 interface QdrantCollectionsListItem {
@@ -250,28 +138,6 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.invoke("lmstudio:switch-profile", profile, contextLength),
   },
 
-  dataset: {
-    startBatch: (settings: BatchSettings): Promise<BatchResult> =>
-      ipcRenderer.invoke("dataset:start-batch", settings),
-    getProgress: (): Promise<ProgressInfo | null> => ipcRenderer.invoke("dataset:get-progress"),
-    listBatches: (): Promise<string[]> => ipcRenderer.invoke("dataset:list-batches"),
-    validateBatch: (batchFile: string): Promise<ValidationReport> =>
-      ipcRenderer.invoke("dataset:validate-batch", batchFile),
-    onChunkProgress: (callback: (event: ChunkProgressEvent) => void): (() => void) => {
-      const listener = (_event: unknown, payload: ChunkProgressEvent): void => callback(payload);
-      ipcRenderer.on("dataset:chunk-progress", listener);
-      return () => ipcRenderer.removeListener("dataset:chunk-progress", listener);
-    },
-    checkReadiness: (): Promise<DatasetReadiness> => ipcRenderer.invoke("dataset:check-readiness"),
-    loadBigModel: (contextLength?: number): Promise<LoadedModelInfo> =>
-      ipcRenderer.invoke("dataset:load-big-model", contextLength),
-    openFinetuneFolder: (): Promise<string> => ipcRenderer.invoke("dataset:open-finetune-folder"),
-    listUnfinalized: (): Promise<DatasetBatchState[]> => ipcRenderer.invoke("dataset:list-unfinalized"),
-    readRoles: (): Promise<DatasetRoles> => ipcRenderer.invoke("dataset:read-roles"),
-    writeRoles: (roles: DatasetRoles): Promise<DatasetRoles> =>
-      ipcRenderer.invoke("dataset:write-roles", roles),
-  },
-
   resilience: {
     scanUnfinished: (): Promise<UnfinishedBatch[]> => ipcRenderer.invoke("resilience:scan-unfinished"),
     telemetryTail: (n: number): Promise<TelemetryEvent[]> =>
@@ -286,12 +152,6 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.on("resilience:lmstudio-online", listener);
       return () => ipcRenderer.removeListener("resilience:lmstudio-online", listener);
     },
-  },
-
-  batch: {
-    cancel: (batchId: string): Promise<boolean> => ipcRenderer.invoke("batch:cancel", batchId),
-    discard: (batchId: string): Promise<boolean> => ipcRenderer.invoke("batch:discard", batchId),
-    resume: (batchName: string): Promise<BatchResult> => ipcRenderer.invoke("batch:resume", batchName),
   },
 
   yarn: {

@@ -11,8 +11,6 @@ import type { BrowserWindow } from "electron";
 
 import { registerQdrantIpc } from "./qdrant.ipc.js";
 import { registerLmstudioIpc } from "./lmstudio.ipc.js";
-import { registerDatasetIpc } from "./dataset.ipc.js";
-import { registerBatchIpc } from "./batch.ipc.js";
 import { registerForgeIpc } from "./forge.ipc.js";
 import { registerHfIpc } from "./hf.ipc.js";
 import { registerSystemIpc } from "./system.ipc.js";
@@ -27,15 +25,11 @@ import { registerAgentIpc, abortAllAgents } from "./agent.ipc.js";
 import { registerPreferencesIpc } from "./preferences.ipc.js";
 import { registerChatHistoryIpc } from "./chat-history.ipc.js";
 
-import { abortAllBatches } from "../lib/batch/active-batches.js";
-
-export { abortAllBatches, abortAllIngests, abortAllDatasetV2, abortAllBookhunter, abortAllAgents };
+export { abortAllIngests, abortAllDatasetV2, abortAllBookhunter, abortAllAgents };
 
 export function registerAllIpcHandlers(getMainWindow: () => BrowserWindow | null): void {
   registerQdrantIpc();
   registerLmstudioIpc();
-  registerDatasetIpc(getMainWindow);
-  registerBatchIpc(getMainWindow);
   registerForgeIpc(getMainWindow);
   registerHfIpc();
   registerSystemIpc();
