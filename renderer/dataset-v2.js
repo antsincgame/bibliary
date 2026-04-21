@@ -348,6 +348,118 @@ function resetStats() {
   STATE.acceptedThisSession = [];
 }
 
+/* ───── handleEvent: stage handlers (dispatcher pattern) ───── */
+
+function handleParseEvent(_root, payload) {
+  if (String(payload.phase ?? "") !== "done") return;
+  pushEvent("parse", `Книга «${payload.bookTitle}» — ${payload.totalChapters} глав`, "info");
+}
+
+function handleChunkerEvent(root, payload) {
+  STATE.stats.chapter = (Number(payload.chapterIndex) ?? 0) + 1;
+  STATE.stats.chapterTitle = String(payload.chapterTitle ?? "");
+  STATE.stats.chunks += Number(payload.chunks ?? 0);
+  pushEvent("chunker", `Глава #${payload.chapterIndex} → ${payload.chunks} чанков`, "info");
+  renderStats(root);
+}
+
+function handleExtractEvent(root, payload) {
+  const eventType = String(payload.type ?? "");
+  if (eventType === "extract.chunk.done") {
+    const raw = Number(payload.raw ?? 0);
+    const valid = Number(payload.valid ?? 0);
+    STATE.stats.extracted += valid;
+    pushEvent(
+      "extract",
+      `chunk ${payload.chunkPart}/${payload.chunkTotal}: raw=${raw} valid=${valid} (${payload.durationMs}ms)`,
+      valid > 0 ? "good" : "warn"
+    );
+    renderStats(root);
+  } else if (eventType === "extract.chunk.error") {
+    pushEvent("extract", `chunk ${payload.chunkPart}: ${payload.error}`, "bad");
+  }
+}
+
+function handleDedupEvent(root, payload) {
+  const eventType = String(payload.type ?? "");
+  if (eventType === "intra-dedup.merge") {
+    pushEvent("dedup", `merge sim=${Number(payload.sim).toFixed(3)} «${payload.principleA}» ↔ «${payload.principleB}»`, "warn");
+  } else if (eventType === "intra-dedup.done") {
+    STATE.stats.deduped = Number(payload.after ?? STATE.stats.deduped);
+    pushEvent("dedup", `${payload.before} → ${payload.after} (мерджей: ${payload.mergedPairs})`, "info");
+    renderStats(root);
+  }
+}
+
+function handleJudgeEvent(root, payload) {
+  const eventType = String(payload.type ?? "");
+  if (eventType === "judge.score") {
+    pushEvent(
+      "judge",
+      `score=${Number(payload.score).toFixed(2)} N=${Number(payload.novelty).toFixed(2)} A=${Number(payload.actionability).toFixed(2)} D=${Number(payload.domain_fit).toFixed(2)}`,
+      "info"
+    );
+    return;
+  }
+  if (eventType === "judge.accept") {
+    STATE.stats.accepted++;
+    const score = Number(payload.score ?? 0);
+    pushEvent("judge", `ACCEPT ${score.toFixed(2)} «${payload.principle}»`, "good");
+    STATE.acceptedThisSession.push({
+      conceptId: String(payload.conceptId ?? ""),
+      principle: String(payload.principle ?? ""),
+      domain: String(payload.domain ?? "?"),
+      score,
+    });
+    renderStats(root);
+    renderAccepted(root);
+    renderAcceptedTotal(root);
+    return;
+  }
+  if (eventType === "judge.reject.lowscore") {
+    STATE.stats.rejected++;
+    pushEvent("judge", `REJECT lowscore=${Number(payload.score).toFixed(2)} «${payload.principle}»`, "warn");
+    renderStats(root);
+    return;
+  }
+  if (eventType === "judge.crossdupe") {
+    STATE.stats.rejected++;
+    pushEvent("judge", `REJECT crossdupe sim=${Number(payload.sim).toFixed(3)} «${payload.principle}»`, "warn");
+    renderStats(root);
+    return;
+  }
+  if (eventType === "judge.reject.error") {
+    STATE.stats.rejected++;
+    pushEvent("judge", `REJECT error «${payload.principle}»: ${payload.reason}`, "bad");
+    renderStats(root);
+  }
+}
+
+function handleChapterEvent(_root, payload) {
+  if (String(payload.phase ?? "") !== "done") return;
+  pushEvent(
+    "chapter",
+    `done #${payload.chapterIndex}: extracted=${payload.extracted} deduped=${payload.deduped} accepted=${payload.accepted} rejected=${payload.rejected}`,
+    "good"
+  );
+}
+
+function handleJobEvent(root, payload) {
+  if (String(payload.phase ?? "") !== "done") return;
+  pushEvent("job", "DONE — вся книга обработана", "good");
+  setBusy(root, false);
+}
+
+const STAGE_HANDLERS = {
+  "parse": handleParseEvent,
+  "chunker": handleChunkerEvent,
+  "extract": handleExtractEvent,
+  "intra-dedup": handleDedupEvent,
+  "judge": handleJudgeEvent,
+  "chapter": handleChapterEvent,
+  "job": handleJobEvent,
+};
+
 function handleEvent(root, payload) {
   if (payload.jobId) {
     if (!STATE.currentJobId) {
@@ -356,85 +468,8 @@ function handleEvent(root, payload) {
       return;
     }
   }
-  const stage = String(payload.stage ?? "");
-  const phase = String(payload.phase ?? "");
-
-  if (stage === "parse" && phase === "done") {
-    pushEvent("parse", `Книга «${payload.bookTitle}» — ${payload.totalChapters} глав`, "info");
-  } else if (stage === "chunker") {
-    STATE.stats.chapter = (Number(payload.chapterIndex) ?? 0) + 1;
-    STATE.stats.chapterTitle = String(payload.chapterTitle ?? "");
-    STATE.stats.chunks += Number(payload.chunks ?? 0);
-    pushEvent("chunker", `Глава #${payload.chapterIndex} → ${payload.chunks} чанков`, "info");
-    renderStats(root);
-  } else if (stage === "extract") {
-    const t2 = String(payload.type ?? "");
-    if (t2 === "extract.chunk.done") {
-      const raw = Number(payload.raw ?? 0);
-      const valid = Number(payload.valid ?? 0);
-      STATE.stats.extracted += valid;
-      pushEvent(
-        "extract",
-        `chunk ${payload.chunkPart}/${payload.chunkTotal}: raw=${raw} valid=${valid} (${payload.durationMs}ms)`,
-        valid > 0 ? "good" : "warn"
-      );
-      renderStats(root);
-    } else if (t2 === "extract.chunk.error") {
-      pushEvent("extract", `chunk ${payload.chunkPart}: ${payload.error}`, "bad");
-    }
-  } else if (stage === "intra-dedup") {
-    const t2 = String(payload.type ?? "");
-    if (t2 === "intra-dedup.merge") {
-      pushEvent("dedup", `merge sim=${Number(payload.sim).toFixed(3)} «${payload.principleA}» ↔ «${payload.principleB}»`, "warn");
-    } else if (t2 === "intra-dedup.done") {
-      STATE.stats.deduped = Number(payload.after ?? STATE.stats.deduped);
-      pushEvent("dedup", `${payload.before} → ${payload.after} (мерджей: ${payload.mergedPairs})`, "info");
-      renderStats(root);
-    }
-  } else if (stage === "judge") {
-    const t2 = String(payload.type ?? "");
-    if (t2 === "judge.score") {
-      pushEvent(
-        "judge",
-        `score=${Number(payload.score).toFixed(2)} N=${Number(payload.novelty).toFixed(2)} A=${Number(payload.actionability).toFixed(2)} D=${Number(payload.domain_fit).toFixed(2)}`,
-        "info"
-      );
-    } else if (t2 === "judge.accept") {
-      STATE.stats.accepted++;
-      const score = Number(payload.score ?? 0);
-      pushEvent("judge", `ACCEPT ${score.toFixed(2)} «${payload.principle}»`, "good");
-      STATE.acceptedThisSession.push({
-        conceptId: String(payload.conceptId ?? ""),
-        principle: String(payload.principle ?? ""),
-        domain: String(payload.domain ?? "?"),
-        score,
-      });
-      renderStats(root);
-      renderAccepted(root);
-      renderAcceptedTotal(root);
-    } else if (t2 === "judge.reject.lowscore") {
-      STATE.stats.rejected++;
-      pushEvent("judge", `REJECT lowscore=${Number(payload.score).toFixed(2)} «${payload.principle}»`, "warn");
-      renderStats(root);
-    } else if (t2 === "judge.crossdupe") {
-      STATE.stats.rejected++;
-      pushEvent("judge", `REJECT crossdupe sim=${Number(payload.sim).toFixed(3)} «${payload.principle}»`, "warn");
-      renderStats(root);
-    } else if (t2 === "judge.reject.error") {
-      STATE.stats.rejected++;
-      pushEvent("judge", `REJECT error «${payload.principle}»: ${payload.reason}`, "bad");
-      renderStats(root);
-    }
-  } else if (stage === "chapter" && phase === "done") {
-    pushEvent(
-      "chapter",
-      `done #${payload.chapterIndex}: extracted=${payload.extracted} deduped=${payload.deduped} accepted=${payload.accepted} rejected=${payload.rejected}`,
-      "good"
-    );
-  } else if (stage === "job" && phase === "done") {
-    pushEvent("job", "DONE — вся книга обработана", "good");
-    setBusy(root, false);
-  }
+  const handler = STAGE_HANDLERS[String(payload.stage ?? "")];
+  if (handler) handler(root, payload);
   renderLog(root);
 }
 
