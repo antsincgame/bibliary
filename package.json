@@ -26,6 +26,7 @@
     "test:bookhunter": "tsx scripts/test-bookhunter.ts",
     "test:agent-live": "tsx scripts/test-agent-live.ts",
     "test:dataset-v2-live": "tsx scripts/test-dataset-v2-live.ts",
+    "test:e2e:mvp": "tsx scripts/e2e-full-mvp.ts",
     "lint": "tsc -p tsconfig.electron.json --noEmit"
   },
   "dependencies": {

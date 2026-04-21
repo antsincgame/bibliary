@@ -153,12 +153,26 @@ async function parsePdf(filePath: string, opts: ParseOptions = {}): Promise<Pars
       const heading = String(entry.title ?? "").trim();
       if (!heading) continue;
       chapterIdx++;
-      const matchIdx = allParagraphs.findIndex((p, idx) => idx >= cursor && p.text.toLowerCase().includes(heading.toLowerCase().slice(0, 40)));
+      const matchIdx = allParagraphs.findIndex((p, idx) =>
+        idx >= cursor && typeof p?.text === "string" &&
+        p.text.toLowerCase().includes(heading.toLowerCase().slice(0, 40)),
+      );
       if (chapter) sections.push(chapter);
       chapter = { level: 1, title: heading, paragraphs: [] };
       const sliceStart = matchIdx >= 0 ? matchIdx : cursor;
-      const sliceEnd = (chapterIdx < outline.length) ? Math.min(sliceStart + Math.max(20, allParagraphs.length / outline.length), allParagraphs.length) : allParagraphs.length;
-      for (let i = sliceStart; i < sliceEnd; i++) chapter.paragraphs.push(allParagraphs[i].text);
+      /* sliceEnd MUST be an integer -- the previous version used
+         `allParagraphs.length / outline.length` which yields a float
+         (e.g. 47.3). The for-loop then read allParagraphs[47] when length
+         was 47, producing undefined -> "Cannot read properties of
+         undefined (reading 'text')" on the .text access below. */
+      const avgChunk = Math.max(20, Math.ceil(allParagraphs.length / outline.length));
+      const sliceEnd = (chapterIdx < outline.length)
+        ? Math.min(sliceStart + avgChunk, allParagraphs.length)
+        : allParagraphs.length;
+      for (let i = sliceStart; i < sliceEnd; i++) {
+        const p = allParagraphs[i];
+        if (p && typeof p.text === "string") chapter.paragraphs.push(p.text);
+      }
       cursor = sliceEnd;
     }
     if (chapter) sections.push(chapter);

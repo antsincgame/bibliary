@@ -106,7 +106,35 @@ exp. backoff, abortGrace). `chat`/`chatWithTools` остались для скр
 Результат: при offline LM Studio watchdog `pauseAll()` останавливает
 extraction наравне с dataset/forge, не оставляя зависшие LLM retries.
 
-### P0.2. E2E тест полного цикла -- pending
+### P0.2. E2E тест полного цикла ✅ DONE
+
+`scripts/e2e-full-mvp.ts` (`npm run test:e2e:mvp`) -- 35 шагов покрывают
+весь user journey на реальных данных:
+
+T0  Health-check LM Studio + Qdrant
+T1  Probe Downloads (~289 файлов, 3+ форматов)
+T2  Parallel ingest 3 тематических коллекций под file-lock
+T3  RAG retrieval per theme (top-1 score >= 0.55)
+T4  OCR одной картинки через @napi-rs/system-ocr
+T5  OCR scanned PDF (rasterise + recognize)
+T6  Crystallizer: extractChapterConcepts -> dedup -> judge -> Qdrant
+T7  Forge prepareDataset (ChatML split 90/10)
+T8  Forge generateBundle (Unsloth + AutoTrain + Colab + Axolotl + README)
+T9  Cleanup всех e2e-коллекций
+
+Запуск (LM Studio + Qdrant должны быть запущены):
+  npm run test:e2e:mvp
+
+Опции:
+  --downloads "C:/path"   -- альтернативная папка с книгами
+  --skip-crystal          -- без LLM-этапа (быстро, ~5 сек)
+  --skip-forge            -- без bundle generation
+
+Текущий результат на dev-машине:
+  35 PASS, 0 FAIL, 0 SKIP, ~28 секунд
+  3 коллекции по 80 чанков каждая
+  Crystal принимает 2 концепта из 1 главы
+  Forge bundle: 4 конфига + README на диске
 
 **Проблема:** есть `scripts/e2e-book-ingest.ts` и `e2e-library-ux.ts`, но они
 покрывают только Library. Нет цепочки **drop → ingest → crystallize → forge bundle → eval**.
