@@ -200,13 +200,42 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
 
   /** Сколько концептов лежит в dataset-accepted-concepts (для UI бейджа). */
   ipcMain.handle("dataset-v2:list-accepted", async (): Promise<{ total: number; byDomain: Record<string, number> }> => {
-    const { fetchQdrantJson, QDRANT_URL } = await import("../lib/qdrant/http-client.js");
+    const { fetchQdrantJson, QDRANT_URL, QDRANT_API_KEY } = await import("../lib/qdrant/http-client.js");
     const { ACCEPTED_COLLECTION } = await import("../lib/dataset-v2/judge.js");
     try {
       const data = await fetchQdrantJson<{ result: { points_count?: number } }>(
         `${QDRANT_URL}/collections/${ACCEPTED_COLLECTION}`
       );
-      return { total: data.result.points_count ?? 0, byDomain: {} };
+      const total = data.result.points_count ?? 0;
+      const byDomain: Record<string, number> = {};
+
+      if (total > 0 && total <= 50_000) {
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (QDRANT_API_KEY) headers["api-key"] = QDRANT_API_KEY;
+        const scrollResp = await fetch(
+          `${QDRANT_URL}/collections/${ACCEPTED_COLLECTION}/points/scroll`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              limit: Math.min(total, 10_000),
+              with_payload: ["domain"],
+              with_vector: false,
+            }),
+          }
+        );
+        if (scrollResp.ok) {
+          const scrollData = (await scrollResp.json()) as {
+            result: { points: Array<{ payload?: { domain?: string } }> };
+          };
+          for (const pt of scrollData.result.points) {
+            const d = pt.payload?.domain || "unknown";
+            byDomain[d] = (byDomain[d] || 0) + 1;
+          }
+        }
+      }
+
+      return { total, byDomain };
     } catch {
       return { total: 0, byDomain: {} };
     }

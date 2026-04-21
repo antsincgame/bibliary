@@ -54,15 +54,3 @@ export function applyToDocument() {
   const mode = getMode();
   document.body.dataset.uiMode = mode;
 }
-
-/** @returns {ReadonlyArray<UiMode>} */
-export function listModes() {
-  return ORDER;
-}
-
-/** Возвращает true, если текущий mode >= требуемого. */
-export function modeAtLeast(required) {
-  const cur = ORDER.indexOf(getMode());
-  const need = ORDER.indexOf(required);
-  return cur >= need;
-}

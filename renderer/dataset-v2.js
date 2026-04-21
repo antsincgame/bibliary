@@ -1,6 +1,7 @@
 // @ts-check
 import { el, clear } from "./dom.js";
 import { t } from "./i18n.js";
+import { buildNeonHero, neonDivider } from "./components/neon-helpers.js";
 
 /**
  * Phase 3.1 — UI экран «Кристаллизатор концептов».
@@ -443,6 +444,13 @@ export function mountCrystal(root) {
   if (root.dataset.mounted === "1") return;
   root.dataset.mounted = "1";
   clear(root);
+
+  root.appendChild(buildNeonHero({
+    title: t("crystal.header.title"),
+    subtitle: t("crystal.header.sub"),
+    pattern: "metatron",
+  }));
+  root.appendChild(neonDivider());
 
   const controls = el("div", { class: "cv-controls" });
   const stats = el("div", { class: "cv-stats" });

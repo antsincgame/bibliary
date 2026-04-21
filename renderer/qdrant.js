@@ -14,6 +14,7 @@
 
 import { el, clear, fmtBytes } from "./dom.js";
 import { t } from "./i18n.js";
+import { buildNeonHero, wrapSacredCard, neonSpinner, neonDivider } from "./components/neon-helpers.js";
 
 const STATE = {
   /** @type {Array<{name:string;pointsCount:number;vectorSize?:number;status:string}>} */
@@ -77,7 +78,7 @@ function renderHeader(root) {
 
 function renderList(root) {
   if (STATE.loading) {
-    return el("div", { class: "qdrant-list-empty" }, t("qdrant.loading"));
+    return el("div", { class: "qdrant-list-empty" }, [neonSpinner(), " ", t("qdrant.loading")]);
   }
   if (STATE.collections.length === 0) {
     return el("div", { class: "qdrant-list-empty" }, t("qdrant.empty"));
@@ -131,9 +132,9 @@ async function renderDetails(root) {
 }
 
 function renderInfoCard(info, root) {
-  const card = el("div", { class: "qdrant-card" });
-  card.appendChild(el("div", { class: "qdrant-card-head" }, [
-    el("div", { class: "qdrant-card-title" }, info.name),
+  const inner = el("div", {});
+  inner.appendChild(el("div", { class: "qdrant-card-head" }, [
+    el("div", { class: "qdrant-card-title neon-heading" }, info.name),
     el("button", {
       class: "btn-danger-soft",
       onclick: () => openDeleteDialog(info.name, root),
@@ -144,23 +145,23 @@ function renderInfoCard(info, root) {
   const stat = (label, value, dim) =>
     el("div", { class: "qdrant-stat" }, [
       el("div", { class: "qdrant-stat-label" }, label),
-      el("div", { class: `qdrant-stat-value ${dim ? "qdrant-stat-dim" : ""}` }, String(value ?? "—")),
+      el("div", { class: `qdrant-stat-value ${dim ? "qdrant-stat-dim" : ""}` }, String(value ?? "--")),
     ]);
   grid.appendChild(stat(t("qdrant.stat.points"), fmtNum(info.pointsCount)));
   grid.appendChild(stat(t("qdrant.stat.vectors"), fmtNum(info.vectorsCount)));
   grid.appendChild(stat(t("qdrant.stat.segments"), fmtNum(info.segmentsCount)));
-  grid.appendChild(stat(t("qdrant.stat.dim"), info.vectorSize ?? "—"));
-  grid.appendChild(stat(t("qdrant.stat.distance"), info.distance ?? "—"));
+  grid.appendChild(stat(t("qdrant.stat.dim"), info.vectorSize ?? "--"));
+  grid.appendChild(stat(t("qdrant.stat.distance"), info.distance ?? "--"));
   grid.appendChild(stat(t("qdrant.stat.status"), info.status));
   grid.appendChild(stat(t("qdrant.stat.disk"), fmtBytes(info.diskDataSize)));
   grid.appendChild(stat(t("qdrant.stat.ram"), fmtBytes(info.ramDataSize)));
-  card.appendChild(grid);
-  return card;
+  inner.appendChild(grid);
+  return wrapSacredCard([inner], "qdrant-card");
 }
 
 function renderSearchCard(name, root) {
-  const card = el("div", { class: "qdrant-card" });
-  card.appendChild(el("div", { class: "qdrant-card-title" }, t("qdrant.search.title")));
+  const inner = el("div", {});
+  inner.appendChild(el("div", { class: "qdrant-card-title neon-heading" }, t("qdrant.search.title")));
   const input = el("input", {
     type: "text",
     class: "qdrant-search-input",
@@ -189,10 +190,10 @@ function renderSearchCard(name, root) {
       }
     },
   }, t("qdrant.search.go")));
-  card.appendChild(el("div", { class: "qdrant-search-row" }, [input, goBtn]));
+  inner.appendChild(el("div", { class: "qdrant-search-row" }, [input, goBtn]));
 
   const results = el("div", { class: "qdrant-search-results", id: "qdrant-search-results" });
-  card.appendChild(results);
+  inner.appendChild(results);
 
   function renderSearchResults() {
     clear(results);
@@ -214,7 +215,7 @@ function renderSearchCard(name, root) {
       ]));
     }
   }
-  return card;
+  return wrapSacredCard([inner], "qdrant-card");
 }
 
 function openCreateDialog(root) {
@@ -354,7 +355,17 @@ async function render(root) {
   await loadCluster();
   await loadCollections();
   const layout = el("div", { class: "qdrant-screen" });
+
+  const hero = buildNeonHero({
+    title: t("qdrant.header.title"),
+    subtitle: t("qdrant.header.sub"),
+    pattern: "flower",
+  });
+  layout.appendChild(hero);
+
   layout.appendChild(renderHeader(root));
+  layout.appendChild(neonDivider());
+
   const main = el("div", { class: "qdrant-main" });
   main.appendChild(el("div", { class: "qdrant-list-wrap" }, [renderList(root)]));
   main.appendChild(el("div", { class: "qdrant-details-wrap" }, [await renderDetails(root)]));

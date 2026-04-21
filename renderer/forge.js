@@ -4,6 +4,7 @@ import { t } from "./i18n.js";
 import { buildContextSlider } from "./components/context-slider.js";
 import { buildVramCalculator } from "./components/vram-calc.js";
 import { buildEvalPanel } from "./components/eval-panel.js";
+import { buildNeonHero, neonDivider } from "./components/neon-helpers.js";
 
 const TOAST_TTL_MS = 5000;
 
@@ -78,6 +79,12 @@ async function initialize() {
 function render() {
   if (!pageRoot) return;
   clear(pageRoot);
+  pageRoot.appendChild(buildNeonHero({
+    title: t("forge.header.title"),
+    subtitle: t("forge.header.sub"),
+    pattern: "metatron",
+  }));
+  pageRoot.appendChild(neonDivider());
   pageRoot.appendChild(buildStepper());
   pageRoot.appendChild(buildToastArea());
   if (STATE.step === 0) pageRoot.appendChild(buildStepSource());

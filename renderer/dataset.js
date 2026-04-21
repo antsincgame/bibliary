@@ -2,6 +2,7 @@
 import { el } from "./dom.js";
 import { t } from "./i18n.js";
 import { makeGlossaryButton } from "./dataset-glossary.js";
+import { buildNeonHero, neonDivider } from "./components/neon-helpers.js";
 import {
   buildStepper,
   isOnboarded,
@@ -946,6 +947,12 @@ export async function mountDataset(root) {
   STATE.rootEl = root;
   STATE.headerEl = el("div", { class: "wizard-header" });
   STATE.bodyEl = el("div", { class: "wizard-body" });
+  root.appendChild(buildNeonHero({
+    title: t("dataset.header.title"),
+    subtitle: t("dataset.header.sub"),
+    pattern: "metatron",
+  }));
+  root.appendChild(neonDivider());
   root.appendChild(STATE.headerEl);
   root.appendChild(STATE.bodyEl);
 

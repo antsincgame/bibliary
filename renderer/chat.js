@@ -74,8 +74,11 @@ function populateSelect(select, items) {
 /** @param {HTMLButtonElement} btn @param {() => Promise<void>} action */
 async function withSpin(btn, action) {
   btn.classList.add("spinning");
-  await action();
-  setTimeout(() => btn.classList.remove("spinning"), SPIN_DURATION_MS);
+  try {
+    await action();
+  } finally {
+    setTimeout(() => btn.classList.remove("spinning"), SPIN_DURATION_MS);
+  }
 }
 
 let initialized = false;

@@ -7,6 +7,7 @@ import { downloadedList } from "./downloaded-list.js";
 import { statusBar } from "./status-bar.js";
 import { buildContextSlider } from "../components/context-slider.js";
 import { buildProfileManager } from "./profile-manager.js";
+import { buildNeonHero, neonDivider } from "../components/neon-helpers.js";
 
 const REFRESH_MS = 7000;
 const TOAST_TTL_MS = 6000;
@@ -231,6 +232,12 @@ function handleSwitch(profile) {
 
 function buildLayout() {
   return [
+    buildNeonHero({
+      title: t("models.header.title"),
+      subtitle: t("models.header.sub"),
+      pattern: "flower",
+    }),
+    neonDivider(),
     el("div", { class: "card" }, [
       el("div", { class: "card-title" }, t("models.card.server")),
       el("div", { id: "mp-status" }, t("models.card.loading")),

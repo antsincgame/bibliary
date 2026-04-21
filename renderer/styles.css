@@ -1,7 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&family=Cinzel:wght@400;600;700&family=Montserrat:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap');
 
 :root {
-  /* Phase 5.0 ? Neon design tokens v2 */
+  /* Phase 5.0 -- Neon design tokens v2 */
 
   /* Deep space surfaces */
   --void: #050508;
@@ -53,7 +53,7 @@
   --font-heading: 'Montserrat', sans-serif;
   --font-body: 'Inter', 'Montserrat', sans-serif;
 
-  /* Motion timings ? unified language of motion */
+  /* Motion timings -- unified language of motion */
   --motion-fast: 200ms;
   --motion-normal: 400ms;
   --motion-slow: 800ms;
