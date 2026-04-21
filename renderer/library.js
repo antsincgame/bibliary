@@ -853,15 +853,8 @@ function buildGroupControl(root, listEl) {
 
 /* ───── mount ───── */
 
-export async function mountLibrary(root) {
-  if (!root) return;
-  if (root.dataset.mounted === "1") return;
-  root.dataset.mounted = "1";
-  clear(root);
-
-  await loadPrefs();
-
-  const tabs = el("div", { class: "lib-tabs" }, [
+function buildLibraryTabs(root) {
+  return el("div", { class: "lib-tabs" }, [
     el("button", { class: "lib-tab lib-tab-active", type: "button", "data-tab": "browse",
       onclick: () => switchTab("browse", root) }, t("library.tab.browse")),
     el("button", { class: "lib-tab", type: "button", "data-tab": "search",
@@ -869,35 +862,26 @@ export async function mountLibrary(root) {
     el("button", { class: "lib-tab", type: "button", "data-tab": "history",
       onclick: () => switchTab("history", root) }, t("library.tab.history")),
   ]);
+}
 
-  const collectionWrap = el("div", { class: "lib-collection-wrap" });
-  const collectionLabel = el("label", { class: "lib-collection-label" }, t("library.collection.label"));
-  const collectionInput = el("input", {
+function buildCollectionInput() {
+  const wrap = el("div", { class: "lib-collection-wrap" });
+  const label = el("label", { class: "lib-collection-label" }, t("library.collection.label"));
+  const input = el("input", {
     type: "text", class: "lib-collection-input",
     placeholder: "library", list: "lib-collection-suggestions",
   });
-  collectionInput.value = STATE.collection || "library";
-  collectionInput.addEventListener("input", () => {
-    STATE.collection = collectionInput.value.trim();
+  input.value = STATE.collection || "library";
+  input.addEventListener("input", () => {
+    STATE.collection = input.value.trim();
   });
   const datalist = el("datalist", { id: "lib-collection-suggestions" });
-  collectionWrap.append(collectionLabel, collectionInput, datalist);
+  wrap.append(label, input, datalist);
+  return { wrap, input, datalist };
+}
 
-  Promise.all([loadCollections(), loadHistory()]).then(() => {
-    clear(datalist);
-    for (const c of STATE.collections) datalist.appendChild(el("option", { value: c }));
-    if (!STATE.collection) {
-      collectionInput.value = "library";
-      STATE.collection = "library";
-    }
-    renderBooks(root.querySelector(".lib-list"), root);
-  });
-
-  const btnPick = el("button", { class: "lib-btn lib-btn-primary", type: "button" }, t("library.btn.pickFolder"));
-  const btnOpenFiles = el("button", { class: "lib-btn", type: "button" }, t("library.btn.openFiles"));
-  const btnStart = el("button", { class: "lib-btn lib-btn-accent", type: "button", disabled: "true" }, t("library.btn.ingest"));
-  const btnCancel = el("button", { class: "lib-btn", type: "button" }, t("library.btn.cancelAll"));
-  const summary = el("div", { class: "lib-summary" }, [
+function buildLibrarySummary() {
+  return el("div", { class: "lib-summary" }, [
     t("library.summary.selected") + " ",
     el("strong", { id: "lib-selected-count" }, "0"),
     " / ",
@@ -906,24 +890,25 @@ export async function mountLibrary(root) {
     t("library.summary.queue") + " ",
     el("strong", { id: "lib-queue-count" }, "0"),
   ]);
+}
 
-  const listEl = el("div", { class: "lib-list" });
-  const previewEl = el("div", { class: "lib-preview" });
-
-  const groupControl = buildGroupControl(root, listEl);
-
-  const ocrBadge = STATE.prefs.ocrSupported
+function buildOcrBadge() {
+  return STATE.prefs.ocrSupported
     ? el("span", { class: "lib-ocr-badge lib-ocr-badge-ok", title: t("library.ocr.badge.ok.tooltip") },
         t("library.ocr.badge.ok").replace("{platform}", STATE.prefs.ocrPlatform))
     : el("span", { class: "lib-ocr-badge lib-ocr-badge-off", title: STATE.prefs.ocrReason || t("library.ocr.badge.off.tooltip") },
         t("library.ocr.badge.off"));
+}
 
-  const toolbar = el("div", { class: "lib-toolbar" }, [
-    collectionWrap, btnPick, btnOpenFiles, btnStart, btnCancel, groupControl, ocrBadge, summary,
-  ]);
-
-  const dropzone = buildDropzone(root, listEl);
-  const splitPane = el("div", { class: "lib-split" }, [listEl, previewEl]);
+/**
+ * Создаёт 4 action-кнопки и навешивает обработчики.
+ * @returns {{ btnPick: HTMLButtonElement, btnOpenFiles: HTMLButtonElement, btnStart: HTMLButtonElement, btnCancel: HTMLButtonElement }}
+ */
+function buildLibraryActionButtons(root, listEl) {
+  const btnPick = /** @type {HTMLButtonElement} */ (el("button", { class: "lib-btn lib-btn-primary", type: "button" }, t("library.btn.pickFolder")));
+  const btnOpenFiles = /** @type {HTMLButtonElement} */ (el("button", { class: "lib-btn", type: "button" }, t("library.btn.openFiles")));
+  const btnStart = /** @type {HTMLButtonElement} */ (el("button", { class: "lib-btn lib-btn-accent", type: "button", disabled: "true" }, t("library.btn.ingest")));
+  const btnCancel = /** @type {HTMLButtonElement} */ (el("button", { class: "lib-btn", type: "button" }, t("library.btn.cancelAll")));
 
   btnPick.addEventListener("click", async () => {
     btnPick.disabled = true;
@@ -935,7 +920,6 @@ export async function mountLibrary(root) {
       btnPick.disabled = false;
     }
   });
-
   btnOpenFiles.addEventListener("click", async () => {
     btnOpenFiles.disabled = true;
     try {
@@ -946,19 +930,24 @@ export async function mountLibrary(root) {
       btnOpenFiles.disabled = false;
     }
   });
-
   btnStart.addEventListener("click", () => {
     const books = Array.from(STATE.selected.values());
     enqueueAndStart(books, root);
   });
   btnCancel.addEventListener("click", () => { cancelAll(root); });
 
+  return { btnPick, btnOpenFiles, btnStart, btnCancel };
+}
+
+function subscribeScannerProgress(root, listEl) {
   if (unsubscribeProgress) unsubscribeProgress();
   unsubscribeProgress = window.api.scanner.onProgress((p) => {
     STATE.progress.set(p.bookSourcePath, p);
     renderBooks(listEl, root);
   });
+}
 
+function subscribeDownloadProgress(root) {
   if (unsubscribeDownloadProgress) unsubscribeDownloadProgress();
   unsubscribeDownloadProgress = window.api.bookhunter.onDownloadProgress((p) => {
     const candidateId = DOWNLOAD_BY_ID.get(p.downloadId);
@@ -974,23 +963,63 @@ export async function mountLibrary(root) {
     });
     rerenderCard(candidateId, root);
   });
+}
+
+/**
+ * Window-level guards: prevent the OS from navigating away from the app
+ * when the user accidentally drops a file outside the dropzone.
+ */
+function installWindowDropGuards(root) {
+  if (root.dataset.dropGuard) return;
+  root.dataset.dropGuard = "1";
+  window.addEventListener("dragover", (ev) => ev.preventDefault());
+  window.addEventListener("drop", (ev) => ev.preventDefault());
+}
+
+function loadInitialLibraryData(root, datalist, collectionInput) {
+  Promise.all([loadCollections(), loadHistory()]).then(() => {
+    clear(datalist);
+    for (const c of STATE.collections) datalist.appendChild(el("option", { value: c }));
+    if (!STATE.collection) {
+      collectionInput.value = "library";
+      STATE.collection = "library";
+    }
+    renderBooks(root.querySelector(".lib-list"), root);
+  });
+}
+
+export async function mountLibrary(root) {
+  if (!root) return;
+  if (root.dataset.mounted === "1") return;
+  root.dataset.mounted = "1";
+  clear(root);
+
+  await loadPrefs();
+
+  const tabs = buildLibraryTabs(root);
+  const coll = buildCollectionInput();
+  const listEl = el("div", { class: "lib-list" });
+  const previewEl = el("div", { class: "lib-preview" });
+  const btns = buildLibraryActionButtons(root, listEl);
+  const groupControl = buildGroupControl(root, listEl);
+
+  const toolbar = el("div", { class: "lib-toolbar" }, [
+    coll.wrap, btns.btnPick, btns.btnOpenFiles, btns.btnStart, btns.btnCancel,
+    groupControl, buildOcrBadge(), buildLibrarySummary(),
+  ]);
+  const dropzone = buildDropzone(root, listEl);
+  const splitPane = el("div", { class: "lib-split" }, [listEl, previewEl]);
 
   const browsePane = el("div", { class: "lib-pane lib-pane-browse lib-pane-active" }, [toolbar, dropzone, splitPane]);
   const searchPane = el("div", { class: "lib-pane lib-pane-search" }, [el("div", { class: "lib-search" })]);
   const historyPane = el("div", { class: "lib-pane lib-pane-history" }, [el("div", { class: "lib-history" })]);
 
-  root.appendChild(tabs);
-  root.appendChild(browsePane);
-  root.appendChild(searchPane);
-  root.appendChild(historyPane);
+  root.append(tabs, browsePane, searchPane, historyPane);
 
-  /* Window-level guards: prevent the OS from navigating away from the app
-     when the user accidentally drops a file outside the dropzone. */
-  if (!root.dataset.dropGuard) {
-    root.dataset.dropGuard = "1";
-    window.addEventListener("dragover", (ev) => ev.preventDefault());
-    window.addEventListener("drop", (ev) => ev.preventDefault());
-  }
+  subscribeScannerProgress(root, listEl);
+  subscribeDownloadProgress(root);
+  installWindowDropGuards(root);
+  loadInitialLibraryData(root, coll.datalist, coll.input);
 
   refreshSummary(root);
   renderPreview(root);
