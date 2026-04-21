@@ -483,6 +483,7 @@ contextBridge.exposeInMainWorld("api", {
       candidate: unknown;
       collection: string;
       preferredFormat?: string;
+      downloadId?: string;
     }): Promise<{ downloadId: string; destPath: string; bookTitle: string; embedded: number; upserted: number }> =>
       ipcRenderer.invoke("bookhunter:download-and-ingest", args),
     onDownloadProgress: (cb: (payload: { downloadId: string; downloaded: number; total: number | null }) => void): (() => void) => {

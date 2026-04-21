@@ -134,6 +134,11 @@ export function registerBookhunterIpc(getMainWindow: () => BrowserWindow | null)
         candidate: BookCandidate;
         collection: string;
         preferredFormat?: BookFileVariant["format"];
+        /**
+         * Optional caller-provided id. Lets the renderer correlate progress
+         * events with its UI card without waiting for the final return.
+         */
+        downloadId?: string;
       }
     ): Promise<{ downloadId: string; destPath: string; bookTitle: string; embedded: number; upserted: number }> => {
       if (!args || !args.candidate || !args.collection) throw new Error("candidate and collection required");
@@ -145,10 +150,13 @@ export function registerBookhunterIpc(getMainWindow: () => BrowserWindow | null)
       const fileName = `${safeFileName(c.title)}__${c.id}.${variant.format}`;
       const destPath = path.join(dir, fileName);
 
-      /* Один общий AbortController на весь pipeline: cancel-download останавливает
-         и download, и ingest. */
+      /* One AbortController for the whole pipeline: cancel-download stops
+         both download and ingest. */
       const ctrl = new AbortController();
-      const dlId = downloadId();
+      const dlId =
+        typeof args.downloadId === "string" && args.downloadId.length > 0
+          ? args.downloadId
+          : downloadId();
       activeDownloads.set(dlId, ctrl);
       const win = getMainWindow();
       try {

@@ -523,8 +523,20 @@ function renderHistory(root) {
 
 /* ───── search tab (BookHunter) ───── */
 
-/** @type {{ query: string, results: Array<any>, searching: boolean }} */
-const SEARCH_STATE = { query: "", results: [], searching: false };
+/**
+ * @typedef {{ downloadId: string, downloaded: number, total: number | null, status: "downloading"|"ingesting"|"done"|"error"|"cancelled", message?: string }} DownloadState
+ */
+
+/** @type {{ query: string, results: Array<any>, searching: boolean, error: string }} */
+const SEARCH_STATE = { query: "", results: [], searching: false, error: "" };
+
+/** Active downloads: candidate.id -> DownloadState. */
+/** @type {Map<string, DownloadState>} */
+const DOWNLOAD_STATE = new Map();
+/** Reverse map: downloadId -> candidate.id (so progress events can find the card). */
+/** @type {Map<string, string>} */
+const DOWNLOAD_BY_ID = new Map();
+let unsubscribeDownloadProgress = null;
 
 function renderSearch(root) {
   const wrap = root.querySelector(".lib-search");
@@ -551,54 +563,170 @@ function renderSearch(root) {
     qInput.addEventListener("input", (e) => { SEARCH_STATE.query = e.target.value; });
   }
 
-  if (SEARCH_STATE.results.length === 0 && !SEARCH_STATE.searching) {
+  if (SEARCH_STATE.error) {
+    wrap.appendChild(el("div", { class: "lib-search-error", role: "alert" }, [
+      el("strong", {}, t("library.search.error") + ": "),
+      SEARCH_STATE.error,
+    ]));
+  }
+
+  if (SEARCH_STATE.results.length === 0 && !SEARCH_STATE.searching && !SEARCH_STATE.error) {
     wrap.appendChild(el("div", { class: "lib-search-hint" }, t("library.search.hint")));
     return;
   }
 
   const list = el("div", { class: "lib-search-results" });
   for (const r of SEARCH_STATE.results) {
-    const fmts = (r.formats || []).map((f) => f.format || f).join(", ");
-    const card = el("div", { class: "lib-search-card" }, [
-      el("div", { class: "lib-search-title" }, r.title),
-      el("div", { class: "lib-search-meta" }, [
-        r.authors?.join(", ") || "--",
-        r.year ? ` - ${r.year}` : "",
-        ` - ${r.sourceTag}`,
-        ` - ${r.license}`,
-        fmts ? ` - ${fmts}` : "",
-      ].join("")),
-      r.description ? el("div", { class: "lib-search-desc" }, r.description.slice(0, 200)) : null,
-      el("div", { class: "lib-search-actions" }, [
-        el("button", {
-          class: "lib-btn lib-btn-accent lib-btn-small", type: "button",
-          onclick: async () => {
-            if (!STATE.collection) { alert(t("library.alert.collection")); return; }
-            try {
-              card.querySelector(".lib-btn-accent").textContent = "...";
-              const res = await window.api.bookhunter.downloadAndIngest({
-                candidate: r, collection: STATE.collection,
-              });
-              card.querySelector(".lib-btn-accent").textContent = `done (${res.upserted} chunks)`;
-              card.querySelector(".lib-btn-accent").disabled = true;
-            } catch (e) {
-              const msg = e instanceof Error ? e.message : String(e);
-              alert(t("library.search.downloadFailed") + ": " + msg);
-              card.querySelector(".lib-btn-accent").textContent = t("library.search.btn.downloadIngest");
-            }
-          },
-        }, t("library.search.btn.downloadIngest")),
-        r.webPageUrl
-          ? el("a", {
-              class: "lib-search-link", href: r.webPageUrl,
-              target: "_blank", rel: "noopener",
-            }, t("library.search.btn.openPage"))
-          : null,
-      ]),
-    ]);
-    list.appendChild(card);
+    list.appendChild(buildSearchCard(r, root));
   }
   wrap.appendChild(list);
+}
+
+function buildSearchCard(candidate, root) {
+  const fmts = (candidate.formats || []).map((f) => f.format || f).join(", ");
+  const dlState = DOWNLOAD_STATE.get(candidate.id);
+
+  const actionsWrap = el("div", { class: "lib-search-actions" });
+  const card = el("div", { class: "lib-search-card", "data-candidate-id": candidate.id }, [
+    el("div", { class: "lib-search-title" }, candidate.title),
+    el("div", { class: "lib-search-meta" }, [
+      candidate.authors?.join(", ") || "--",
+      candidate.year ? ` - ${candidate.year}` : "",
+      ` - ${candidate.sourceTag}`,
+      ` - ${candidate.license}`,
+      fmts ? ` - ${fmts}` : "",
+    ].join("")),
+    candidate.description ? el("div", { class: "lib-search-desc" }, candidate.description.slice(0, 200)) : null,
+    actionsWrap,
+  ]);
+
+  refreshSearchCardActions(card, candidate, root, dlState);
+  return card;
+}
+
+function refreshSearchCardActions(card, candidate, root, dlState) {
+  const actionsWrap = card.querySelector(".lib-search-actions");
+  if (!actionsWrap) return;
+  clear(actionsWrap);
+
+  if (dlState && (dlState.status === "downloading" || dlState.status === "ingesting")) {
+    const pct = dlState.total ? Math.min(100, Math.floor((dlState.downloaded / dlState.total) * 100)) : null;
+    const label = dlState.status === "ingesting"
+      ? t("library.search.status.ingesting")
+      : pct !== null
+        ? `${pct}% (${formatBytes(dlState.downloaded)}/${formatBytes(dlState.total)})`
+        : `${formatBytes(dlState.downloaded)}`;
+    actionsWrap.appendChild(
+      el("div", { class: "lib-search-progress", role: "status", "aria-live": "polite" }, [
+        el("div", { class: "lib-search-progress-bar" }, [
+          el("div", { class: "lib-search-progress-fill", style: `width: ${pct ?? 50}%` }),
+        ]),
+        el("div", { class: "lib-search-progress-label" }, label),
+      ])
+    );
+    actionsWrap.appendChild(
+      el("button", {
+        class: "lib-btn lib-btn-small", type: "button",
+        onclick: async () => {
+          try {
+            await window.api.bookhunter.cancelDownload(dlState.downloadId);
+            updateDownloadStatus(candidate.id, "cancelled", t("library.search.status.cancelled"), root);
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            updateDownloadStatus(candidate.id, "error", t("library.search.cancelFailed") + ": " + msg, root);
+          }
+        },
+      }, t("library.search.btn.cancel"))
+    );
+    return;
+  }
+
+  if (dlState?.status === "done") {
+    actionsWrap.appendChild(el("button", {
+      class: "lib-btn lib-btn-accent lib-btn-small", type: "button", disabled: "true",
+    }, dlState.message || t("library.search.status.done")));
+  } else if (dlState?.status === "error" || dlState?.status === "cancelled") {
+    actionsWrap.appendChild(el("div", { class: "lib-search-error-inline" }, dlState.message || dlState.status));
+    actionsWrap.appendChild(el("button", {
+      class: "lib-btn lib-btn-accent lib-btn-small", type: "button",
+      onclick: () => startCardDownload(candidate, root),
+    }, t("library.search.btn.retry")));
+  } else {
+    actionsWrap.appendChild(el("button", {
+      class: "lib-btn lib-btn-accent lib-btn-small", type: "button",
+      onclick: () => startCardDownload(candidate, root),
+    }, t("library.search.btn.downloadIngest")));
+  }
+
+  if (candidate.webPageUrl) {
+    actionsWrap.appendChild(el("a", {
+      class: "lib-search-link", href: candidate.webPageUrl,
+      target: "_blank", rel: "noopener",
+    }, t("library.search.btn.openPage")));
+  }
+}
+
+async function startCardDownload(candidate, root) {
+  if (!STATE.collection) { alert(t("library.alert.collection")); return; }
+  if (DOWNLOAD_STATE.get(candidate.id)?.status === "downloading") return;
+  const downloadId = makeDownloadId();
+  const initial = { downloadId, downloaded: 0, total: null, status: "downloading" };
+  DOWNLOAD_STATE.set(candidate.id, initial);
+  DOWNLOAD_BY_ID.set(downloadId, candidate.id);
+  rerenderCard(candidate.id, root);
+  try {
+    const res = await window.api.bookhunter.downloadAndIngest({
+      candidate, collection: STATE.collection, downloadId,
+    });
+    DOWNLOAD_STATE.set(candidate.id, {
+      downloadId, downloaded: 0, total: 0,
+      status: "done",
+      message: t("library.search.status.doneCount").replace("{count}", String(res.upserted)),
+    });
+    loadHistory();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const cancelled = /aborted|user-cancel/i.test(msg);
+    DOWNLOAD_STATE.set(candidate.id, {
+      downloadId, downloaded: 0, total: 0,
+      status: cancelled ? "cancelled" : "error",
+      message: cancelled ? t("library.search.status.cancelled") : msg,
+    });
+  } finally {
+    DOWNLOAD_BY_ID.delete(downloadId);
+    rerenderCard(candidate.id, root);
+  }
+}
+
+function updateDownloadStatus(candidateId, status, message, root) {
+  const cur = DOWNLOAD_STATE.get(candidateId);
+  if (!cur) return;
+  DOWNLOAD_STATE.set(candidateId, { ...cur, status, message });
+  rerenderCard(candidateId, root);
+}
+
+function rerenderCard(candidateId, root) {
+  const card = root.querySelector(`.lib-search-card[data-candidate-id="${cssEscape(candidateId)}"]`);
+  if (!card) return;
+  const candidate = SEARCH_STATE.results.find((r) => r.id === candidateId);
+  if (!candidate) return;
+  refreshSearchCardActions(card, candidate, root, DOWNLOAD_STATE.get(candidateId));
+}
+
+function cssEscape(str) {
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") return CSS.escape(str);
+  return String(str).replace(/[^a-zA-Z0-9_-]/g, (c) => `\\${c}`);
+}
+
+function makeDownloadId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return "dl-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+}
+
+function formatBytes(n) {
+  if (!n || n < 1024) return `${n || 0} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
 async function doSearch(root) {
@@ -606,11 +734,12 @@ async function doSearch(root) {
   if (!q || SEARCH_STATE.searching) return;
   SEARCH_STATE.searching = true;
   SEARCH_STATE.results = [];
+  SEARCH_STATE.error = "";
   renderSearch(root);
   try {
     SEARCH_STATE.results = await window.api.bookhunter.search({ query: q, perSourceLimit: 6 });
   } catch (e) {
-    alert(t("library.search.error") + ": " + (e instanceof Error ? e.message : String(e)));
+    SEARCH_STATE.error = e instanceof Error ? e.message : String(e);
   } finally {
     SEARCH_STATE.searching = false;
     renderSearch(root);
@@ -811,6 +940,22 @@ export async function mountLibrary(root) {
   unsubscribeProgress = window.api.scanner.onProgress((p) => {
     STATE.progress.set(p.bookSourcePath, p);
     renderBooks(listEl, root);
+  });
+
+  if (unsubscribeDownloadProgress) unsubscribeDownloadProgress();
+  unsubscribeDownloadProgress = window.api.bookhunter.onDownloadProgress((p) => {
+    const candidateId = DOWNLOAD_BY_ID.get(p.downloadId);
+    if (!candidateId) return;
+    const cur = DOWNLOAD_STATE.get(candidateId);
+    if (!cur) return;
+    const reachedEnd = p.total !== null && p.downloaded >= p.total;
+    DOWNLOAD_STATE.set(candidateId, {
+      ...cur,
+      downloaded: p.downloaded,
+      total: p.total,
+      status: reachedEnd ? "ingesting" : "downloading",
+    });
+    rerenderCard(candidateId, root);
   });
 
   const browsePane = el("div", { class: "lib-pane lib-pane-browse lib-pane-active" }, [toolbar, dropzone, splitPane]);
