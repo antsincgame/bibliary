@@ -47,11 +47,11 @@ export function mountResilienceBar() {
 
   unsubOff = window.api.resilience.onLmstudioOffline(() => {
     clearHideTimer();
-    show(t("ds.lmstudio.offline.banner"), "warn");
+    show(t("resilience.lmstudio.offline.banner"), "warn");
   });
   unsubOn = window.api.resilience.onLmstudioOnline(() => {
     clearHideTimer();
-    show(t("ds.lmstudio.online.banner"), "ok");
+    show(t("resilience.lmstudio.online.banner"), "ok");
     hideTimer = setTimeout(() => {
       hide();
       hideTimer = null;

@@ -293,8 +293,8 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
     "ds.resume.toast.discarded": "Батч {name} удалён",
     "ds.resume.toast.resume_failed": "Не удалось продолжить: {msg}",
 
-    "ds.lmstudio.offline.banner": "LM Studio не отвечает — батч поставлен на паузу, ждём восстановления…",
-    "ds.lmstudio.online.banner": "LM Studio снова в строю — продолжаем работу",
+    "resilience.lmstudio.offline.banner": "LM Studio не отвечает — операция поставлена на паузу, ждём восстановления…",
+    "resilience.lmstudio.online.banner": "LM Studio снова в строю — продолжаем работу",
 
     "ds.step3.title": "Шаг 3 — Генерация",
     "ds.step3.sub":
@@ -1176,8 +1176,8 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
     "ds.resume.toast.discarded": "Batch {name} discarded",
     "ds.resume.toast.resume_failed": "Resume failed: {msg}",
 
-    "ds.lmstudio.offline.banner": "LM Studio not responding — batch paused, awaiting recovery…",
-    "ds.lmstudio.online.banner": "LM Studio is back — resuming work",
+    "resilience.lmstudio.offline.banner": "LM Studio not responding — operation paused, awaiting recovery…",
+    "resilience.lmstudio.online.banner": "LM Studio is back — resuming work",
 
     "ds.step3.title": "Step 3 — Generating",
     "ds.step3.sub":
