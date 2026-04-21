@@ -2,6 +2,7 @@
 import { el, clear } from "./dom.js";
 import { t } from "./i18n.js";
 import { metatronCube, svgDataUrl } from "./components/sacred-geometry.js";
+import { buildModelSelect } from "./components/model-select.js";
 
 /**
  * Phase 4.0 — Forge Chat Agent UI.
@@ -19,13 +20,7 @@ import { metatronCube, svgDataUrl } from "./components/sacred-geometry.js";
  *   4. Stop button → agent:cancel
  */
 
-/** @typedef {{ identifier: string, modelKey: string, contextLength?: number }} LoadedModel */
-
 const STATE = {
-  /** @type {LoadedModel[]} */
-  loadedModels: [],
-  /** @type {string} */
-  selectedModel: "",
   /** @type {Array<{role: string, content: string, tools?: Array<{callId: string, name: string, args: unknown, result?: unknown, ok?: boolean, durationMs?: number, expanded?: boolean}>}>} */
   chatHistory: [],
   /** @type {string | null} */
@@ -40,6 +35,11 @@ const STATE = {
 };
 
 let unsubEvents = null;
+/** Активный экземпляр model-select для агента (создаётся в setupAgentModelSelector). */
+let agentModelSelect = /** @type {ReturnType<typeof buildModelSelect> | null} */ (null);
+
+/** Подсказки для подбора tool-capable модели по умолчанию. */
+const AGENT_TOOL_HINTS = ["qwen3.6", "qwen3-coder", "qwen3.5", "mistral-small", "qwen2.5-coder"];
 
 function fmtMs(ms) {
   if (!ms || ms < 1000) return `${ms ?? "?"}ms`;
@@ -55,63 +55,37 @@ function fmtJson(v, max = 200) {
   }
 }
 
-const TOOL_CAPABLE_HINTS = ["qwen3.6", "qwen3-coder", "qwen3.5", "mistral-small", "qwen2.5-coder"];
-
-function pickDefaultModel(models) {
-  for (const hint of TOOL_CAPABLE_HINTS) {
-    const m = models.find((x) => x.modelKey.toLowerCase().includes(hint));
-    if (m) return m.modelKey;
-  }
-  return models[0]?.modelKey ?? "";
-}
-
-async function loadModels() {
-  try {
-    /** @type {LoadedModel[]} */
-    const list = await window.api.lmstudio.listLoaded();
-    STATE.loadedModels = Array.isArray(list) ? list : [];
-    if (!STATE.selectedModel || !STATE.loadedModels.find((m) => m.modelKey === STATE.selectedModel)) {
-      STATE.selectedModel = pickDefaultModel(STATE.loadedModels);
-    }
-  } catch {
-    STATE.loadedModels = [];
-    STATE.selectedModel = "";
-  }
-}
-
-function renderModelSelector(root) {
+/**
+ * Монтирует общий model-select внутри toolbar-контейнера .agent-model-wrap.
+ * Сохраняет инстанс в module-level agentModelSelect для sendPrompt и Refresh.
+ */
+function setupAgentModelSelector(root) {
   const wrap = root.querySelector(".agent-model-wrap");
   if (!wrap) return;
   clear(wrap);
-  const label = el("label", { class: "agent-model-label" }, t("agent.model.label"));
-  const sel = el("select", { class: "agent-model-select", id: "agent-model-select" });
-  if (STATE.loadedModels.length === 0) {
-    sel.appendChild(el("option", { value: "" }, t("agent.model.noLoaded")));
-    sel.disabled = true;
-  } else {
-    for (const m of STATE.loadedModels) {
-      const opt = el("option", { value: m.modelKey }, m.modelKey + (m.contextLength ? ` (${m.contextLength})` : ""));
-      if (m.modelKey === STATE.selectedModel) opt.selected = true;
-      sel.appendChild(opt);
-    }
-  }
-  sel.addEventListener("change", () => {
-    STATE.selectedModel = sel.value;
+  agentModelSelect = buildModelSelect({
+    role: "agent",
+    label: t("agent.model.label"),
+    showContext: true,
+    selectId: "agent-model-select",
+    selectClass: "agent-model-select",
+    labelClass: "agent-model-label",
+    wrapClass: "agent-model-inner",
+    hints: AGENT_TOOL_HINTS,
   });
-  const refresh = el(
+  const refreshBtn = el(
     "button",
     {
       class: "agent-model-refresh",
       type: "button",
       title: t("agent.model.refresh"),
       onclick: async () => {
-        await loadModels();
-        renderModelSelector(root);
+        await agentModelSelect?.refresh();
       },
     },
     "↻"
   );
-  wrap.append(label, sel, refresh);
+  wrap.append(agentModelSelect.wrap, refreshBtn);
 }
 
 function renderActivity(root) {
@@ -384,7 +358,8 @@ async function sendPrompt(root) {
   if (!input) return;
   const text = input.value.trim();
   if (!text) return;
-  if (!STATE.selectedModel) {
+  const model = agentModelSelect?.getValue() ?? "";
+  if (!model) {
     alert(t("agent.alert.noModel"));
     return;
   }
@@ -397,7 +372,7 @@ async function sendPrompt(root) {
   try {
     const resultPromise = window.api.agent.start({
       userMessage: text,
-      model: STATE.selectedModel,
+      model,
       budget: { maxIterations: 12, maxTokens: 30_000 },
     });
     /* agentId приходит в onEvent-payload; до этого — слушаем первое событие */
@@ -527,7 +502,7 @@ export function mountAgent(root) {
   ]));
 
   bindAgentInputHotkeys(root);
-  loadModels().then(() => renderModelSelector(root));
+  setupAgentModelSelector(root);
   renderChat(root);
   renderActivity(root);
   subscribeAgentEvents(root);
