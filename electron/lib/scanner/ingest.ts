@@ -1,9 +1,9 @@
-import { pipeline, type FeatureExtractionPipeline } from "@xenova/transformers";
 import { parseBook } from "./parsers/index.js";
 import type { ParseOptions } from "./parsers/types.js";
 import { chunkBook, type BookChunk, type ChunkerOptions } from "./chunker.js";
 import { ScannerStateStore } from "./state.js";
 import { DEFAULT_EMBED_MODEL, EMBEDDING_DIM, EMBED_MAX_INPUT_CHARS } from "./embedding.js";
+import { embedPassage } from "../embedder/shared.js";
 
 /**
  * Phase 2.6 — Book Ingest pipeline.
@@ -58,32 +58,6 @@ export interface IngestOptions {
 
 const DEFAULT_UPSERT_BATCH = 32;
 const DEFAULT_MAX_BOOK_CHARS = 5_000_000;
-
-let extractor: FeatureExtractionPipeline | null = null;
-let extractorKey: string | null = null;
-let extractorPromise: Promise<FeatureExtractionPipeline> | null = null;
-
-/**
- * Singleton с защитой от race: если два параллельных ingest стартуют до
- * первой загрузки, оба ждут одного Promise вместо двух одновременных init.
- */
-async function getExtractor(model: string): Promise<FeatureExtractionPipeline> {
-  if (extractor && extractorKey === model) return extractor;
-  if (extractorPromise && extractorKey === model) return extractorPromise;
-  extractorKey = model;
-  extractorPromise = (async () => {
-    const m = await pipeline("feature-extraction", model);
-    extractor = m;
-    return m;
-  })();
-  return extractorPromise;
-}
-
-async function embedPassage(text: string, model: string): Promise<number[]> {
-  const ext = await getExtractor(model);
-  const out = await ext(`passage: ${text}`, { pooling: "mean", normalize: true });
-  return Array.from(out.data as Float32Array);
-}
 
 interface QdrantPoint {
   id: string;

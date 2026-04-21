@@ -6,8 +6,8 @@
  * на процесс. Безопасно для concurrent вызовов: Promise возврата кэшируется.
  */
 
-import { pipeline, type FeatureExtractionPipeline } from "@xenova/transformers";
 import { fetchQdrantJson, QDRANT_URL } from "../qdrant/http-client.js";
+import { embedQuery as embedQuerySingleton } from "../embedder/shared.js";
 
 async function loadPrefs() {
   try {
@@ -78,26 +78,13 @@ export interface QdrantSearchResult {
   payload: Record<string, unknown>;
 }
 
-let embeddingModel: FeatureExtractionPipeline | null = null;
-let embeddingPromise: Promise<FeatureExtractionPipeline> | null = null;
-
-async function getEmbeddingModel(): Promise<FeatureExtractionPipeline> {
-  if (embeddingModel) return embeddingModel;
-  if (!embeddingPromise) {
-    embeddingPromise = (async () => {
-      const m = await pipeline("feature-extraction", "Xenova/multilingual-e5-small");
-      embeddingModel = m;
-      return m;
-    })();
-  }
-  return embeddingPromise;
-}
-
-export async function embedQuery(text: string): Promise<number[]> {
-  const model = await getEmbeddingModel();
-  const output = await model(`query: ${text}`, { pooling: "mean", normalize: true });
-  return Array.from(output.data as Float32Array);
-}
+/**
+ * Re-export of the shared singleton embedder. Keeps the public API of
+ * this module stable while ensuring scanner/ingest and rag/index share
+ * one instance of multilingual-e5-small (saves ~150 MB per process when
+ * ingest and chat run concurrently).
+ */
+export const embedQuery = embedQuerySingleton;
 
 export async function searchRelevantChunks(
   collection: string,
