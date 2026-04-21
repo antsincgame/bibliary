@@ -16,7 +16,10 @@ export function buildProfileManager(opts) {
   async function refresh() {
     clear(root);
     /** @type {any[]} */
-    const profiles = await window.api.profile.list().catch(() => []);
+    const profiles = await window.api.profile.list().catch((err) => {
+      console.error("[profile-manager] profile.list failed:", err instanceof Error ? err.message : err);
+      return [];
+    });
 
     const list = el("div", { class: "pm-list" });
     for (const p of profiles) {

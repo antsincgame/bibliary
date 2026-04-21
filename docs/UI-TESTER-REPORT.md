@@ -1,8 +1,13 @@
-# UI-TESTER REPORT — Bibliary v2.5.3
+# UI-TESTER REPORT — Bibliary v2.5.4
 
 > Скилл `/ui-tester` -- статический инспектор интерактивных элементов.
-> Дата отчёта: 2026-04-21 (revision 2 после `/sherlok` сверки фактов).
-> Поправлены завышенные счётчики prefs из revision 1.
+> Дата отчёта: 2026-04-21 (revision 3 после Phase 2.5R wiring + diamond cleanup).
+>
+> Изменения с rev2:
+> - +5 preference keys (lockRetries, lockStaleMs, healthPollIntervalMs,
+>   healthFailThreshold, watchdogLivenessTimeoutMs) -- все wired в runtime
+> - -1 dead export (`isImageBookExt` удалён из renderer/library.js)
+> - 3 BAD swallowed catches заменены на console.error диагностику
 
 ## 1. Покрытие
 
@@ -78,8 +83,8 @@ disabled feature, кнопка `disabled`. Не мёртвый UI.
 
 ## 4. Store / Preferences интеграция (точная сверка)
 
-Полный набор -- **34 ключа** (revision 1 ошибочно показывал 32).
-Wired в runtime после revision 2 -- **33 / 34**:
+Полный набор -- **39 ключей** (rev3 добавил 5 resilience-ключей).
+Wired в runtime после revision 3 -- **38 / 39**:
 
 | # | Key                          | Wired into                                                  | Status |
 |---|------------------------------|-------------------------------------------------------------|--------|
@@ -102,6 +107,11 @@ Wired в runtime после revision 2 -- **33 / 34**:
 | 17| `policyMaxRetries`           | `electron/dataset-generator.ts` via `buildRequestPolicy()`  | OK     |
 | 18| `policyBaseBackoffMs`        | `electron/dataset-generator.ts` via `buildRequestPolicy()`  | OK     |
 | 19| `hardTimeoutCapMs`           | `electron/dataset-generator.ts` via `buildRequestPolicy()`  | OK     |
+| 19a| `lockRetries`               | `electron/main.ts` -> `configureFileLockDefaults()`         | OK     |
+| 19b| `lockStaleMs`               | `electron/main.ts` -> `configureFileLockDefaults()`         | OK     |
+| 19c| `healthPollIntervalMs`      | `electron/main.ts` -> `configureWatchdog()`                 | OK     |
+| 19d| `healthFailThreshold`       | `electron/main.ts` -> `configureWatchdog()`                 | OK     |
+| 19e| `watchdogLivenessTimeoutMs` | `electron/main.ts` -> `configureWatchdog()`                 | OK     |
 | 20| `forgeHeartbeatMs`           | `electron/ipc/forge.ipc.ts` -> `LocalRunner.start()`        | OK     |
 | 21| `forgeMaxWallMs`             | `electron/ipc/forge.ipc.ts` -> `LocalRunner.start()`        | OK     |
 | 22| `searchPerSourceLimit`       | `electron/ipc/bookhunter.ipc.ts`                            | OK     |
@@ -118,11 +128,13 @@ Wired в runtime после revision 2 -- **33 / 34**:
 | 33| `ocrPdfDpi`                  | `pdf.ts` -> `rasterisePdfPages({dpi})`                      | OK     |
 | 34| `libraryGroupBy`             | `renderer/library.js`                                       | OK     |
 
-**Итого: 33 wired в runtime, 1 reserved (`refreshIntervalMs` -- для будущих
+**Итого: 38 wired в runtime, 1 reserved (`refreshIntervalMs` -- для будущих
 polling loops, например автообновление статуса LM Studio).**
 
-Revision 1 этого отчёта неверно указывал "32 keys / 30 wired" -- на 2 ключа
-меньше и завышал процент wired. Исправлено после `/sherlok` cross-examination.
+Revision 1 этого отчёта неверно указывал "32 keys / 30 wired"; revision 2
+после `/sherlok` исправлено на 34 keys / 33 wired; revision 3 добавил 5 новых
+resilience-ключей (lock + watchdog) и сразу wire-down. Один gap намеренно
+оставлен (`refreshIntervalMs`) с явным TODO в QUALITY-GATES.md.
 
 ## 5. Drag & Drop корректность
 
@@ -169,13 +181,19 @@ Revision 1 этого отчёта неверно указывал "32 keys / 30
 Валидных:                         10 (100%)
 Битых:                             0
 
-Store / Preferences keys:         34
-Видны в Settings UI:              34 (100%)
-Wired to runtime:                 33 (97%)
+Store / Preferences keys:         39
+Видны в Settings UI:              39 (100%)
+Wired to runtime:                 38 (97%)
 Reserved (intentional):            1  refreshIntervalMs
 
 Drag&Drop сценариев:               6 / 6  OK
 OCR сценариев:                     7 / 7  OK
+
+Diamond-buddha cleanup (rev3):
+- dead exports удалено:            1  (isImageBookExt)
+- BAD swallowed catches исправлено: 3  (batch / forge / profile-manager)
+- Magic numbers извлечено:         1  (EMBEDDING_DIM в scanner/embedding.ts)
+- Type 2 refactor candidates:      7  (см. QUALITY-GATES.md / >400 строк)
 ```
 
 ## 9. Рекомендация (одна, как требует протокол)

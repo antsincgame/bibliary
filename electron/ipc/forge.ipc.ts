@@ -144,7 +144,10 @@ export function registerForgeIpc(getMainWindow: () => BrowserWindow | null): voi
   });
 
   ipcMain.handle("forge:list-runs", async (): Promise<ForgeRunState[]> => {
-    const items = await getForgeStore().scan().catch(() => []);
+    const items = await getForgeStore().scan().catch((err) => {
+      console.error("[forge:list-runs] store scan failed:", err instanceof Error ? err.message : err);
+      return [];
+    });
     return items.map((i) => i.snapshot);
   });
 

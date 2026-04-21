@@ -30,6 +30,20 @@
 ## P0 — Закрыть критические дыры (1-2 дня)
 
 ### P0.1. Wire forge / resilience / qdrant / bookhunter runtime preferences ✅ DONE
+### P0.1.b. Phase 2.5R: wire LOCK + watchdog runtime preferences ✅ DONE
+
+В дополнение к P0.1:
+- `lockRetries`, `lockStaleMs` -- через `configureFileLockDefaults()`
+- `healthPollIntervalMs`, `healthFailThreshold`, `watchdogLivenessTimeoutMs`
+  -- через `configureWatchdog()` в watchdog
+- preferences IPC применяет side-effects на каждом `set`/`reset`
+- 3 BAD swallowed catches (`batch.ipc.ts`, `forge.ipc.ts`, `profile-manager.js`)
+  заменены на `console.error` диагностику
+- Magic number `384` извлечён в `electron/lib/scanner/embedding.ts` как
+  `EMBEDDING_DIM` (использовался в 3 местах: ingest.ts, judge.ts, qdrant.ipc.ts)
+- Введён `docs/QUALITY-GATES.md` с 5 gate-уровнями (Pre-commit, Pre-push,
+  Pre-PR, Pre-RC, Pre-release) и таблицей контрольных метрик
+
 
 **Было:** `forgeHeartbeatMs`, `forgeMaxWallMs`, `policyMaxRetries`,
 `policyBaseBackoffMs`, `hardTimeoutCapMs`, `qdrantTimeoutMs`,

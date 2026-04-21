@@ -16,8 +16,6 @@ import { t } from "./i18n.js";
 /** @typedef {{ collection: string, books: Array<{ bookSourcePath: string, fileName: string, status: "running"|"done"|"error"|"paused", totalChunks: number, processedChunks: number, startedAt: string, lastUpdatedAt: string, errorMessage?: string }>, totalBooks: number, totalChunks: number }} HistoryGroup */
 /** @typedef {"none"|"ext"|"status"|"folder"} GroupMode */
 
-const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "bmp", "tif", "tiff", "webp"]);
-
 const STATE = {
   /** @type {"browse"|"history"|"search"} */
   tab: "browse",
@@ -839,8 +837,4 @@ export async function mountLibrary(root) {
 
 export function isLibraryBusy() {
   return STATE.activeIngests.size > 0 || STATE.queue.length > 0;
-}
-
-export function isImageBookExt(ext) {
-  return IMAGE_EXTS.has(String(ext || "").toLowerCase());
 }

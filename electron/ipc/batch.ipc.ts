@@ -31,7 +31,10 @@ export function registerBatchIpc(getMainWindow: () => BrowserWindow | null): voi
     }
     const datasetHandle = coordinator.getPipeline("dataset");
     if (datasetHandle) {
-      const items = await datasetHandle.store.scan().catch(() => []);
+      const items = await datasetHandle.store.scan().catch((err) => {
+        console.error("[batch:discard] dataset store scan failed:", err instanceof Error ? err.message : err);
+        return [];
+      });
       if (items.find((i) => i.id === batchId)) {
         await datasetHandle.discard(batchId);
         return true;
