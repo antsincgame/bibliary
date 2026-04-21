@@ -67,7 +67,14 @@ async function parsePdf(filePath: string, opts: ParseOptions = {}): Promise<Pars
 
   const allParagraphs: Array<{ page: number; text: string }> = [];
   let totalChars = 0;
+  /* AUDIT MED-6: цикл по страницам мог идти минутами на 1000-страничном
+     PDF и игнорировал opts.signal — cancel ingest'а не прерывал парсинг.
+     Проверяем перед каждой страницей: дешёво, но мгновенно отвечает. */
   for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
+    if (opts.signal?.aborted) {
+      await doc.destroy().catch(() => undefined);
+      throw new Error(`pdf parse aborted at page ${pageNum}/${doc.numPages}`);
+    }
     const page = await doc.getPage(pageNum);
     const tc = await page.getTextContent();
     const items = tc.items as Array<{ str: string; transform: number[]; hasEOL?: boolean }>;

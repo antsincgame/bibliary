@@ -13,6 +13,7 @@
 import { ipcMain, type BrowserWindow } from "electron";
 import { randomUUID } from "crypto";
 import { parseBook } from "../lib/scanner/parsers/index.js";
+import { isOcrSupported } from "../lib/scanner/ocr/index.js";
 import {
   chunkChapter,
   extractChapterConcepts,
@@ -137,7 +138,17 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
 
       try {
         emit({ stage: "parse", phase: "start", bookSourcePath: args.bookSourcePath });
-        const parsed = await parseBook(args.bookSourcePath);
+        /* AUDIT MED-4: parseBook вызывался без opts → отсканированные PDF
+           проваливались в Crystallizer тихим "0 chapters", даже когда
+           prefs.ocrEnabled=true. Также signal не пробрасывался → cancel
+           не прерывал многомегабайтный PDF parse. */
+        const parsed = await parseBook(args.bookSourcePath, {
+          ocrEnabled: prefs.ocrEnabled && isOcrSupported(),
+          ocrLanguages: prefs.ocrLanguages,
+          ocrAccuracy: prefs.ocrAccuracy,
+          ocrPdfDpi: prefs.ocrPdfDpi,
+          signal: ctrl.signal,
+        });
         const totalChapters = parsed.sections.length;
         const range = args.chapterRange ?? { from: 0, to: totalChapters };
         emit({ stage: "parse", phase: "done", bookTitle: parsed.metadata.title, totalChapters });
@@ -171,6 +182,7 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
           const extractRes = await extractChapterConcepts({
             chunks,
             promptsDir: null,
+            signal: ctrl.signal,
             callbacks: {
               llm: llmExtract,
               onEvent: (e: ExtractEvent) => emit({ stage: "extract", chapterIndex: ci, ...e }),
@@ -199,6 +211,7 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
             promptsDir: null,
             scoreThreshold: args.scoreThreshold ?? prefs.judgeScoreThreshold,
             crossLibDupeThreshold: prefs.crossLibDupeThreshold,
+            signal: ctrl.signal,
             callbacks: {
               llm: llmJudge,
               onEvent: (e: JudgeEvent) => emit({ stage: "judge", chapterIndex: ci, ...e }),
@@ -249,7 +262,7 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
 
   /** Сколько концептов лежит в dataset-accepted-concepts (для UI бейджа). */
   ipcMain.handle("dataset-v2:list-accepted", async (): Promise<{ total: number; byDomain: Record<string, number> }> => {
-    const { fetchQdrantJson, QDRANT_URL, QDRANT_API_KEY } = await import("../lib/qdrant/http-client.js");
+    const { fetchQdrantJson, QDRANT_URL } = await import("../lib/qdrant/http-client.js");
     const { ACCEPTED_COLLECTION } = await import("../lib/dataset-v2/judge.js");
     try {
       const data = await fetchQdrantJson<{ result: { points_count?: number } }>(
@@ -259,28 +272,28 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
       const byDomain: Record<string, number> = {};
 
       if (total > 0 && total <= 50_000) {
-        const headers: Record<string, string> = { "Content-Type": "application/json" };
-        if (QDRANT_API_KEY) headers["api-key"] = QDRANT_API_KEY;
-        const scrollResp = await fetch(
+        /* AUDIT MED-3: scroll fetch шёл голым `fetch()` без timeout — при
+           зависшем Qdrant IPC-handler висел навсегда, блокируя UI-бейдж.
+           fetchQdrantJson даёт QDRANT_TIMEOUT_MS + унифицированные headers.
+           Большой scroll (10k точек) — поднимаем timeout до 30s. */
+        const scrollData = await fetchQdrantJson<{
+          result: { points: Array<{ payload?: { domain?: string } }> };
+        }>(
           `${QDRANT_URL}/collections/${ACCEPTED_COLLECTION}/points/scroll`,
           {
             method: "POST",
-            headers,
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               limit: Math.min(total, 10_000),
               with_payload: ["domain"],
               with_vector: false,
             }),
-          }
+            timeoutMs: 30_000,
+          },
         );
-        if (scrollResp.ok) {
-          const scrollData = (await scrollResp.json()) as {
-            result: { points: Array<{ payload?: { domain?: string } }> };
-          };
-          for (const pt of scrollData.result.points) {
-            const d = pt.payload?.domain || "unknown";
-            byDomain[d] = (byDomain[d] || 0) + 1;
-          }
+        for (const pt of scrollData.result.points) {
+          const d = pt.payload?.domain || "unknown";
+          byDomain[d] = (byDomain[d] || 0) + 1;
         }
       }
 
