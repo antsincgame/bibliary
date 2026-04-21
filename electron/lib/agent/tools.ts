@@ -20,7 +20,7 @@ import { aggregateSearch, ALLOWED_LICENSES } from "../bookhunter/index.js";
 import { probeBooks, isSupportedBook } from "../scanner/parsers/index.js";
 import { ingestBook, ScannerStateStore } from "../scanner/index.js";
 import { fetchQdrantJson, QDRANT_URL, QDRANT_API_KEY, SCROLL_PAGE_SIZE } from "../qdrant/http-client.js";
-import { searchRelevantChunks } from "../rag/index.js";
+import { searchRelevantChunks, getRagConfig } from "../rag/index.js";
 import { getPromptStore, DatasetRolesSchema } from "../prompts/store.js";
 import type { ToolDefinition, OpenAiToolDefinition } from "./types.js";
 
@@ -93,7 +93,8 @@ const searchCollectionTool: ToolDefinition<{ query: string; collection: string; 
     k: z.number().int().min(1).max(20).optional().describe("сколько результатов вернуть (default 5)"),
   }),
   execute: async ({ query, collection, k }) => {
-    const results = await searchRelevantChunks(collection, query, k ?? 5);
+    const ragCfg = await getRagConfig();
+    const results = await searchRelevantChunks(collection, query, k ?? 5, ragCfg.scoreThreshold);
     return results.map((r) => ({
       score: r.score,
       principle: String(r.payload.principle ?? ""),

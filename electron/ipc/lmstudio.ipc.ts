@@ -39,7 +39,7 @@ export function registerLmstudioIpc(): void {
         try {
           const query = extractUserQuery(messages);
           if (query) {
-            const results = await searchRelevantChunks(collection, query, ragCfg.topK);
+            const results = await searchRelevantChunks(collection, query, ragCfg.topK, ragCfg.scoreThreshold);
             if (results.length > 0) {
               systemPrompt = buildRagPrompt(formatChunksForPrompt(results));
             }
@@ -81,7 +81,7 @@ export function registerLmstudioIpc(): void {
         try {
           const query = extractUserQuery(messages);
           if (query) {
-            const results = await searchRelevantChunks(collection, query, ragCfg.topK);
+            const results = await searchRelevantChunks(collection, query, ragCfg.topK, ragCfg.scoreThreshold);
             if (results.length > 0) {
               ragSystemPrompt = buildRagPrompt(formatChunksForPrompt(results));
             }

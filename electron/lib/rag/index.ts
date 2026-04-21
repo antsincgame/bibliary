@@ -86,10 +86,18 @@ export interface QdrantSearchResult {
  */
 export const embedQuery = embedQuerySingleton;
 
+/**
+ * AUDIT MED-2: ранее `score_threshold` всегда брался из константы
+ * `RAG_SCORE_THRESHOLD`, игнорируя `prefs.ragScoreThreshold` хоть и
+ * `getRagConfig()` его честно читал. UI-слайдер «релевантность ≥ X»
+ * фактически не работал. Теперь параметр опциональный с тем же
+ * fallback'ом — backward-compatible для всех существующих вызовов.
+ */
 export async function searchRelevantChunks(
   collection: string,
   query: string,
-  limit: number = RAG_TOP_K
+  limit: number = RAG_TOP_K,
+  scoreThreshold: number = RAG_SCORE_THRESHOLD,
 ): Promise<QdrantSearchResult[]> {
   const vector = await embedQuery(query);
   const data = await fetchQdrantJson<{ result: QdrantSearchResult[] }>(
@@ -101,7 +109,7 @@ export async function searchRelevantChunks(
         vector,
         limit,
         with_payload: true,
-        score_threshold: RAG_SCORE_THRESHOLD,
+        score_threshold: scoreThreshold,
       }),
     }
   );
