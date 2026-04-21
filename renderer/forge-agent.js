@@ -433,15 +433,9 @@ async function stopAgent(root) {
   setBusy(root, false);
 }
 
-export function mountAgent(root) {
-  if (!root) return;
-  if (root.dataset.mounted === "1") return;
-  root.dataset.mounted = "1";
-  clear(root);
-
-  /* Hero с sacred geometry — metatron-куб золотом на фоне */
+function buildAgentHero() {
   const heroPattern = svgDataUrl(metatronCube({ size: 380, opacity: 0.2, color: "#ffd700" }));
-  const hero = el(
+  return el(
     "div",
     {
       class: "hero-neon agent-hero",
@@ -452,8 +446,10 @@ export function mountAgent(root) {
       el("div", { class: "hero-neon-sub" }, t("agent.hero.sub")),
     ]
   );
+}
 
-  const toolbar = el("div", { class: "agent-toolbar agent-toolbar-neon" }, [
+function buildAgentToolbar(root) {
+  return el("div", { class: "agent-toolbar agent-toolbar-neon" }, [
     el("div", { class: "agent-model-wrap" }),
     el(
       "button",
@@ -467,8 +463,10 @@ export function mountAgent(root) {
       t("agent.btn.stop")
     ),
   ]);
+}
 
-  const chatWrap = el("div", { class: "agent-chat-wrap sacred-card" }, [
+function buildAgentChatWrap(root) {
+  return el("div", { class: "agent-chat-wrap sacred-card" }, [
     el("div", { class: "agent-chat-list" }),
     el("div", { class: "agent-approval-area" }),
     el("div", { class: "agent-input-wrap" }, [
@@ -490,34 +488,49 @@ export function mountAgent(root) {
       ),
     ]),
   ]);
+}
 
-  const sidebar = el("div", { class: "agent-sidebar sacred-card" }, [
+function buildAgentSidebar() {
+  return el("div", { class: "agent-sidebar sacred-card" }, [
     el("div", { class: "agent-sidebar-title neon-subheading" }, t("agent.activity.title")),
     el("div", { class: "agent-activity-list" }),
   ]);
+}
 
-  const layout = el("div", { class: "agent-layout" }, [chatWrap, sidebar]);
-
-  root.appendChild(hero);
-  root.appendChild(toolbar);
-  root.appendChild(layout);
-
+function bindAgentInputHotkeys(root) {
   const inputEl = root.querySelector("#agent-input");
-  if (inputEl) {
-    inputEl.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault();
-        sendPrompt(root);
-      }
-    });
-  }
+  if (!inputEl) return;
+  inputEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      sendPrompt(root);
+    }
+  });
+}
 
+function subscribeAgentEvents(root) {
+  if (unsubEvents) unsubEvents();
+  unsubEvents = window.api.agent.onEvent((payload) => handleAgentEvent(root, payload));
+}
+
+export function mountAgent(root) {
+  if (!root) return;
+  if (root.dataset.mounted === "1") return;
+  root.dataset.mounted = "1";
+  clear(root);
+
+  root.appendChild(buildAgentHero());
+  root.appendChild(buildAgentToolbar(root));
+  root.appendChild(el("div", { class: "agent-layout" }, [
+    buildAgentChatWrap(root),
+    buildAgentSidebar(),
+  ]));
+
+  bindAgentInputHotkeys(root);
   loadModels().then(() => renderModelSelector(root));
   renderChat(root);
   renderActivity(root);
-
-  if (unsubEvents) unsubEvents();
-  unsubEvents = window.api.agent.onEvent((payload) => handleAgentEvent(root, payload));
+  subscribeAgentEvents(root);
 }
 
 export function isAgentBusy() {
