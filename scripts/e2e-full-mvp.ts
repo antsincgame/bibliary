@@ -65,6 +65,7 @@ import { prepareDataset, generateBundle } from "../electron/lib/forge/pipeline.j
 import { ForgeSpecSchema, type ForgeSpec } from "../electron/lib/forge/configgen.js";
 import { chat } from "../electron/lmstudio-client.js";
 import { embedQuery } from "../electron/lib/embedder/shared.js";
+import { getModelProfile, type ModelTag } from "../electron/lib/dataset-v2/model-profile.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Config (env-overridable)
@@ -218,6 +219,32 @@ function pickModel(loaded: string[], preferences: string[]): string | null {
     if (hit) return hit;
   }
   return loaded[0] ?? null;
+}
+
+/**
+ * Tag-based picker. Сравнивает каждую loaded model с curated-models.json
+ * (через getModelProfile) и выбирает первую loaded, у которой есть один
+ * из приоритетных тегов. Перебор тегов в порядке `tagPriority`: кто раньше
+ * нашёлся — тот и выбран.
+ *
+ * Используется в T6 для выбора Crystallizer-моделей: топовый choice —
+ * tool-capable-coder (qwen3-coder-30b), потом non-thinking-instruct
+ * (mistral-small, qwen3-14b), потом small-fast (qwen3-4b как last resort).
+ *
+ * Если у пользователя загружены ТОЛЬКО неизвестные curated-системе модели —
+ * fallback на legacy pickModel по подстрокам.
+ */
+async function pickModelByTags(loaded: string[], tagPriority: ModelTag[], legacyHints: string[]): Promise<string | null> {
+  const enriched: Array<{ id: string; tags: ModelTag[] }> = [];
+  for (const id of loaded) {
+    const profile = await getModelProfile(id);
+    enriched.push({ id, tags: profile.tags });
+  }
+  for (const tag of tagPriority) {
+    const hit = enriched.find((m) => m.tags.includes(tag));
+    if (hit) return hit.id;
+  }
+  return pickModel(loaded, legacyHints);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -478,13 +505,21 @@ async function main(): Promise<void> {
   if (skipCrystal) {
     console.log(`  ${COLOR.yellow}skipped via --skip-crystal${COLOR.reset}`);
   } else {
-    /* Prefer non-thinking instruct models -- thinking models (qwen3.6
-       MoE family) burn the entire max_tokens budget on reasoning and
-       leave content="" which the extractor reads as 0 concepts.
-       qwen3-4b-2507 is the lightweight 4B Instruct from the user's
-       loaded set; it returns content directly. */
-    const extractModel = pickModel(lm.models, ["qwen3-4b-2507", "qwen3.5-9b", "qwen2.5-coder", "qwen3.6"]);
-    const judgeModel = pickModel(lm.models, ["qwen3-4b-2507", "qwen3.5-9b", "qwen2.5-coder", "qwen3.6"]);
+    /* Tag-based selection (Удар 3 плана crystal-quality-multi-tier).
+       Приоритет: tool-capable-coder > non-thinking-instruct > small-fast.
+       Это выбирает qwen3-coder-30b если он загружен (топ для structured extraction),
+       потом mistral-small / qwen3-14b (быстрые quality-инструкты),
+       и только в last resort падает на qwen3-4b. Раньше E2E хардкодил
+       qwen3-4b как первый choice — теперь живёт по реальному качеству.
+       Thinking-модели (qwen3.6) НЕ в приоритете для E2E, потому что
+       inline llm() в T6.3 пинит greedy decoding (temp=0, max_tokens=8192)
+       без stop=["</think>"] — они всё ещё могут выгореть. Production-код
+       через makeLlm в dataset-v2.ipc.ts применяет thinking-heavy профиль
+       автоматически и работает с qwen3.6. */
+    const CRYSTAL_TAG_PRIORITY: ModelTag[] = ["tool-capable-coder", "non-thinking-instruct", "small-fast"];
+    const LEGACY_HINTS = ["qwen3-coder", "mistral-small", "qwen3-14b", "qwen3-4b-2507"];
+    const extractModel = await pickModelByTags(lm.models, CRYSTAL_TAG_PRIORITY, LEGACY_HINTS);
+    const judgeModel = await pickModelByTags(lm.models, CRYSTAL_TAG_PRIORITY, LEGACY_HINTS);
 
     await step("T6.1 -- LM Studio has a usable model loaded", () => {
       if (!extractModel) throw new Error("no model available");
