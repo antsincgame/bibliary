@@ -42,8 +42,27 @@ function authHeaders(extra?: Record<string, string>): Record<string, string> {
   return h;
 }
 
-async function qdrantRaw(url: string, init?: RequestInit): Promise<Response> {
-  return fetch(url, { ...(init ?? {}), headers: authHeaders(init?.headers as Record<string, string> | undefined) });
+/**
+ * Raw `Response`-returning Qdrant call (used when the IPC handler needs
+ * to inspect the status code or body itself; `fetchQdrantJson` always
+ * throws on !ok).
+ *
+ * Honours `prefs.qdrantTimeoutMs` so it can't hang the IPC channel
+ * forever when Qdrant is slow. Fallback default 8000 ms.
+ */
+async function qdrantRaw(url: string, init?: RequestInit, timeoutMs?: number): Promise<Response> {
+  const ms = typeof timeoutMs === "number" && timeoutMs > 0 ? timeoutMs : 8000;
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(`qdrant timeout ${ms}ms`), ms);
+  try {
+    return await fetch(url, {
+      ...(init ?? {}),
+      headers: authHeaders(init?.headers as Record<string, string> | undefined),
+      signal: ctl.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export function registerQdrantIpc(): void {

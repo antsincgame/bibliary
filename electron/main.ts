@@ -6,6 +6,7 @@ import {
   abortAllIngests,
   abortAllDatasetV2,
   abortAllBookhunter,
+  abortAllAgents,
 } from "./ipc";
 import { disposeClient } from "./lmstudio-client";
 import {
@@ -95,6 +96,7 @@ if (!gotLock) {
       abortAllIngests("app-quit");
       abortAllDatasetV2("app-quit");
       abortAllBookhunter("app-quit");
+      abortAllAgents("app-quit");
       disposeClient();
       return;
     }
@@ -144,6 +146,11 @@ if (!gotLock) {
         }
         try {
           abortAllBookhunter("app-quit");
+        } catch {
+          // ignore
+        }
+        try {
+          abortAllAgents("app-quit");
         } catch {
           // ignore
         }
