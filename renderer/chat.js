@@ -273,6 +273,17 @@ export function mountChat() {
 
   setupMemoryPopover({ modelSelect, btnMemory, btnMemoryLabel, memoryPopover });
 
+  /* Persist выбранной модели чата в preferences.chatModel — единый источник
+     истины с другими экранами (Crystal/Agent через model-select component). */
+  let _chatModelSaveTimer = null;
+  modelSelect.addEventListener("change", () => {
+    if (_chatModelSaveTimer) clearTimeout(_chatModelSaveTimer);
+    _chatModelSaveTimer = setTimeout(() => {
+      _chatModelSaveTimer = null;
+      void window.api.preferences.set({ chatModel: modelSelect.value }).catch(() => { /* ignore */ });
+    }, 300);
+  });
+
   /** @param {string} role @param {string} content */
   function addMessage(role, content) {
     const cls = role === "user" ? "message message-user" : "message message-assistant";
@@ -334,10 +345,25 @@ export function mountChat() {
       try {
         const models = await window.api.getModels();
         populateSelect(modelSelect, models);
+        await applyChatModelPref();
       } catch {
         populateSelect(modelSelect, []);
       }
     });
+  }
+
+  /**
+   * Восстановить выбранную модель чата из preferences.chatModel.
+   * Если pref-модель отсутствует среди опций — оставляем дефолтную (первую).
+   */
+  async function applyChatModelPref() {
+    try {
+      const prefs = /** @type {any} */ (await window.api.preferences.getAll());
+      const saved = String(prefs?.chatModel ?? "");
+      if (!saved) return;
+      const exists = Array.from(modelSelect.options).some((opt) => opt.value === saved);
+      if (exists) modelSelect.value = saved;
+    } catch { /* preferences недоступны — игнорируем */ }
   }
 
   /**
