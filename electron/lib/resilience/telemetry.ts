@@ -8,6 +8,7 @@ export type TelemetryEvent =
   | { type: "forge.run.success"; runId: string; durationMs: number; ts: string }
   | { type: "forge.run.fail"; runId: string; target: string; error: string; ts: string }
   | { type: "forge.cloud.upload"; runId: string; target: string; sizeMB: number; ok: boolean; ts: string }
+  | { type: "forge.eval.judge_error"; caseIndex: number; tunedModel: string; error: string; ts: string }
   | {
       type: "batch.chunk.ok";
       batchId: string;

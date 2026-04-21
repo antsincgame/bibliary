@@ -132,10 +132,25 @@ export async function runEval(opts: {
   chat: EvalChatFn;
   /** Опциональный progress callback. */
   onProgress?: (done: number, total: number) => void;
+  /**
+   * Если signal.aborted — выходим между case'ами без следующего chat-call.
+   * IPC-handler передаёт сюда controller, чтобы forge:cancel-eval мог
+   * прервать длительный прогон без зависания UI.
+   */
+  signal?: AbortSignal;
+  /**
+   * Логирование сбоя judge-вызова. Сам judge остаётся optional (не падаем),
+   * но caller получает шанс залогировать в telemetry — раньше ошибки
+   * молча терялись (audit MED).
+   */
+  onJudgeError?: (caseIndex: number, error: string) => void;
 }): Promise<EvalSummary> {
   const results: EvalResult[] = [];
   let i = 0;
   for (const ec of opts.cases) {
+    if (opts.signal?.aborted) {
+      throw new Error("aborted: eval cancelled between cases");
+    }
     i++;
     const messages: Array<{ role: string; content: string }> = [];
     if (ec.systemPrompt) messages.push({ role: "system", content: ec.systemPrompt });
@@ -162,8 +177,10 @@ export async function runEval(opts: {
         judgeBase = j.a;
         judgeTuned = j.b;
         judgeWinner = j.winner;
-      } catch {
-        // judge optional — не падаем
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn(`[forge.eval] judge failed for case ${i}/${opts.cases.length}: ${msg}`);
+        opts.onJudgeError?.(i, msg);
       }
     }
 

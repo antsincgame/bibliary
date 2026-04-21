@@ -403,6 +403,7 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.invoke("forge:import-gguf", { outputDir, modelKey }),
     runEval: (args: { evalPath: string; baseModel: string; tunedModel: string; judgeModel?: string; maxCases?: number }): Promise<unknown> =>
       ipcRenderer.invoke("forge:run-eval", args),
+    cancelEval: (): Promise<boolean> => ipcRenderer.invoke("forge:cancel-eval"),
     onMetric: (cb: (payload: { runId: string; metric: unknown }) => void): (() => void) => {
       const l = (_e: unknown, p: { runId: string; metric: unknown }) => cb(p);
       ipcRenderer.on("forge:local-metric", l);
@@ -412,6 +413,16 @@ contextBridge.exposeInMainWorld("api", {
       const l = (_e: unknown, p: { runId: string; line: string }) => cb(p);
       ipcRenderer.on("forge:local-stdout", l);
       return () => ipcRenderer.removeListener("forge:local-stdout", l);
+    },
+    onStderr: (cb: (payload: { runId: string; line: string }) => void): (() => void) => {
+      const l = (_e: unknown, p: { runId: string; line: string }) => cb(p);
+      ipcRenderer.on("forge:local-stderr", l);
+      return () => ipcRenderer.removeListener("forge:local-stderr", l);
+    },
+    onError: (cb: (payload: { runId: string; error: string }) => void): (() => void) => {
+      const l = (_e: unknown, p: { runId: string; error: string }) => cb(p);
+      ipcRenderer.on("forge:local-error", l);
+      return () => ipcRenderer.removeListener("forge:local-error", l);
     },
     onExit: (cb: (payload: { runId: string; code: number | null }) => void): (() => void) => {
       const l = (_e: unknown, p: { runId: string; code: number | null }) => cb(p);

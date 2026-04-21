@@ -23,7 +23,14 @@ import {
 import { listBatchFiles } from "../lib/finetune/batch-files.js";
 import { coordinator, telemetry } from "../lib/resilience/index.js";
 import { getPreferencesStore } from "../lib/preferences/store.js";
-import { chat } from "../lmstudio-client.js";
+import { chatWithPolicy } from "../lmstudio-client.js";
+
+/* AUDIT P0 (Inquisitor): раньше forge:run-eval вызывал прямой chat() без
+   AbortSignal — если LM Studio тормозила, IPC залипал навсегда. Держим
+   единственный активный controller на уровне модуля: новый run-eval
+   аборти прежний (UI не может запустить eval параллельно), а отдельный
+   IPC forge:cancel-eval даёт пользователю выйти из длительного прогона. */
+let activeEvalController: AbortController | null = null;
 
 export function registerForgeIpc(getMainWindow: () => BrowserWindow | null): void {
   ipcMain.handle("forge:list-source-batches", async (): Promise<string[]> => {
@@ -233,34 +240,67 @@ export function registerForgeIpc(getMainWindow: () => BrowserWindow | null): voi
       const cases = chatMLToEvalCases(lines, args.maxCases || 20);
 
       const win = getMainWindow();
-      return runEval({
-        cases,
-        baseModel: args.baseModel,
-        tunedModel: args.tunedModel,
-        judgeModel: args.judgeModel,
-        chat: async (modelKey, messages) => {
-          const reply = await chat({
-            model: modelKey,
-            messages: messages as Array<{ role: "system" | "user" | "assistant"; content: string }>,
-            sampling: {
-              temperature: 0.3,
-              top_p: 0.9,
-              top_k: 30,
-              min_p: 0,
-              presence_penalty: 0,
-              max_tokens: 1024,
-            },
-          });
-          return reply.content || "";
-        },
-        onProgress: (done, total) => {
-          if (win && !win.isDestroyed()) {
-            win.webContents.send("forge:eval-progress", { done, total });
-          }
-        },
-      });
+
+      if (activeEvalController) {
+        activeEvalController.abort("superseded by new eval");
+      }
+      const ctrl = new AbortController();
+      activeEvalController = ctrl;
+
+      try {
+        return await runEval({
+          cases,
+          baseModel: args.baseModel,
+          tunedModel: args.tunedModel,
+          judgeModel: args.judgeModel,
+          signal: ctrl.signal,
+          onJudgeError: (caseIndex, error) => {
+            telemetry.logEvent({
+              type: "forge.eval.judge_error",
+              caseIndex,
+              error,
+              tunedModel: args.tunedModel,
+            });
+          },
+          chat: async (modelKey, messages) => {
+            const reply = await chatWithPolicy(
+              {
+                model: modelKey,
+                messages: messages as Array<{ role: "system" | "user" | "assistant"; content: string }>,
+                sampling: {
+                  temperature: 0.3,
+                  top_p: 0.9,
+                  top_k: 30,
+                  min_p: 0,
+                  presence_penalty: 0,
+                  max_tokens: 1024,
+                },
+              },
+              { externalSignal: ctrl.signal },
+            );
+            return reply.content || "";
+          },
+          onProgress: (done, total) => {
+            if (win && !win.isDestroyed()) {
+              win.webContents.send("forge:eval-progress", { done, total });
+            }
+          },
+        });
+      } finally {
+        if (activeEvalController === ctrl) {
+          activeEvalController = null;
+        }
+      }
     }
   );
+
+  ipcMain.handle("forge:cancel-eval", async (): Promise<boolean> => {
+    if (activeEvalController) {
+      activeEvalController.abort("user-cancel");
+      return true;
+    }
+    return false;
+  });
 
   ipcMain.handle("forge:mark-status", async (_e, args: { runId: string; status: ForgeRunState["status"] }) => {
     const state = await getForgeStore().load(args.runId);
