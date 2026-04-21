@@ -105,6 +105,16 @@ export interface ChatUsage {
 
 export interface ChatResponse {
   content: string;
+  /**
+   * Содержимое поля `reasoning_content` для thinking-моделей (Qwen3.x, DeepSeek-R1).
+   * При `response_format=json_schema` LM Studio часто кладёт сюда финальный JSON
+   * вместо `content` (см. LM Studio bug-tracker #1773 / #1698 / #1602). Caller
+   * (например, concept-extractor) должен иметь fallback на reasoning_content
+   * через `extractJsonFromReasoning()` из `lib/dataset-v2/reasoning-decoder`.
+   */
+  reasoningContent?: string;
+  /** finish_reason из OpenAI-compat ответа: "stop" | "length" | "content_filter" | ... */
+  finishReason?: string;
   usage?: ChatUsage;
 }
 
@@ -243,6 +253,8 @@ export async function chat(request: ChatRequest): Promise<ChatResponse> {
 
   return {
     content,
+    reasoningContent: reasoningContent.length > 0 ? reasoningContent : undefined,
+    finishReason,
     usage: data.usage
       ? {
           prompt: data.usage.prompt_tokens ?? 0,
@@ -308,6 +320,8 @@ export interface ChatToolCall {
 
 export interface ChatWithToolsResponse {
   content: string;
+  /** См. `ChatResponse.reasoningContent`. */
+  reasoningContent?: string;
   toolCalls?: ChatToolCall[];
   finishReason?: string;
   usage?: ChatUsage;
@@ -371,6 +385,7 @@ export async function chatWithTools(request: ChatWithToolsRequest): Promise<Chat
   if (!choice) throw new Error("LM Studio returned no completion choice");
 
   const content = choice.message.content ?? "";
+  const reasoningContent = choice.message.reasoning_content ?? "";
   const toolCalls = choice.message.tool_calls?.map((tc) => ({
     id: tc.id ?? `tc_${Math.random().toString(36).slice(2, 12)}`,
     name: tc.function.name,
@@ -379,6 +394,7 @@ export async function chatWithTools(request: ChatWithToolsRequest): Promise<Chat
 
   return {
     content,
+    reasoningContent: reasoningContent.length > 0 ? reasoningContent : undefined,
     toolCalls,
     finishReason: choice.finish_reason,
     usage: data.usage

@@ -12,6 +12,7 @@
 import { chunkChapter } from "../electron/lib/dataset-v2/semantic-chunker.js";
 import { dedupChapterConcepts } from "../electron/lib/dataset-v2/intra-dedup.js";
 import { extractChapterConcepts, clearPromptCache } from "../electron/lib/dataset-v2/concept-extractor.js";
+import { extractJsonFromReasoning } from "../electron/lib/dataset-v2/reasoning-decoder.js";
 import type { BookSection } from "../electron/lib/scanner/parsers/index.js";
 import type { ExtractedConcept } from "../electron/lib/dataset-v2/types.js";
 
@@ -272,6 +273,93 @@ async function main(): Promise<void> {
     if (memorySeen[0].includes("Earlier in this chapter")) throw new Error("first call must NOT have memory");
     if (!memorySeen[1].includes("Earlier in this chapter")) throw new Error("second call MUST have memory");
     if (!memorySeen[1].includes("Concept #1")) throw new Error("memory missing first concept");
+  });
+
+  /* === Reasoning Decoder — спасает JSON из reasoning_content поля === */
+
+  await step("R1-1 — пустой/null/undefined reasoning → null", () => {
+    if (extractJsonFromReasoning("") !== null) throw new Error("empty string must return null");
+    if (extractJsonFromReasoning(null) !== null) throw new Error("null must return null");
+    if (extractJsonFromReasoning(undefined) !== null) throw new Error("undefined must return null");
+    if (extractJsonFromReasoning("   \n  ") !== null) throw new Error("whitespace must return null");
+  });
+
+  await step("R1-2 — простой массив без обвязки → возвращается как есть", () => {
+    const input = '[{"a":1},{"b":2}]';
+    const out = extractJsonFromReasoning(input);
+    if (out !== input) throw new Error(`expected "${input}", got "${out}"`);
+    JSON.parse(out!);
+  });
+
+  await step("R1-3 — JSON внутри thinking-prose → извлекается", () => {
+    const input = `Hmm, let me think about this carefully.
+The chunk talks about caching strategies. So the final answer is:
+[{"principle":"X","value":42}]
+That should be it.`;
+    const out = extractJsonFromReasoning(input);
+    if (!out) throw new Error("decoder returned null");
+    const parsed = JSON.parse(out);
+    if (!Array.isArray(parsed) || parsed.length !== 1 || parsed[0].principle !== "X") {
+      throw new Error(`unexpected parse: ${JSON.stringify(parsed)}`);
+    }
+  });
+
+  await step("R1-4 — markdown fence ```json [...] ``` снимается", () => {
+    const input = "Here is the JSON:\n```json\n[{\"k\":\"v\"}]\n```\nDone.";
+    const out = extractJsonFromReasoning(input);
+    if (!out) throw new Error("decoder returned null");
+    const parsed = JSON.parse(out);
+    if (parsed[0].k !== "v") throw new Error(`got ${JSON.stringify(parsed)}`);
+  });
+
+  await step("R1-5 — несколько массивов → возвращается ПОСЛЕДНИЙ валидный", () => {
+    const input = `First draft was [{"v":1}], but on reflection the answer is [{"v":2}].`;
+    const out = extractJsonFromReasoning(input);
+    if (!out) throw new Error("decoder returned null");
+    const parsed = JSON.parse(out);
+    if (parsed[0].v !== 2) throw new Error(`expected v=2, got ${JSON.stringify(parsed)}`);
+  });
+
+  await step("R1-6 — невалидный последний массив → fallback на предыдущий", () => {
+    const input = `Earlier I considered [{"v":1}], then I tried [this is broken{`;
+    const out = extractJsonFromReasoning(input);
+    if (!out) throw new Error("decoder returned null");
+    const parsed = JSON.parse(out);
+    if (parsed[0].v !== 1) throw new Error(`expected v=1, got ${JSON.stringify(parsed)}`);
+  });
+
+  await step("R1-7 — массив с вложенными объектами и [ внутри строк", () => {
+    const input = `Result: [{"label":"hello [world]","arr":[1,2,3],"nested":{"deep":[true]}}]`;
+    const out = extractJsonFromReasoning(input);
+    if (!out) throw new Error("decoder returned null");
+    const parsed = JSON.parse(out);
+    if (parsed[0].label !== "hello [world]") throw new Error(`bracket-in-string broke: ${JSON.stringify(parsed)}`);
+    if (!Array.isArray(parsed[0].arr) || parsed[0].arr.length !== 3) throw new Error("nested array lost");
+  });
+
+  await step("R1-8 — escape \\\" внутри строки не ломает сканер", () => {
+    const input = 'Final: [{"q":"He said \\"hi [there]\\" loudly"}]';
+    const out = extractJsonFromReasoning(input);
+    if (!out) throw new Error("decoder returned null");
+    const parsed = JSON.parse(out);
+    if (!parsed[0].q.includes("hi [there]")) throw new Error("escape handling broken");
+  });
+
+  await step("R1-9 — нет ни одного [...] → null", () => {
+    const input = "Just plain text with {object} but no array brackets at all.";
+    if (extractJsonFromReasoning(input) !== null) throw new Error("must return null when no array");
+  });
+
+  await step("R1-10 — большой reasoning без catastrophic backtracking", () => {
+    /* 50KB текста с 1 валидным массивом в конце — должно отработать <100мс. */
+    const filler = "lorem ipsum [unbalanced bracket here ".repeat(1000);
+    const input = filler + "[{\"final\":true}]";
+    const t0 = Date.now();
+    const out = extractJsonFromReasoning(input);
+    const dt = Date.now() - t0;
+    if (!out) throw new Error("decoder returned null");
+    if (dt > 500) throw new Error(`decoder too slow: ${dt}ms (catastrophic backtracking risk)`);
+    if (JSON.parse(out)[0].final !== true) throw new Error("wrong array picked");
   });
 
   /* === Summary === */
