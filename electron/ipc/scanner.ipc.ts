@@ -20,6 +20,12 @@ import * as path from "path";
 import { getPreferencesStore } from "../lib/preferences/store.js";
 import { randomUUID } from "crypto";
 import {
+  AbsoluteFilePathSchema,
+  AbsoluteFilePathArraySchema,
+  CollectionNameSchema,
+  parseOrThrow,
+} from "./validators.js";
+import {
   probeBooks,
   probeFiles,
   parseBook,
@@ -37,7 +43,9 @@ import {
   type OcrSupportInfo,
 } from "../lib/scanner/index.js";
 
-const QDRANT_URL = process.env.QDRANT_URL || "http://localhost:6333";
+/* QDRANT_URL is now read at-call from preferences-aware getQdrantUrl().
+   Keeps user-changed URL hot without app restart. */
+import { getQdrantUrl } from "../lib/endpoints/index.js";
 const QDRANT_API_KEY = process.env.QDRANT_API_KEY || undefined;
 
 interface ParsePreview {
@@ -82,8 +90,9 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
     return probeBooks(folder);
   });
 
-  ipcMain.handle("scanner:probe-files", async (_e, paths: string[]): Promise<BookFileSummary[]> => {
-    if (!Array.isArray(paths) || paths.length === 0) return [];
+  ipcMain.handle("scanner:probe-files", async (_e, raw): Promise<BookFileSummary[]> => {
+    if (!Array.isArray(raw) || raw.length === 0) return [];
+    const paths = parseOrThrow(AbsoluteFilePathArraySchema, raw, "paths");
     return probeFiles(paths);
   });
 
@@ -107,9 +116,10 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
     return getOcrSupport();
   });
 
-  ipcMain.handle("scanner:parse-preview", async (_e, filePath: string): Promise<ParsePreview> => {
-    if (typeof filePath !== "string" || !isSupportedBook(filePath)) {
-      throw new Error("unsupported file");
+  ipcMain.handle("scanner:parse-preview", async (_e, rawPath): Promise<ParsePreview> => {
+    const filePath = parseOrThrow(AbsoluteFilePathSchema, rawPath, "filePath");
+    if (!isSupportedBook(filePath)) {
+      throw new Error("unsupported file extension");
     }
     const prefs = await getPreferencesStore().getAll();
     const parsed = await parseBook(filePath, {
@@ -150,12 +160,11 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
         ocrOverride?: boolean;
       }
     ): Promise<{ ingestId: string; result: IngestResult }> => {
-      if (!args || typeof args.filePath !== "string" || !isSupportedBook(args.filePath)) {
-        throw new Error("invalid filePath");
-      }
-      if (typeof args.collection !== "string" || args.collection.trim().length === 0) {
-        throw new Error("invalid collection");
-      }
+      if (!args) throw new Error("args required");
+      const filePath = parseOrThrow(AbsoluteFilePathSchema, args.filePath, "filePath");
+      const collection = parseOrThrow(CollectionNameSchema, args.collection, "collection");
+      if (!isSupportedBook(filePath)) throw new Error("unsupported file extension");
+      args = { ...args, filePath, collection };
       const ingestId = randomUUID();
       const ctrl = new AbortController();
       activeIngests.set(ingestId, ctrl);
@@ -164,9 +173,10 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
       try {
         const prefs = await getPreferencesStore().getAll();
         const ocrWanted = typeof args.ocrOverride === "boolean" ? args.ocrOverride : prefs.ocrEnabled;
+        const qdrantUrl = await getQdrantUrl();
         const result = await ingestBook(args.filePath, {
           collection: args.collection,
-          qdrantUrl: QDRANT_URL,
+          qdrantUrl,
           qdrantApiKey: QDRANT_API_KEY,
           state: stateStore(),
           signal: ctrl.signal,
@@ -283,19 +293,15 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
       _e,
       args: { bookSourcePath: string; collection: string }
     ): Promise<{ deleted: boolean; pointsDeleted: number }> => {
-      if (
-        !args ||
-        typeof args.bookSourcePath !== "string" ||
-        typeof args.collection !== "string" ||
-        args.bookSourcePath.length === 0 ||
-        args.collection.length === 0
-      ) {
-        throw new Error("invalid args");
-      }
+      if (!args) throw new Error("args required");
+      const bookSourcePath = parseOrThrow(AbsoluteFilePathSchema, args.bookSourcePath, "bookSourcePath");
+      const collection = parseOrThrow(CollectionNameSchema, args.collection, "collection");
+      args = { bookSourcePath, collection };
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (QDRANT_API_KEY) headers["api-key"] = QDRANT_API_KEY;
+      const qdrantUrl = await getQdrantUrl();
       const resp = await fetch(
-        `${QDRANT_URL}/collections/${encodeURIComponent(args.collection)}/points/delete?wait=true`,
+        `${qdrantUrl}/collections/${encodeURIComponent(args.collection)}/points/delete?wait=true`,
         {
           method: "POST",
           headers,

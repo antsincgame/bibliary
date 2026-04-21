@@ -116,6 +116,15 @@ const SECTIONS = [
       { key: "ocrPdfDpi", type: "int", min: 100, max: 400, labelKey: "settings.ocrPdfDpi" },
     ],
   },
+  {
+    id: "connectivity",
+    titleKey: "settings.section.connectivity",
+    mode: "simple",
+    fields: [
+      { key: "lmStudioUrl", type: "url", labelKey: "settings.lmStudioUrl", placeholder: "http://localhost:1234", probe: "lmstudio" },
+      { key: "qdrantUrl", type: "url", labelKey: "settings.qdrantUrl", placeholder: "http://localhost:6333", probe: "qdrant" },
+    ],
+  },
 ];
 
 function modeRank(mode) {
@@ -233,7 +242,121 @@ function buildField(field, root) {
   if (field.type === "bool") return buildBoolField(field, root);
   if (field.type === "enum") return buildEnumField(field, root);
   if (field.type === "tags") return buildTagsField(field, root);
+  if (field.type === "url") return buildUrlField(field, root);
   return buildNumberField(field, root);
+}
+
+/**
+ * URL input with Test button. Empty value = "use env var or default".
+ * Test button calls api.system.envSummary() after a quick save to a
+ * scratch in-memory buffer + a real probe to the entered endpoint.
+ */
+function buildUrlField(field, root) {
+  const value = String(STATE.prefs[field.key] ?? STATE.defaults[field.key] ?? "");
+  const dflt = STATE.defaults[field.key] ?? "";
+  const input = el("input", {
+    type: "url",
+    class: "settings-input",
+    value,
+    placeholder: field.placeholder || "https://...",
+    spellcheck: "false",
+    autocomplete: "off",
+  });
+  const status = el("span", { class: "settings-url-status" }, "");
+  let validateTimer = null;
+  function validate() {
+    const v = String(input.value).trim();
+    if (v === "") {
+      status.textContent = t("settings.url.empty");
+      status.className = "settings-url-status settings-url-status-info";
+      return true;
+    }
+    try {
+      // eslint-disable-next-line no-new
+      new URL(v);
+      if (v.endsWith("/")) {
+        status.textContent = t("settings.url.noTrailingSlash");
+        status.className = "settings-url-status settings-url-status-error";
+        return false;
+      }
+      status.textContent = "";
+      status.className = "settings-url-status";
+      return true;
+    } catch {
+      status.textContent = t("settings.url.invalid");
+      status.className = "settings-url-status settings-url-status-error";
+      return false;
+    }
+  }
+  input.addEventListener("input", () => {
+    STATE.prefs[field.key] = String(input.value).trim();
+    STATE.dirty = true;
+    updateSaveBtn(root);
+    if (validateTimer) clearTimeout(validateTimer);
+    validateTimer = setTimeout(validate, 200);
+  });
+
+  const testBtn = el("button", {
+    class: "settings-test-btn",
+    type: "button",
+    title: t("settings.url.test.tooltip"),
+  }, t("settings.url.test"));
+  testBtn.addEventListener("click", async () => {
+    if (!validate()) return;
+    testBtn.disabled = true;
+    status.textContent = t("settings.url.testing");
+    status.className = "settings-url-status settings-url-status-info";
+    try {
+      const probeUrl = String(input.value).trim();
+      const ok = await probeEndpoint(field.probe, probeUrl);
+      if (ok) {
+        status.textContent = t("settings.url.ok");
+        status.className = "settings-url-status settings-url-status-ok";
+      } else {
+        status.textContent = t("settings.url.unreachable");
+        status.className = "settings-url-status settings-url-status-error";
+      }
+    } catch (e) {
+      status.textContent = t("settings.url.error") + ": " + (e instanceof Error ? e.message : String(e));
+      status.className = "settings-url-status settings-url-status-error";
+    } finally {
+      testBtn.disabled = false;
+    }
+  });
+
+  const resetBtn = buildResetBtn(field.key, dflt, () => { input.value = String(dflt); validate(); }, value === dflt, root);
+  return el("div", { class: "settings-field settings-field-url" }, [
+    el("label", { class: "settings-label" }, [
+      el("span", { class: "settings-label-text" }, t(field.labelKey)),
+      el("span", { class: "settings-label-range" }, t("settings.url.hint")),
+    ]),
+    el("div", { class: "settings-input-wrap" }, [input, testBtn, resetBtn]),
+    status,
+  ]);
+}
+
+/**
+ * Probe the entered endpoint by hitting a known harmless GET endpoint.
+ * - lmstudio: GET /v1/models (returns 200 if running)
+ * - qdrant:   GET /collections (returns 200 if running)
+ *
+ * Note: this fires from the renderer using window.fetch. Most local
+ * Bibliary setups have CORS open or are localhost (no preflight).
+ * Failures show a generic "unreachable" -- user has to read DevTools
+ * for details. That's fine for an MVP probe; server-side probe via IPC
+ * is a follow-up if users hit CORS in the wild.
+ */
+async function probeEndpoint(kind, baseUrl) {
+  const path = kind === "lmstudio" ? "/v1/models" : "/collections";
+  const url = baseUrl.replace(/\/+$/, "") + path;
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 5000);
+  try {
+    const resp = await fetch(url, { signal: ctl.signal });
+    return resp.ok;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function updateSaveBtn(root) {

@@ -1,6 +1,7 @@
 import { ipcMain } from "electron";
 import { detectHardware, clearHardwareCache } from "../lib/hardware/profiler.js";
 import hardwarePresetsRaw from "../defaults/hardware-presets.json";
+import { getEndpoints, getEndpointsSource } from "../lib/endpoints/index.js";
 
 export function registerSystemIpc(): void {
   ipcMain.handle("system:hardware-info", async (_e, opts?: { force?: boolean }) => {
@@ -8,9 +9,12 @@ export function registerSystemIpc(): void {
   });
 
   ipcMain.handle("system:env-summary", async () => {
+    const { lmStudioUrl, qdrantUrl } = await getEndpoints();
     return {
-      lmStudioUrl: process.env.LM_STUDIO_URL || "http://localhost:1234",
-      qdrantUrl: process.env.QDRANT_URL || "http://localhost:6333",
+      lmStudioUrl,
+      qdrantUrl,
+      /** Where the URLs were resolved from: prefs / env / default. */
+      source: getEndpointsSource(),
       platform: process.platform,
       arch: process.arch,
     };

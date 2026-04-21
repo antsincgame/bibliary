@@ -5,8 +5,8 @@ import {
   HEALTH_FAIL_THRESHOLD,
   HEALTH_POLL_INTERVAL_MS,
 } from "./constants";
+import { getLmStudioUrl } from "../endpoints/index.js";
 
-const HTTP_URL = process.env.LM_STUDIO_URL || "http://localhost:1234";
 /** Default fetch timeout for the liveness probe -- overridable via prefs. */
 const DEFAULT_LIVENESS_TIMEOUT_MS = 3_000;
 
@@ -105,7 +105,8 @@ async function checkLiveness(): Promise<boolean> {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), activeConfig.livenessTimeoutMs);
   try {
-    const response = await fetch(`${HTTP_URL}/v1/models`, { signal: ctl.signal });
+    const baseUrl = await getLmStudioUrl();
+    const response = await fetch(`${baseUrl}/v1/models`, { signal: ctl.signal });
     return response.ok;
   } catch {
     return false;

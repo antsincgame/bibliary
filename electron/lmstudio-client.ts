@@ -2,9 +2,20 @@ import { LMStudioClient } from "@lmstudio/sdk";
 import { registerModelContext, unregisterModelContext } from "./lib/token/overflow-guard";
 import { withPolicy, buildRequestPolicy, type RequestPolicy, type PolicyContext } from "./lib/resilience/lm-request-policy";
 import { getPreferencesStore } from "./lib/preferences/store";
+import { getLmStudioUrl, getLmStudioUrlSync } from "./lib/endpoints/index.js";
 
-const HTTP_URL = process.env.LM_STUDIO_URL || "http://localhost:1234";
-const WS_URL = HTTP_URL.replace(/^http/, "ws");
+/**
+ * Resolve LM Studio URL on every call. Allows the user to change it in
+ * Settings without restarting the app. Sync version used only by the
+ * legacy SDK initialisation that runs before any IPC has fired (very
+ * early boot); after the first await it always uses the cached value.
+ */
+function lmStudioHttpUrl(): string {
+  return getLmStudioUrlSync();
+}
+function lmStudioWsUrl(): string {
+  return lmStudioHttpUrl().replace(/^http/, "ws");
+}
 
 /**
  * Default expected output budget when caller didn't pass one. Used by
@@ -126,9 +137,19 @@ let cachedClient: LMStudioClient | null = null;
 
 function getClient(): LMStudioClient {
   if (!cachedClient) {
-    cachedClient = new LMStudioClient({ baseUrl: WS_URL });
+    cachedClient = new LMStudioClient({ baseUrl: lmStudioWsUrl() });
   }
   return cachedClient;
+}
+
+/**
+ * Drop the SDK client so the next getClient() call rebuilds with the
+ * fresh URL from preferences. Use after the user changes LM Studio URL
+ * in Settings. The SDK doesn't expose a public disconnect; we just
+ * release the reference and let GC + the next reconnect handle cleanup.
+ */
+export function refreshLmStudioClient(): void {
+  cachedClient = null;
 }
 
 function dropClient(): void {
@@ -161,7 +182,8 @@ export async function chat(request: ChatRequest): Promise<ChatResponse> {
     max_tokens: sampling.max_tokens,
   };
 
-  const response = await fetch(`${HTTP_URL}/v1/chat/completions`, {
+  const baseUrl = await getLmStudioUrl();
+  const response = await fetch(`${baseUrl}/v1/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -296,7 +318,8 @@ export async function chatWithTools(request: ChatWithToolsRequest): Promise<Chat
     max_tokens: sampling.max_tokens,
   };
 
-  const response = await fetch(`${HTTP_URL}/v1/chat/completions`, {
+  const baseUrl = await getLmStudioUrl();
+  const response = await fetch(`${baseUrl}/v1/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -404,7 +427,8 @@ export async function chatWithToolsAndPolicy(
 
 export async function listOpenAiModels(): Promise<string[]> {
   try {
-    const response = await fetch(`${HTTP_URL}/v1/models`);
+    const baseUrl = await getLmStudioUrl();
+    const response = await fetch(`${baseUrl}/v1/models`);
     if (!response.ok) return [];
     const data = (await response.json()) as OpenAiModelsResponse;
     return data.data.map((m) => m.id);

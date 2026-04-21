@@ -81,6 +81,17 @@ export const PreferencesSchema = z.object({
 
   // -- Library UI --
   libraryGroupBy: z.enum(["none", "ext", "status", "folder"]).default("none"),
+
+  // -- Connectivity (external service URLs) --
+  /** Empty string = use env var or built-in default. Validation: no trailing slash. */
+  lmStudioUrl: z.string().regex(/^$|^https?:\/\/[^\s/$.?#].[^\s]*[^/]$/i, "must be a URL without trailing slash, or empty for default").default(""),
+  qdrantUrl: z.string().regex(/^$|^https?:\/\/[^\s/$.?#].[^\s]*[^/]$/i, "must be a URL without trailing slash, or empty for default").default(""),
+
+  // -- Chat session --
+  /** Max messages kept in chat history (FIFO eviction). Caps IPC payload growth. */
+  chatHistoryCap: z.number().int().min(4).max(500).default(50),
+  /** Persist chat history across app restarts via data/chat-history.json. */
+  chatHistoryPersist: z.boolean().default(true),
 });
 
 export type Preferences = z.infer<typeof PreferencesSchema>;

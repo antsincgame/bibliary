@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, session, type OnHeadersReceivedListenerDetails } from "electron";
 import * as path from "path";
 import {
   registerAllIpcHandlers,
@@ -31,6 +31,46 @@ const BG_COLOR = "#050508";
 
 let mainWindow: BrowserWindow | null = null;
 
+/**
+ * Defense-in-depth Content Security Policy. The renderer is fully
+ * trusted (we ship its HTML/JS), but we still pin a strict CSP so
+ * that ANY future XSS via a stored Markdown payload, HF model
+ * description, or PDF text cannot escalate into network/script abuse.
+ *
+ * Allowed:
+ *   - script: self only (no inline, no eval -- preload exposes the
+ *     entire IPC surface so renderer never needs to assemble code)
+ *   - style:  self + Google Fonts CSS + 'unsafe-inline' (renderer
+ *     uses inline `style="..."` in a few sacred-card / progress-bar
+ *     spots; switching to attribute-only would mean a UI rewrite)
+ *   - font:   self + Google Fonts
+ *   - img:    self + data: (icons embedded as base64) + https: (book
+ *     covers from BookHunter sources)
+ *   - connect: self + Google Fonts + http(s):// localhost (LM Studio,
+ *     Qdrant) + http(s)://* for HF / BookHunter sources
+ */
+const CSP_HEADER = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com",
+  "img-src 'self' data: https:",
+  "connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com http://localhost:* http://127.0.0.1:* https:",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-ancestors 'none'",
+].join("; ");
+
+function applyCsp(): void {
+  session.defaultSession.webRequest.onHeadersReceived(
+    (details: OnHeadersReceivedListenerDetails, callback) => {
+      const headers = { ...(details.responseHeaders ?? {}) };
+      headers["Content-Security-Policy"] = [CSP_HEADER];
+      callback({ responseHeaders: headers });
+    }
+  );
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: WINDOW_WIDTH,
@@ -43,6 +83,10 @@ function createWindow(): void {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: false /* preload uses Node fs in a few spots; keeping
+                       sandbox off until the migration to a thin
+                       contextBridge-only preload is complete */,
+      webSecurity: true,
     },
   });
 
@@ -84,12 +128,21 @@ if (!gotLock) {
        in coordinator). Keeping it in main.ts is what breaks the cycle
        resilience/bootstrap <-> forge/state. */
     initForgeStore(dataDir);
+    /* Resolve endpoints from preferences once and propagate the result
+       into the live QDRANT_URL binding. Without this, modules that
+       import { QDRANT_URL } at module-init read the env-only value. */
+    const { setQdrantUrl } = await import("./lib/qdrant/http-client.js");
+    const { getEndpoints } = await import("./lib/endpoints/index.js");
+    const endpoints = await getEndpoints();
+    setQdrantUrl(endpoints.qdrantUrl);
+
     registerDatasetPipeline();
     registerForgePipeline();
     /* Crystallizer (extraction) is now first-class in coordinator: when
        LM Studio goes offline the watchdog pauses it (= aborts in-flight
        LLM calls) symmetrically with dataset/forge. */
     registerExtractionPipeline();
+    applyCsp();
     startWatchdog(() => mainWindow);
     registerAllIpcHandlers(() => mainWindow);
     createWindow();

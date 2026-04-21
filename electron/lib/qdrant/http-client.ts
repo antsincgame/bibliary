@@ -5,7 +5,30 @@
  * Не имеет глобального состояния. Конфигурация — через ENV или per-call параметры.
  */
 
-export const QDRANT_URL = process.env.QDRANT_URL || "http://localhost:6333";
+/**
+ * Live-binding URL export. Set initially from env (and updated by
+ * `setQdrantUrl()` once preferences resolve at boot, and again on every
+ * `preferences:set` if the user changes it in Settings). Consumers that
+ * use ESM `import { QDRANT_URL } from ...` see the current value on
+ * every read because ES module bindings are reactive.
+ *
+ * For paths where the URL has to be guaranteed-fresh (e.g. inside a
+ * promise that survived a settings change), use the async `getQdrantUrl()`
+ * from `../endpoints/index.js` directly.
+ */
+export let QDRANT_URL: string = process.env.QDRANT_URL || "http://localhost:6333";
+
+/**
+ * Update the QDRANT_URL live binding. Called by the preferences IPC
+ * handler after a successful set/reset; also called once at boot from
+ * main.ts after `getEndpoints()` resolves.
+ */
+export function setQdrantUrl(url: string): void {
+  if (typeof url === "string" && url.length > 0) {
+    QDRANT_URL = url.replace(/\/+$/, "");
+  }
+}
+
 export const QDRANT_API_KEY = process.env.QDRANT_API_KEY || undefined;
 export const QDRANT_TIMEOUT_MS = 8_000;
 export const QDRANT_USER_AGENT = "Bibliary/2.2 (https://github.com/bibliary/bibliary)";
