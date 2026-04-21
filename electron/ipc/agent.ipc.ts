@@ -25,13 +25,26 @@ import {
 import { chatWithToolsAndPolicy, type ToolMessage } from "../lmstudio-client.js";
 
 const activeAgents = new Map<string, AbortController>();
-const pendingApprovals = new Map<string, { resolve: (approved: boolean) => void }>();
+/* pendingApprovals хранит agentId, чтобы cancel одного агента не уронил
+   approvals соседнего. Старая реализация чистила Map целиком — закрывает
+   AUDIT HIGH-3 (cross-agent approval rejection при параллельных сессиях). */
+const pendingApprovals = new Map<string, { resolve: (approved: boolean) => void; agentId: string }>();
+
+function rejectApprovalsForAgent(agentId: string): void {
+  for (const [callId, p] of pendingApprovals.entries()) {
+    if (p.agentId === agentId) {
+      p.resolve(false);
+      pendingApprovals.delete(callId);
+    }
+  }
+}
 
 export function abortAllAgents(reason: string): void {
   for (const [id, ctrl] of activeAgents.entries()) {
     ctrl.abort(reason);
     activeAgents.delete(id);
   }
+  /* shutdown — единственный случай когда корректно убить все approvals разом */
   for (const [, p] of pendingApprovals.entries()) p.resolve(false);
   pendingApprovals.clear();
 }
@@ -73,7 +86,7 @@ export function registerAgentIpc(getMainWindow: () => BrowserWindow | null): voi
           emit,
           awaitApproval: (callId) =>
             new Promise<boolean>((resolve) => {
-              pendingApprovals.set(callId, { resolve });
+              pendingApprovals.set(callId, { resolve, agentId });
             }),
           llm: async ({ messages, tools }) => {
             const resp = await chatWithToolsAndPolicy({
@@ -112,9 +125,8 @@ export function registerAgentIpc(getMainWindow: () => BrowserWindow | null): voi
     if (!ctrl) return false;
     ctrl.abort("user-cancel");
     activeAgents.delete(agentId);
-    /* Все pending approvals резолвим как rejected, чтобы loop не висел */
-    for (const [, p] of pendingApprovals.entries()) p.resolve(false);
-    pendingApprovals.clear();
+    /* Резолвим только approvals ЭТОГО агента — соседние сессии не страдают */
+    rejectApprovalsForAgent(agentId);
     return true;
   });
 }

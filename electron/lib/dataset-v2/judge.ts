@@ -19,8 +19,9 @@
 import { promises as fs } from "fs";
 import * as path from "path";
 import { embedQuery } from "../rag/index.js";
-import { fetchQdrantJson, QDRANT_URL, QDRANT_API_KEY } from "../qdrant/http-client.js";
+import { fetchQdrantJson, QDRANT_URL } from "../qdrant/http-client.js";
 import { EMBEDDING_DIM } from "../scanner/embedding.js";
+import { isAbortError } from "../resilience/lm-request-policy.js";
 import { JudgeResultSchema, type AcceptedConcept, type DedupedConcept, type JudgeResult } from "./types.js";
 
 export const ACCEPTED_COLLECTION = "dataset-accepted-concepts";
@@ -142,13 +143,17 @@ async function crossLibrarySearch(domain: string, vector: number[]): Promise<Cro
   return { id: String(top.id), score: top.score };
 }
 
+/**
+ * AUDIT MED-5: ранее upsert шёл голым `fetch()` без timeout — зависший
+ * Qdrant вешал весь job (judge ждал бесконечно, signal не обрывал HTTP).
+ * fetchQdrantJson даёт QDRANT_TIMEOUT_MS и единые headers с API-ключом.
+ * Upsert с `wait=true` может занимать дольше search'а — даём 15s.
+ */
 async function upsertAccepted(concept: AcceptedConcept, vector: number[]): Promise<void> {
   await ensureAcceptedCollection();
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (QDRANT_API_KEY) headers["api-key"] = QDRANT_API_KEY;
-  const resp = await fetch(`${QDRANT_URL}/collections/${ACCEPTED_COLLECTION}/points?wait=true`, {
+  await fetchQdrantJson(`${QDRANT_URL}/collections/${ACCEPTED_COLLECTION}/points?wait=true`, {
     method: "PUT",
-    headers,
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       points: [
         {
@@ -173,11 +178,8 @@ async function upsertAccepted(concept: AcceptedConcept, vector: number[]): Promi
         },
       ],
     }),
+    timeoutMs: 15_000,
   });
-  if (!resp.ok) {
-    const txt = await resp.text().catch(() => "");
-    throw new Error(`accepted upsert ${resp.status}: ${txt.slice(0, 200)}`);
-  }
 }
 
 /* ────────────────── Judge LLM call ────────────────── */
@@ -211,6 +213,10 @@ async function llmJudge(
       maxTokens: 800,
     });
   } catch (e) {
+    /* Cancel job'а != "judge не смог оценить". Без re-throw'а отмена выглядит
+       как rejected concept и судья продолжает прожаривать следующие.
+       Закрывает AUDIT HIGH-2. */
+    if (isAbortError(e)) throw e;
     cb.onEvent?.({ type: "judge.reject.error", principle: concept.principle.slice(0, 60), reason: e instanceof Error ? e.message : String(e) });
     return null;
   }
@@ -233,6 +239,18 @@ function weightedScore(j: JudgeResult): number {
   return 0.5 * j.novelty + 0.3 * j.actionability + 0.2 * j.domain_fit;
 }
 
+/**
+ * Косинус для нормализованных E5-векторов (единичная длина → достаточно
+ * скалярного произведения, без деления на нормы). Используется для
+ * in-batch dedup'а — экономит лишнюю перенормировку.
+ */
+function cosineNormalised(a: number[], b: number[]): number {
+  let dot = 0;
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) dot += a[i] * b[i];
+  return dot;
+}
+
 /* ────────────────── Main entry ────────────────── */
 
 export interface JudgeBatchArgs {
@@ -241,6 +259,8 @@ export interface JudgeBatchArgs {
   callbacks: JudgeCallbacks;
   scoreThreshold?: number;
   crossLibDupeThreshold?: number;
+  /** Если signal aborted — выходим между концептами без следующего LLM/Qdrant call. */
+  signal?: AbortSignal;
 }
 
 export interface JudgeBatchResult {
@@ -256,15 +276,54 @@ export async function judgeAndAccept(args: JudgeBatchArgs): Promise<JudgeBatchRe
   const accepted: AcceptedConcept[] = [];
   const rejected: Array<{ concept: DedupedConcept; reason: string }> = [];
 
+  /* AUDIT MED-7: между upsertAccepted (с wait=true) и следующим
+     crossLibrarySearch по той же batch есть микро-окно, когда Qdrant
+     уже принял точку, но search-индекс ещё её не видит (особенно при
+     высокой нагрузке). Локальный кэш уже принятых в ЭТОЙ batch
+     закрывает race без лишних round-trip'ов: если новый concept
+     слишком похож на уже принятый в той же сессии — отбрасываем как
+     in-batch duplicate. Группируем по domain, потому что cross-search
+     тоже фильтрует по domain. */
+  const inBatchCache = new Map<string, Array<{ id: string; vector: number[] }>>();
+
   for (const concept of args.concepts) {
+    if (args.signal?.aborted) {
+      throw new Error("aborted: judge cancelled between concepts");
+    }
     const vector = await embedQuery(concept.principle);
 
-    /* 1. Cross-library check (бесплатно, без LLM) */
+    /* 1a. In-batch check (мгновенно, в памяти) */
+    const sameDomain = inBatchCache.get(concept.domain) ?? [];
+    let inBatchHit: { id: string; sim: number } | null = null;
+    for (const prev of sameDomain) {
+      const sim = cosineNormalised(vector, prev.vector);
+      if (sim > crossTh) {
+        inBatchHit = { id: prev.id, sim };
+        break;
+      }
+    }
+    if (inBatchHit) {
+      args.callbacks.onEvent?.({
+        type: "judge.crossdupe",
+        principle: concept.principle.slice(0, 60),
+        existingId: inBatchHit.id,
+        sim: inBatchHit.sim,
+      });
+      rejected.push({
+        concept,
+        reason: `in-batch duplicate of ${inBatchHit.id} (sim=${inBatchHit.sim.toFixed(3)})`,
+      });
+      continue;
+    }
+
+    /* 1b. Cross-library check (Qdrant search, бесплатно без LLM) */
     let crossHit: CrossSearchHit | null = null;
     try {
       crossHit = await crossLibrarySearch(concept.domain, vector);
-    } catch {
-      /* if Qdrant down — skip cross-check, доверяем LLM */
+    } catch (e) {
+      /* Qdrant timeout/down — пропускаем cross-check, доверяем LLM.
+         Но если Qdrant прервался по abort'у — всё равно выходим. */
+      if (isAbortError(e)) throw e;
     }
     if (crossHit && crossHit.score > crossTh) {
       args.callbacks.onEvent?.({
@@ -319,9 +378,16 @@ export async function judgeAndAccept(args: JudgeBatchArgs): Promise<JudgeBatchRe
     try {
       await upsertAccepted(acceptedConcept, vector);
     } catch (e) {
+      if (isAbortError(e)) throw e;
       rejected.push({ concept, reason: `upsert-error: ${e instanceof Error ? e.message : e}` });
       continue;
     }
+    /* Регистрируем в локальном кэше — следующий concept этой batch'а
+       увидит дубликат даже если Qdrant ещё не обновил search-индекс. */
+    const slot = inBatchCache.get(concept.domain) ?? [];
+    slot.push({ id: concept.id, vector });
+    inBatchCache.set(concept.domain, slot);
+
     args.callbacks.onEvent?.({
       type: "judge.accept",
       conceptId: concept.id,

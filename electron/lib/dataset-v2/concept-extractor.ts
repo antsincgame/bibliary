@@ -16,6 +16,7 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import { ExtractedConceptArraySchema, type ChapterMemory, type ExtractedConcept, type SemanticChunk } from "./types.js";
 import { ALLOWED_DOMAINS } from "../../mechanicus-prompt.js";
+import { isAbortError } from "../resilience/lm-request-policy.js";
 
 export interface ExtractCallbacks {
   /** Один LLM-call. messages в OpenAI-формате, контракт совместим с lmstudio-client.chat. */
@@ -162,6 +163,10 @@ async function extractOne(
       maxTokens: 4096,
     });
   } catch (e) {
+    /* Abort != ошибка LLM. Без re-throw'а cancel job'а превращается в
+       молчаливое "0 концептов на главе" и пайплайн идёт дальше, продолжая
+       жечь токены на следующих главах. Закрывает AUDIT HIGH-1. */
+    if (isAbortError(e)) throw e;
     cb.onEvent?.({
       type: "extract.chunk.error",
       chunkPart: chunk.partN,
@@ -250,6 +255,8 @@ export interface ExtractChapterArgs {
   chunks: SemanticChunk[];
   promptsDir?: string | null;
   callbacks: ExtractCallbacks;
+  /** Если signal aborted — выходим между чанками без следующего LLM-call. */
+  signal?: AbortSignal;
 }
 
 export interface ExtractChapterResult {
@@ -271,6 +278,9 @@ export async function extractChapterConcepts(args: ExtractChapterArgs): Promise<
   const allWarnings: string[] = [];
 
   for (const chunk of args.chunks) {
+    if (args.signal?.aborted) {
+      throw new Error("aborted: extract cancelled between chunks");
+    }
     const result = await extractOne(chunk, memory, template, args.callbacks);
     perChunk.push(result);
     conceptsTotal.push(...result.concepts);
