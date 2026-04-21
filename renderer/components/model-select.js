@@ -29,11 +29,13 @@ import { t } from "../i18n.js";
  * @property {string} [selectClass] - дополнительный CSS-класс для select
  * @property {string} [wrapClass] - CSS-класс для wrap div (default "model-select-wrap")
  * @property {string} [labelClass] - CSS-класс для label (default "model-select-label")
+ * @property {boolean} [bare] - вернуть только select без обёртки (label не создаётся);
+ *   полезно для случаев, когда родитель уже имеет свой layout (chat.js header).
  * @property {(modelKey: string) => void} [onChange] - дополнительный callback при изменении
  * @property {string[]} [hints] - подсказки для pickModel-fallback (substring match по modelKey)
  *
  * @typedef {Object} ModelSelectInstance
- * @property {HTMLElement} wrap - готовая обёртка с label + select для append'а
+ * @property {HTMLElement} wrap - обёртка с label + select; в bare-режиме === select
  * @property {HTMLSelectElement} select - сам select (для closures, .value, addEventListener)
  * @property {() => Promise<void>} refresh - перечитать listLoaded + перерисовать options
  * @property {() => string} getValue - текущее выбранное значение
@@ -134,12 +136,14 @@ export function buildModelSelect(opts) {
   const showContext = opts.showContext === true;
   const hints = Array.isArray(opts.hints) && opts.hints.length > 0 ? opts.hints : DEFAULT_MODEL_HINTS;
 
-  const labelEl = el("label", { class: labelClass }, labelText);
   /** @type {Record<string, string>} */
   const selectAttrs = { class: selectClass };
   if (opts.selectId) selectAttrs.id = opts.selectId;
   const select = /** @type {HTMLSelectElement} */ (el("select", selectAttrs));
-  const wrap = el("div", { class: wrapClass }, [labelEl, select]);
+  /** В bare-режиме wrap === select; никаких label/div не создаётся. */
+  const wrap = opts.bare === true
+    ? select
+    : el("div", { class: wrapClass }, [el("label", { class: labelClass }, labelText), select]);
 
   /** @type {LoadedModel[]} */
   let models = [];

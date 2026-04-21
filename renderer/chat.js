@@ -1,6 +1,7 @@
 // @ts-check
 import { t } from "./i18n.js";
 import { buildContextSlider } from "./components/context-slider.js";
+import { buildModelSelect } from "./components/model-select.js";
 
 let SPIN_DURATION_MS = 600;
 const TEXTAREA_MAX_HEIGHT = 120;
@@ -262,7 +263,6 @@ export function mountChat() {
   const input = /** @type {HTMLTextAreaElement} */ (getEl("input"));
   const btnSend = /** @type {HTMLButtonElement} */ (getEl("btn-send"));
   const collectionSelect = /** @type {HTMLSelectElement} */ (getEl("collection-select"));
-  const modelSelect = /** @type {HTMLSelectElement} */ (getEl("model-select"));
   const btnRefreshCollections = /** @type {HTMLButtonElement} */ (getEl("btn-refresh-collections"));
   const btnRefreshModels = /** @type {HTMLButtonElement} */ (getEl("btn-refresh-models"));
   const btnCompare = /** @type {HTMLButtonElement} */ (getEl("btn-compare"));
@@ -271,18 +271,22 @@ export function mountChat() {
   const btnMemoryLabel = /** @type {HTMLSpanElement} */ (getEl("btn-memory-label"));
   const memoryPopover = /** @type {HTMLDivElement} */ (getEl("memory-popover"));
 
-  setupMemoryPopover({ modelSelect, btnMemory, btnMemoryLabel, memoryPopover });
-
-  /* Persist выбранной модели чата в preferences.chatModel — единый источник
-     истины с другими экранами (Crystal/Agent через model-select component). */
-  let _chatModelSaveTimer = null;
-  modelSelect.addEventListener("change", () => {
-    if (_chatModelSaveTimer) clearTimeout(_chatModelSaveTimer);
-    _chatModelSaveTimer = setTimeout(() => {
-      _chatModelSaveTimer = null;
-      void window.api.preferences.set({ chatModel: modelSelect.value }).catch(() => { /* ignore */ });
-    }, 300);
+  /* Phase 3 Удар 2 / B.4-полная: заменяем inline <select id="model-select"> на
+     общий buildModelSelect (bare-режим — у chat header свой layout с label).
+     Источник моделей унифицирован: lmstudio.listLoaded() (был getModels()).
+     Persist в preferences.chatModel автоматический; pickBestModel fallback по
+     общим DEFAULT_MODEL_HINTS. ID "model-select" сохранён → DOM-querySelector
+     и стили продолжают работать без изменений. */
+  const oldModelSelect = /** @type {HTMLSelectElement} */ (getEl("model-select"));
+  const chatModelInstance = buildModelSelect({
+    role: "chat",
+    selectId: "model-select",
+    bare: true,
   });
+  oldModelSelect.replaceWith(chatModelInstance.select);
+  const modelSelect = chatModelInstance.select;
+
+  setupMemoryPopover({ modelSelect, btnMemory, btnMemoryLabel, memoryPopover });
 
   /** @param {string} role @param {string} content */
   function addMessage(role, content) {
@@ -340,30 +344,10 @@ export function mountChat() {
     });
   }
 
-  async function loadModels() {
+  async function refreshModels() {
     await withSpin(btnRefreshModels, async () => {
-      try {
-        const models = await window.api.getModels();
-        populateSelect(modelSelect, models);
-        await applyChatModelPref();
-      } catch {
-        populateSelect(modelSelect, []);
-      }
+      await chatModelInstance.refresh();
     });
-  }
-
-  /**
-   * Восстановить выбранную модель чата из preferences.chatModel.
-   * Если pref-модель отсутствует среди опций — оставляем дефолтную (первую).
-   */
-  async function applyChatModelPref() {
-    try {
-      const prefs = /** @type {any} */ (await window.api.preferences.getAll());
-      const saved = String(prefs?.chatModel ?? "");
-      if (!saved) return;
-      const exists = Array.from(modelSelect.options).some((opt) => opt.value === saved);
-      if (exists) modelSelect.value = saved;
-    } catch { /* preferences недоступны — игнорируем */ }
   }
 
   /**
@@ -471,10 +455,10 @@ export function mountChat() {
   });
   btnSend.addEventListener("click", sendMessage);
   btnRefreshCollections.addEventListener("click", loadCollections);
-  btnRefreshModels.addEventListener("click", loadModels);
+  btnRefreshModels.addEventListener("click", refreshModels);
 
   loadCollections();
-  loadModels();
+  /* Модели грузятся автоматически внутри buildModelSelect (см. mountChat выше). */
   /* Restore previous session before user starts typing -- non-blocking. */
   void restoreHistory(chatArea);
   input.focus();
