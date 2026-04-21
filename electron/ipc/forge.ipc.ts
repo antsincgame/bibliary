@@ -20,7 +20,7 @@ import {
   type TrainingMetric,
   type EvalSummary,
 } from "../lib/forge/index.js";
-import { listBatchFiles } from "../finetune-state.js";
+import { listBatchFiles } from "../lib/finetune/batch-files.js";
 import { coordinator, telemetry } from "../lib/resilience/index.js";
 import { getPreferencesStore } from "../lib/preferences/store.js";
 import { chat } from "../lmstudio-client.js";
