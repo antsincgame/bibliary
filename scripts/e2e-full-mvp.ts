@@ -70,7 +70,7 @@ import {
   buildExtractorResponseFormat,
   buildJudgeResponseFormat,
 } from "../electron/lib/dataset-v2/json-schemas.js";
-import { ALLOWED_DOMAINS } from "../electron/mechanicus-prompt.js";
+import { ALLOWED_DOMAINS } from "../electron/crystallizer-constants.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Config (env-overridable)

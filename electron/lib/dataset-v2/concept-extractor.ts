@@ -15,7 +15,7 @@
 import { promises as fs } from "fs";
 import * as path from "path";
 import { ExtractedConceptArraySchema, type ChapterMemory, type ExtractedConcept, type SemanticChunk } from "./types.js";
-import { ALLOWED_DOMAINS } from "../../mechanicus-prompt.js";
+import { ALLOWED_DOMAINS } from "../../crystallizer-constants.js";
 import { isAbortError } from "../resilience/lm-request-policy.js";
 import { extractJsonFromReasoning } from "./reasoning-decoder.js";
 

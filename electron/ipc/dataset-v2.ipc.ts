@@ -37,7 +37,7 @@ import {
   buildExtractorResponseFormat,
   buildJudgeResponseFormat,
 } from "../lib/dataset-v2/json-schemas.js";
-import { ALLOWED_DOMAINS } from "../mechanicus-prompt.js";
+import { ALLOWED_DOMAINS } from "../crystallizer-constants.js";
 
 interface StartExtractionArgs {
   bookSourcePath: string;
