@@ -20,7 +20,12 @@
 
 import type { BookSection } from "../scanner/parsers/index.js";
 import type { SemanticChunk } from "./types.js";
-import { embedQuery } from "../rag/index.js";
+/* AUDIT MED-1: параграфы книги — это passages, а не queries.
+   E5-семейство (`multilingual-e5-small`) обучено на разных префиксах
+   "query: " (retrieval-side) и "passage: " (corpus-side); смешивание
+   снижает cosine similarity между концептуально близкими параграфами
+   на ~5–8 пунктов F1 → ложные drift-границы и битые чанки. */
+import { embedPassage } from "../embedder/shared.js";
 
 /** Максимум слов, при котором блок отдаётся LLM целиком без разрезания. */
 const SAFE_LIMIT = 4000;
@@ -114,7 +119,7 @@ async function findThematicBoundaries(
   const vectors: number[][] = [];
   for (let i = 0; i < paragraphs.length; i++) {
     if (signal?.aborted) throw new Error("chunker aborted");
-    vectors.push(await embedQuery(paragraphs[i].slice(0, 500)));
+    vectors.push(await embedPassage(paragraphs[i].slice(0, 500)));
   }
 
   const boundaries: number[] = [];
