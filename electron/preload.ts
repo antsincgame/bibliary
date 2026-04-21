@@ -320,6 +320,8 @@ contextBridge.exposeInMainWorld("api", {
     envSummary: (): Promise<{ lmStudioUrl: string; qdrantUrl: string; platform: string; arch: string }> =>
       ipcRenderer.invoke("system:env-summary"),
     hardwarePresets: (): Promise<unknown> => ipcRenderer.invoke("system:hardware-presets"),
+    /** Кураторский список рекомендованных моделей для wizard. */
+    curatedModels: (): Promise<unknown> => ipcRenderer.invoke("system:curated-models"),
     invalidateHardwareCache: (): Promise<boolean> => ipcRenderer.invoke("system:invalidate-hardware-cache"),
     /** Параллельный health-check LM Studio + Qdrant для onboarding wizard. */
     probeServices: (): Promise<{
