@@ -52,8 +52,8 @@ export interface RougeScore {
 }
 
 export function rougeL(reference: string, hypothesis: string): RougeScore {
-  const refTokens = tokenize(reference);
-  const hypTokens = tokenize(hypothesis);
+  const refTokens = tokenize(reference).slice(0, ROUGE_MAX_TOKENS);
+  const hypTokens = tokenize(hypothesis).slice(0, ROUGE_MAX_TOKENS);
   if (refTokens.length === 0 || hypTokens.length === 0) {
     return { precision: 0, recall: 0, f1: 0 };
   }
@@ -67,6 +67,10 @@ export function rougeL(reference: string, hypothesis: string): RougeScore {
 function tokenize(text: string): string[] {
   return text.toLowerCase().split(/\s+/).filter(Boolean);
 }
+
+/** Больше 500 токенов — overhead O(m×n) не оправдан для eval; типичный
+    ответ модели ≤ 200 токенов. Truncate не искажает ROUGE-L для коротких. */
+const ROUGE_MAX_TOKENS = 500;
 
 function lcsLen(a: string[], b: string[]): number {
   const m = a.length;
