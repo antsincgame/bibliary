@@ -85,19 +85,14 @@ function pushEvent(stage, summary, level = "info") {
   if (STATE.events.length > 300) STATE.events = STATE.events.slice(-200);
 }
 
-function renderControls(root) {
-  const wrap = root.querySelector(".cv-controls");
-  if (!wrap) return;
-  clear(wrap);
-
-  /* Source selector */
-  const srcLabel = el("label", { class: "cv-label" }, t("crystal.src.label"));
-  const srcSelect = el("select", { class: "cv-select cv-source" });
+function buildSourceRow() {
+  const label = el("label", { class: "cv-label" }, t("crystal.src.label"));
+  const select = el("select", { class: "cv-select cv-source" });
   if (STATE.history.length === 0) {
-    srcSelect.appendChild(el("option", { value: "" }, t("crystal.src.empty")));
-    srcSelect.disabled = true;
+    select.appendChild(el("option", { value: "" }, t("crystal.src.empty")));
+    select.disabled = true;
   } else {
-    srcSelect.appendChild(el("option", { value: "" }, "—"));
+    select.appendChild(el("option", { value: "" }, "—"));
     for (const grp of STATE.history) {
       const og = el("optgroup", { label: grp.collection });
       for (const b of grp.books) {
@@ -105,50 +100,43 @@ function renderControls(root) {
         if (b.bookSourcePath === STATE.selectedBook) opt.selected = true;
         og.appendChild(opt);
       }
-      srcSelect.appendChild(og);
+      select.appendChild(og);
     }
   }
-  srcSelect.addEventListener("change", () => {
-    STATE.selectedBook = srcSelect.value;
+  select.addEventListener("change", () => {
+    STATE.selectedBook = select.value;
   });
+  return el("div", { class: "cv-row" }, [label, select]);
+}
 
-  /* Extractor model */
-  const extLabel = el("label", { class: "cv-label" }, t("crystal.model.extractor"));
-  const extSelect = el("select", { class: "cv-select" });
+/**
+ * DRY-селектор для extractor/judge моделей.
+ * @param {string} labelKey       i18n-ключ для подписи
+ * @param {string} currentValue   текущее выбранное значение из STATE
+ * @param {(modelKey: string) => void} onChange  сеттер в STATE
+ */
+function buildModelRow(labelKey, currentValue, onChange) {
+  const label = el("label", { class: "cv-label" }, t(labelKey));
+  const select = el("select", { class: "cv-select" });
   if (STATE.loadedModels.length === 0) {
-    extSelect.appendChild(el("option", { value: "" }, t("crystal.model.empty")));
-    extSelect.disabled = true;
+    select.appendChild(el("option", { value: "" }, t("crystal.model.empty")));
+    select.disabled = true;
   } else {
     for (const m of STATE.loadedModels) {
       const opt = el("option", { value: m.modelKey }, m.modelKey);
-      if (m.modelKey === STATE.selectedExtractor) opt.selected = true;
-      extSelect.appendChild(opt);
+      if (m.modelKey === currentValue) opt.selected = true;
+      select.appendChild(opt);
     }
   }
-  extSelect.addEventListener("change", () => {
-    STATE.selectedExtractor = extSelect.value;
+  select.addEventListener("change", () => {
+    onChange(select.value);
   });
+  return el("div", { class: "cv-row" }, [label, select]);
+}
 
-  /* Judge model */
-  const judgeLabel = el("label", { class: "cv-label" }, t("crystal.model.judge"));
-  const judgeSelect = el("select", { class: "cv-select" });
-  if (STATE.loadedModels.length === 0) {
-    judgeSelect.appendChild(el("option", { value: "" }, t("crystal.model.empty")));
-    judgeSelect.disabled = true;
-  } else {
-    for (const m of STATE.loadedModels) {
-      const opt = el("option", { value: m.modelKey }, m.modelKey);
-      if (m.modelKey === STATE.selectedJudge) opt.selected = true;
-      judgeSelect.appendChild(opt);
-    }
-  }
-  judgeSelect.addEventListener("change", () => {
-    STATE.selectedJudge = judgeSelect.value;
-  });
-
-  /* Score threshold */
-  const thLabel = el("label", { class: "cv-label" }, t("crystal.threshold.label"));
-  const thInput = el("input", {
+function buildThresholdRow() {
+  const label = el("label", { class: "cv-label" }, t("crystal.threshold.label"));
+  const input = el("input", {
     type: "range",
     min: "0.4",
     max: "0.9",
@@ -156,13 +144,15 @@ function renderControls(root) {
     value: String(STATE.scoreThreshold),
     class: "cv-range",
   });
-  const thValue = el("span", { class: "cv-range-value" }, STATE.scoreThreshold.toFixed(2));
-  thInput.addEventListener("input", () => {
-    STATE.scoreThreshold = Number(thInput.value);
-    thValue.textContent = STATE.scoreThreshold.toFixed(2);
+  const value = el("span", { class: "cv-range-value" }, STATE.scoreThreshold.toFixed(2));
+  input.addEventListener("input", () => {
+    STATE.scoreThreshold = Number(input.value);
+    value.textContent = STATE.scoreThreshold.toFixed(2);
   });
+  return el("div", { class: "cv-row" }, [label, input, value]);
+}
 
-  /* Buttons */
+function buildActionsRow(root) {
   const btnStart = el(
     "button",
     {
@@ -198,18 +188,27 @@ function renderControls(root) {
     },
     "↻"
   );
+  return el("div", { class: "cv-row cv-actions" }, [btnStart, btnStop, btnRefresh]);
+}
+
+function renderControls(root) {
+  const wrap = root.querySelector(".cv-controls");
+  if (!wrap) return;
+  clear(wrap);
 
   wrap.append(
-    el("div", { class: "cv-row" }, [srcLabel, srcSelect]),
-    el("div", { class: "cv-row" }, [extLabel, extSelect]),
-    el("div", { class: "cv-row" }, [judgeLabel, judgeSelect]),
-    el("div", { class: "cv-row" }, [thLabel, thInput, thValue]),
-    el("div", { class: "cv-row cv-actions" }, [btnStart, btnStop, btnRefresh])
+    buildSourceRow(),
+    buildModelRow("crystal.model.extractor", STATE.selectedExtractor, (v) => { STATE.selectedExtractor = v; }),
+    buildModelRow("crystal.model.judge", STATE.selectedJudge, (v) => { STATE.selectedJudge = v; }),
+    buildThresholdRow(),
+    buildActionsRow(root)
   );
 
   if (STATE.busy) {
-    btnStart.disabled = true;
-    btnStop.disabled = false;
+    const start = wrap.querySelector("#cv-start");
+    const stop = wrap.querySelector("#cv-stop");
+    if (start) start.disabled = true;
+    if (stop) stop.disabled = false;
   }
 }
 
