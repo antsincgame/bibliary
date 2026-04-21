@@ -433,6 +433,7 @@ async function pumpQueue(root) {
 
 async function runOne(book, root) {
   STATE.activeIngests.set(book.absPath, "pending");
+  if (STATE.tab === "history") renderHistory(root);
   try {
     const ocrOverride = STATE.ocrOverride !== null ? STATE.ocrOverride : undefined;
     const res = await window.api.scanner.startIngest({
@@ -459,6 +460,7 @@ async function runOne(book, root) {
     renderBooks(root.querySelector(".lib-list"), root);
     refreshSummary(root);
     pumpQueue(root);
+    if (STATE.tab === "history") renderHistory(root);
     if (STATE.activeIngests.size === 0 && STATE.queue.length === 0) {
       loadHistory().then(() => {
         if (STATE.tab === "history") renderHistory(root);
@@ -497,14 +499,17 @@ function renderHistory(root) {
     ]);
     const list = el("div", { class: "lib-hist-list" });
     for (const b of group.books) {
-      list.appendChild(
-        el("div", { class: "lib-hist-row" }, [
-          el("span", { class: `lib-hist-status lib-hist-status-${b.status}` }, b.status),
-          el("div", { class: "lib-hist-name", title: b.bookSourcePath }, b.fileName),
-          el("div", { class: "lib-hist-counts" }, `${b.processedChunks}/${b.totalChunks}`),
-          el("div", { class: "lib-hist-date" }, fmtDate(b.lastUpdatedAt)),
-          el("button", { class: "lib-btn lib-btn-small", type: "button",
+      const isIngesting = STATE.activeIngests.has(b.bookSourcePath);
+      const delBtnAttrs = isIngesting
+        ? { class: "lib-btn lib-btn-small", type: "button", disabled: "true", title: t("library.history.btn.deleteDisabled") }
+        : {
+            class: "lib-btn lib-btn-small",
+            type: "button",
             onclick: async () => {
+              if (STATE.activeIngests.has(b.bookSourcePath)) {
+                alert(t("library.history.deleteWhileIngest"));
+                return;
+              }
               if (!confirm(t("library.history.confirmDelete").replace("{book}", b.fileName).replace("{collection}", group.collection))) return;
               try {
                 await window.api.scanner.deleteFromCollection(b.bookSourcePath, group.collection);
@@ -513,7 +518,15 @@ function renderHistory(root) {
               } catch (e) {
                 alert(t("library.history.deleteFailed") + ": " + (e instanceof Error ? e.message : String(e)));
               }
-            } }, t("library.history.btn.delete")),
+            },
+          };
+      list.appendChild(
+        el("div", { class: "lib-hist-row" }, [
+          el("span", { class: `lib-hist-status lib-hist-status-${b.status}` }, b.status),
+          el("div", { class: "lib-hist-name", title: b.bookSourcePath }, b.fileName),
+          el("div", { class: "lib-hist-counts" }, `${b.processedChunks}/${b.totalChunks}`),
+          el("div", { class: "lib-hist-date" }, fmtDate(b.lastUpdatedAt)),
+          el("button", delBtnAttrs, t("library.history.btn.delete")),
         ])
       );
     }
