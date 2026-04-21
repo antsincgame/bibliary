@@ -25,6 +25,12 @@ import {
 } from "../lib/dataset-v2/index.js";
 import { chat, PROFILE } from "../lmstudio-client.js";
 import { getPreferencesStore } from "../lib/preferences/store.js";
+import { coordinator } from "../lib/resilience/batch-coordinator.js";
+import {
+  trackExtractionJob,
+  untrackExtractionJob,
+  abortAllExtractionJobs,
+} from "../lib/dataset-v2/coordinator-pipeline.js";
 
 interface StartExtractionArgs {
   bookSourcePath: string;
@@ -52,6 +58,9 @@ export function abortAllDatasetV2(reason: string): void {
     ctrl.abort(reason);
     activeJobs.delete(id);
   }
+  /* Also clear coordinator-side tracking so the watchdog/shutdown path
+     doesn't try to pause a job whose AbortController is already gone. */
+  abortAllExtractionJobs(reason);
 }
 
 function makeLlm(modelKey: string): (args: {
@@ -85,6 +94,18 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
       const jobId = randomUUID();
       const ctrl = new AbortController();
       activeJobs.set(jobId, ctrl);
+      trackExtractionJob(jobId, ctrl);
+      coordinator.reportBatchStart({
+        pipeline: "extraction",
+        batchId: jobId,
+        startedAt: new Date().toISOString(),
+        config: {
+          bookSourcePath: args.bookSourcePath,
+          extractModel: args.extractModel,
+          judgeModel: args.judgeModel,
+          chapterRange: args.chapterRange,
+        },
+      });
 
       const win = getMainWindow();
       const emit = (event: Record<string, unknown>): void => {
@@ -196,6 +217,8 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
         };
       } finally {
         activeJobs.delete(jobId);
+        untrackExtractionJob(jobId);
+        coordinator.reportBatchEnd(jobId);
       }
     }
   );
@@ -205,6 +228,8 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
     if (!ctrl) return false;
     ctrl.abort("user-cancel");
     activeJobs.delete(jobId);
+    untrackExtractionJob(jobId);
+    coordinator.reportBatchEnd(jobId);
     return true;
   });
 
