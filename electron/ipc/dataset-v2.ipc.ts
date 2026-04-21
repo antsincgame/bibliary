@@ -24,6 +24,7 @@ import {
   type AcceptedConcept,
 } from "../lib/dataset-v2/index.js";
 import { chat, PROFILE } from "../lmstudio-client.js";
+import { getPreferencesStore } from "../lib/preferences/store.js";
 
 interface StartExtractionArgs {
   bookSourcePath: string;
@@ -97,6 +98,8 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
       const llmExtract = makeLlm(extractModel);
       const llmJudge = makeLlm(judgeModel);
 
+      const prefs = await getPreferencesStore().getAll();
+
       try {
         emit({ stage: "parse", phase: "start", bookSourcePath: args.bookSourcePath });
         const parsed = await parseBook(args.bookSourcePath);
@@ -119,6 +122,11 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
             bookTitle: parsed.metadata.title,
             bookSourcePath: args.bookSourcePath,
             signal: ctrl.signal,
+            safeLimit: prefs.chunkSafeLimit,
+            minChunkWords: prefs.chunkMinWords,
+            driftThreshold: prefs.driftThreshold,
+            maxParagraphsForDrift: prefs.maxParagraphsForDrift,
+            overlapParagraphs: prefs.overlapParagraphs,
           });
           emit({ stage: "chunker", chapterIndex: ci, chapterTitle: section.title, chunks: chunks.length });
           if (chunks.length === 0) continue;
@@ -144,6 +152,7 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
             bookTitle: parsed.metadata.title,
             chapterIndex: ci,
             chapterTitle: section.title,
+            threshold: prefs.intraDedupThreshold,
             onEvent: (e: IntraDedupEvent) => emit({ stage: "intra-dedup", chapterIndex: ci, ...e }),
           });
           stats.afterDedup += dedupRes.concepts.length;
@@ -153,7 +162,8 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
           const judgeRes = await judgeAndAccept({
             concepts: dedupRes.concepts,
             promptsDir: null,
-            scoreThreshold: args.scoreThreshold,
+            scoreThreshold: args.scoreThreshold ?? prefs.judgeScoreThreshold,
+            crossLibDupeThreshold: prefs.crossLibDupeThreshold,
             callbacks: {
               llm: llmJudge,
               onEvent: (e: JudgeEvent) => emit({ stage: "judge", chapterIndex: ci, ...e }),

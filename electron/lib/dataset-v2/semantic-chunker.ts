@@ -102,10 +102,14 @@ function splitByHeadings(paragraphs: string[], sectionTitle: string): Structural
 /** Hard cap, чтобы один монстр-блок не зажал embed-pipeline на минуты. */
 const MAX_PARAGRAPHS_FOR_DRIFT = 800;
 
-async function findThematicBoundaries(paragraphs: string[], signal?: AbortSignal): Promise<number[]> {
+async function findThematicBoundaries(
+  paragraphs: string[],
+  signal?: AbortSignal,
+  driftTh: number = DRIFT_THRESHOLD,
+  maxPara: number = MAX_PARAGRAPHS_FOR_DRIFT,
+): Promise<number[]> {
   if (paragraphs.length < 3) return [];
-  /* Длинные блоки → пропускаем embed-проход; падаем на hard-limit fallback. */
-  if (paragraphs.length > MAX_PARAGRAPHS_FOR_DRIFT) return [];
+  if (paragraphs.length > maxPara) return [];
 
   const vectors: number[][] = [];
   for (let i = 0; i < paragraphs.length; i++) {
@@ -116,7 +120,7 @@ async function findThematicBoundaries(paragraphs: string[], signal?: AbortSignal
   const boundaries: number[] = [];
   for (let i = 0; i < vectors.length - 1; i++) {
     const sim = cosine(vectors[i], vectors[i + 1]);
-    if (sim < DRIFT_THRESHOLD) {
+    if (sim < driftTh) {
       boundaries.push(i);
     }
   }
@@ -127,11 +131,17 @@ async function findThematicBoundaries(paragraphs: string[], signal?: AbortSignal
  * Разделяет большой блок по тематическим границам. Если границ нет — режет
  * по hard-limit (SAFE_LIMIT * 1.5), чтобы не отдавать 10k слов в LLM.
  */
-async function splitByThematicDrift(paragraphs: string[], signal?: AbortSignal): Promise<string[][]> {
-  const boundaries = await findThematicBoundaries(paragraphs, signal);
+async function splitByThematicDrift(
+  paragraphs: string[],
+  signal?: AbortSignal,
+  safeLimit: number = SAFE_LIMIT,
+  driftTh: number = DRIFT_THRESHOLD,
+  maxPara: number = MAX_PARAGRAPHS_FOR_DRIFT,
+): Promise<string[][]> {
+  const boundaries = await findThematicBoundaries(paragraphs, signal, driftTh, maxPara);
 
   if (boundaries.length === 0) {
-    const hardLimit = Math.floor(SAFE_LIMIT * 1.5);
+    const hardLimit = Math.floor(safeLimit * 1.5);
     const result: string[][] = [];
     let buf: string[] = [];
     for (const p of paragraphs) {
@@ -181,9 +191,11 @@ export interface ChunkChapterArgs {
   chapterIndex: number;
   bookTitle: string;
   bookSourcePath: string;
-  /** Override safe limit (default 4000 words). */
   safeLimit?: number;
-  /** Прокидывается в embed-цикл — отмена между параграфами. */
+  minChunkWords?: number;
+  driftThreshold?: number;
+  maxParagraphsForDrift?: number;
+  overlapParagraphs?: number;
   signal?: AbortSignal;
 }
 
@@ -196,6 +208,10 @@ export interface ChunkChapterArgs {
 export async function chunkChapter(args: ChunkChapterArgs): Promise<SemanticChunk[]> {
   const { section, chapterIndex, bookTitle, bookSourcePath } = args;
   const safeLimit = args.safeLimit ?? SAFE_LIMIT;
+  const minWords = args.minChunkWords ?? MIN_CHUNK_WORDS;
+  const driftTh = args.driftThreshold ?? DRIFT_THRESHOLD;
+  const maxParaDrift = args.maxParagraphsForDrift ?? MAX_PARAGRAPHS_FOR_DRIFT;
+  const overlap = args.overlapParagraphs ?? OVERLAP_PARAGRAPHS;
 
   if (section.paragraphs.length === 0) return [];
 
@@ -210,13 +226,13 @@ export async function chunkChapter(args: ChunkChapterArgs): Promise<SemanticChun
       continue;
     }
 
-    const subChunks = await splitByThematicDrift(block.paragraphs, args.signal);
+    const subChunks = await splitByThematicDrift(block.paragraphs, args.signal, safeLimit, driftTh, maxParaDrift);
     for (const sub of subChunks) {
       rawChunks.push({ heading: block.heading, paragraphs: sub });
     }
   }
 
-  const filtered = rawChunks.filter((c) => wordsOf(c.paragraphs) >= MIN_CHUNK_WORDS);
+  const filtered = rawChunks.filter((c) => wordsOf(c.paragraphs) >= minWords);
   if (filtered.length === 0 && rawChunks.length > 0) {
     filtered.push(...rawChunks);
   }
@@ -242,7 +258,7 @@ export async function chunkChapter(args: ChunkChapterArgs): Promise<SemanticChun
     };
   });
 
-  return applyContextOverlap(chunks, OVERLAP_PARAGRAPHS);
+  return applyContextOverlap(chunks, overlap);
 }
 
 /** Exported for testing. */

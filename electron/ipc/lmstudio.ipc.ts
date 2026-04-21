@@ -41,11 +41,10 @@ export function registerLmstudioIpc(): void {
             const results = await searchRelevantChunks(collection, query);
             if (results.length > 0) {
               systemPrompt = buildRagPrompt(formatChunksForPrompt(results));
-              console.log(`[rag:chat] Found ${results.length} relevant chunks`);
             }
           }
-        } catch (e) {
-          console.error("[rag:chat]", e instanceof Error ? e.message : e);
+        } catch {
+          /* RAG fallback: proceed without context */
         }
       }
 
@@ -85,8 +84,8 @@ export function registerLmstudioIpc(): void {
               ragSystemPrompt = buildRagPrompt(formatChunksForPrompt(results));
             }
           }
-        } catch (e) {
-          console.error("[rag:compare]", e instanceof Error ? e.message : e);
+        } catch {
+          /* RAG fallback: proceed without context */
         }
       }
 

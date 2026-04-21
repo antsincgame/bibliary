@@ -239,6 +239,7 @@ export interface JudgeBatchArgs {
   promptsDir?: string | null;
   callbacks: JudgeCallbacks;
   scoreThreshold?: number;
+  crossLibDupeThreshold?: number;
 }
 
 export interface JudgeBatchResult {
@@ -249,6 +250,7 @@ export interface JudgeBatchResult {
 export async function judgeAndAccept(args: JudgeBatchArgs): Promise<JudgeBatchResult> {
   const template = await loadPromptTemplate(args.promptsDir ?? null);
   const threshold = args.scoreThreshold ?? DEFAULT_SCORE_THRESHOLD;
+  const crossTh = args.crossLibDupeThreshold ?? CROSS_LIB_DUPE_THRESHOLD;
 
   const accepted: AcceptedConcept[] = [];
   const rejected: Array<{ concept: DedupedConcept; reason: string }> = [];
@@ -263,7 +265,7 @@ export async function judgeAndAccept(args: JudgeBatchArgs): Promise<JudgeBatchRe
     } catch {
       /* if Qdrant down — skip cross-check, доверяем LLM */
     }
-    if (crossHit && crossHit.score > CROSS_LIB_DUPE_THRESHOLD) {
+    if (crossHit && crossHit.score > crossTh) {
       args.callbacks.onEvent?.({
         type: "judge.crossdupe",
         principle: concept.principle.slice(0, 60),

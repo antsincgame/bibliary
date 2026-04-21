@@ -139,7 +139,7 @@ async function ensureCollection(
       headers,
       body: JSON.stringify({ field_name: field, field_schema: "keyword" }),
       signal,
-    }).catch(() => {});
+    }).catch(() => { /* keyword index may already exist */ });
   }
 }
 

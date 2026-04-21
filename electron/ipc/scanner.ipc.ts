@@ -17,6 +17,7 @@
 
 import { ipcMain, dialog, app, type BrowserWindow } from "electron";
 import * as path from "path";
+import { getPreferencesStore } from "../lib/preferences/store.js";
 import { randomUUID } from "crypto";
 import {
   probeBooks,
@@ -125,6 +126,7 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
       const win = getMainWindow();
 
       try {
+        const prefs = await getPreferencesStore().getAll();
         const result = await ingestBook(args.filePath, {
           collection: args.collection,
           qdrantUrl: QDRANT_URL,
@@ -132,6 +134,8 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
           state: stateStore(),
           signal: ctrl.signal,
           chunkerOptions: args.chunkerOptions,
+          upsertBatch: prefs.ingestUpsertBatch,
+          maxBookChars: prefs.maxBookChars,
           onProgress: (p: IngestProgress) => {
             if (win && !win.isDestroyed()) {
               win.webContents.send("scanner:ingest-progress", { ingestId, ...p });

@@ -59,9 +59,7 @@ async function getEmbeddingModel(): Promise<FeatureExtractionPipeline> {
   if (embeddingModel) return embeddingModel;
   if (!embeddingPromise) {
     embeddingPromise = (async () => {
-      console.log("[embed] Loading multilingual-e5-small…");
       const m = await pipeline("feature-extraction", "Xenova/multilingual-e5-small");
-      console.log("[embed] Model ready.");
       embeddingModel = m;
       return m;
     })();
