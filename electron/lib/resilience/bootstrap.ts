@@ -4,7 +4,13 @@ import { configureTelemetry } from "./telemetry";
 import { TELEMETRY_MAX_BYTES } from "./constants";
 import { initPromptStore } from "../prompts/store";
 import { initProfileStore } from "../profiles/store";
-import { initForgeStore } from "../forge/state";
+
+/**
+ * Note: forge store is intentionally NOT initialised here. It used to be,
+ * but that created a circular dependency (`forge/state` imports the
+ * resilience barrel; this file imports `forge/state`). Forge store is
+ * now bootstrapped from `electron/main.ts` after this layer is up.
+ */
 
 export interface ResilienceInitOptions {
   dataDir?: string;
@@ -43,8 +49,6 @@ export async function initResilienceLayer(opts: ResilienceInitOptions = {}): Pro
 
   const profileStore = initProfileStore({ dataDir });
   await profileStore.ensureDefaults();
-
-  initForgeStore(dataDir);
 
   initialized = true;
 }

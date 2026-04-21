@@ -8,8 +8,12 @@
 import * as path from "path";
 import { z } from "zod";
 
+/* Direct file-level imports only -- importing the resilience barrel
+   created a circular dependency: forge/state -> resilience/index ->
+   resilience/bootstrap -> forge/state. Going to the leaf modules
+   keeps the dependency graph acyclic. */
 import { createCheckpointStore, type CheckpointStore } from "../resilience/checkpoint-store";
-import { coordinator, type PipelineHandle } from "../resilience";
+import { coordinator, type PipelineHandle } from "../resilience/batch-coordinator";
 
 export const ForgeRunStateSchema = z.object({
   runId: z.string().min(1),

@@ -18,6 +18,8 @@ import {
 import { initPreferencesStore } from "./lib/preferences/store.js";
 import { registerDatasetPipeline } from "./finetune-state";
 import { registerForgePipeline } from "./lib/forge";
+import { initForgeStore } from "./lib/forge/state";
+import { registerExtractionPipeline } from "./lib/dataset-v2/coordinator-pipeline";
 import { startWatchdog, stopWatchdog, configureWatchdog } from "./lib/resilience/lmstudio-watchdog";
 import { SHUTDOWN_FLUSH_TIMEOUT_MS } from "./lib/resilience/constants";
 
@@ -63,8 +65,9 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
-    await initResilienceLayer();
-    const prefsStore = initPreferencesStore(path.resolve("data"));
+    const dataDir = path.resolve("data");
+    await initResilienceLayer({ dataDir });
+    const prefsStore = initPreferencesStore(dataDir);
     await prefsStore.ensureDefaults();
     const prefs = await prefsStore.getAll();
     configureWatchdog({
@@ -76,8 +79,17 @@ if (!gotLock) {
       retries: prefs.lockRetries,
       stale: prefs.lockStaleMs,
     });
+    /* Forge store must be initialised after resilience layer (uses
+       checkpoint store) but before registerForgePipeline (registers it
+       in coordinator). Keeping it in main.ts is what breaks the cycle
+       resilience/bootstrap <-> forge/state. */
+    initForgeStore(dataDir);
     registerDatasetPipeline();
     registerForgePipeline();
+    /* Crystallizer (extraction) is now first-class in coordinator: when
+       LM Studio goes offline the watchdog pauses it (= aborts in-flight
+       LLM calls) symmetrically with dataset/forge. */
+    registerExtractionPipeline();
     startWatchdog(() => mainWindow);
     registerAllIpcHandlers(() => mainWindow);
     createWindow();
