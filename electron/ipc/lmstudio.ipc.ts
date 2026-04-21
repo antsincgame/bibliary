@@ -16,7 +16,7 @@ import {
   formatChunksForPrompt,
   buildRagPrompt,
   extractUserQuery,
-  CHAT_SAMPLING,
+  getRagConfig,
 } from "../lib/rag/index.js";
 
 export function registerLmstudioIpc(): void {
@@ -34,11 +34,12 @@ export function registerLmstudioIpc(): void {
       collection: string
     ): Promise<string> => {
       let systemPrompt = "You are Bibliary — an expert knowledge assistant. You help users explore their curated library of concepts extracted from books. Answer questions using your general knowledge. Respond in Russian unless the user writes in English.";
+      const ragCfg = await getRagConfig();
       if (collection) {
         try {
           const query = extractUserQuery(messages);
           if (query) {
-            const results = await searchRelevantChunks(collection, query);
+            const results = await searchRelevantChunks(collection, query, ragCfg.topK);
             if (results.length > 0) {
               systemPrompt = buildRagPrompt(formatChunksForPrompt(results));
             }
@@ -54,7 +55,7 @@ export function registerLmstudioIpc(): void {
           role: "system" | "user" | "assistant";
           content: string;
         }>,
-        sampling: CHAT_SAMPLING,
+        sampling: ragCfg.sampling,
       });
       return response.content;
     }
@@ -75,11 +76,12 @@ export function registerLmstudioIpc(): void {
     }> => {
       const baseSystemPrompt = "You are Bibliary — an expert knowledge assistant. Answer questions using your general knowledge. Respond in Russian unless the user writes in English.";
       let ragSystemPrompt = baseSystemPrompt;
+      const ragCfg = await getRagConfig();
       if (collection) {
         try {
           const query = extractUserQuery(messages);
           if (query) {
-            const results = await searchRelevantChunks(collection, query);
+            const results = await searchRelevantChunks(collection, query, ragCfg.topK);
             if (results.length > 0) {
               ragSystemPrompt = buildRagPrompt(formatChunksForPrompt(results));
             }
@@ -94,12 +96,12 @@ export function registerLmstudioIpc(): void {
       const baseResp = await chat({
         model,
         messages: [{ role: "system", content: baseSystemPrompt }, ...typed],
-        sampling: CHAT_SAMPLING,
+        sampling: ragCfg.sampling,
       });
       const ragResp = await chat({
         model,
         messages: [{ role: "system", content: ragSystemPrompt }, ...typed],
-        sampling: CHAT_SAMPLING,
+        sampling: ragCfg.sampling,
       });
 
       return {

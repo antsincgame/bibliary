@@ -35,14 +35,40 @@ export const CHAT_SAMPLING = {
   max_tokens: 16384,
 } as const;
 
-export async function getRagConfig() {
+export interface RagConfig {
+  topK: number;
+  scoreThreshold: number;
+  temperature: number;
+  topP: number;
+  maxTokens: number;
+  /** Ready-to-pass sampling object for `chat({ sampling })`. */
+  sampling: {
+    temperature: number;
+    top_p: number;
+    top_k: number;
+    min_p: number;
+    presence_penalty: number;
+    max_tokens: number;
+  };
+}
+
+export async function getRagConfig(): Promise<RagConfig> {
   const p = await loadPrefs();
+  const temperature = p?.chatTemperature ?? CHAT_SAMPLING.temperature;
+  const topP = p?.chatTopP ?? CHAT_SAMPLING.top_p;
+  const maxTokens = p?.chatMaxTokens ?? CHAT_SAMPLING.max_tokens;
   return {
     topK: p?.ragTopK ?? RAG_TOP_K,
     scoreThreshold: p?.ragScoreThreshold ?? RAG_SCORE_THRESHOLD,
-    temperature: p?.chatTemperature ?? CHAT_SAMPLING.temperature,
-    topP: p?.chatTopP ?? CHAT_SAMPLING.top_p,
-    maxTokens: p?.chatMaxTokens ?? CHAT_SAMPLING.max_tokens,
+    temperature,
+    topP,
+    maxTokens,
+    sampling: {
+      ...CHAT_SAMPLING,
+      temperature,
+      top_p: topP,
+      max_tokens: maxTokens,
+    },
   };
 }
 
