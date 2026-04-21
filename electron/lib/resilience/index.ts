@@ -1,5 +1,9 @@
 export { writeJsonAtomic, writeTextAtomic } from "./atomic-write";
-export { withFileLock, type FileLockOptions } from "./file-lock";
+export {
+  withFileLock,
+  configureFileLockDefaults,
+  type FileLockOptions,
+} from "./file-lock";
 export {
   createCheckpointStore,
   type CheckpointStore,

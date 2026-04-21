@@ -1,9 +1,14 @@
 import type { BrowserWindow } from "electron";
 import { coordinator } from "./batch-coordinator";
 import * as telemetry from "./telemetry";
-import { HEALTH_FAIL_THRESHOLD, HEALTH_POLL_INTERVAL_MS } from "./constants";
+import {
+  HEALTH_FAIL_THRESHOLD,
+  HEALTH_POLL_INTERVAL_MS,
+} from "./constants";
 
 const HTTP_URL = process.env.LM_STUDIO_URL || "http://localhost:1234";
+/** Default fetch timeout for the liveness probe -- overridable via prefs. */
+const DEFAULT_LIVENESS_TIMEOUT_MS = 3_000;
 
 let pollTimer: NodeJS.Timeout | null = null;
 let consecutiveFailures = 0;
@@ -11,6 +16,28 @@ let lastState: "online" | "offline" = "online";
 let unsubStart: (() => void) | null = null;
 let unsubEnd: (() => void) | null = null;
 let getMainWindow: (() => BrowserWindow | null) | null = null;
+
+interface WatchdogConfig {
+  pollIntervalMs: number;
+  failThreshold: number;
+  livenessTimeoutMs: number;
+}
+
+let activeConfig: WatchdogConfig = {
+  pollIntervalMs: HEALTH_POLL_INTERVAL_MS,
+  failThreshold: HEALTH_FAIL_THRESHOLD,
+  livenessTimeoutMs: DEFAULT_LIVENESS_TIMEOUT_MS,
+};
+
+/**
+ * Update the runtime watchdog configuration. Safe to call from preferences
+ * IPC after a `set` -- next activate() reads the new values. If a poll is
+ * already in flight it keeps the old interval until next deactivate/activate
+ * cycle (caller responsibility if instant change matters).
+ */
+export function configureWatchdog(partial: Partial<WatchdogConfig>): void {
+  activeConfig = { ...activeConfig, ...partial };
+}
 
 export function startWatchdog(windowGetter: () => BrowserWindow | null): void {
   if (unsubStart || unsubEnd) return;
@@ -40,7 +67,7 @@ function activate(): void {
   lastState = "online";
   pollTimer = setInterval(() => {
     void poll();
-  }, HEALTH_POLL_INTERVAL_MS);
+  }, activeConfig.pollIntervalMs);
 }
 
 function deactivate(): void {
@@ -66,7 +93,7 @@ async function poll(): Promise<void> {
   }
 
   consecutiveFailures += 1;
-  if (consecutiveFailures >= HEALTH_FAIL_THRESHOLD && lastState === "online") {
+  if (consecutiveFailures >= activeConfig.failThreshold && lastState === "online") {
     lastState = "offline";
     telemetry.logEvent({ type: "lmstudio.offline", consecutiveFailures });
     emit("resilience:lmstudio-offline", { consecutiveFailures });
@@ -76,7 +103,7 @@ async function poll(): Promise<void> {
 
 async function checkLiveness(): Promise<boolean> {
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), 3_000);
+  const timer = setTimeout(() => ctl.abort(), activeConfig.livenessTimeoutMs);
   try {
     const response = await fetch(`${HTTP_URL}/v1/models`, { signal: ctl.signal });
     return response.ok;

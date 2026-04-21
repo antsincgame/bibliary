@@ -46,6 +46,15 @@ export const PreferencesSchema = z.object({
   policyBaseBackoffMs: z.number().int().min(100).max(30_000).default(1000),
   hardTimeoutCapMs: z.number().int().min(30_000).max(3_600_000).default(600_000),
 
+  // -- Resilience / File locks (Phase 2.5R) --
+  lockRetries: z.number().int().min(0).max(20).default(5),
+  lockStaleMs: z.number().int().min(1_000).max(60_000).default(10_000),
+
+  // -- Resilience / LM Studio watchdog (Phase 2.5R) --
+  healthPollIntervalMs: z.number().int().min(1_000).max(60_000).default(5_000),
+  healthFailThreshold: z.number().int().min(1).max(20).default(3),
+  watchdogLivenessTimeoutMs: z.number().int().min(500).max(15_000).default(3_000),
+
   // -- Forge --
   forgeHeartbeatMs: z.number().int().min(60_000).max(7_200_000).default(1_800_000),
   forgeMaxWallMs: z.number().int().min(3_600_000).max(172_800_000).default(43_200_000),

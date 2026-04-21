@@ -9,6 +9,21 @@ export interface FileLockOptions {
 }
 
 /**
+ * Process-wide defaults for withFileLock(). Values come from
+ * preferences/store at boot via configureFileLockDefaults(). Per-call
+ * `opts` always wins.
+ */
+const runtimeDefaults: Required<FileLockOptions> = {
+  retries: LOCK_RETRIES,
+  stale: LOCK_STALE_MS,
+};
+
+export function configureFileLockDefaults(partial: Partial<FileLockOptions>): void {
+  if (typeof partial.retries === "number") runtimeDefaults.retries = partial.retries;
+  if (typeof partial.stale === "number") runtimeDefaults.stale = partial.stale;
+}
+
+/**
  * Cross-process exclusive lock на файл.
  * Гарантирует: UI ↔ CLI ↔ second-instance не разрушают друг другу данные.
  * Если файла-цели ещё нет — создаётся пустым (proper-lockfile требует существующий путь).
@@ -23,8 +38,8 @@ export async function withFileLock<T>(
   await ensureFileExists(filePath);
 
   const release = await lockfile.lock(filePath, {
-    retries: opts.retries ?? LOCK_RETRIES,
-    stale: opts.stale ?? LOCK_STALE_MS,
+    retries: opts.retries ?? runtimeDefaults.retries,
+    stale: opts.stale ?? runtimeDefaults.stale,
     realpath: false,
   });
 

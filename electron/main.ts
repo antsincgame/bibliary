@@ -8,11 +8,16 @@ import {
   abortAllBookhunter,
 } from "./ipc";
 import { disposeClient } from "./lmstudio-client";
-import { initResilienceLayer, coordinator, telemetry } from "./lib/resilience";
+import {
+  initResilienceLayer,
+  coordinator,
+  telemetry,
+  configureFileLockDefaults,
+} from "./lib/resilience";
 import { initPreferencesStore } from "./lib/preferences/store.js";
 import { registerDatasetPipeline } from "./finetune-state";
 import { registerForgePipeline } from "./lib/forge";
-import { startWatchdog, stopWatchdog } from "./lib/resilience/lmstudio-watchdog";
+import { startWatchdog, stopWatchdog, configureWatchdog } from "./lib/resilience/lmstudio-watchdog";
 import { SHUTDOWN_FLUSH_TIMEOUT_MS } from "./lib/resilience/constants";
 
 const WINDOW_WIDTH = 1280;
@@ -60,6 +65,16 @@ if (!gotLock) {
     await initResilienceLayer();
     const prefsStore = initPreferencesStore(path.resolve("data"));
     await prefsStore.ensureDefaults();
+    const prefs = await prefsStore.getAll();
+    configureWatchdog({
+      pollIntervalMs: prefs.healthPollIntervalMs,
+      failThreshold: prefs.healthFailThreshold,
+      livenessTimeoutMs: prefs.watchdogLivenessTimeoutMs,
+    });
+    configureFileLockDefaults({
+      retries: prefs.lockRetries,
+      stale: prefs.lockStaleMs,
+    });
     registerDatasetPipeline();
     registerForgePipeline();
     startWatchdog(() => mainWindow);
