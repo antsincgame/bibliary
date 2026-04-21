@@ -266,9 +266,11 @@ async function main(): Promise<void> {
       callbacks: { llm: mockLlm },
     });
     if (result.conceptsTotal.length < 2) throw new Error(`only ${result.conceptsTotal.length} concepts`);
-    /* В первом запросе памяти ещё нет, во втором должна появиться */
-    if (memorySeen[0].includes("Ранее в этой главе")) throw new Error("first call must NOT have memory");
-    if (!memorySeen[1].includes("Ранее в этой главе")) throw new Error("second call MUST have memory");
+    /* Memory block теперь рендерится на английском (для Cognitive Distiller-style
+       английского prompt template). Маркер "Earlier in this chapter the author" —
+       sentinel начала memory block из renderMemoryBlock() в concept-extractor.ts. */
+    if (memorySeen[0].includes("Earlier in this chapter")) throw new Error("first call must NOT have memory");
+    if (!memorySeen[1].includes("Earlier in this chapter")) throw new Error("second call MUST have memory");
     if (!memorySeen[1].includes("Concept #1")) throw new Error("memory missing first concept");
   });
 

@@ -33,7 +33,8 @@ export type ExtractEvent =
   | { type: "extract.chunk.start"; chunkPart: number; chunkTotal: number; chapterTitle: string }
   | { type: "extract.chunk.done"; chunkPart: number; chunkTotal: number; raw: number; valid: number; durationMs: number }
   | { type: "extract.chunk.error"; chunkPart: number; chunkTotal: number; error: string }
-  | { type: "extract.parse.warning"; chunkPart: number; reason: string };
+  | { type: "extract.parse.warning"; chunkPart: number; reason: string }
+  | { type: "extract.retry"; chunkPart: number; attempt: number; reason: string };
 
 interface ChunkResult {
   chunk: SemanticChunk;
@@ -97,11 +98,22 @@ export function clearPromptCache(): void {
 
 function renderMemoryBlock(memory: ChapterMemory): string {
   if (memory.ledConcepts.length === 0 && !memory.lastSummary) return "";
-  const parts = ["Ранее в этой главе автор:"];
-  if (memory.ledConcepts.length > 0) parts.push(`- ввёл концепты: ${memory.ledConcepts.join("; ")}`);
+  const parts = ["Earlier in this chapter the author has:"];
+  if (memory.ledConcepts.length > 0) parts.push(`- introduced concepts: ${memory.ledConcepts.join("; ")}`);
   if (memory.lastSummary) parts.push(`- ${memory.lastSummary}`);
-  parts.push("Опираясь на это знание, проанализируй следующий отрывок.");
+  parts.push("Use this prior knowledge when analysing the next excerpt.");
   return parts.join("\n");
+}
+
+/**
+ * Контекст из конца предыдущего чанка той же главы. Чанкер уже его генерирует
+ * (semantic-chunker.ts:overlapText), но раньше extractor его не использовал —
+ * connection-of-thought терялась на стыке чанков. Теперь rendering как явный
+ * блок для LLM.
+ */
+function renderOverlapBlock(chunk: SemanticChunk): string {
+  if (!chunk.overlapText || chunk.overlapText.trim().length === 0) return "";
+  return `Context from end of previous chunk:\n"${chunk.overlapText.trim()}"\n(This is for continuity only — extract concepts from the new chunk below, not from this overlap.)`;
 }
 
 function buildPrompt(template: string, chunk: SemanticChunk, memory: ChapterMemory): string {
@@ -109,6 +121,7 @@ function buildPrompt(template: string, chunk: SemanticChunk, memory: ChapterMemo
   return template
     .replace("{{BREADCRUMB}}", chunk.breadcrumb)
     .replace("{{CHAPTER_MEMORY}}", renderMemoryBlock(memory))
+    .replace("{{OVERLAP_CONTEXT}}", renderOverlapBlock(chunk))
     .replace("{{ALLOWED_DOMAINS}}", allowed)
     .replace("{{CHUNK_TEXT}}", chunk.text);
 }
@@ -140,6 +153,44 @@ function quoteFoundInChunk(quote: string, chunkText: string): boolean {
   return false;
 }
 
+/**
+ * Попытка одного LLM-call + parse. Возвращает либо успешный массив, либо строку
+ * с причиной для retry. Не работает с warnings/events — это делает caller (extractOne).
+ */
+async function tryOneExtractionAttempt(
+  userPrompt: string,
+  cb: ExtractCallbacks,
+  attempt: { temperature: number; maxTokens: number },
+): Promise<{ ok: true; raw: string; parsed: unknown[] } | { ok: false; raw: string; reason: string }> {
+  let raw: string;
+  try {
+    raw = await cb.llm({
+      messages: [{ role: "user", content: userPrompt }],
+      temperature: attempt.temperature,
+      maxTokens: attempt.maxTokens,
+    });
+  } catch (e) {
+    if (isAbortError(e)) throw e;
+    return { ok: false, raw: "", reason: `llm-error: ${e instanceof Error ? e.message : e}` };
+  }
+  if (raw.trim().length === 0) {
+    return { ok: false, raw, reason: "empty-content" };
+  }
+  let parsed: unknown;
+  try {
+    parsed = tryParseConceptsJson(raw);
+  } catch (e) {
+    return { ok: false, raw, reason: `json-parse: ${e instanceof Error ? e.message : e}` };
+  }
+  if (!Array.isArray(parsed)) {
+    return { ok: false, raw, reason: `expected array, got ${typeof parsed}` };
+  }
+  return { ok: true, raw, parsed };
+}
+
+const DEFAULT_EXTRACT_MAX_TOKENS = 8192;
+const RETRY_TEMPERATURE = 0.2;
+
 async function extractOne(
   chunk: SemanticChunk,
   memory: ChapterMemory,
@@ -155,58 +206,60 @@ async function extractOne(
     chapterTitle: chunk.chapterTitle,
   });
 
-  let raw: string;
-  try {
-    raw = await cb.llm({
-      messages: [{ role: "user", content: userPrompt }],
-      temperature: 0.4,
-      maxTokens: 4096,
-    });
-  } catch (e) {
-    /* Abort != ошибка LLM. Без re-throw'а cancel job'а превращается в
-       молчаливое "0 концептов на главе" и пайплайн идёт дальше, продолжая
-       жечь токены на следующих главах. Закрывает AUDIT HIGH-1. */
-    if (isAbortError(e)) throw e;
-    cb.onEvent?.({
-      type: "extract.chunk.error",
-      chunkPart: chunk.partN,
-      chunkTotal: chunk.partTotal,
-      error: e instanceof Error ? e.message : String(e),
-    });
-    return { chunk, concepts: [], raw: "", warnings: [`llm-error: ${e instanceof Error ? e.message : e}`] };
-  }
-
   const warnings: string[] = [];
-  let parsed: unknown;
-  try {
-    parsed = tryParseConceptsJson(raw);
-  } catch (e) {
-    warnings.push(`json-parse: ${e instanceof Error ? e.message : e}`);
-    cb.onEvent?.({ type: "extract.parse.warning", chunkPart: chunk.partN, reason: "json-parse" });
+
+  /* Попытка 1 — нормальные параметры (temperature=0.4 для разнообразия). */
+  const first = await tryOneExtractionAttempt(userPrompt, cb, {
+    temperature: 0.4,
+    maxTokens: DEFAULT_EXTRACT_MAX_TOKENS,
+  });
+
+  let success: { raw: string; parsed: unknown[] } | null = first.ok ? first : null;
+
+  if (!first.ok) {
+    /* Попытка 2 — retry с пониженной температурой и удвоенным budget'ом.
+       Низкая температура → меньше "креативного" prose до JSON.
+       Удвоенный budget → даёт thinking-моделям шанс долететь до JSON,
+       даже если адаптивный профиль уже выставил большой максимум.
+       Если retry выпадает по abort (cancel job'а) — пробрасываем как раньше. */
     cb.onEvent?.({
-      type: "extract.chunk.done",
+      type: "extract.retry",
       chunkPart: chunk.partN,
-      chunkTotal: chunk.partTotal,
-      raw: 0,
-      valid: 0,
-      durationMs: Date.now() - t0,
+      attempt: 2,
+      reason: first.reason,
     });
-    return { chunk, concepts: [], raw, warnings };
+    warnings.push(`attempt-1 failed: ${first.reason}`);
+    const second = await tryOneExtractionAttempt(userPrompt, cb, {
+      temperature: RETRY_TEMPERATURE,
+      maxTokens: DEFAULT_EXTRACT_MAX_TOKENS * 2,
+    });
+    if (second.ok) {
+      success = second;
+    } else {
+      warnings.push(`attempt-2 failed: ${second.reason}`);
+      cb.onEvent?.({
+        type: first.reason.startsWith("llm-error") ? "extract.chunk.error" : "extract.parse.warning",
+        chunkPart: chunk.partN,
+        chunkTotal: chunk.partTotal,
+        ...(first.reason.startsWith("llm-error")
+          ? { error: second.reason }
+          : { reason: second.reason }),
+      } as ExtractEvent);
+      cb.onEvent?.({
+        type: "extract.chunk.done",
+        chunkPart: chunk.partN,
+        chunkTotal: chunk.partTotal,
+        raw: 0,
+        valid: 0,
+        durationMs: Date.now() - t0,
+      });
+      return { chunk, concepts: [], raw: second.raw || first.raw, warnings };
+    }
   }
 
-  if (!Array.isArray(parsed)) {
-    warnings.push(`expected array, got ${typeof parsed}`);
-    cb.onEvent?.({
-      type: "extract.chunk.done",
-      chunkPart: chunk.partN,
-      chunkTotal: chunk.partTotal,
-      raw: 0,
-      valid: 0,
-      durationMs: Date.now() - t0,
-    });
-    return { chunk, concepts: [], raw, warnings };
-  }
-
+  /* Здесь success !== null гарантированно — либо first.ok, либо second.ok. */
+  const raw = success!.raw;
+  const parsed = success!.parsed;
   const rawCount = parsed.length;
 
   /* Per-item Zod validation, мягкая (один невалидный не убивает всё) */

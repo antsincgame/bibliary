@@ -210,7 +210,12 @@ async function llmJudge(
     raw = await cb.llm({
       messages: [{ role: "user", content: prompt }],
       temperature: 0.2,
-      maxTokens: 800,
+      /* AUDIT: 800 токенов было мало для chain-of-thought reasoning у quality-моделей —
+         они начинали JSON, не успевали закрыть → schema parse fail → judge-error.
+         1500 даёт безопасный запас на 200-400 токенов размышления + структурированный
+         ответ. Caller hint всё равно перекрывается профилем модели в makeLlm
+         (thinking-моделям дадут больше). */
+      maxTokens: 1500,
     });
   } catch (e) {
     /* Cancel job'а != "judge не смог оценить". Без re-throw'а отмена выглядит
