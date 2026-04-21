@@ -2,6 +2,7 @@
 import { el, clear } from "./dom.js";
 import { t } from "./i18n.js";
 import { buildNeonHero, neonDivider } from "./components/neon-helpers.js";
+import { buildModelSelect } from "./components/model-select.js";
 
 /**
  * Phase 3.1 — UI экран «Кристаллизатор концептов».
@@ -15,11 +16,7 @@ import { buildNeonHero, neonDivider } from "./components/neon-helpers.js";
 const STATE = {
   /** @type {Array<{collection: string, books: Array<{bookSourcePath: string, fileName: string, totalChunks: number, status: string}>}>} */
   history: [],
-  /** @type {Array<{identifier: string, modelKey: string}>} */
-  loadedModels: [],
   selectedBook: "",
-  selectedExtractor: "",
-  selectedJudge: "",
   scoreThreshold: 0.6,
   /** @type {string | null} */
   currentJobId: null,
@@ -44,7 +41,12 @@ const STATE = {
 
 let unsub = null;
 
-const TOOL_HINTS = ["qwen3.6", "qwen3-coder", "mistral-small", "qwen3.5"];
+/** Подсказки для pickBestModel в model-select для extractor/judge (Crystal-специфичные). */
+const CRYSTAL_MODEL_HINTS = ["qwen3.6", "qwen3-coder", "mistral-small", "qwen3.5"];
+
+/** Активные экземпляры model-select для extractor/judge. Создаются в renderControls. */
+let extractorSelect = /** @type {ReturnType<typeof buildModelSelect> | null} */ (null);
+let judgeSelect = /** @type {ReturnType<typeof buildModelSelect> | null} */ (null);
 
 function fmtTime(ts) {
   return new Date(ts).toLocaleTimeString();
@@ -54,29 +56,11 @@ function fmtPct(v) {
   return (v * 100).toFixed(0) + "%";
 }
 
-function pickModel(models, hints = TOOL_HINTS) {
-  for (const h of hints) {
-    const m = models.find((x) => x.modelKey.toLowerCase().includes(h));
-    if (m) return m.modelKey;
-  }
-  return models[0]?.modelKey ?? "";
-}
-
 async function loadHistory() {
   try {
     STATE.history = await window.api.scanner.listHistory();
   } catch {
     STATE.history = [];
-  }
-}
-
-async function loadModels() {
-  try {
-    STATE.loadedModels = await window.api.lmstudio.listLoaded();
-    if (!STATE.selectedExtractor) STATE.selectedExtractor = pickModel(STATE.loadedModels);
-    if (!STATE.selectedJudge) STATE.selectedJudge = STATE.selectedExtractor;
-  } catch {
-    STATE.loadedModels = [];
   }
 }
 
@@ -139,28 +123,21 @@ function buildSourceRow() {
 }
 
 /**
- * DRY-селектор для extractor/judge моделей.
- * @param {string} labelKey       i18n-ключ для подписи
- * @param {string} currentValue   текущее выбранное значение из STATE
- * @param {(modelKey: string) => void} onChange  сеттер в STATE
+ * Создать строку cv-row с готовым селектом ролевой модели через общий компонент.
+ * @param {"extractor"|"judge"} role
+ * @returns {{ row: HTMLElement, instance: ReturnType<typeof buildModelSelect> }}
  */
-function buildModelRow(labelKey, currentValue, onChange) {
-  const label = el("label", { class: "cv-label" }, t(labelKey));
-  const select = el("select", { class: "cv-select" });
-  if (STATE.loadedModels.length === 0) {
-    select.appendChild(el("option", { value: "" }, t("crystal.model.empty")));
-    select.disabled = true;
-  } else {
-    for (const m of STATE.loadedModels) {
-      const opt = el("option", { value: m.modelKey }, m.modelKey);
-      if (m.modelKey === currentValue) opt.selected = true;
-      select.appendChild(opt);
-    }
-  }
-  select.addEventListener("change", () => {
-    onChange(select.value);
+function buildCrystalModelRow(role) {
+  const labelKey = role === "extractor" ? "crystal.model.extractor" : "crystal.model.judge";
+  const instance = buildModelSelect({
+    role,
+    label: t(labelKey),
+    hints: CRYSTAL_MODEL_HINTS,
+    wrapClass: "cv-row",
+    labelClass: "cv-label",
+    selectClass: "cv-select",
   });
-  return el("div", { class: "cv-row" }, [label, select]);
+  return { row: instance.wrap, instance };
 }
 
 function buildThresholdRow() {
@@ -211,7 +188,12 @@ function buildActionsRow(root) {
       type: "button",
       title: t("crystal.btn.refresh.title"),
       onclick: async () => {
-        await Promise.all([loadHistory(), loadModels(), loadThresholdFromPrefs()]);
+        await Promise.all([
+          loadHistory(),
+          loadThresholdFromPrefs(),
+          extractorSelect?.refresh() ?? Promise.resolve(),
+          judgeSelect?.refresh() ?? Promise.resolve(),
+        ]);
         renderControls(root);
         renderAcceptedTotal(root);
       },
@@ -226,10 +208,15 @@ function renderControls(root) {
   if (!wrap) return;
   clear(wrap);
 
+  const extractorRow = buildCrystalModelRow("extractor");
+  const judgeRow = buildCrystalModelRow("judge");
+  extractorSelect = extractorRow.instance;
+  judgeSelect = judgeRow.instance;
+
   wrap.append(
     buildSourceRow(),
-    buildModelRow("crystal.model.extractor", STATE.selectedExtractor, (v) => { STATE.selectedExtractor = v; }),
-    buildModelRow("crystal.model.judge", STATE.selectedJudge, (v) => { STATE.selectedJudge = v; }),
+    extractorRow.row,
+    judgeRow.row,
     buildThresholdRow(),
     buildActionsRow(root)
   );
@@ -509,7 +496,9 @@ async function startJob(root) {
     alert(t("crystal.alert.noBook"));
     return;
   }
-  if (!STATE.selectedExtractor || !STATE.selectedJudge) {
+  const extractModel = extractorSelect?.getValue() ?? "";
+  const judgeModel = judgeSelect?.getValue() ?? "";
+  if (!extractModel || !judgeModel) {
     alert(t("crystal.alert.noModel"));
     return;
   }
@@ -522,8 +511,8 @@ async function startJob(root) {
   try {
     const result = await window.api.datasetV2.startExtraction({
       bookSourcePath: STATE.selectedBook,
-      extractModel: STATE.selectedExtractor,
-      judgeModel: STATE.selectedJudge,
+      extractModel,
+      judgeModel,
       scoreThreshold: STATE.scoreThreshold,
     });
     STATE.currentJobId = result.jobId;
@@ -587,7 +576,9 @@ export function mountCrystal(root) {
 
   root.appendChild(layout);
 
-  Promise.all([loadHistory(), loadModels(), loadThresholdFromPrefs()]).then(() => {
+  /* model-select экземпляры самозагружаются при создании внутри renderControls.
+     Здесь параллельно подгружаем history (для buildSourceRow) и threshold (slider). */
+  Promise.all([loadHistory(), loadThresholdFromPrefs()]).then(() => {
     renderControls(root);
     renderStats(root);
     renderLog(root);
