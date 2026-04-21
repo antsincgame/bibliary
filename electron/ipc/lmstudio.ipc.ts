@@ -1,6 +1,6 @@
 import { ipcMain } from "electron";
 import {
-  chat,
+  chatWithPolicy,
   listOpenAiModels,
   listDownloaded,
   listLoaded,
@@ -49,7 +49,7 @@ export function registerLmstudioIpc(): void {
         }
       }
 
-      const response = await chat({
+      const response = await chatWithPolicy({
         model,
         messages: [{ role: "system", content: systemPrompt }, ...messages] as Array<{
           role: "system" | "user" | "assistant";
@@ -93,12 +93,12 @@ export function registerLmstudioIpc(): void {
 
       const typed = messages as Array<{ role: "system" | "user" | "assistant"; content: string }>;
 
-      const baseResp = await chat({
+      const baseResp = await chatWithPolicy({
         model,
         messages: [{ role: "system", content: baseSystemPrompt }, ...typed],
         sampling: ragCfg.sampling,
       });
-      const ragResp = await chat({
+      const ragResp = await chatWithPolicy({
         model,
         messages: [{ role: "system", content: ragSystemPrompt }, ...typed],
         sampling: ragCfg.sampling,

@@ -1,8 +1,17 @@
 import { LMStudioClient } from "@lmstudio/sdk";
 import { registerModelContext, unregisterModelContext } from "./lib/token/overflow-guard";
+import { withPolicy, buildRequestPolicy, type RequestPolicy, type PolicyContext } from "./lib/resilience/lm-request-policy";
+import { getPreferencesStore } from "./lib/preferences/store";
 
 const HTTP_URL = process.env.LM_STUDIO_URL || "http://localhost:1234";
 const WS_URL = HTTP_URL.replace(/^http/, "ws");
+
+/**
+ * Default expected output budget when caller didn't pass one. Used by
+ * withPolicy for adaptive timeout. Conservative -- matches DEFAULT_SAMPLING.max_tokens.
+ */
+const DEFAULT_EXPECTED_TOKENS = 4096;
+const DEFAULT_OBSERVED_TPS = 8;
 
 export const PROFILE = {
   BIG: {
@@ -322,6 +331,75 @@ export async function chatWithTools(request: ChatWithToolsRequest): Promise<Chat
         }
       : undefined,
   };
+}
+
+/**
+ * Build a RequestPolicy from current preferences (with sane fallbacks
+ * when the store is not yet initialised, e.g. in unit-tests).
+ */
+async function loadRuntimePolicy(): Promise<RequestPolicy> {
+  try {
+    const prefs = await getPreferencesStore().getAll();
+    return buildRequestPolicy({
+      policyMaxRetries: prefs.policyMaxRetries,
+      policyBaseBackoffMs: prefs.policyBaseBackoffMs,
+      hardTimeoutCapMs: prefs.hardTimeoutCapMs,
+    });
+  } catch {
+    return buildRequestPolicy({});
+  }
+}
+
+export interface PolicyContextOverride extends Partial<PolicyContext> {
+  /** Outer signal to honor between retries (e.g. user clicked Stop). */
+  externalSignal?: AbortSignal;
+}
+
+/**
+ * Drop-in replacement for `chat()` that runs through the resilience
+ * policy: adaptive per-request timeout (based on expected tokens / TPS),
+ * exponential backoff retry on transient errors / timeouts, abortGrace
+ * around LM Studio bug #1203.
+ *
+ * Use this from any IPC handler or agent loop where transient
+ * disconnects shouldn't fail the whole user action immediately.
+ */
+export async function chatWithPolicy(
+  request: ChatRequest,
+  ctx: PolicyContextOverride = {},
+): Promise<ChatResponse> {
+  const policy = await loadRuntimePolicy();
+  const externalSignal = ctx.externalSignal ?? request.signal ?? new AbortController().signal;
+  return withPolicy(
+    policy,
+    externalSignal,
+    {
+      expectedTokens: ctx.expectedTokens ?? request.sampling?.max_tokens ?? DEFAULT_EXPECTED_TOKENS,
+      observedTps: ctx.observedTps ?? DEFAULT_OBSERVED_TPS,
+    },
+    (innerSignal) => chat({ ...request, signal: innerSignal }),
+  );
+}
+
+/**
+ * Same as chatWithPolicy but for the tools-aware variant. Agent loop
+ * uses this so a flaky LM Studio doesn't kill the whole ReAct iteration.
+ */
+export async function chatWithToolsAndPolicy(
+  request: ChatWithToolsRequest,
+  ctx: PolicyContextOverride = {},
+): Promise<ChatWithToolsResponse> {
+  const policy = await loadRuntimePolicy();
+  const externalSignal = ctx.externalSignal ?? request.signal ?? new AbortController().signal;
+  return withPolicy(
+    policy,
+    externalSignal,
+    {
+      expectedTokens: ctx.expectedTokens ?? request.sampling?.max_tokens ?? DEFAULT_EXPECTED_TOKENS,
+      observedTps: ctx.observedTps ?? DEFAULT_OBSERVED_TPS,
+    },
+    (innerSignal) => chatWithTools({ ...request, signal: innerSignal }),
+  );
 }
 
 export async function listOpenAiModels(): Promise<string[]> {

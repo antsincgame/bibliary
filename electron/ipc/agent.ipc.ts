@@ -22,7 +22,7 @@ import {
   type AgentMessage,
   type OpenAiToolDefinition,
 } from "../lib/agent/index.js";
-import { chatWithTools, type ToolMessage } from "../lmstudio-client.js";
+import { chatWithToolsAndPolicy, type ToolMessage } from "../lmstudio-client.js";
 
 const activeAgents = new Map<string, AbortController>();
 const pendingApprovals = new Map<string, { resolve: (approved: boolean) => void }>();
@@ -76,14 +76,14 @@ export function registerAgentIpc(getMainWindow: () => BrowserWindow | null): voi
               pendingApprovals.set(callId, { resolve });
             }),
           llm: async ({ messages, tools }) => {
-            const resp = await chatWithTools({
+            const resp = await chatWithToolsAndPolicy({
               model,
               messages: messages as ToolMessage[],
               tools: tools as OpenAiToolDefinition[],
               toolChoice: "auto",
               sampling: { temperature: 0.5, top_p: 0.9, max_tokens: 4096 },
               signal: ctrl.signal,
-            });
+            }, { externalSignal: ctrl.signal });
             return {
               content: resp.content,
               toolCalls: resp.toolCalls,

@@ -24,8 +24,34 @@ import { safeStorage } from "electron";
 
 const HF_API = "https://huggingface.co/api";
 const TOKEN_FILE_NAME = ".hf-token.enc";
+/**
+ * Default timeout for unauthenticated HF API calls. The huggingface.co
+ * gateway can be slow during peak; without a hard cap an IPC channel
+ * could hang the renderer waiting for a hf:search-models or hf:model-info
+ * response.
+ */
+const HF_FETCH_TIMEOUT_MS = 10_000;
 
 let cachedToken: string | null = null;
+
+/**
+ * fetch() that always honours an AbortController-backed timeout.
+ * Use everywhere we hit the public HF API. Throws a clean Error with
+ * "HF timeout" prefix so the caller can distinguish from HTTP errors.
+ */
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit = {},
+  timeoutMs: number = HF_FETCH_TIMEOUT_MS,
+): Promise<Response> {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(`HF timeout ${timeoutMs}ms`), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: ctl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Token management
@@ -93,7 +119,7 @@ export interface HfModelSummary {
 
 export async function searchModels(query: string, limit = 20): Promise<HfModelSummary[]> {
   const url = `${HF_API}/models?search=${encodeURIComponent(query)}&limit=${limit}&sort=downloads&direction=-1`;
-  const resp = await fetch(url);
+  const resp = await fetchWithTimeout(url);
   if (!resp.ok) {
     throw new Error(`HF search failed: ${resp.status} ${resp.statusText}`);
   }
@@ -103,7 +129,7 @@ export async function searchModels(query: string, limit = 20): Promise<HfModelSu
 
 export async function getModelInfo(repoId: string): Promise<unknown> {
   const url = `${HF_API}/models/${encodeURIComponent(repoId)}`;
-  const resp = await fetch(url);
+  const resp = await fetchWithTimeout(url);
   if (!resp.ok) {
     throw new Error(`HF model info failed: ${resp.status}`);
   }
