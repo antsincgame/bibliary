@@ -80,6 +80,35 @@ async function loadModels() {
   }
 }
 
+/**
+ * Читает глобальный судейский порог из preferences.judgeScoreThreshold.
+ * Если pref не задан или не валиден — STATE.scoreThreshold остаётся как есть (0.6 fallback).
+ */
+async function loadThresholdFromPrefs() {
+  try {
+    const prefs = /** @type {any} */ (await window.api.preferences.getAll());
+    const v = Number(prefs?.judgeScoreThreshold);
+    if (Number.isFinite(v) && v >= 0 && v <= 1) {
+      STATE.scoreThreshold = v;
+    }
+  } catch {
+    /* ignore — оставляем дефолт STATE.scoreThreshold */
+  }
+}
+
+/**
+ * Сохраняет порог в preferences. Debounced через таймер модульного уровня —
+ * пользователь дёргает slider десятки раз, пишем только после паузы.
+ */
+let _thresholdSaveTimer = /** @type {ReturnType<typeof setTimeout> | null} */ (null);
+function saveThresholdToPrefs(value) {
+  if (_thresholdSaveTimer) clearTimeout(_thresholdSaveTimer);
+  _thresholdSaveTimer = setTimeout(() => {
+    _thresholdSaveTimer = null;
+    void window.api.preferences.set({ judgeScoreThreshold: value }).catch(() => { /* ignore */ });
+  }, 500);
+}
+
 function pushEvent(stage, summary, level = "info") {
   STATE.events.push({ ts: Date.now(), stage, summary: String(summary).slice(0, 240), level });
   if (STATE.events.length > 300) STATE.events = STATE.events.slice(-200);
@@ -135,11 +164,11 @@ function buildModelRow(labelKey, currentValue, onChange) {
 }
 
 function buildThresholdRow() {
-  const label = el("label", { class: "cv-label" }, t("crystal.threshold.label"));
+  const label = el("label", { class: "cv-label", title: t("crystal.threshold.tooltip") }, t("crystal.threshold.label"));
   const input = el("input", {
     type: "range",
-    min: "0.4",
-    max: "0.9",
+    min: "0",
+    max: "1",
     step: "0.05",
     value: String(STATE.scoreThreshold),
     class: "cv-range",
@@ -148,6 +177,7 @@ function buildThresholdRow() {
   input.addEventListener("input", () => {
     STATE.scoreThreshold = Number(input.value);
     value.textContent = STATE.scoreThreshold.toFixed(2);
+    saveThresholdToPrefs(STATE.scoreThreshold);
   });
   return el("div", { class: "cv-row" }, [label, input, value]);
 }
@@ -181,7 +211,7 @@ function buildActionsRow(root) {
       type: "button",
       title: t("crystal.btn.refresh.title"),
       onclick: async () => {
-        await Promise.all([loadHistory(), loadModels()]);
+        await Promise.all([loadHistory(), loadModels(), loadThresholdFromPrefs()]);
         renderControls(root);
         renderAcceptedTotal(root);
       },
@@ -557,7 +587,7 @@ export function mountCrystal(root) {
 
   root.appendChild(layout);
 
-  Promise.all([loadHistory(), loadModels()]).then(() => {
+  Promise.all([loadHistory(), loadModels(), loadThresholdFromPrefs()]).then(() => {
     renderControls(root);
     renderStats(root);
     renderLog(root);
