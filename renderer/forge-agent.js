@@ -396,11 +396,14 @@ async function stopAgent(root) {
   if (!STATE.currentAgentId) return;
   try {
     await window.api.agent.cancel(STATE.currentAgentId);
-  } catch {
-    /* ignore */
+    pushActivity("aborted", t("agent.stopByUser"));
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    pushActivity("error", `${t("agent.stopFailed")}: ${msg}`);
   }
   STATE.pendingApproval = null;
   renderApproval(root);
+  renderActivity(root);
   setBusy(root, false);
 }
 

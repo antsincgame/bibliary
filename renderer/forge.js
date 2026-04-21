@@ -369,6 +369,10 @@ function buildStepRun() {
   ]);
   card.appendChild(summary);
 
+  if (STATE.target === "colab" || STATE.target === "autotrain") {
+    card.appendChild(buildHfTokenWidget());
+  }
+
   const goBtn = el("button", { class: "btn btn-gold", type: "button" }, t("forge.run.bundle"));
   goBtn.addEventListener("click", async () => {
     goBtn.disabled = true;
@@ -379,7 +383,6 @@ function buildStepRun() {
         target: STATE.target,
       }));
       showToast(t("forge.toast.bundle_ok", { dir: result.bundleDir }), "success");
-      // Авто-открыть target
       if (STATE.target === "colab") await window.api.hf.openColab();
       else if (STATE.target === "autotrain") await window.api.hf.openAutoTrain();
     } catch (e) {
@@ -432,6 +435,78 @@ function buildStepRun() {
   card.appendChild(markRow);
 
   return card;
+}
+
+/**
+ * HuggingFace token widget. Visible only on colab / autotrain target steps.
+ * Shows current saved-status, lets user paste + Save, or Clear. Token is
+ * stored in OS keytar (or plain file fallback) by hf.ipc.ts -- we never
+ * read it back from main, only the boolean "has token" flag.
+ */
+function buildHfTokenWidget() {
+  const widget = el("div", { class: "forge-hf-widget", "data-mode-min": "advanced" }, [
+    el("div", { class: "forge-hf-title" }, t("forge.hf.title")),
+    el("div", { class: "forge-hf-hint" }, t("forge.hf.hint")),
+  ]);
+
+  const status = el("span", { class: "forge-hf-status" }, t("forge.hf.checking"));
+  const input = el("input", {
+    type: "password", class: "forge-hf-input",
+    placeholder: "hf_...", autocomplete: "off",
+    spellcheck: "false",
+  });
+  const saveBtn = el("button", { class: "btn btn-gold btn-small", type: "button" }, t("forge.hf.save"));
+  const clearBtn = el("button", { class: "btn btn-ghost btn-small", type: "button" }, t("forge.hf.clear"));
+
+  async function refreshStatus() {
+    try {
+      const has = await window.api.hf.hasToken();
+      status.textContent = has ? t("forge.hf.status.saved") : t("forge.hf.status.none");
+      status.className = `forge-hf-status${has ? " forge-hf-status-ok" : " forge-hf-status-none"}`;
+      clearBtn.disabled = !has;
+    } catch (e) {
+      status.textContent = t("forge.hf.status.error") + ": " + errMsg(e);
+      status.className = "forge-hf-status forge-hf-status-error";
+    }
+  }
+
+  saveBtn.addEventListener("click", async () => {
+    const value = input.value.trim();
+    if (!value) {
+      showToast(t("forge.hf.empty"), "error");
+      return;
+    }
+    saveBtn.disabled = true;
+    try {
+      await window.api.hf.saveToken(value);
+      input.value = "";
+      showToast(t("forge.hf.toast.saved"), "success");
+      await refreshStatus();
+    } catch (e) {
+      showToast(t("forge.hf.toast.saveFailed", { msg: errMsg(e) }), "error");
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
+
+  clearBtn.addEventListener("click", async () => {
+    if (!confirm(t("forge.hf.confirmClear"))) return;
+    clearBtn.disabled = true;
+    try {
+      await window.api.hf.clearToken();
+      showToast(t("forge.hf.toast.cleared"), "success");
+      await refreshStatus();
+    } catch (e) {
+      showToast(t("forge.hf.toast.clearFailed", { msg: errMsg(e) }), "error");
+    } finally {
+      clearBtn.disabled = false;
+    }
+  });
+
+  widget.appendChild(el("div", { class: "forge-hf-row" }, [status]));
+  widget.appendChild(el("div", { class: "forge-hf-row" }, [input, saveBtn, clearBtn]));
+  refreshStatus();
+  return widget;
 }
 
 // ─── Footer ────────────────────────────────────────────────────────────────
