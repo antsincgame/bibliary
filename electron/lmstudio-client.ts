@@ -75,6 +75,26 @@ export interface ChatRequest {
   messages: ChatMessage[];
   sampling?: Partial<SamplingParams>;
   signal?: AbortSignal;
+  /**
+   * Stop sequences (OpenAI-compat). Когда модель сгенерирует одну из строк —
+   * генерация останавливается. Полезно для thinking-моделей: после `</think>`
+   * можно прекратить, чтобы не жечь токены на пустую генерацию.
+   * LM Studio пробрасывает в llama.cpp без модификаций.
+   */
+  stop?: string[];
+  /**
+   * Structured output schema (LM Studio 0.4.0+). Обычно `{ type: "json_schema", json_schema: { name, strict: true, schema } }`.
+   * Гарантирует, что модель вернёт валидный JSON по схеме (constrained decoding).
+   * Не все runtime'ы LM Studio поддерживают одинаково — fallback'и должны быть в caller.
+   */
+  responseFormat?: Record<string, unknown>;
+  /**
+   * Qwen-style chat template kwargs (например, `{ enable_thinking: false }` для Qwen3.6).
+   * LM Studio 0.4.12+ принимает, но не все модели читают. Безопасный дополнительный
+   * рычаг управления thinking-режимом — всегда комбинировать с `stop` и prompt-директивой.
+   * См. docs/RESILIENCE.md FAQ.
+   */
+  chatTemplateKwargs?: Record<string, unknown>;
 }
 
 export interface ChatUsage {
@@ -97,6 +117,9 @@ interface OpenAiChatPayload {
   min_p: number;
   presence_penalty: number;
   max_tokens: number;
+  stop?: string[];
+  response_format?: Record<string, unknown>;
+  chat_template_kwargs?: Record<string, unknown>;
 }
 
 interface OpenAiChatResponse {
@@ -181,6 +204,9 @@ export async function chat(request: ChatRequest): Promise<ChatResponse> {
     presence_penalty: sampling.presence_penalty,
     max_tokens: sampling.max_tokens,
   };
+  if (request.stop && request.stop.length > 0) payload.stop = request.stop;
+  if (request.responseFormat) payload.response_format = request.responseFormat;
+  if (request.chatTemplateKwargs) payload.chat_template_kwargs = request.chatTemplateKwargs;
 
   const baseUrl = await getLmStudioUrl();
   const response = await fetch(`${baseUrl}/v1/chat/completions`, {
@@ -266,6 +292,12 @@ export interface ChatWithToolsRequest {
   toolChoice?: "auto" | "none" | "required";
   sampling?: Partial<SamplingParams>;
   signal?: AbortSignal;
+  /** См. ChatRequest.stop. */
+  stop?: string[];
+  /** См. ChatRequest.responseFormat. Реже нужно с tools, но иногда нужно структурировать финальный answer. */
+  responseFormat?: Record<string, unknown>;
+  /** См. ChatRequest.chatTemplateKwargs. */
+  chatTemplateKwargs?: Record<string, unknown>;
 }
 
 export interface ChatToolCall {
@@ -305,7 +337,7 @@ interface OpenAiChatWithToolsResponse {
 
 export async function chatWithTools(request: ChatWithToolsRequest): Promise<ChatWithToolsResponse> {
   const sampling = { ...DEFAULT_SAMPLING, ...request.sampling };
-  const payload = {
+  const payload: Record<string, unknown> = {
     model: request.model,
     messages: request.messages,
     tools: request.tools,
@@ -317,6 +349,9 @@ export async function chatWithTools(request: ChatWithToolsRequest): Promise<Chat
     presence_penalty: sampling.presence_penalty,
     max_tokens: sampling.max_tokens,
   };
+  if (request.stop && request.stop.length > 0) payload.stop = request.stop;
+  if (request.responseFormat) payload.response_format = request.responseFormat;
+  if (request.chatTemplateKwargs) payload.chat_template_kwargs = request.chatTemplateKwargs;
 
   const baseUrl = await getLmStudioUrl();
   const response = await fetch(`${baseUrl}/v1/chat/completions`, {

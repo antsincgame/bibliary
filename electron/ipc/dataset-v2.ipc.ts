@@ -32,6 +32,12 @@ import {
   untrackExtractionJob,
   abortAllExtractionJobs,
 } from "../lib/dataset-v2/coordinator-pipeline.js";
+import { getModelProfile } from "../lib/dataset-v2/model-profile.js";
+import {
+  buildExtractorResponseFormat,
+  buildJudgeResponseFormat,
+} from "../lib/dataset-v2/json-schemas.js";
+import { ALLOWED_DOMAINS } from "../mechanicus-prompt.js";
 
 interface StartExtractionArgs {
   bookSourcePath: string;
@@ -67,20 +73,45 @@ export function abortAllDatasetV2(reason: string): void {
 /**
  * Crystallizer LLM wrapper.
  *
- * Two guarantees vs the previous direct `chat()` call:
+ * Three guarantees vs the previous direct `chat()` call:
  *   1. `chatWithPolicy` provides retry/backoff/adaptive timeout (closes
  *      AUDIT-2026-04 heresy #1 -- pipeline no longer dies on a single
  *      network blip).
  *   2. `signal` is captured by closure and forwarded as `externalSignal`
  *      so `dataset-v2:cancel` aborts the in-flight HTTP request, not just
  *      the gap between requests.
+ *   3. Adaptive model profile (model-profile.ts) автоматически подбирает
+ *      maxTokens budget, response_format и stop sequences по тегам модели
+ *      из curated-models.json. Thinking-модели (qwen3.6) получают 16k+ токенов
+ *      и stop=["</think>"]; tool-capable-coder получают JSON Schema decoding.
+ *      Защищает от "0 концептов" из-за выгорания max_tokens на reasoning.
+ *
+ * Caller указывает `role`: "extractor" определяет JSON Schema = массив концептов,
+ * "judge" — single JudgeResult. Профиль модели — общий по тегам.
  */
-function makeLlm(modelKey: string, signal: AbortSignal): (args: {
+function makeLlm(
+  modelKey: string,
+  signal: AbortSignal,
+  role: "extractor" | "judge",
+): (args: {
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
   temperature?: number;
   maxTokens?: number;
 }) => Promise<string> {
+  const profilePromise = getModelProfile(modelKey);
+  const allowedDomains = Array.from(ALLOWED_DOMAINS).sort();
+  const responseFormatBuilder =
+    role === "extractor" ? () => buildExtractorResponseFormat(allowedDomains) : () => buildJudgeResponseFormat();
+
   return async ({ messages, temperature, maxTokens }) => {
+    const profile = await profilePromise;
+    /* Caller (extractor.ts / judge.ts) задаёт hint для maxTokens, но профиль
+       модели имеет приоритет: thinking-моделям нужно МИНИМУМ profile.maxTokens,
+       чтобы не выгореть на reasoning. Берём максимум из двух — caller может
+       поднять выше профиля для длинных глав, но не опустить ниже. */
+    const callerHint = maxTokens ?? 4096;
+    const effectiveMaxTokens = Math.max(callerHint, profile.maxTokens);
+
     const response = await chatWithPolicy(
       {
         model: modelKey,
@@ -91,8 +122,11 @@ function makeLlm(modelKey: string, signal: AbortSignal): (args: {
           top_k: 30,
           min_p: 0,
           presence_penalty: 0,
-          max_tokens: maxTokens ?? 4096,
+          max_tokens: effectiveMaxTokens,
         },
+        stop: profile.stop,
+        responseFormat: profile.useResponseFormat ? responseFormatBuilder() : undefined,
+        chatTemplateKwargs: profile.chatTemplateKwargs,
       },
       { externalSignal: signal },
     );
@@ -131,8 +165,8 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
 
       const extractModel = args.extractModel ?? PROFILE.BIG.key;
       const judgeModel = args.judgeModel ?? PROFILE.BIG.key;
-      const llmExtract = makeLlm(extractModel, ctrl.signal);
-      const llmJudge = makeLlm(judgeModel, ctrl.signal);
+      const llmExtract = makeLlm(extractModel, ctrl.signal, "extractor");
+      const llmJudge = makeLlm(judgeModel, ctrl.signal, "judge");
 
       const prefs = await getPreferencesStore().getAll();
 
