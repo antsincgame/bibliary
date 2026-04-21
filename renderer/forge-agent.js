@@ -220,7 +220,12 @@ function renderApproval(root) {
             const callId = p.callId;
             STATE.pendingApproval = null;
             renderApproval(root);
-            await window.api.agent.approve(callId, true);
+            try {
+              await window.api.agent.approve(callId, true);
+            } catch (e) {
+              pushActivity("approval.error", e instanceof Error ? e.message : String(e));
+              renderActivity(root);
+            }
           },
         },
         t("agent.approval.apply")
@@ -234,7 +239,12 @@ function renderApproval(root) {
             const callId = p.callId;
             STATE.pendingApproval = null;
             renderApproval(root);
-            await window.api.agent.approve(callId, false);
+            try {
+              await window.api.agent.approve(callId, false);
+            } catch (e) {
+              pushActivity("approval.error", e instanceof Error ? e.message : String(e));
+              renderActivity(root);
+            }
           },
         },
         t("agent.approval.reject")
@@ -354,6 +364,7 @@ function handleAgentEvent(root, payload) {
 }
 
 async function sendPrompt(root) {
+  if (STATE.busy) return;
   const input = /** @type {HTMLTextAreaElement} */ (root.querySelector("#agent-input"));
   if (!input) return;
   const text = input.value.trim();
