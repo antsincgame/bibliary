@@ -28,7 +28,8 @@
     "test:dataset-v2-live": "tsx scripts/test-dataset-v2-live.ts",
     "test:e2e:mvp": "tsx scripts/e2e-full-mvp.ts",
     "test:e2e:quality": "tsx scripts/e2e-quality.ts",
-    "lint": "tsc -p tsconfig.electron.json --noEmit"
+    "lint": "tsc -p tsconfig.electron.json --noEmit && eslint \"renderer/**/*.js\" --max-warnings=9",
+    "lint:fix": "eslint \"renderer/**/*.js\" --fix"
   },
   "dependencies": {
     "@lmstudio/sdk": "^1.5.0",
@@ -52,6 +53,8 @@
     "@types/uuid": "^10.0.0",
     "electron": "^41.2.0",
     "electron-builder": "^26.8.1",
+    "eslint": "^10.2.1",
+    "globals": "^17.5.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }
