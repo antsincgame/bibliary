@@ -8,6 +8,7 @@ import {
 } from "../lib/qdrant/http-client.js";
 import { EMBEDDING_DIM } from "../lib/scanner/embedding.js";
 import { getPreferencesStore } from "../lib/preferences/store.js";
+import { CollectionNameSchema, parseOrThrow } from "./validators.js";
 
 interface QdrantPoint {
   id: string;
@@ -198,7 +199,12 @@ export function registerQdrantIpc(): void {
       _e,
       args: { name: string; vectorSize?: number; distance?: "Cosine" | "Euclid" | "Dot" }
     ): Promise<{ ok: boolean; error?: string }> => {
-      if (!args || typeof args.name !== "string" || !args.name) return { ok: false, error: "name required" };
+      try {
+        if (!args) return { ok: false, error: "args required" };
+        args = { ...args, name: parseOrThrow(CollectionNameSchema, args.name, "name") };
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
       const size = args.vectorSize ?? EMBEDDING_DIM;
       const distance = args.distance ?? "Cosine";
       try {
@@ -221,7 +227,11 @@ export function registerQdrantIpc(): void {
   ipcMain.handle(
     "qdrant:delete-collection",
     async (_e, name: string): Promise<{ ok: boolean; error?: string }> => {
-      if (typeof name !== "string" || !name) return { ok: false, error: "name required" };
+      try {
+        name = parseOrThrow(CollectionNameSchema, name, "name");
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
       try {
         const resp = await qdrantRaw(`${QDRANT_URL}/collections/${encodeURIComponent(name)}`, {
           method: "DELETE",
