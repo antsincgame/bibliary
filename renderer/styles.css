@@ -1,9 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&family=Cinzel:wght@400;600;700&family=Montserrat:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap');
 
 :root {
-  /* ??? Phase 5.0 ? Neon tokens v2 ??? */
+  /* Phase 5.0 ? Neon design tokens v2 */
 
-  /* ???????? ?????? */
+  /* Deep space surfaces */
   --void: #050508;
   --void-black: #0a0a0f;
   --deep-space: #0d0d1a;
@@ -13,7 +13,7 @@
   --surface-elevated: #2a2a2a;
   --border: rgba(0, 240, 255, 0.15);
 
-  /* ?????? ? ???? */
+  /* Gold and light */
   --gold: #ffd700;
   --gold-pure: #ffd700;
   --gold-warm: #f4a836;
@@ -22,7 +22,7 @@
   --gold-glow: rgba(255, 215, 0, 0.4);
   --gold-aura: rgba(255, 215, 0, 0.08);
 
-  /* ???????? ??????? */
+  /* Neon accents */
   --red: #ff003c;
   --cyan: #00f0ff;
   --yellow: #f5e100;
@@ -33,41 +33,41 @@
   --neon-emerald: #00ff88;
   --accent-red: #ff4444;
 
-  /* ????????? ????????? */
+  /* Quantum gradients */
   --quantum-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f953c6 100%);
   --sacred-gradient: linear-gradient(45deg, #ffd700, #ff6b35, #ff00ff, #00f5ff);
   --aura-gradient: radial-gradient(ellipse at center, rgba(255, 215, 0, 0.3) 0%, transparent 70%);
   --aura-cyan: radial-gradient(ellipse at center, rgba(0, 240, 255, 0.25) 0%, transparent 70%);
 
-  /* ????? */
+  /* Text */
   --text: #c8c8d0;
   --text-primary: #ffffff;
   --text-secondary: #999999;
   --text-dim: #5a5a6a;
   --text-muted: #666666;
 
-  /* ??????????? */
+  /* Typography */
   --font-mono: 'Share Tech Mono', monospace;
   --font-display: 'Orbitron', sans-serif;
   --font-sacred: 'Cinzel', serif;
   --font-heading: 'Montserrat', sans-serif;
   --font-body: 'Inter', 'Montserrat', sans-serif;
 
-  /* ???????? ???????? ? ?????? ???? ???????? */
+  /* Motion timings ? unified language of motion */
   --motion-fast: 200ms;
   --motion-normal: 400ms;
   --motion-slow: 800ms;
   --motion-aura: 3000ms;
   --motion-pulse: 1500ms;
 
-  /* ???????? ??? box-shadow */
+  /* Glows for box-shadow */
   --glow-gold-soft: 0 0 20px rgba(255, 215, 0, 0.2);
   --glow-gold-bright: 0 0 32px rgba(255, 215, 0, 0.45);
   --glow-cyan-soft: 0 0 20px rgba(0, 240, 255, 0.2);
   --glow-emerald-soft: 0 0 20px rgba(0, 255, 136, 0.2);
 }
 
-/* Reduced motion: ??????? ????????? ????????? (a11y + ???????) */
+/* Reduced motion: respect system preference (a11y + battery) */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -109,7 +109,7 @@ body::after {
   z-index: 9999;
 }
 
-/* ?? Layout ?? */
+/* Layout */
 .app {
   display: flex;
   flex-direction: row;
@@ -123,7 +123,7 @@ body::after {
   min-width: 0;
 }
 
-/* ?? Sidebar ?? */
+/* Sidebar */
 .sidebar {
   width: 72px;
   background: var(--panel);
@@ -202,7 +202,7 @@ body::after {
   display: block;
 }
 
-/* ?? Routes ?? */
+/* Routes */
 .route {
   display: none;
   flex-direction: column;
@@ -257,7 +257,7 @@ body::after {
   border-radius: 2px;
 }
 
-/* ?? Cards ?? */
+/* Cards */
 .card {
   background: rgba(13, 13, 18, 0.6);
   border: 1px solid var(--border);
@@ -312,7 +312,7 @@ body::after {
   box-shadow: 0 0 8px rgba(0, 240, 255, 0.2);
 }
 
-/* ?? Buttons ?? */
+/* Buttons */
 .btn {
   background: transparent;
   border: 1px solid var(--cyan);
@@ -360,7 +360,7 @@ body::after {
   flex-wrap: wrap;
 }
 
-/* ?? Profile cards (Models page) ?? */
+/* Profile cards (Models page) */
 .profile-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -455,7 +455,7 @@ body::after {
   letter-spacing: 1px;
 }
 
-/* ?? Lists ?? */
+/* Lists */
 .list-row {
   display: grid;
   grid-template-columns: 1fr auto auto;
@@ -479,7 +479,7 @@ body::after {
   text-transform: uppercase;
 }
 
-/* ?? Progress / generation ?? */
+/* Progress / generation */
 .progress-bar-track {
   height: 6px;
   background: rgba(0, 240, 255, 0.08);
@@ -556,7 +556,7 @@ body::after {
   color: #00ff66;
 }
 
-/* ?? Top bar ?? */
+/* Top bar */
 .top-bar {
   display: flex;
   align-items: center;
@@ -678,7 +678,7 @@ select option {
   50% { opacity: 0.4; }
 }
 
-/* ?? Compare button ?? */
+/* Compare button */
 .btn-compare {
   background: transparent;
   border: 1px solid var(--violet);
@@ -706,7 +706,7 @@ select option {
   box-shadow: 0 0 20px rgba(180, 0, 255, 0.5), 0 0 60px rgba(180, 0, 255, 0.1);
 }
 
-/* ?? Compare result ?? */
+/* Compare result */
 .compare-row {
   display: flex;
   gap: 16px;
@@ -759,7 +759,7 @@ select option {
 }
 
 .compare-text-base::before {
-  content: '?';
+  content: '\250C';
   position: absolute;
   top: -1px;
   left: -1px;
@@ -768,7 +768,7 @@ select option {
 }
 
 .compare-text-base::after {
-  content: '?';
+  content: '\2518';
   position: absolute;
   bottom: -1px;
   right: -1px;
@@ -784,7 +784,7 @@ select option {
 }
 
 .compare-text-rag::before {
-  content: '?';
+  content: '\250C';
   position: absolute;
   top: -1px;
   left: -1px;
@@ -793,7 +793,7 @@ select option {
 }
 
 .compare-text-rag::after {
-  content: '?';
+  content: '\2518';
   position: absolute;
   bottom: -1px;
   right: -1px;
@@ -801,7 +801,7 @@ select option {
   opacity: 0.5;
 }
 
-/* ?? Compare stats ?? */
+/* Compare stats */
 .compare-stats {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -823,7 +823,7 @@ select option {
   border: 1px solid rgba(0, 240, 255, 0.15);
 }
 
-/* ?? Chat area ?? */
+/* Chat area */
 .chat-area {
   flex: 1;
   overflow-y: auto;
@@ -851,7 +851,7 @@ select option {
   border-radius: 2px;
 }
 
-/* ?? Messages ?? */
+/* Messages */
 .message {
   max-width: 80%;
   padding: 14px 18px;
@@ -875,7 +875,7 @@ select option {
 
 /* Corner brackets for user messages */
 .message-user::before {
-  content: '?';
+  content: '\250C';
   position: absolute;
   top: -1px;
   left: -1px;
@@ -884,7 +884,7 @@ select option {
 }
 
 .message-user::after {
-  content: '?';
+  content: '\2518';
   position: absolute;
   bottom: -1px;
   right: -1px;
@@ -900,7 +900,7 @@ select option {
 }
 
 .message-assistant::before {
-  content: '?';
+  content: '\250C';
   position: absolute;
   top: -1px;
   left: -1px;
@@ -909,7 +909,7 @@ select option {
 }
 
 .message-assistant::after {
-  content: '?';
+  content: '\2518';
   position: absolute;
   bottom: -1px;
   right: -1px;
@@ -926,7 +926,7 @@ select option {
   max-width: 60%;
 }
 
-/* ?? Typing indicator ?? */
+/* Typing indicator */
 .typing-indicator {
   align-self: flex-start;
   display: flex;
@@ -950,7 +950,7 @@ select option {
   30% { opacity: 1; transform: scale(1); }
 }
 
-/* ?? Welcome screen ?? */
+/* Welcome screen */
 .welcome {
   flex: 1;
   display: flex;
@@ -998,7 +998,7 @@ select option {
   text-transform: uppercase;
 }
 
-/* ?? Input bar ?? */
+/* Input bar */
 .input-bar {
   display: flex;
   align-items: flex-end;
@@ -1070,7 +1070,7 @@ textarea:focus {
   50% { box-shadow: 0 0 16px rgba(255, 0, 60, 0.4); }
 }
 
-/* ?? Markdown inside messages ?? */
+/* Markdown inside messages */
 .message h1, .message h2, .message h3, .message h4,
 .compare-text h1, .compare-text h2, .compare-text h3, .compare-text h4 {
   font-family: var(--font-display);
@@ -1175,7 +1175,7 @@ textarea:focus {
   margin: 12px 0;
 }
 
-/* ?? Holographic shimmer on hover ?? */
+/* Holographic shimmer on hover */
 .message:hover {
   background-image: linear-gradient(
     135deg,
@@ -1192,9 +1192,7 @@ textarea:focus {
   100% { background-position: 0% 0%; }
 }
 
-/* ????????????????????????????????????????????????????????????????
-   DATASET WIZARD
-   ???????????????????????????????????????????????????????????????? */
+/* DATASET WIZARD */
 
 .wizard-header {
   display: flex;
@@ -1221,7 +1219,7 @@ textarea:focus {
   line-height: 1.5;
 }
 
-/* ?? Stepper ?? */
+/* Stepper */
 .stepper {
   background: rgba(13, 13, 18, 0.55);
   border: 1px solid var(--border);
@@ -1385,7 +1383,7 @@ textarea:focus {
   box-shadow: 0 0 12px rgba(0, 240, 255, 0.4);
 }
 
-/* ?? Glossary popover ?? */
+/* Glossary popover */
 .glossary-trigger {
   display: inline-flex;
   align-items: center;
@@ -1452,7 +1450,7 @@ textarea:focus {
   line-height: 1.5;
 }
 
-/* ?? Welcome / Step 0 ?? */
+/* Welcome / Step 0 */
 .welcome-card {
   display: flex;
   flex-direction: column;
@@ -1603,7 +1601,7 @@ textarea:focus {
   margin-top: 10px;
 }
 
-/* ?? Readiness rows ?? */
+/* Readiness rows */
 .readiness-list {
   display: flex;
   flex-direction: column;
@@ -1664,7 +1662,7 @@ textarea:focus {
   line-height: 1.5;
 }
 
-/* ?? QuickStart slider ?? */
+/* QuickStart slider */
 .quick-slider-row {
   display: flex;
   flex-direction: column;
@@ -1734,7 +1732,7 @@ textarea:focus {
   margin-bottom: 14px;
 }
 
-/* ?? Advanced collapsible ?? */
+/* Advanced collapsible */
 .advanced-toggle {
   margin-top: 6px;
   border: 1px solid var(--border);
@@ -1762,7 +1760,7 @@ textarea:focus {
 }
 
 .advanced-toggle > summary::before {
-  content: "?";
+  content: "\25B8";
   color: var(--cyan);
   transition: transform 0.2s;
   display: inline-block;
@@ -1786,14 +1784,14 @@ textarea:focus {
   padding: 0;
 }
 
-/* ?? Field label tweak for inline help ?? */
+/* Field label tweak for inline help */
 .field-label {
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
-/* ?? Review card ?? */
+/* Review card */
 .review-summary {
   display: flex;
   flex-direction: column;
@@ -1834,7 +1832,7 @@ textarea:focus {
   color: var(--gold);
 }
 
-/* ?? Toast area ?? */
+/* Toast area */
 .ds-toast-area {
   position: fixed;
   bottom: 20px;
@@ -1846,14 +1844,14 @@ textarea:focus {
   max-width: 360px;
 }
 
-/* ?? Phase column glossary tweak ?? */
+/* Phase column glossary tweak */
 .phase-col-label {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-/* ?? Responsive: stepper line stacks on narrow ?? */
+/* Responsive: stepper line stacks on narrow */
 @media (max-width: 920px) {
   .stepper-line {
     grid-template-columns: repeat(2, 1fr);
@@ -1956,10 +1954,7 @@ textarea:focus {
 }
 
 
-/* ?????????????????????????????????????????????????????????????????????????????
- * DOCS / Codex ? Neon Wave Future onboarding (Phase 2.5R · 2.6 audit)
- * ?????? ???, ??????? ??????, ?????????? ?????, ?????? ????????.
- * ????????????????????????????????????????????????????????????????????????????? */
+/* * DOCS / Codex Neon Wave Future onboarding (Phase 2.5R 2.6 audit) * , , , . * */
 
 #docs-root {
   padding: 0 0 60px 0;
@@ -1974,7 +1969,7 @@ textarea:focus {
   border-radius: 4px;
 }
 
-/* ?? HERO ?? */
+/* HERO */
 .docs-hero {
   position: relative;
   min-height: 360px;
@@ -2085,7 +2080,7 @@ textarea:focus {
 
 .docs-hero-cta:active { transform: translateY(0); }
 
-/* ?? TOC ?? */
+/* TOC */
 .docs-toc {
   max-width: 1100px;
   margin: 40px auto 60px;
@@ -2148,7 +2143,7 @@ textarea:focus {
   letter-spacing: 0.5px;
 }
 
-/* ?? SECTION ?? */
+/* SECTION */
 .docs-section {
   max-width: 1100px;
   margin: 0 auto 56px;
@@ -2185,7 +2180,7 @@ textarea:focus {
   letter-spacing: 1px;
 }
 
-/* ?? CARD GRID ?? */
+/* CARD GRID */
 .docs-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2263,7 +2258,7 @@ textarea:focus {
 }
 
 .docs-list li::before {
-  content: "?";
+  content: "\25C7";
   position: absolute;
   left: 0;
   top: 0;
@@ -2292,7 +2287,7 @@ textarea:focus {
   letter-spacing: 1px;
 }
 
-/* ?? FAQ ?? */
+/* FAQ */
 .docs-faq {
   display: flex;
   flex-direction: column;
@@ -2333,7 +2328,7 @@ textarea:focus {
 }
 
 .docs-faq-item[open] .docs-faq-q::before {
-  content: "?";
+  content: "\2212";
   color: var(--gold);
 }
 
@@ -2347,7 +2342,7 @@ textarea:focus {
   line-height: 1.7;
 }
 
-/* ?? CTA ?? */
+/* CTA */
 .docs-cta {
   position: relative;
   max-width: 1100px;
@@ -2407,10 +2402,7 @@ textarea:focus {
 .docs-cta-button:active { transform: translateY(0); }
 
 
-/* ?????????????????????????????????????????????????????????????????????????????
- * MEMORY FORGE ? context-slider, presets, suggestions, VRAM bar (Phase 3.0).
- * Neon-?????: gold-glow, sacred geometry, ?????? ???.
- * ????????????????????????????????????????????????????????????????????????????? */
+/* * MEMORY FORGE context-slider, presets, suggestions, VRAM bar (Phase 3.0). * Neon-: gold-glow, sacred geometry, . * */
 
 .card-sub {
   margin-top: -6px;
@@ -2421,7 +2413,7 @@ textarea:focus {
   letter-spacing: 0.5px;
 }
 
-/* === Models page ? Memory Forge ?????? === */
+/* === Models page Memory Forge === */
 .mp-memory-list { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
 .mp-memory-row {
   display: flex;
@@ -2472,7 +2464,7 @@ textarea:focus {
   font-family: var(--font-mono);
 }
 
-/* === Context slider ? ????? ????????? === */
+/* === Context slider === */
 .context-slider {
   display: flex;
   flex-direction: column;
@@ -2512,7 +2504,7 @@ textarea:focus {
   color: #fff;
 }
 
-/* === Presets ? ?????????? ????? ???????? === */
+/* === Presets === */
 .ctx-presets {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -2564,7 +2556,7 @@ textarea:focus {
 }
 .ctx-preset-active .ctx-preset-meta { color: var(--gold); }
 
-/* === Range ? ?????? ??????? ? ?????? === */
+/* === Range === */
 .ctx-range {
   -webkit-appearance: none;
   appearance: none;
@@ -2697,7 +2689,7 @@ textarea:focus {
   color: var(--gold);
   font-weight: 700;
 }
-.ctx-details[open] > summary::before { content: "? "; }
+.ctx-details[open] > summary::before { content: "\2212 "; }
 .ctx-details-body { padding: 10px 12px; }
 .ctx-detail-grid {
   display: grid;
@@ -2726,7 +2718,7 @@ textarea:focus {
 .ctx-actions .btn { font-size: 11px; padding: 10px 18px; }
 
 
-/* === Context presets ? ??????? task-???????? === */
+/* === Context presets task-=== */
 .ctx-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -2782,7 +2774,7 @@ textarea:focus {
 }
 
 
-/* === Chat top-bar ? Memory button + popover === */
+/* === Chat top-bar - Memory button + popover === */
 .btn-memory {
   display: inline-flex;
   align-items: center;
@@ -2882,7 +2874,7 @@ textarea:focus {
 .sidebar-mode[data-mode="pro"] { color: var(--gold); border-color: rgba(255, 215, 0, 0.4); }
 .mode-current { display: block; text-align: center; }
 
-/* ???????? ???????? ? data-mode-min ???? ???????? */
+/* data-mode-min */
 body[data-ui-mode="simple"] [data-mode-min="advanced"],
 body[data-ui-mode="simple"] [data-mode-min="pro"],
 body[data-ui-mode="advanced"] [data-mode-min="pro"] {
@@ -3065,7 +3057,7 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   text-align: left;
 }
 .ww-features li::before {
-  content: "?";
+  content: "\25C7";
   position: absolute;
   left: 0;
   color: var(--gold);
@@ -3556,7 +3548,7 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   border-top: 1px dashed rgba(255, 215, 0, 0.15);
 }
 
-/* ===== Library (Phase 2.6 ? Book Scanner) ===== */
+/* ===== Library (Phase 2.6 - Book Scanner) ===== */
 .lib-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -3673,7 +3665,7 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   font-size: 12px;
 }
 
-/* ===== Library Phase 2.7 ? split-pane, preview, history, queue ===== */
+/* ===== Library Phase 2.7 - split-pane, preview, history, queue ===== */
 .lib-tabs {
   display: flex;
   gap: 0;
@@ -3885,7 +3877,7 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   font-size: 10px;
 }
 
-/* ===== Phase 4.0 ? Forge Chat Agent UI ===== */
+/* ===== Phase 4.0 - Forge Chat Agent UI ===== */
 .agent-toolbar {
   display: flex;
   align-items: center;
@@ -4180,7 +4172,7 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
 .agent-activity-agent-error .agent-activity-type { color: #ff6b6b; }
 .agent-activity-agent-done .agent-activity-type { color: var(--neon-emerald); }
 
-/* ===== Phase 3.1 ? ?????????????? UI ===== */
+/* ===== Phase 3.1 UI ===== */
 .cv-layout {
   display: grid;
   grid-template-columns: 320px 1fr 280px;
@@ -4410,10 +4402,10 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
 }
 
 /* ===================================================================== */
-/* ===== Phase 5.0 ? Neon Wave Future: reusable design system v2 ====== */
+/* ===== Phase 5.0 - Neon Wave Future: reusable design system v2 ====== */
 /* ===================================================================== */
 
-/* ??? Sacred animations ???????????????????????????????????????????? */
+/* Sacred animations */
 
 @keyframes neon-aura-pulse {
   0%, 100% { box-shadow: var(--glow-gold-soft); }
@@ -4445,7 +4437,7 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ??? Premium typography helpers ???????????????????????????????????? */
+/* Premium typography helpers */
 
 .neon-heading {
   font-family: var(--font-sacred);
@@ -4477,7 +4469,7 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   line-height: 1.6;
 }
 
-/* ??? Buttons ??????????????????????????????????????????????????????? */
+/* Buttons */
 
 .neon-btn {
   position: relative;
@@ -4530,7 +4522,7 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   box-shadow: var(--glow-gold-bright);
 }
 
-/* ??? Cards ????????????????????????????????????????????????????????? */
+/* Cards */
 
 .sacred-card {
   position: relative;
@@ -4561,7 +4553,7 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   animation: neon-aura-pulse var(--motion-aura) ease-in-out infinite;
 }
 
-/* ??? Hero section ?????????????????????????????????????????????????? */
+/* Hero section */
 
 .hero-neon {
   position: relative;
@@ -4617,7 +4609,7 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   max-width: 720px;
 }
 
-/* ??? Pulsing FAB ??????????????????????????????????????????????????? */
+/* Pulsing FAB */
 
 .pulsing-fab {
   position: relative;
@@ -4638,7 +4630,7 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
 }
 .pulsing-fab:hover { transform: scale(1.06); }
 
-/* ??? Quantum divider ??????????????????????????????????????????????? */
+/* Quantum divider */
 
 .quantum-divider {
   height: 1px;
@@ -4649,7 +4641,7 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   margin: 12px 0;
 }
 
-/* ??? Glow spinner (??? loading) ??????????????????????????????????? */
+/* Glow spinner (loading) */
 
 .glow-spinner {
   width: 24px;
@@ -4661,7 +4653,7 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   box-shadow: var(--glow-gold-soft);
 }
 
-/* ===== Phase 5.0 ? Forge Agent neon overrides ===== */
+/* ===== Phase 5.0 - Forge Agent neon overrides ===== */
 .route-body-no-header { padding-top: 0; }
 
 .agent-hero {
@@ -4676,12 +4668,12 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   margin-bottom: 14px;
 }
 
-/* Layout ? ?????? hero ? ?????? ????????? ?? ~140px */
+/* Layout hero ~140px */
 #route-agent .agent-layout {
   height: calc(100vh - 380px);
 }
 
-/* sacred-card override: ??????? ?????????????? inner padding (????? ??? padding'???) */
+/* sacred-card override: inner padding (padding') */
 .agent-chat-wrap.sacred-card {
   padding: 14px;
 }
@@ -4689,7 +4681,7 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   padding: 12px;
 }
 
-/* ???????? aura-overlay ? chat (?????? ??????????) */
+/* aura-overlay chat () */
 .agent-chat-wrap.sacred-card::before {
   opacity: 0.12;
 }
@@ -4697,7 +4689,7 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   opacity: 0.18;
 }
 
-/* ???????? input/btn ? neon ????? */
+/* input/btn neon */
 #route-agent .agent-input {
   font-family: var(--font-body);
   background: rgba(0, 0, 0, 0.55);
@@ -4708,14 +4700,14 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   box-shadow: var(--glow-gold-soft);
 }
 
-/* Approval card: ????????? gold-glow */
+/* Approval card: gold-glow */
 #route-agent .agent-approval-card {
   background: linear-gradient(145deg, rgba(245, 225, 0, 0.08), rgba(255, 215, 0, 0.03));
   box-shadow: var(--glow-gold-soft);
   animation: neon-aura-pulse 3.5s ease-in-out infinite;
 }
 
-/* ????????? ?????? ?????? ? heading-style */
+/* heading-style */
 #route-agent .agent-msg-assistant .agent-msg-content {
   font-family: var(--font-body);
   font-size: 13px;
@@ -4723,7 +4715,7 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   color: var(--text-primary);
 }
 
-/* Approve button ? primary neon */
+/* Approve button - primary neon */
 #route-agent .agent-approval-actions .agent-btn-accent {
   background: linear-gradient(135deg, rgba(255, 215, 0, 0.18), rgba(255, 215, 0, 0.06));
   border-color: var(--gold);
@@ -4803,7 +4795,7 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
 }
 .lib-search-link:hover { text-decoration: underline; }
 
-/* ===== Qdrant management ? vector base UI ===== */
+/* ===== Qdrant management - vector base UI ===== */
 .qdrant-screen {
   display: flex;
   flex-direction: column;
@@ -5091,4 +5083,177 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   border: 1px solid rgba(255, 68, 68, 0.3);
 }
 .btn-danger-soft:hover { background: rgba(255, 68, 68, 0.08); border-color: var(--accent-red); }
+
+/* ===== Phase 5.0 Library Neon polish - visual upgrade only (no DOM changes) ===== */
+
+/* Library hero header - sacred gradient + glow */
+#route-library .route-header {
+  position: relative;
+  padding: 24px 28px 22px;
+  border-radius: 8px 8px 0 0;
+  background:
+    radial-gradient(ellipse at top right, rgba(255, 215, 0, 0.10) 0%, transparent 60%),
+    linear-gradient(145deg, rgba(20, 20, 35, 0.85), rgba(10, 10, 20, 0.95));
+  border: 1px solid rgba(255, 215, 0, 0.18);
+  border-bottom: none;
+  overflow: hidden;
+}
+#route-library .route-header::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(0deg, transparent 49%, rgba(255, 215, 0, 0.05) 50%, transparent 51%),
+    linear-gradient(90deg, transparent 49%, rgba(0, 240, 255, 0.04) 50%, transparent 51%);
+  background-size: 64px 64px;
+  pointer-events: none;
+  opacity: 0.5;
+}
+#route-library .route-title {
+  font-family: var(--font-sacred);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  background: var(--sacred-gradient);
+  background-size: 300% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: neon-shimmer 8s linear infinite;
+  position: relative;
+  z-index: 1;
+}
+#route-library .route-sub {
+  position: relative;
+  z-index: 1;
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+/* Library tabs - golden underline + smooth motion */
+.lib-tabs {
+  position: relative;
+}
+.lib-tab {
+  position: relative;
+  transition: color var(--motion-fast) ease, text-shadow var(--motion-fast) ease;
+}
+.lib-tab::after {
+  content: '';
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 0;
+  height: 2px;
+  background: var(--gold);
+  box-shadow: 0 0 8px rgba(255, 215, 0, 0.6);
+  transform: scaleX(0);
+  transform-origin: center;
+  transition: transform var(--motion-fast) ease;
+}
+.lib-tab-active::after { transform: scaleX(1); }
+.lib-tab-active { color: var(--gold); text-shadow: 0 0 12px rgba(255, 215, 0, 0.4); }
+.lib-tab:hover:not(.lib-tab-active) { color: var(--cyan); }
+
+/* Library buttons - neon emphasis on primary actions */
+.lib-btn-primary { box-shadow: inset 0 0 0 1px transparent; }
+.lib-btn-primary:hover:not(:disabled) {
+  background: rgba(0, 240, 255, 0.08);
+  box-shadow: var(--glow-cyan-soft);
+}
+.lib-btn-accent { box-shadow: inset 0 0 0 1px transparent; }
+.lib-btn-accent:hover:not(:disabled) {
+  background: rgba(255, 215, 0, 0.10);
+  box-shadow: var(--glow-gold-soft);
+  transform: translateY(-1px);
+}
+.lib-btn { transition: background var(--motion-fast) ease, box-shadow var(--motion-fast) ease, transform var(--motion-fast) ease; }
+
+/* Selected book row - gold left-border accent */
+.lib-row { transition: background var(--motion-fast) ease; }
+.lib-row-active {
+  background: linear-gradient(90deg, rgba(255, 215, 0, 0.12), rgba(255, 215, 0, 0.02) 60%, transparent);
+  border-left: 2px solid var(--gold);
+  padding-left: 6px;
+}
+.lib-row:has(.lib-cb:checked) {
+  background: rgba(255, 215, 0, 0.06);
+}
+
+/* Running ingest indicator - neon pulse */
+.lib-status-running {
+  text-shadow: 0 0 8px rgba(0, 240, 255, 0.5);
+  animation: neon-aura-pulse 2s ease-in-out infinite;
+}
+.lib-status-done {
+  text-shadow: 0 0 6px rgba(107, 255, 141, 0.4);
+}
+.lib-status-error {
+  text-shadow: 0 0 6px rgba(255, 107, 107, 0.4);
+}
+
+/* Search results - sacred-card lift on hover */
+.lib-search-card {
+  transition: border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease, transform var(--motion-fast) ease;
+}
+.lib-search-card:hover {
+  border-color: rgba(255, 215, 0, 0.35);
+  box-shadow: var(--glow-gold-soft);
+  transform: translateY(-2px);
+}
+
+/* Preview pane - subtle aura when active */
+.lib-preview:not(:empty) {
+  position: relative;
+  border-left: 1px solid rgba(255, 215, 0, 0.18);
+  background:
+    radial-gradient(ellipse at top right, rgba(255, 215, 0, 0.04) 0%, transparent 60%),
+    rgba(13, 13, 18, 0.55);
+}
+
+/* Phase 6.0 prep: warning hint for image-only PDFs */
+.lib-warning-ocr {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.08), rgba(255, 107, 53, 0.04));
+  border: 1px solid rgba(255, 215, 0, 0.25);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  line-height: 1.5;
+}
+.lib-warning-ocr-icon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(255, 215, 0, 0.2);
+  color: var(--gold);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 12px;
+}
+.lib-warning-ocr-title {
+  display: block;
+  color: var(--gold);
+  font-weight: 600;
+  margin-bottom: 2px;
+  letter-spacing: 0.04em;
+}
+.lib-warning-ocr-body {
+  color: var(--text-secondary);
+}
+
+/* Empty state - softer */
+.lib-empty {
+  border: 1px dashed rgba(255, 215, 0, 0.15);
+  border-radius: 4px;
+  background: rgba(13, 13, 18, 0.4);
+}
 

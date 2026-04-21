@@ -178,6 +178,20 @@ function renderPreview(root) {
       ...meta.warnings.map((wm) => el("div", { class: "lib-warning" }, "• " + wm)),
     ]);
     pane.appendChild(w);
+
+    /* Phase 6.0 prep: actionable hint for image-only PDFs */
+    const hasOcrCandidate = meta.warnings.some((wm) => /scanned|image|OCR|no text/i.test(String(wm)));
+    if (hasOcrCandidate && d.rawCharCount === 0) {
+      pane.appendChild(
+        el("div", { class: "lib-warning-ocr", role: "note" }, [
+          el("span", { class: "lib-warning-ocr-icon", "aria-hidden": "true" }, "i"),
+          el("div", {}, [
+            el("span", { class: "lib-warning-ocr-title" }, t("library.preview.ocr.title")),
+            el("span", { class: "lib-warning-ocr-body" }, t("library.preview.ocr.body")),
+          ]),
+        ])
+      );
+    }
   }
   const samples = el("div", { class: "lib-preview-samples" }, [
     el("strong", {}, t("library.preview.firstChunks") + ":"),
