@@ -79,7 +79,6 @@ async function parseImage(filePath: string, opts: ParseOptions = {}): Promise<Pa
   return {
     metadata: {
       title: baseName,
-      language: result.language,
       warnings: paragraphs.length === 0 ? ["OCR produced only whitespace"] : [],
     },
     sections: [

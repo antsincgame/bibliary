@@ -116,6 +116,7 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
       ocrEnabled: prefs.ocrEnabled && isOcrSupported(),
       ocrLanguages: prefs.ocrLanguages,
       ocrAccuracy: prefs.ocrAccuracy,
+      ocrPdfDpi: prefs.ocrPdfDpi,
     });
     const chunks = chunkBook(parsed, filePath);
     return {
@@ -176,6 +177,7 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
             ocrEnabled: ocrWanted && isOcrSupported(),
             ocrLanguages: prefs.ocrLanguages,
             ocrAccuracy: prefs.ocrAccuracy,
+            ocrPdfDpi: prefs.ocrPdfDpi,
             signal: ctrl.signal,
           },
           onProgress: (p: IngestProgress) => {

@@ -54,6 +54,8 @@ export interface ParseOptions {
   ocrEnabled?: boolean;
   ocrLanguages?: string[];
   ocrAccuracy?: "fast" | "accurate";
+  /** DPI used when rasterising PDF pages for OCR. Higher = better quality but slower. */
+  ocrPdfDpi?: number;
   /** Caller-side abort. Honoured by long-running parsers (PDF OCR). */
   signal?: AbortSignal;
 }

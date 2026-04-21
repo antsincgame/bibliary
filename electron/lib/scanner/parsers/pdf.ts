@@ -104,12 +104,16 @@ async function parsePdf(filePath: string, opts: ParseOptions = {}): Promise<Pars
   if (allParagraphs.length === 0) {
     if (opts.ocrEnabled && isOcrSupported()) {
       try {
-        for await (const page of rasterisePdfPages(filePath, { signal: opts.signal })) {
+        for await (const page of rasterisePdfPages(filePath, {
+          signal: opts.signal,
+          dpi: opts.ocrPdfDpi,
+        })) {
           const result = await recognizeImageBuffer(
             page.pngBuffer,
             page.pageIndex,
             opts.ocrLanguages ?? [],
             opts.ocrAccuracy ?? "accurate",
+            opts.signal,
           );
           const txt = result.text.trim();
           if (!txt) continue;
