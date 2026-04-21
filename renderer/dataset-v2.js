@@ -350,8 +350,12 @@ function resetStats() {
 }
 
 function handleEvent(root, payload) {
-  if (payload.jobId && !STATE.currentJobId) {
-    STATE.currentJobId = payload.jobId;
+  if (payload.jobId) {
+    if (!STATE.currentJobId) {
+      STATE.currentJobId = payload.jobId;
+    } else if (payload.jobId !== STATE.currentJobId) {
+      return;
+    }
   }
   const stage = String(payload.stage ?? "");
   const phase = String(payload.phase ?? "");
