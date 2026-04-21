@@ -92,6 +92,22 @@ export const PreferencesSchema = z.object({
   chatHistoryCap: z.number().int().min(4).max(500).default(50),
   /** Persist chat history across app restarts via data/chat-history.json. */
   chatHistoryPersist: z.boolean().default(true),
+
+  // -- Selected models per role (Phase 3 onboarding wizard) --
+  /** Модель LM Studio для чата (modelKey). Пусто = первая загруженная. */
+  chatModel: z.string().default(""),
+  /** Модель LM Studio для агента (modelKey). Пусто = chatModel или первая загруженная. */
+  agentModel: z.string().default(""),
+  /** Модель LM Studio для extractor (Crystallizer). Пусто = первая загруженная. */
+  extractorModel: z.string().default(""),
+  /** Модель LM Studio для judge (Crystallizer). Пусто = extractorModel. */
+  judgeModel: z.string().default(""),
+
+  // -- Onboarding wizard (Phase 3) --
+  /** True если пользователь прошёл/skip-нул welcome wizard. Заменяет legacy localStorage. */
+  onboardingDone: z.boolean().default(false),
+  /** Версия пройденного wizard. Позволяет показать wizard повторно при major update. */
+  onboardingVersion: z.number().int().min(0).max(1000).default(0),
 });
 
 export type Preferences = z.infer<typeof PreferencesSchema>;
