@@ -321,6 +321,11 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.invoke("system:env-summary"),
     hardwarePresets: (): Promise<unknown> => ipcRenderer.invoke("system:hardware-presets"),
     invalidateHardwareCache: (): Promise<boolean> => ipcRenderer.invoke("system:invalidate-hardware-cache"),
+    /** Параллельный health-check LM Studio + Qdrant для onboarding wizard. */
+    probeServices: (): Promise<{
+      lmStudio: { online: boolean; version?: string; url: string };
+      qdrant: { online: boolean; version?: string; url: string };
+    }> => ipcRenderer.invoke("system:probe-services"),
   },
 
   profile: {
