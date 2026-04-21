@@ -126,16 +126,11 @@ mountResilienceBar();
     } catch { /* следующий запуск повторит миграцию */ }
   }
 
-  showRoute(onboardingDone ? "chat" : "chat");
+  showRoute("chat");
   if (!onboardingDone) {
     openWelcomeWizard({ force: true });
   }
 })();
-
-// Экспортируем хелпер для других модулей, если им нужен переход через JS.
-export function navigate(name) {
-  showRoute(name);
-}
 
 // Tiny self-test: убедиться, что i18n загружен (иначе в логах увидим warning).
 if (typeof t !== "function") {
