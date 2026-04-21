@@ -7,7 +7,16 @@ let unsubOff = null;
 let unsubOn = null;
 let hideTimer = null;
 
-const HIDE_DELAY_MS = 4000;
+let HIDE_DELAY_MS = 4000;
+
+(async () => {
+  try {
+    const prefs = await window.api?.preferences?.getAll();
+    if (prefs && typeof prefs.resilienceBarHideDelayMs === "number") {
+      HIDE_DELAY_MS = prefs.resilienceBarHideDelayMs;
+    }
+  } catch { /* default */ }
+})();
 
 /**
  * Подключает глобальный resilience-bar к корню документа.

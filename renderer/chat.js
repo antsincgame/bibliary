@@ -2,9 +2,18 @@
 import { t } from "./i18n.js";
 import { buildContextSlider } from "./components/context-slider.js";
 
-const SPIN_DURATION_MS = 600;
+let SPIN_DURATION_MS = 600;
 const TEXTAREA_MAX_HEIGHT = 120;
-const TOAST_TTL_MS = 5000;
+let TOAST_TTL_MS = 5000;
+
+(async () => {
+  try {
+    const prefs = await window.api?.preferences?.getAll();
+    if (!prefs) return;
+    if (typeof prefs.spinDurationMs === "number") SPIN_DURATION_MS = prefs.spinDurationMs;
+    if (typeof prefs.toastTtlMs === "number") TOAST_TTL_MS = prefs.toastTtlMs;
+  } catch { /* defaults */ }
+})();
 
 /** @type {Array<{role: string, content: string}>} */
 const history = [];

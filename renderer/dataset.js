@@ -35,8 +35,15 @@ const CONTEXT_PRESETS = [
 ];
 
 const SECONDS_PER_CHUNK_ESTIMATE = 45;
-const TOAST_TTL_MS = 6000;
+let TOAST_TTL_MS = 6000;
 const SOURCE_SCHEMA_HINT = "{ id, principle, explanation, domain, tags[] }";
+
+(async () => {
+  try {
+    const prefs = await window.api?.preferences?.getAll();
+    if (prefs && typeof prefs.toastTtlMs === "number") TOAST_TTL_MS = prefs.toastTtlMs;
+  } catch { /* default */ }
+})();
 
 /** Кешируемый LM Studio URL — берётся через IPC system:env-summary, чтобы не хардкодить. */
 let cachedLmStudioUrl = "http://localhost:1234";
