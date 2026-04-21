@@ -110,11 +110,32 @@ applyI18n(document);
 setupLanguageToggle();
 setupUiModeToggle();
 mountResilienceBar();
-/* Первый запуск (wizard не пройдён) → models/setup, потом → chat */
-const setupDone = localStorage.getItem("bibliary_setup_done") === "1";
-showRoute(setupDone ? "chat" : "models");
-// Welcome wizard на первый запуск (тихо игнорируется если уже пройден).
-openWelcomeWizard();
+
+/* Phase 3 Удар 3: source of truth для onboarding — preferences.onboardingDone.
+   Legacy localStorage["bibliary_setup_done"] поддерживается как fallback и
+   мигрируется в prefs при первом обнаружении. */
+(async () => {
+  let onboardingDone = false;
+  try {
+    const prefs = /** @type {any} */ (await window.api.preferences.getAll());
+    onboardingDone = prefs?.onboardingDone === true;
+  } catch { /* prefs недоступны — значит свежий запуск */ }
+
+  /* Миграция legacy → prefs (одноразовая) */
+  const legacyDone = localStorage.getItem("bibliary_setup_done") === "1";
+  if (legacyDone && !onboardingDone) {
+    onboardingDone = true;
+    try {
+      await window.api.preferences.set({ onboardingDone: true, onboardingVersion: 1 });
+      localStorage.removeItem("bibliary_setup_done");
+    } catch { /* следующий запуск повторит миграцию */ }
+  }
+
+  showRoute(onboardingDone ? "chat" : "chat");
+  if (!onboardingDone) {
+    openWelcomeWizard({ force: true });
+  }
+})();
 
 // Экспортируем хелпер для других модулей, если им нужен переход через JS.
 export function navigate(name) {

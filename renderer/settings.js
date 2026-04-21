@@ -10,6 +10,7 @@ import { el, clear } from "./dom.js";
 import { t } from "./i18n.js";
 import { getMode } from "./ui-mode.js";
 import { buildNeonHero, wrapSacredCard, neonDivider } from "./components/neon-helpers.js";
+import { openWelcomeWizard, resetWelcomeWizard } from "./components/welcome-wizard.js";
 
 /** @returns {any} */
 function api() { return /** @type {any} */ (window).api; }
@@ -415,6 +416,15 @@ function render(root) {
       type: "button",
       onclick: () => resetAll(root),
     }, t("settings.resetAll")),
+    el("button", {
+      class: "neon-btn",
+      type: "button",
+      title: t("settings.replayOnboarding.tooltip"),
+      onclick: async () => {
+        await resetWelcomeWizard();
+        openWelcomeWizard({ force: true });
+      },
+    }, t("settings.replayOnboarding")),
   ]);
   root.appendChild(actions);
 
