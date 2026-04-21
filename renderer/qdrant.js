@@ -24,7 +24,7 @@ const STATE = {
   /** @type {{url:string;online:boolean;version?:string;collectionsCount:number}|null} */
   cluster: null,
   loading: false,
-  search: { query: "", running: false, results: [] },
+  search: { query: "", running: false, results: [], error: "" },
 };
 
 /** @returns {any} */
@@ -178,10 +178,12 @@ function renderSearchCard(name, root) {
       STATE.search.running = true;
       goBtn.disabled = true;
       goBtn.textContent = t("qdrant.search.running");
+      STATE.search.error = "";
       try {
         STATE.search.results = await api().qdrant.search({ collection: name, query: q, limit: 12 });
       } catch (e) {
         STATE.search.results = [];
+        STATE.search.error = e instanceof Error ? e.message : String(e);
       } finally {
         STATE.search.running = false;
         goBtn.disabled = false;
@@ -197,6 +199,13 @@ function renderSearchCard(name, root) {
 
   function renderSearchResults() {
     clear(results);
+    if (STATE.search.error) {
+      results.appendChild(el("div", { class: "qdrant-search-error", role: "alert" }, [
+        el("strong", {}, t("qdrant.search.error") + ": "),
+        STATE.search.error,
+      ]));
+      return;
+    }
     if (STATE.search.results.length === 0 && STATE.search.query) {
       results.appendChild(el("div", { class: "qdrant-search-empty" }, t("qdrant.search.empty")));
       return;
