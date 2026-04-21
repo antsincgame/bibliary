@@ -23,17 +23,21 @@ import { fetchQdrantJson, QDRANT_URL } from "../qdrant/http-client.js";
 import { EMBEDDING_DIM } from "../scanner/embedding.js";
 import { isAbortError } from "../resilience/lm-request-policy.js";
 import { JudgeResultSchema, type AcceptedConcept, type DedupedConcept, type JudgeResult } from "./types.js";
+import { extractJsonObjectFromReasoning } from "./reasoning-decoder.js";
+import type { LlmCallResult } from "./concept-extractor.js";
 
 export const ACCEPTED_COLLECTION = "dataset-accepted-concepts";
 const CROSS_LIB_DUPE_THRESHOLD = 0.85;
 const DEFAULT_SCORE_THRESHOLD = 0.6;
 
 export interface JudgeCallbacks {
+  /** Возвращает либо просто строку (старый контракт), либо
+   *  {content, reasoningContent} — для thinking-моделей через reasoning-decoder. */
   llm: (args: {
     messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
     temperature?: number;
     maxTokens?: number;
-  }) => Promise<string>;
+  }) => Promise<LlmCallResult>;
   onEvent?: (e: JudgeEvent) => void;
 }
 
@@ -192,6 +196,11 @@ function tryParseJudgeJson(raw: string): unknown {
   return JSON.parse(cleaned);
 }
 
+function normalizeJudgeLlmResult(r: LlmCallResult): { content: string; reasoningContent?: string } {
+  if (typeof r === "string") return { content: r };
+  return { content: r.content ?? "", reasoningContent: r.reasoningContent };
+}
+
 async function llmJudge(
   concept: DedupedConcept,
   template: string,
@@ -205,18 +214,20 @@ async function llmJudge(
     noveltyHint: concept.noveltyHint,
   };
   const prompt = template.replace("{{CONCEPT_JSON}}", JSON.stringify(conceptForLlm, null, 2));
-  let raw: string;
+  let lm: { content: string; reasoningContent?: string };
   try {
-    raw = await cb.llm({
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.2,
-      /* AUDIT: 800 токенов было мало для chain-of-thought reasoning у quality-моделей —
-         они начинали JSON, не успевали закрыть → schema parse fail → judge-error.
-         1500 даёт безопасный запас на 200-400 токенов размышления + структурированный
-         ответ. Caller hint всё равно перекрывается профилем модели в makeLlm
-         (thinking-моделям дадут больше). */
-      maxTokens: 1500,
-    });
+    lm = normalizeJudgeLlmResult(
+      await cb.llm({
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.2,
+        /* AUDIT: 800 токенов было мало для chain-of-thought reasoning у quality-моделей —
+           они начинали JSON, не успевали закрыть → schema parse fail → judge-error.
+           1500 даёт безопасный запас на 200-400 токенов размышления + структурированный
+           ответ. Caller hint всё равно перекрывается профилем модели в makeLlm
+           (thinking-моделям дадут больше). */
+        maxTokens: 1500,
+      }),
+    );
   } catch (e) {
     /* Cancel job'а != "judge не смог оценить". Без re-throw'а отмена выглядит
        как rejected concept и судья продолжает прожаривать следующие.
@@ -225,13 +236,36 @@ async function llmJudge(
     cb.onEvent?.({ type: "judge.reject.error", principle: concept.principle.slice(0, 60), reason: e instanceof Error ? e.message : String(e) });
     return null;
   }
-  let parsed: unknown;
-  try {
-    parsed = tryParseJudgeJson(raw);
-  } catch (e) {
-    cb.onEvent?.({ type: "judge.reject.error", principle: concept.principle.slice(0, 60), reason: `parse: ${e}` });
+
+  /* Двухисточниковый парсинг: content → reasoning_content fallback.
+     Thinking-модели часто кладут JudgeResult в reasoning при response_format=json_schema. */
+  let parsed: unknown = null;
+  if (lm.content.trim().length > 0) {
+    try {
+      parsed = tryParseJudgeJson(lm.content);
+    } catch {
+      /* fallthrough на reasoning */
+    }
+  }
+  if (parsed === null && lm.reasoningContent) {
+    const decoded = extractJsonObjectFromReasoning(lm.reasoningContent);
+    if (decoded) {
+      try {
+        parsed = JSON.parse(decoded);
+      } catch {
+        /* остаётся null, ниже отрапортуем */
+      }
+    }
+  }
+  if (parsed === null) {
+    cb.onEvent?.({
+      type: "judge.reject.error",
+      principle: concept.principle.slice(0, 60),
+      reason: lm.content.trim().length === 0 && !lm.reasoningContent ? "empty-response" : "parse-failed-in-content-and-reasoning",
+    });
     return null;
   }
+
   const result = JudgeResultSchema.safeParse(parsed);
   if (!result.success) {
     cb.onEvent?.({ type: "judge.reject.error", principle: concept.principle.slice(0, 60), reason: `schema: ${result.error.message.slice(0, 100)}` });

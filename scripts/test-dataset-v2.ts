@@ -12,7 +12,7 @@
 import { chunkChapter } from "../electron/lib/dataset-v2/semantic-chunker.js";
 import { dedupChapterConcepts } from "../electron/lib/dataset-v2/intra-dedup.js";
 import { extractChapterConcepts, clearPromptCache } from "../electron/lib/dataset-v2/concept-extractor.js";
-import { extractJsonFromReasoning } from "../electron/lib/dataset-v2/reasoning-decoder.js";
+import { extractJsonFromReasoning, extractJsonObjectFromReasoning } from "../electron/lib/dataset-v2/reasoning-decoder.js";
 import type { BookSection } from "../electron/lib/scanner/parsers/index.js";
 import type { ExtractedConcept } from "../electron/lib/dataset-v2/types.js";
 
@@ -350,6 +350,22 @@ That should be it.`;
     if (extractJsonFromReasoning(input) !== null) throw new Error("must return null when no array");
   });
 
+  await step("R1-O1 — extractJsonObjectFromReasoning: объект {} извлекается", () => {
+    const input = "Let me think... Final judge result: {\"novelty\":0.8,\"actionability\":0.7,\"domain_fit\":0.9,\"reasoning\":\"good\"}";
+    const out = extractJsonObjectFromReasoning(input);
+    if (!out) throw new Error("decoder returned null");
+    const parsed = JSON.parse(out);
+    if (parsed.novelty !== 0.8) throw new Error(`got ${JSON.stringify(parsed)}`);
+  });
+
+  await step("R1-O2 — extractJsonObjectFromReasoning: вложенные объекты", () => {
+    const input = "Result: {\"outer\":{\"inner\":{\"deep\":1}}}";
+    const out = extractJsonObjectFromReasoning(input);
+    if (!out) throw new Error("decoder returned null");
+    const parsed = JSON.parse(out);
+    if (parsed.outer.inner.deep !== 1) throw new Error("nested object lost");
+  });
+
   await step("R1-10 — большой reasoning без catastrophic backtracking", () => {
     /* 50KB текста с 1 валидным массивом в конце — должно отработать <100мс. */
     const filler = "lorem ipsum [unbalanced bracket here ".repeat(1000);
@@ -360,6 +376,188 @@ That should be it.`;
     if (!out) throw new Error("decoder returned null");
     if (dt > 500) throw new Error(`decoder too slow: ${dt}ms (catastrophic backtracking risk)`);
     if (JSON.parse(out)[0].final !== true) throw new Error("wrong array picked");
+  });
+
+  /* === Dual-Prompt Routing + thinking-fallback в extractor === */
+
+  await step("D1-1 — extractor с promptKey='cognitive' использует cognitive-промпт", async () => {
+    clearPromptCache();
+    const chunkText = "The optimal cache strategy is event-driven invalidation.";
+    const section = makeSection([chunkText]);
+    const chunks = await chunkChapter({ section, chapterIndex: 0, bookTitle: "B", bookSourcePath: "/x" });
+    let seenSystemPrompt = "";
+    const mockLlm = async ({ messages }: { messages: Array<{ content: string }> }): Promise<string> => {
+      seenSystemPrompt = messages[0].content;
+      return JSON.stringify([
+        {
+          principle: "Event invalidation outperforms TTL for cache freshness and hit-rate ratio.",
+          explanation: "Event-driven invalidation maintains both freshness and hit-rate well above TTL alternatives in production systems with predictable write patterns.",
+          domain: "perf",
+          tags: ["cache"],
+          noveltyHint: "Event beats TTL for freshness.",
+          sourceQuote: chunkText,
+        },
+      ]);
+    };
+    const result = await extractChapterConcepts({
+      chunks,
+      promptsDir: null,
+      promptKey: "cognitive",
+      callbacks: { llm: mockLlm },
+    });
+    if (result.conceptsTotal.length !== 1) throw new Error(`expected 1, got ${result.conceptsTotal.length}`);
+    if (!seenSystemPrompt.includes("COGNITIVE DISTILLER")) {
+      throw new Error("cognitive prompt should contain 'COGNITIVE DISTILLER' header");
+    }
+    if (seenSystemPrompt.includes("OMNISSIAH::HDSK_EXTRACTOR")) {
+      throw new Error("cognitive prompt must NOT contain mechanicus header");
+    }
+  });
+
+  await step("D1-2 — extractor с promptKey='mechanicus' использует mechanicus-промпт", async () => {
+    clearPromptCache();
+    const chunkText = "Always validate user input on the server side before processing.";
+    const section = makeSection([chunkText]);
+    const chunks = await chunkChapter({ section, chapterIndex: 0, bookTitle: "B", bookSourcePath: "/x" });
+    let seenSystemPrompt = "";
+    const mockLlm = async ({ messages }: { messages: Array<{ content: string }> }): Promise<string> => {
+      seenSystemPrompt = messages[0].content;
+      return JSON.stringify([
+        {
+          principle: "Always validate user input on the server side before processing.",
+          explanation: "X.web|input_validation: server-side validation prevents bypass via crafted clients; client-only checks fail under hostile traffic. NO: rely-on-client. eg: form-data >> typed-server-schema.",
+          domain: "web",
+          tags: ["security"],
+          noveltyHint: "Server-side wins.",
+          sourceQuote: chunkText,
+        },
+      ]);
+    };
+    const result = await extractChapterConcepts({
+      chunks,
+      promptsDir: null,
+      promptKey: "mechanicus",
+      callbacks: { llm: mockLlm },
+    });
+    if (result.conceptsTotal.length !== 1) throw new Error(`expected 1, got ${result.conceptsTotal.length}`);
+    if (!seenSystemPrompt.includes("OMNISSIAH::HDSK_EXTRACTOR")) {
+      throw new Error("mechanicus prompt should contain OMNISSIAH header");
+    }
+    if (!seenSystemPrompt.includes("⊕")) {
+      throw new Error("mechanicus prompt should contain unicode operators");
+    }
+    if (seenSystemPrompt.includes("COGNITIVE DISTILLER")) {
+      throw new Error("mechanicus prompt must NOT contain cognitive distiller header");
+    }
+  });
+
+  await step("D1-3 — extractor по умолчанию (без promptKey) = mechanicus", async () => {
+    clearPromptCache();
+    const chunkText = "Defer non-critical work to idle callbacks for better TTI.";
+    const section = makeSection([chunkText]);
+    const chunks = await chunkChapter({ section, chapterIndex: 0, bookTitle: "B", bookSourcePath: "/x" });
+    let seenSystemPrompt = "";
+    const mockLlm = async ({ messages }: { messages: Array<{ content: string }> }): Promise<string> => {
+      seenSystemPrompt = messages[0].content;
+      return "[]";
+    };
+    await extractChapterConcepts({
+      chunks,
+      promptsDir: null,
+      callbacks: { llm: mockLlm },
+    });
+    if (!seenSystemPrompt.includes("OMNISSIAH::HDSK_EXTRACTOR")) {
+      throw new Error("default promptKey must be mechanicus");
+    }
+  });
+
+  await step("D2-1 — thinking-fallback: пустой content + JSON в reasoning → концепт извлекается", async () => {
+    clearPromptCache();
+    const chunkText = "Premature optimization is the root of all evil in software design decisions.";
+    const section = makeSection([chunkText]);
+    const chunks = await chunkChapter({ section, chapterIndex: 0, bookTitle: "B", bookSourcePath: "/x" });
+    /* Имитируем поведение LM Studio с qwen3.6: content="", JSON в reasoningContent. */
+    const validJson = JSON.stringify([
+      {
+        principle: "Premature optimization is the root of all evil in software design decisions.",
+        explanation: "Optimizing before profiling biases the codebase toward speculative micro-wins while hiding the systemic bottlenecks measurement would have surfaced. The cost: brittle abstractions and obscured correctness.",
+        domain: "perf",
+        tags: ["optimization", "design"],
+        noveltyHint: "Profile first, optimize second.",
+        sourceQuote: chunkText,
+      },
+    ]);
+    const mockLlm = async (): Promise<{ content: string; reasoningContent?: string }> => ({
+      content: "",
+      reasoningContent: `Let me think about this carefully. The chunk talks about... I'll output: ${validJson}`,
+    });
+    const events: string[] = [];
+    const result = await extractChapterConcepts({
+      chunks,
+      promptsDir: null,
+      promptKey: "cognitive",
+      callbacks: {
+        llm: mockLlm,
+        onEvent: (e) => events.push(e.type),
+      },
+    });
+    if (result.conceptsTotal.length !== 1) {
+      throw new Error(`expected 1 concept from reasoning fallback, got ${result.conceptsTotal.length}`);
+    }
+    if (!events.includes("extract.reasoning_decoded")) {
+      throw new Error("missing extract.reasoning_decoded event");
+    }
+  });
+
+  await step("D2-2 — thinking-fallback: невалидный content + валидный reasoning → fallback", async () => {
+    clearPromptCache();
+    const chunkText = "Cohesion within a module reduces coupling between modules across the codebase boundary.";
+    const section = makeSection([chunkText]);
+    const chunks = await chunkChapter({ section, chapterIndex: 0, bookTitle: "B", bookSourcePath: "/x" });
+    const validJson = JSON.stringify([
+      {
+        principle: "High cohesion within modules drives low coupling between them across boundaries.",
+        explanation: "When a module's responsibilities are tightly aligned, its public surface naturally shrinks; this reduces accidental dependencies that other modules would otherwise form, lowering system-wide coupling.",
+        domain: "arch",
+        tags: ["modularity", "coupling"],
+        noveltyHint: "Cohesion is the lever that controls coupling.",
+        sourceQuote: chunkText,
+      },
+    ]);
+    const mockLlm = async (): Promise<{ content: string; reasoningContent?: string }> => ({
+      content: "Sure! I'll think about this. NOT JSON.",
+      reasoningContent: `My final answer: ${validJson}`,
+    });
+    const result = await extractChapterConcepts({
+      chunks,
+      promptsDir: null,
+      promptKey: "cognitive",
+      callbacks: { llm: mockLlm },
+    });
+    if (result.conceptsTotal.length !== 1) {
+      throw new Error(`expected 1 concept from reasoning fallback, got ${result.conceptsTotal.length}`);
+    }
+  });
+
+  await step("D2-3 — thinking-fallback: оба пусты → empty-content reason", async () => {
+    clearPromptCache();
+    const chunkText = paragraph(100);
+    const section = makeSection([chunkText]);
+    const chunks = await chunkChapter({ section, chapterIndex: 0, bookTitle: "B", bookSourcePath: "/x" });
+    const mockLlm = async (): Promise<{ content: string; reasoningContent?: string }> => ({
+      content: "",
+      reasoningContent: undefined,
+    });
+    const result = await extractChapterConcepts({
+      chunks,
+      promptsDir: null,
+      promptKey: "cognitive",
+      callbacks: { llm: mockLlm },
+    });
+    if (result.conceptsTotal.length !== 0) throw new Error("expected 0 concepts");
+    if (!result.warnings.some((w) => w.includes("empty-content"))) {
+      throw new Error("missing empty-content warning");
+    }
   });
 
   /* === Summary === */

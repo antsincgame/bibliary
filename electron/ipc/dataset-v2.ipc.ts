@@ -97,7 +97,7 @@ function makeLlm(
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
   temperature?: number;
   maxTokens?: number;
-}) => Promise<string> {
+}) => Promise<{ content: string; reasoningContent?: string }> {
   const profilePromise = getModelProfile(modelKey);
   const allowedDomains = Array.from(ALLOWED_DOMAINS).sort();
   const responseFormatBuilder =
@@ -130,8 +130,21 @@ function makeLlm(
       },
       { externalSignal: signal },
     );
-    return response.content;
+    /* Прокидываем оба поля — extractor/judge ниже разберут через reasoning-decoder. */
+    return { content: response.content, reasoningContent: response.reasoningContent };
   };
+}
+
+/**
+ * Dual-Prompt Routing: thinking-heavy модели (Qwen3.6, DeepSeek-R1) ломаются от
+ * unicode-операторов mechanicus-грамматики (⊕ → ↑ ↓ ≡ ⊗ ∅ ⊙) — их RL-тюнинг
+ * требует естественного языка для reasoning. Им даём cognitive-промпт.
+ * Всем остальным (non-thinking-instruct, tool-capable-coder, small-fast,
+ * default-fallback) — компактный mechanicus-промпт со скрина (плотность
+ * <8 токенов/правило, идеален для не-reasoning моделей).
+ */
+function pickPromptKey(profileSource: string): "mechanicus" | "cognitive" {
+  return profileSource === "thinking-heavy" ? "cognitive" : "mechanicus";
 }
 
 export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null): void {
@@ -167,6 +180,12 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
       const judgeModel = args.judgeModel ?? PROFILE.BIG.key;
       const llmExtract = makeLlm(extractModel, ctrl.signal, "extractor");
       const llmJudge = makeLlm(judgeModel, ctrl.signal, "judge");
+
+      /* Routing промпта по тегам модели extractor'а. judge — отдельный single-object
+         промпт, не зависит от mechanicus/cognitive split. */
+      const extractProfile = await getModelProfile(extractModel);
+      const promptKey = pickPromptKey(extractProfile.source);
+      emit({ stage: "config", phase: "info", extractModel, judgeModel, promptKey, profileSource: extractProfile.source });
 
       const prefs = await getPreferencesStore().getAll();
 
@@ -216,6 +235,7 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
           const extractRes = await extractChapterConcepts({
             chunks,
             promptsDir: null,
+            promptKey,
             signal: ctrl.signal,
             callbacks: {
               llm: llmExtract,

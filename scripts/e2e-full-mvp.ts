@@ -510,37 +510,27 @@ async function main(): Promise<void> {
   if (skipCrystal) {
     console.log(`  ${COLOR.yellow}skipped via --skip-crystal${COLOR.reset}`);
   } else {
-    /* Tag-based selection — приоритет ПО РОЛИ, не "максимально мощная вообще".
-       Для Crystallizer (structured JSON extraction) reasoning-модели работают
-       плохо: они пишут всё в <think>...</think>, LM Studio парсит это в
-       reasoning_content, оставляя content="" — extractor видит 0 концептов.
-       Эмпирически на qwen3.6-35b: 912 completion tokens → 0 chars JSON.
-       Поэтому для EXTRACTOR/JUDGE приоритет:
-         1. tool-capable-coder (qwen3-coder-30b — best для structured)
-         2. non-thinking-instruct (mistral-small/qwen3-14b/qwen3-4b — direct JSON)
-         3. flagship (qwen3.6 — last resort, использует адаптивный профиль)
-         4. small-fast (любая мелкая — last-last resort)
-       Для CHAT/AGENT (chat.js, forge-agent.js) flagship остаётся первым —
-       там reasoning помогает. Это разделение по ролям — основа умного выбора. */
-    const CRYSTAL_TAG_PRIORITY: ModelTag[] = ["tool-capable-coder", "non-thinking-instruct", "flagship", "small-fast"];
-    const LEGACY_HINTS = ["qwen3-coder", "mistral-small", "qwen3-14b", "qwen3-4b-2507", "qwen3.6"];
+    /* Tag-based selection — теперь FLAGSHIP ПЕРВЫМ.
+       После внедрения reasoning-decoder + dual-prompt routing (cognitive промпт
+       для thinking-моделей) — qwen3.6-35b наконец-то работает для Crystallizer
+       и даёт лучшее качество концептов. Если flagship загружен → используем его.
+       Иначе — caскад на специализированные modeли:
+         1. flagship (qwen3.6 — топ качество, reasoning + cognitive prompt + decoder)
+         2. tool-capable-coder (qwen3-coder-30b — best для structured без reasoning)
+         3. non-thinking-instruct (mistral-small/qwen3-14b/qwen3-4b — direct JSON)
+         4. small-fast (любая мелкая — last resort) */
+    const CRYSTAL_TAG_PRIORITY: ModelTag[] = ["flagship", "tool-capable-coder", "non-thinking-instruct", "small-fast"];
+    const LEGACY_HINTS = ["qwen3.6", "qwen3-coder", "mistral-small", "qwen3-14b", "qwen3-4b-2507"];
     const extractModel = await pickModelByTags(lm.models, CRYSTAL_TAG_PRIORITY, LEGACY_HINTS);
     const judgeModel = await pickModelByTags(lm.models, CRYSTAL_TAG_PRIORITY, LEGACY_HINTS);
 
-    /* Умная подсказка: если для extractor выбран small-fast или flagship —
-       это работающие, но не оптимальные fallback'и. Подскажем пользователю
-       загрузить лучшую модель для Crystallizer. */
+    /* Подсказка только если выбрана последняя ступень каскада — small-fast. */
     if (extractModel) {
       const hintProfile = await getModelProfile(extractModel);
       if (hintProfile.source === "small-fast") {
         console.log(
           `        ${COLOR.yellow}[hint] Crystallizer работает на small-fast модели. Для лучшего качества загрузите` +
-          ` qwen3-coder-30b-a3b, mistral-small-3.1, или qwen3-14b-instruct в LM Studio.${COLOR.reset}`,
-        );
-      } else if (hintProfile.source === "thinking-heavy") {
-        console.log(
-          `        ${COLOR.yellow}[hint] Crystallizer на reasoning-модели работает медленно (всё уходит в <think>).` +
-          ` Для structured extraction оптимальнее non-thinking instruct: qwen3-coder/14b или mistral-small.${COLOR.reset}`,
+          ` qwen3.6-35b-a3b (flagship), qwen3-coder-30b-a3b или mistral-small-3.1 в LM Studio.${COLOR.reset}`,
         );
       }
     }
@@ -588,7 +578,7 @@ async function main(): Promise<void> {
         messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
         temperature?: number;
         maxTokens?: number;
-      }): Promise<string> => {
+      }): Promise<{ content: string; reasoningContent?: string }> => {
         const r = await chat({
           model: extractModel,
           messages,
@@ -607,7 +597,9 @@ async function main(): Promise<void> {
           responseFormat: extractResponseFormat,
           chatTemplateKwargs: extractProfile.chatTemplateKwargs,
         });
-        return r.content;
+        /* Прокидываем оба поля — concept-extractor разберётся через reasoning-decoder
+           если LM Studio (баг #1773/#1698/#1602) положит JSON в reasoning_content. */
+        return { content: r.content, reasoningContent: r.reasoningContent };
       };
 
       /* Crystal pipeline state -- shared across T6.2..T6.6 steps via
@@ -664,9 +656,15 @@ async function main(): Promise<void> {
 
       if (chosenChapterIdx >= 0 && chunksReady.length > 0) {
         await step(`T6.3 -- extractChapterConcepts (LLM ${extractModel.slice(0, 30)})`, async () => {
+          /* Dual-prompt routing: thinking-heavy → cognitive (естественный английский),
+             все остальные → mechanicus (плотная грамматика со скрина). */
+          const promptKey: "mechanicus" | "cognitive" =
+            extractProfile.source === "thinking-heavy" ? "cognitive" : "mechanicus";
+          console.log(`        ${COLOR.dim}prompt: ${promptKey} (profile: ${extractProfile.source})${COLOR.reset}`);
           const result = await extractChapterConcepts({
             chunks: chunksReady,
             promptsDir: null,
+            promptKey,
             callbacks: {
               llm,
               onEvent: (_e: ExtractEvent) => { /* observed but quiet */ },
@@ -738,7 +736,9 @@ async function main(): Promise<void> {
                   responseFormat: judgeResponseFormat,
                   chatTemplateKwargs: judgeProfile.chatTemplateKwargs,
                 });
-                return r.content;
+                /* Прокидываем оба поля — judge.llmJudge разберётся через
+                   extractJsonObjectFromReasoning при пустом content. */
+                return { content: r.content, reasoningContent: r.reasoningContent };
               },
               onEvent: (_e: JudgeEvent) => { /* quiet */ },
             },

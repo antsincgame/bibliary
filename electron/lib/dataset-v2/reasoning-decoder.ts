@@ -59,24 +59,26 @@ function stripMarkdownFences(input: string): string {
 
 /**
  * Сканирует строку посимвольно, возвращая позиции всех top-level
- * сбалансированных подстрок `[...]`. Учитывает:
- *   - двойные кавычки и escape \"
+ * сбалансированных подстрок, обрамлённых заданными символами (`[`/`]` или `{`/`}`).
+ *
+ * Учитывает:
+ *   - двойные кавычки и escape `\"`
  *   - вложенные скобки (counting depth)
- *   - открывающую `[` без пары — игнорируем
+ *   - открывающую без пары — игнорируется
  *
  * Сложность O(n), без backtracking.
  */
-function findBalancedArrays(input: string): Array<{ start: number; end: number }> {
+function findBalanced(input: string, open: string, close: string): Array<{ start: number; end: number }> {
   const found: Array<{ start: number; end: number }> = [];
   let i = 0;
   const n = input.length;
   while (i < n) {
     const ch = input[i];
-    if (ch !== "[") {
+    if (ch !== open) {
       i++;
       continue;
     }
-    /* Найден потенциальный старт. Сканируем до сбалансированной `]`. */
+    /* Найден потенциальный старт. Сканируем до сбалансированной закрывающей. */
     const start = i;
     let depth = 0;
     let inString = false;
@@ -100,8 +102,8 @@ function findBalancedArrays(input: string): Array<{ start: number; end: number }
         inString = true;
         continue;
       }
-      if (c === "[") depth++;
-      else if (c === "]") {
+      if (c === open) depth++;
+      else if (c === close) {
         depth--;
         if (depth === 0) {
           found.push({ start, end: j });
@@ -112,7 +114,7 @@ function findBalancedArrays(input: string): Array<{ start: number; end: number }
       }
     }
     if (!closed) {
-      /* Незакрытая `[` — пропускаем её и продолжаем дальше с i+1.
+      /* Незакрытая открывающая — пропускаем и продолжаем дальше с i+1.
          Не пытаемся восстановить — это даст false-positive. */
       i = start + 1;
     }
@@ -121,7 +123,36 @@ function findBalancedArrays(input: string): Array<{ start: number; end: number }
 }
 
 /**
- * Извлекает строку JSON-массива из reasoning-текста.
+ * Общий декодер: находит все сбалансированные блоки, заданные парой символов,
+ * и возвращает строку ПОСЛЕДНЕГО валидного JSON (готовую к JSON.parse).
+ */
+function extractLastBalancedJson(
+  reasoning: string | null | undefined,
+  open: string,
+  close: string,
+): string | null {
+  if (!reasoning || typeof reasoning !== "string") return null;
+  const trimmed = reasoning.trim();
+  if (trimmed.length === 0) return null;
+
+  const cleaned = stripMarkdownFences(trimmed);
+  const candidates = findBalanced(cleaned, open, close);
+  if (candidates.length === 0) return null;
+
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    const slice = cleaned.slice(candidates[i].start, candidates[i].end + 1);
+    try {
+      JSON.parse(slice);
+      return slice;
+    } catch {
+      /* Невалидный — пробуем предыдущий кандидат. */
+    }
+  }
+  return null;
+}
+
+/**
+ * Извлекает строку JSON-МАССИВА из reasoning-текста (для extractor: список концептов).
  *
  * @param reasoning — содержимое поля `reasoning_content` от LM Studio.
  *                   Может быть пустой строкой, undefined-like или содержать
@@ -136,23 +167,15 @@ function findBalancedArrays(input: string): Array<{ start: number; end: number }
  *   - Никогда не бросает исключений — только возвращает null.
  */
 export function extractJsonFromReasoning(reasoning: string | null | undefined): string | null {
-  if (!reasoning || typeof reasoning !== "string") return null;
-  const trimmed = reasoning.trim();
-  if (trimmed.length === 0) return null;
+  return extractLastBalancedJson(reasoning, "[", "]");
+}
 
-  const cleaned = stripMarkdownFences(trimmed);
-  const candidates = findBalancedArrays(cleaned);
-  if (candidates.length === 0) return null;
-
-  /* Идём от последнего к первому: финальный ответ модели всегда в конце. */
-  for (let i = candidates.length - 1; i >= 0; i--) {
-    const slice = cleaned.slice(candidates[i].start, candidates[i].end + 1);
-    try {
-      JSON.parse(slice);
-      return slice;
-    } catch {
-      /* Невалидный — пробуем предыдущий кандидат. */
-    }
-  }
-  return null;
+/**
+ * Извлекает строку JSON-ОБЪЕКТА из reasoning-текста (для judge: один JudgeResult).
+ *
+ * Возвращает последний валидный объект `{...}`. Игнорирует одиночные `{` без
+ * сбалансированной пары и пропускает невалидные кандидаты.
+ */
+export function extractJsonObjectFromReasoning(reasoning: string | null | undefined): string | null {
+  return extractLastBalancedJson(reasoning, "{", "}");
 }

@@ -17,6 +17,18 @@ import * as path from "path";
 import { ExtractedConceptArraySchema, type ChapterMemory, type ExtractedConcept, type SemanticChunk } from "./types.js";
 import { ALLOWED_DOMAINS } from "../../mechanicus-prompt.js";
 import { isAbortError } from "../resilience/lm-request-policy.js";
+import { extractJsonFromReasoning } from "./reasoning-decoder.js";
+
+/**
+ * Результат одного LLM-call. `content` — основное поле OpenAI-compat ответа.
+ * `reasoningContent` — поле `reasoning_content` для thinking-моделей; LM Studio
+ * часто складывает туда финальный JSON при `response_format=json_schema`,
+ * оставляя `content` пустым (см. lmstudio-client.ts + reasoning-decoder.ts).
+ *
+ * Для backwards-compat callbacks могут возвращать просто string — в этом
+ * случае извлечения из reasoning не будет, но старый поток продолжит работать.
+ */
+export type LlmCallResult = string | { content: string; reasoningContent?: string };
 
 export interface ExtractCallbacks {
   /** Один LLM-call. messages в OpenAI-формате, контракт совместим с lmstudio-client.chat. */
@@ -24,17 +36,23 @@ export interface ExtractCallbacks {
     messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
     temperature?: number;
     maxTokens?: number;
-  }) => Promise<string>;
+  }) => Promise<LlmCallResult>;
   /** Optional emitter для alchemy log. */
   onEvent?: (e: ExtractEvent) => void;
 }
+
+/** Какой prompt-template использовать. mechanicus — для non-thinking/small моделей,
+ *  cognitive — для thinking-heavy (Qwen3.6 / DeepSeek-R1) которые ломаются
+ *  от unicode-операторов mechanicus-грамматики. */
+export type PromptKey = "mechanicus" | "cognitive";
 
 export type ExtractEvent =
   | { type: "extract.chunk.start"; chunkPart: number; chunkTotal: number; chapterTitle: string }
   | { type: "extract.chunk.done"; chunkPart: number; chunkTotal: number; raw: number; valid: number; durationMs: number }
   | { type: "extract.chunk.error"; chunkPart: number; chunkTotal: number; error: string }
   | { type: "extract.parse.warning"; chunkPart: number; reason: string }
-  | { type: "extract.retry"; chunkPart: number; attempt: number; reason: string };
+  | { type: "extract.retry"; chunkPart: number; attempt: number; reason: string }
+  | { type: "extract.reasoning_decoded"; chunkPart: number; chars: number };
 
 interface ChunkResult {
   chunk: SemanticChunk;
@@ -43,7 +61,16 @@ interface ChunkResult {
   warnings: string[];
 }
 
-const PROMPT_CACHE: { template: string | null } = { template: null };
+/** Кеш по ключу `${promptsDir||"<bundled>"}:${promptKey}`. Map позволяет
+ *  держать ОБА промпта (mechanicus + cognitive) в памяти параллельно — extractor
+ *  может переключаться между ними между чанками если в книге смешаны
+ *  thinking и non-thinking батчи. */
+const PROMPT_CACHE = new Map<string, string>();
+
+const PROMPT_FILES: Record<PromptKey, string> = {
+  mechanicus: "concept-extractor-mechanicus.md",
+  cognitive: "concept-extractor-cognitive.md",
+};
 
 /**
  * Несколько кандидатов на расположение bundled defaults — порядок важен.
@@ -64,36 +91,40 @@ function bundledPromptCandidates(file: string): string[] {
   return candidates;
 }
 
-async function loadPromptTemplate(promptsDir: string | null): Promise<string> {
-  if (PROMPT_CACHE.template) return PROMPT_CACHE.template;
+async function loadPromptTemplate(promptsDir: string | null, promptKey: PromptKey): Promise<string> {
+  const cacheKey = `${promptsDir ?? "<bundled>"}:${promptKey}`;
+  const cached = PROMPT_CACHE.get(cacheKey);
+  if (cached) return cached;
+
+  const filename = PROMPT_FILES[promptKey];
   if (promptsDir) {
     try {
-      const userPath = path.join(promptsDir, "concept-extractor.md");
+      const userPath = path.join(promptsDir, filename);
       const userText = await fs.readFile(userPath, "utf8");
       if (userText.trim().length > 50) {
-        PROMPT_CACHE.template = userText;
+        PROMPT_CACHE.set(cacheKey, userText);
         return userText;
       }
     } catch {
       /* fallback */
     }
   }
-  for (const candidate of bundledPromptCandidates("concept-extractor.md")) {
+  for (const candidate of bundledPromptCandidates(filename)) {
     try {
       const text = await fs.readFile(candidate, "utf8");
       if (text.trim().length > 50) {
-        PROMPT_CACHE.template = text;
+        PROMPT_CACHE.set(cacheKey, text);
         return text;
       }
     } catch {
       /* try next */
     }
   }
-  throw new Error("concept-extractor.md not found in any default location");
+  throw new Error(`${filename} not found in any default location`);
 }
 
 export function clearPromptCache(): void {
-  PROMPT_CACHE.template = null;
+  PROMPT_CACHE.clear();
 }
 
 function renderMemoryBlock(memory: ChapterMemory): string {
@@ -154,38 +185,86 @@ function quoteFoundInChunk(quote: string, chunkText: string): boolean {
 }
 
 /**
- * Попытка одного LLM-call + parse. Возвращает либо успешный массив, либо строку
- * с причиной для retry. Не работает с warnings/events — это делает caller (extractOne).
+ * Нормализует возврат cb.llm к единому формату {content, reasoningContent}.
+ * Backwards-compat: если callback вернул просто string — это content.
+ */
+function normalizeLlmResult(r: LlmCallResult): { content: string; reasoningContent?: string } {
+  if (typeof r === "string") return { content: r };
+  return { content: r.content ?? "", reasoningContent: r.reasoningContent };
+}
+
+/**
+ * Попытка одного LLM-call + parse с двумя источниками JSON:
+ *   1. content (основной путь)
+ *   2. reasoning_content через extractJsonFromReasoning() — спасает thinking-модели
+ *      когда LM Studio (баг #1773/#1698/#1602) кладёт JSON в reasoning вместо content.
+ *
+ * Возвращает либо успешный массив, либо строку с причиной для retry.
+ * Не работает с warnings/events — это делает caller (extractOne).
  */
 async function tryOneExtractionAttempt(
   userPrompt: string,
   cb: ExtractCallbacks,
   attempt: { temperature: number; maxTokens: number },
-): Promise<{ ok: true; raw: string; parsed: unknown[] } | { ok: false; raw: string; reason: string }> {
-  let raw: string;
+  chunkPart: number,
+): Promise<{ ok: true; raw: string; parsed: unknown[]; source: "content" | "reasoning" } | { ok: false; raw: string; reason: string }> {
+  let lm: { content: string; reasoningContent?: string };
   try {
-    raw = await cb.llm({
-      messages: [{ role: "user", content: userPrompt }],
-      temperature: attempt.temperature,
-      maxTokens: attempt.maxTokens,
-    });
+    lm = normalizeLlmResult(
+      await cb.llm({
+        messages: [{ role: "user", content: userPrompt }],
+        temperature: attempt.temperature,
+        maxTokens: attempt.maxTokens,
+      }),
+    );
   } catch (e) {
     if (isAbortError(e)) throw e;
     return { ok: false, raw: "", reason: `llm-error: ${e instanceof Error ? e.message : e}` };
   }
-  if (raw.trim().length === 0) {
-    return { ok: false, raw, reason: "empty-content" };
+
+  const contentTrimmed = lm.content.trim();
+
+  /* Источник 1 — content (основной путь). */
+  if (contentTrimmed.length > 0) {
+    try {
+      const parsed = tryParseConceptsJson(lm.content);
+      if (Array.isArray(parsed)) {
+        return { ok: true, raw: lm.content, parsed, source: "content" };
+      }
+      /* parsed не массив — пробуем reasoning ниже как fallback. */
+    } catch {
+      /* json-parse fail у content — пробуем reasoning ниже как fallback. */
+    }
   }
-  let parsed: unknown;
-  try {
-    parsed = tryParseConceptsJson(raw);
-  } catch (e) {
-    return { ok: false, raw, reason: `json-parse: ${e instanceof Error ? e.message : e}` };
+
+  /* Источник 2 — reasoning_content (fallback для thinking-моделей). */
+  const decoded = extractJsonFromReasoning(lm.reasoningContent);
+  if (decoded) {
+    try {
+      const parsed = JSON.parse(decoded);
+      if (Array.isArray(parsed)) {
+        cb.onEvent?.({ type: "extract.reasoning_decoded", chunkPart, chars: decoded.length });
+        return { ok: true, raw: decoded, parsed, source: "reasoning" };
+      }
+      return {
+        ok: false,
+        raw: decoded,
+        reason: `reasoning-decoded but expected array, got ${typeof parsed}`,
+      };
+    } catch (e) {
+      return {
+        ok: false,
+        raw: decoded,
+        reason: `reasoning-decoded but json-parse: ${e instanceof Error ? e.message : e}`,
+      };
+    }
   }
-  if (!Array.isArray(parsed)) {
-    return { ok: false, raw, reason: `expected array, got ${typeof parsed}` };
+
+  /* Оба источника пусты или невалидны — возвращаем понятную причину. */
+  if (contentTrimmed.length === 0) {
+    return { ok: false, raw: lm.content, reason: "empty-content" };
   }
-  return { ok: true, raw, parsed };
+  return { ok: false, raw: lm.content, reason: "json-parse: invalid in both content and reasoning" };
 }
 
 const DEFAULT_EXTRACT_MAX_TOKENS = 8192;
@@ -212,7 +291,7 @@ async function extractOne(
   const first = await tryOneExtractionAttempt(userPrompt, cb, {
     temperature: 0.4,
     maxTokens: DEFAULT_EXTRACT_MAX_TOKENS,
-  });
+  }, chunk.partN);
 
   let success: { raw: string; parsed: unknown[] } | null = first.ok ? first : null;
 
@@ -232,7 +311,7 @@ async function extractOne(
     const second = await tryOneExtractionAttempt(userPrompt, cb, {
       temperature: RETRY_TEMPERATURE,
       maxTokens: DEFAULT_EXTRACT_MAX_TOKENS * 2,
-    });
+    }, chunk.partN);
     if (second.ok) {
       success = second;
     } else {
@@ -307,6 +386,10 @@ function updateMemory(memory: ChapterMemory, concepts: ExtractedConcept[]): Chap
 export interface ExtractChapterArgs {
   chunks: SemanticChunk[];
   promptsDir?: string | null;
+  /** Какой prompt использовать. По умолчанию "mechanicus" (точный язык со скрина —
+   *  для non-thinking/small моделей). Для thinking-heavy (qwen3.6, deepseek-r1) caller
+   *  ОБЯЗАН передать "cognitive" — иначе модель сходит с ума от unicode-операторов. */
+  promptKey?: PromptKey;
   callbacks: ExtractCallbacks;
   /** Если signal aborted — выходим между чанками без следующего LLM-call. */
   signal?: AbortSignal;
@@ -324,7 +407,7 @@ export interface ExtractChapterResult {
  * + per-chunk детали + список warnings (для UI/CLI отладки).
  */
 export async function extractChapterConcepts(args: ExtractChapterArgs): Promise<ExtractChapterResult> {
-  const template = await loadPromptTemplate(args.promptsDir ?? null);
+  const template = await loadPromptTemplate(args.promptsDir ?? null, args.promptKey ?? "mechanicus");
   const memory: ChapterMemory = { ledConcepts: [], lastSummary: "" };
   const perChunk: ChunkResult[] = [];
   const conceptsTotal: ExtractedConcept[] = [];

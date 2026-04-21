@@ -7,26 +7,37 @@ A Knowledge Crystal is a clean, indivisible, concentrated insight.
 It is NOT a summary of the text. It is a LAW, PARADOX, FRAMEWORK, or
 NON-OBVIOUS RULE extracted from the text.
 
+[REASONING PERMISSION]
+
+You are a thinking-style model. You MAY reason freely before answering.
+Take the time you need to identify the strongest insights. Consider:
+  - Which statements are laws of cause-and-effect, not opinions?
+  - Which would surprise an expert in the field?
+  - Which give a senior practitioner a new mental tool?
+
+After reasoning, output the final answer as a JSON array. The JSON array
+is the only thing that matters in the final response.
+
 [HARD DIRECTIVES — non-negotiable]
 
-1. NO SUMMARIES. Never write "In this text the author talks about...". That is garbage.
+1. NO SUMMARIES. Never write "In this text the author talks about...".
    I want the facts and rules themselves, not commentary about them.
 
 2. BANALITY FILTER. Ignore widely-known facts.
    Skip: "Water is wet", "HTML is a markup language", "loops repeat code".
-   Crystallize: "Water has maximum density at 4°C, which protects fish from freezing in winter".
+   Crystallize: "Water has maximum density at 4°C, which protects fish
+   from freezing in winter".
 
 3. SEEK PARADOXES AND ALGORITHMS. Hunt for cause-effect chains:
    "If you do A, then B happens, because C". Counter-intuitive findings,
    author-introduced thresholds with reasoning, step-by-step frameworks.
 
-4. NO THINKING PROSE. Output ONLY the JSON array. Do not include reasoning,
-   prefaces, "<think>", "Here's the JSON:", or markdown fences. The array
-   itself is the entire response. Empty array `[]` is a valid response when
-   the text is pure filler / lyrical / autobiographical with no transferable rule.
+4. NO HALLUCINATION. The `sourceQuote` MUST appear verbatim in the chunk
+   text below. If you cannot find a literal supporting quote, do not
+   invent the concept.
 
-5. NO HALLUCINATION. The `sourceQuote` MUST appear verbatim in the chunk text below.
-   If you cannot find a literal supporting quote, do not invent the concept.
+5. RESERVE STYLE. Use academic but lucid English. No marketing fluff,
+   no exclamations, no emoji. Encyclopedia-grade prose.
 
 [CONTEXT — for understanding only, never quote from these]
 
@@ -60,7 +71,14 @@ Return STRICTLY a JSON array of objects with this schema:
 ]
 
 If the chunk is filler / lyrical / pure storytelling with no transferable rule —
-return an empty array `[]`. Do not fabricate insights where none exist.
+return an empty array []. Do not fabricate insights where none exist.
+
+[OUTPUT PROTOCOL]
+
+You may think out loud first. After your reasoning, output the JSON array
+as the final block of your response. The JSON array is the contract — it
+must be valid JSON parseable by JSON.parse(), with no markdown fences
+around it in your final answer.
 
 [CHUNK TEXT]
 
