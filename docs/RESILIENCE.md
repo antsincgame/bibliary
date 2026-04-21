@@ -69,8 +69,9 @@
                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                          electron/lib/prompts/                       │
-│  store.ts (FsPromptStore: data/prompts/{mechanicus.md,               │
-│             mechanicus-grammar.json, dataset-roles.json})            │
+│  store.ts (FsPromptStore: data/prompts/{mechanicus-grammar.json,     │
+│             dataset-roles.json,                                      │
+│             concept-extractor-{mechanicus,cognitive}.md})            │
 └─────────────────────────────────────────────────────────────────────┘
                               │
                               ▼

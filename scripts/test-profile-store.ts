@@ -40,7 +40,6 @@ async function setupWorkspace(): Promise<{ dir: string; cleanup: () => Promise<v
   const promptDefaults = path.join(dir, "defaults", "prompts");
   await fs.mkdir(promptDefaults, { recursive: true });
   // Пустые stub-файлы достаточно — store не упадёт на пустых.
-  await fs.writeFile(path.join(promptDefaults, "mechanicus.md"), "stub");
   await fs.writeFile(path.join(promptDefaults, "mechanicus-grammar.json"), "{}");
   await fs.writeFile(
     path.join(promptDefaults, "dataset-roles.json"),

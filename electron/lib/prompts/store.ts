@@ -44,10 +44,9 @@ export const MechanicusGrammarSchema = z.object({
 
 export type MechanicusGrammar = z.infer<typeof MechanicusGrammarSchema>;
 
-export type PromptFile = "mechanicus" | "grammar" | "dataset-roles";
+export type PromptFile = "grammar" | "dataset-roles";
 
 const FILES: Record<PromptFile, string> = {
-  mechanicus: "mechanicus.md",
   grammar: "mechanicus-grammar.json",
   "dataset-roles": "dataset-roles.json",
 };
@@ -95,14 +94,6 @@ export class FsPromptStore {
     });
   }
 
-  async readMechanicusPrompt(): Promise<string> {
-    return this.readText("mechanicus");
-  }
-
-  async writeMechanicusPrompt(content: string): Promise<void> {
-    await this.writeText("mechanicus", content);
-  }
-
   async readGrammar(): Promise<MechanicusGrammar> {
     const raw = await this.readJson("grammar");
     return MechanicusGrammarSchema.parse(raw);
@@ -121,18 +112,6 @@ export class FsPromptStore {
   async writeDatasetRoles(value: DatasetRoles): Promise<void> {
     DatasetRolesSchema.parse(value);
     await this.writeJson("dataset-roles", value);
-  }
-
-  private async readText(file: PromptFile): Promise<string> {
-    const target = path.join(this.dataDir, FILES[file]);
-    return fs.readFile(target, "utf8");
-  }
-
-  private async writeText(file: PromptFile, content: string): Promise<void> {
-    const target = path.join(this.dataDir, FILES[file]);
-    await withFileLock(target, async () => {
-      await writeTextAtomic(target, content);
-    });
   }
 
   private async readJson(file: PromptFile): Promise<unknown> {
