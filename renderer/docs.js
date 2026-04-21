@@ -16,7 +16,6 @@ export function mountDocs(root) {
   root.appendChild(buildSection("start", buildStart));
   root.appendChild(buildSection("memory", buildMemory));
   root.appendChild(buildSection("chat", buildChat));
-  root.appendChild(buildSection("dataset", buildDatasetFlow));
   root.appendChild(buildSection("formats", buildFormats));
   root.appendChild(buildSection("resilience", buildResilience));
   root.appendChild(buildSection("troubleshoot", buildTroubleshoot));
@@ -47,7 +46,7 @@ function buildHero() {
 }
 
 function buildToc() {
-  const sections = ["overview", "start", "memory", "chat", "dataset", "formats", "resilience", "troubleshoot", "advanced"];
+  const sections = ["overview", "start", "memory", "chat", "formats", "resilience", "troubleshoot", "advanced"];
   const list = el("ol", { class: "docs-toc-list" });
   sections.forEach((id, idx) => {
     const num = String(idx + 1).padStart(2, "0");
@@ -159,24 +158,6 @@ function buildMemory() {
   ]);
 }
 
-function buildDatasetFlow() {
-  return el("div", { class: "docs-grid" }, [
-    el("div", { class: "docs-card" }, [
-      el("h3", { class: "docs-h3" }, t("docs.section.dataset.flow.title")),
-      el("p", { class: "docs-paragraph docs-mono" }, t("docs.section.dataset.flow.body")),
-    ]),
-    el("div", { class: "docs-card" }, [
-      el("h3", { class: "docs-h3" }, t("docs.section.dataset.steps.title")),
-      el("ol", { class: "docs-list docs-list-numbered" }, [
-        el("li", {}, t("docs.section.dataset.steps.1")),
-        el("li", {}, t("docs.section.dataset.steps.2")),
-        el("li", {}, t("docs.section.dataset.steps.3")),
-        el("li", {}, t("docs.section.dataset.steps.4")),
-      ]),
-    ]),
-  ]);
-}
-
 function buildFormats() {
   return el("div", { class: "docs-grid docs-grid-3" }, [
     el("div", { class: "docs-card" }, [
@@ -239,7 +220,7 @@ function buildCta() {
         class: "docs-cta-button",
         type: "button",
         onclick: () => {
-          const btn = document.querySelector('.sidebar-icon[data-route="dataset"]');
+          const btn = document.querySelector('.sidebar-icon[data-route="crystal"]');
           if (btn instanceof HTMLElement) btn.click();
         },
       },

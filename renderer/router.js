@@ -1,5 +1,4 @@
 import { mountChat } from "./chat.js";
-import { mountDataset, isDatasetBatchActive } from "./dataset.js";
 import { mountModels } from "./models/models-page.js";
 import { mountDocs } from "./docs.js";
 import { mountForge } from "./forge.js";
@@ -13,8 +12,8 @@ import { mountResilienceBar } from "./components/resilience-bar.js";
 import { getMode, cycleMode, applyToDocument as applyMode, onModeChange } from "./ui-mode.js";
 import { openWelcomeWizard } from "./components/welcome-wizard.js";
 
-const ROUTES = ["chat", "library", "qdrant", "agent", "crystal", "dataset", "models", "forge", "docs", "settings"];
-const REMOUNT_ON_LOCALE = new Set(["library", "qdrant", "agent", "crystal", "dataset", "models", "forge", "docs", "settings"]);
+const ROUTES = ["chat", "library", "qdrant", "agent", "crystal", "models", "forge", "docs", "settings"];
+const REMOUNT_ON_LOCALE = new Set(["library", "qdrant", "agent", "crystal", "models", "forge", "docs", "settings"]);
 const mounted = new Set();
 
 function mountRoute(name) {
@@ -23,7 +22,6 @@ function mountRoute(name) {
   else if (name === "qdrant") mountQdrant(document.getElementById("qdrant-root"));
   else if (name === "agent") mountAgent(document.getElementById("agent-root"));
   else if (name === "crystal") mountCrystal(document.getElementById("crystal-root"));
-  else if (name === "dataset") mountDataset(document.getElementById("dataset-root"));
   else if (name === "models") mountModels(document.getElementById("models-root"));
   else if (name === "forge") mountForge(document.getElementById("forge-root"));
   else if (name === "docs") mountDocs(document.getElementById("docs-root"));
@@ -42,10 +40,7 @@ function showRoute(name) {
 }
 
 function canRemount(name) {
-  // Не пересоздавать вкладку датасета во время активного батча — DOM прогресса
-  // должен жить, иначе пользователь "потеряет" экран генерации при смене языка.
-  if (name === "dataset" && isDatasetBatchActive()) return false;
-  // Аналогично — не выкидывать прогресс ingest книг при смене языка.
+  // Не выкидывать прогресс ingest книг при смене языка.
   if (name === "library" && isLibraryBusy()) return false;
   // Не убивать активный agent loop сменой локали.
   if (name === "agent" && isAgentBusy()) return false;

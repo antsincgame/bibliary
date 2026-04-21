@@ -10,11 +10,9 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
   ru: {
     "nav.chat": "Чат",
     "nav.library": "Библиотека",
-    "nav.dataset": "Датасет",
     "nav.models": "Модели",
     "nav.chat.title": "Чат",
     "nav.library.title": "Библиотека книг — сканер PDF/EPUB/FB2/DOCX/TXT",
-    "nav.dataset.title": "Генератор датасета",
     "nav.models.title": "Мастерская моделей",
     "library.header.title": "Библиотека книг",
     "library.header.sub": "Сканирует PDF · EPUB · FB2 · DOCX · TXT — превращает книги в концепты Qdrant",
@@ -187,142 +185,11 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
 
     "lang.toggle.title": "Сменить язык",
 
-    "dataset.header.title": "Генератор датасета",
-    "dataset.header.sub": "Из source-chunks → JSONL для fine-tune · мастер из 4 шагов",
     "models.header.title": "Мастерская моделей",
     "models.header.sub": "Управление LM Studio — загрузка, выгрузка, переключение профиля",
 
-    "stepper.step.1": "Готовность",
-    "stepper.step.2": "Настройка",
-    "stepper.step.3": "Генерация",
-    "stepper.step.4": "Итог",
-    "stepper.totals.total": "всего",
-    "stepper.totals.done": "готово",
-    "stepper.totals.left": "осталось",
-    "stepper.replay": "Показать вступление",
-    "stepper.replay.title": "Показать вступительный экран снова",
-    "stepper.help.title": "Что это значит?",
-
-    "ds.checking": "Проверяю окружение…",
-    "ds.toast.batch_done": "Батч {name} готов — {count} примеров",
-    "ds.toast.batch_failed": "Сбой батча: {msg}",
-    "ds.toast.cancel_requested": "Отмена запрошена. Сохраняю частичный батч…",
-    "ds.toast.validate_ok": "{file}: {valid}/{total} корректных",
-    "ds.toast.validate_err": "{file}: {count} ошибок — {first}",
-    "ds.toast.model_loaded": "Модель BIG загружена",
-    "ds.toast.load_failed": "Не удалось загрузить: {msg}",
-
-    "ds.welcome.title": "Как работает генерация датасета",
-    "ds.welcome.sub":
-      "Bibliary берёт ваши source-chunks (атомарные кусочки знания) и из каждого собирает три примера для дообучения модели. Готовые примеры пишутся в JSONL-файл, готовый к fine-tune.",
-    "ds.welcome.flow.input.body":
-      "Атомарные знания: principle + explanation + domain + tags",
-    "ds.welcome.flow.engine.title": "Модель BIG (Qwen3.6-35B)",
-    "ds.welcome.flow.engine.body": "На каждый чанк делает 3 промпта: T1, T2, T3",
-    "ds.welcome.flow.output.body":
-      "Готовый файл: 3 строки на каждый чанк, формат ShareGPT",
-    "ds.welcome.step.1": "Готовность — проверим, что LM Studio запущен и модель загружена",
-    "ds.welcome.step.2": "Настройка — выберите, сколько чанков обработать сейчас",
-    "ds.welcome.step.3": "Генерация — наблюдайте, как T1/T2/T3 заполняются в реальном времени",
-    "ds.welcome.step.4": "Итог — посмотрите результат и при желании запустите следующий батч",
-    "ds.welcome.start": "Поехали",
-
-    "ds.step1.title": "Шаг 1 — Проверка готовности",
-    "ds.step1.sub": "Проверим окружение перед запуском генерации.",
-    "ds.step1.lm.label": "Сервер LM Studio",
-    "ds.step1.lm.online": "Online{ver} · {url}",
-    "ds.step1.lm.offline":
-      "Offline. Запустите LM Studio и включите Local Server (порт 1234).",
-    "ds.step1.lm.recheck": "Перепроверить",
-    "ds.step1.model.label": "Модель BIG ({key})",
-    "ds.step1.model.need_lm": "Сначала включите LM Studio.",
-    "ds.step1.model.loaded": "Загружена в память.",
-    "ds.step1.model.not_loaded":
-      "Не загружена. Нажмите «Загрузить» — модель ~22 ГБ, может занять минуту.",
-    "ds.step1.model.load": "Загрузить модель",
-    "ds.step1.model.loading": "Загружается…",
-    "ds.step1.source.label": "Source chunks",
-    "ds.step1.source.missing":
-      "Файл не найден: {path}. Создайте JSON-массив объектов {schema}.",
-    "ds.step1.source.empty":
-      "Все {total} чанков уже обработаны. Добавьте новые или пересоздайте progress.json.",
-    "ds.step1.source.has":
-      "{left} необработанных из {total}.",
-    "ds.step1.source.open_folder": "Открыть папку",
-    "ds.step1.gold.label": "Gold examples (few-shot, по желанию)",
-    "ds.step1.gold.has": "{count} эталонов найдено в gold-examples.jsonl.",
-    "ds.step1.gold.missing":
-      "Файл пуст или отсутствует. Можно работать без few-shot, но качество будет ниже.",
-    "ds.step1.recheck_all": "Перепроверить всё",
-    "ds.step1.continue": "Дальше →",
-
-    "ds.step2.title": "Шаг 2 — Настройка батча",
-    "ds.step2.sub":
-      "Решите, сколько чанков обработать в этом прогоне. Один чанк = 3 примера для обучения. Прервать можно в любой момент.",
-    "ds.step2.chunks": "Сколько чанков обработать",
-    "ds.step2.eta": "≈ {examples} примеров · ~{eta}",
-    "ds.step2.all_remaining": "Все оставшиеся ({n})",
-    "ds.step2.remaining_prefix": "Осталось необработанных:",
-    "ds.step2.remaining_of": "из {total}",
-    "ds.step2.show_advanced": "Показать расширенные настройки",
-    "ds.step2.back": "← Назад",
-    "ds.step2.start": "Начать генерацию →",
-
-    "ds.adv.title": "Расширенные параметры генератора",
-    "ds.adv.profile": "Профиль",
-    "ds.adv.context": "Контекстное окно",
-    "ds.adv.batch_size": "Размер батча (чанков)",
-    "ds.adv.delay": "Задержка между вызовами, мс",
-    "ds.adv.fewshot": "Few-shot на фазу",
-    "ds.adv.sampling": "Сэмплинг (пресет Qwen Team)",
-    "ds.adv.sampling.temperature": "temperature (креативность)",
-    "ds.adv.sampling.top_p": "top_p (ядерное сэмплирование)",
-    "ds.adv.sampling.top_k": "top_k (число кандидатов)",
-    "ds.adv.sampling.min_p": "min_p (минимальная вероятность)",
-    "ds.adv.sampling.presence_penalty": "presence_penalty (штраф за повтор)",
-    "ds.adv.sampling.max_tokens": "max_tokens (длина ответа)",
-
-    "ds.resume.banner.title": "Найдены прерванные батчи",
-    "ds.resume.banner.sub": "Текущие батчи можно безопасно продолжить — все промежуточные данные сохранены.",
-    "ds.resume.banner.meta": "{processed} чанков · последняя запись {ts}",
-    "ds.resume.banner.continue": "Продолжить",
-    "ds.resume.banner.discard": "Сбросить",
-    "ds.resume.banner.dismiss": "Скрыть",
-    "ds.resume.banner.confirm_discard": "Удалить незавершённый батч {batch}? Действие необратимо.",
-    "ds.resume.toast.resumed": "Батч {name} продолжен — обработано {count} новых чанков",
-    "ds.resume.toast.discarded": "Батч {name} удалён",
-    "ds.resume.toast.resume_failed": "Не удалось продолжить: {msg}",
-
     "resilience.lmstudio.offline.banner": "LM Studio не отвечает — операция поставлена на паузу, ждём восстановления…",
     "resilience.lmstudio.online.banner": "LM Studio снова в строю — продолжаем работу",
-
-    "ds.step3.title": "Шаг 3 — Генерация",
-    "ds.step3.sub":
-      "Идёт генерация. На каждый чанк строится T1, затем T2, затем T3 — всё пишется в один JSONL по мере готовности.",
-    "ds.step3.cancel": "Отменить",
-
-    "ds.progress.title": "Прогресс в реальном времени",
-    "ds.progress.loading": "Загружаю модель и подготавливаю…",
-    "ds.progress.chunk_phase":
-      "чанк <strong style=\"color:var(--cyan);\">{idx}</strong> / {total} — фаза <strong style=\"color:var(--gold);\">{phase}</strong>",
-    "ds.progress.error": "ОШИБКА: {msg}",
-    "ds.progress.elapsed": "Прошло",
-    "ds.progress.avg": "Средн./чанк",
-    "ds.progress.eta": "Осталось",
-    "ds.progress.done": "Готово",
-
-    "ds.step4.title": "Шаг 4 — Итог",
-    "ds.step4.no_data": "Нет данных о последнем батче.",
-    "ds.step4.batch_file": "Файл батча",
-    "ds.step4.examples_written": "Примеров записано",
-    "ds.step4.chunks_processed": "Чанков обработано",
-    "ds.step4.failed": "Сбоев",
-    "ds.step4.validate": "Проверить",
-    "ds.step4.open_folder": "Открыть папку",
-    "ds.step4.run_another": "Запустить следующий батч →",
-    "ds.history.title": "История батчей",
-    "ds.history.empty": "Батчей ещё нет.",
-    "ds.history.line": "{name} · {chunks} чанков · {examples} примеров",
 
     "models.toast.refresh_failed": "Сбой обновления: {msg}",
     "models.toast.busy": "Другая операция уже выполняется",
@@ -478,28 +345,6 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
     "models.empty.no_downloaded":
       "Нет связи с LM Studio (или нет скачанных LLM).",
 
-    "glossary.chunk.title": "Chunk",
-    "glossary.chunk.body":
-      "Один атомарный кусочек знания — JSON с полями id, principle, explanation, domain, tags. Чанки лежат в data/finetune/source-chunks.json. Из каждого чанка генератор собирает 3 примера для дообучения (T1, T2, T3).",
-    "glossary.T1.title": "T1 — отрывок из книги",
-    "glossary.T1.body":
-      "Первый тип примера: модель сочиняет имитацию книжного фрагмента (150–220 слов), из которого «логически вытекает» данный чанк. Учит модель извлекать чанк из плотного текста.",
-    "glossary.T2.title": "T2 — вопрос пользователя",
-    "glossary.T2.body":
-      "Практический вопрос пользователя 1–3 предложения, на который данный чанк является ответом. Учит модель отвечать чанком на живой запрос.",
-    "glossary.T3.title": "T3 — короткая идея",
-    "glossary.T3.body":
-      "Сжатая идея в 1–2 строки, которую нужно развернуть до полноценного чанка. Учит модель из подсказки строить структурированный MECHANICUS-чанк.",
-    "glossary.fewshot.title": "Few-shot",
-    "glossary.fewshot.body":
-      "Несколько эталонных примеров (gold examples), которые подмешиваются в промпт перед каждой генерацией, чтобы модель копировала их стиль и формат. Лежат в data/finetune/gold-examples.jsonl.",
-    "glossary.batch.title": "Батч",
-    "glossary.batch.body":
-      "Один прогон генерации по N чанкам. Результат сохраняется в data/finetune/batches/batch-NNN.jsonl. Каждый чанк даёт 3 строки (T1+T2+T3). Прогресс трекается в progress.json — повторно один и тот же чанк не обрабатывается.",
-    "glossary.mechanicus.title": "MECHANICUS",
-    "glossary.mechanicus.body":
-      "Внутренний компактный формат записи знания (principle + закодированное explanation). Цель датасета — научить модель кодировать любой ввод именно в этот формат.",
-
     "nav.docs": "Книга",
     "nav.docs.title": "Кодекс -- встроенная документация",
     "nav.settings": "Настройки",
@@ -581,17 +426,6 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
     "docs.section.chat.tips.1": "Без коллекции — обычный чат с LM Studio, без обогащения.",
     "docs.section.chat.tips.2": "Индикатор Qdrant справа: зелёный — онлайн, серый — offline.",
     "docs.section.chat.tips.3": "Если ответ пустой — модель занята reasoning-токенами; увеличьте max_tokens в промпте или ролях.",
-
-    "docs.section.dataset.title": "IV · Генератор датасета",
-    "docs.section.dataset.sub": "Из source-chunks в JSONL для fine-tune",
-    "docs.section.dataset.flow.title": "Поток данных",
-    "docs.section.dataset.flow.body":
-      "data/finetune/source-chunks.json → выборка непрошедших чанков → для каждого 3 LLM-вызова (T1, T2, T3) → запись в batches/batch-NNN.jsonl с атомарным lockfile → обновление progress.json → resume с любого места.",
-    "docs.section.dataset.steps.title": "Мастер из 4 шагов",
-    "docs.section.dataset.steps.1": "Готовность — проверка LM Studio, источника, моделей, gold-examples.",
-    "docs.section.dataset.steps.2": "Настройка — размер батча, профиль BIG/SMALL, sampling, few-shot.",
-    "docs.section.dataset.steps.3": "Генерация — наблюдайте T1/T2/T3 в реальном времени, можно отменить.",
-    "docs.section.dataset.steps.4": "Итог — валидируйте, откройте папку, начните следующий батч.",
 
     "docs.section.formats.title": "V · Форматы и MECHANICUS",
     "docs.section.formats.sub": "Язык, на котором говорит ваша модель",
@@ -894,11 +728,9 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
   en: {
     "nav.chat": "Chat",
     "nav.library": "Library",
-    "nav.dataset": "Dataset",
     "nav.models": "Models",
     "nav.chat.title": "Chat",
     "nav.library.title": "Books Library — scanner for PDF/EPUB/FB2/DOCX/TXT",
-    "nav.dataset.title": "Dataset Generator",
     "nav.models.title": "Models Workshop",
     "library.header.title": "Books Library",
     "library.header.sub": "Scans PDF · EPUB · FB2 · DOCX · TXT — turns books into Qdrant concepts",
@@ -1070,142 +902,11 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
 
     "lang.toggle.title": "Switch language",
 
-    "dataset.header.title": "Dataset Generator",
-    "dataset.header.sub": "From source chunks → JSONL fine-tune dataset · 4-step wizard",
     "models.header.title": "Models Workshop",
     "models.header.sub": "LM Studio control plane — load, unload, switch profile",
 
-    "stepper.step.1": "Ready",
-    "stepper.step.2": "Configure",
-    "stepper.step.3": "Generate",
-    "stepper.step.4": "Review",
-    "stepper.totals.total": "total",
-    "stepper.totals.done": "done",
-    "stepper.totals.left": "left",
-    "stepper.replay": "Replay intro",
-    "stepper.replay.title": "Show the welcome screen again",
-    "stepper.help.title": "What does this mean?",
-
-    "ds.checking": "Checking environment…",
-    "ds.toast.batch_done": "Batch {name} done — {count} examples",
-    "ds.toast.batch_failed": "Batch failed: {msg}",
-    "ds.toast.cancel_requested": "Cancellation requested. Saving partial batch…",
-    "ds.toast.validate_ok": "{file}: {valid}/{total} valid",
-    "ds.toast.validate_err": "{file}: {count} errors — {first}",
-    "ds.toast.model_loaded": "Model BIG loaded",
-    "ds.toast.load_failed": "Load failed: {msg}",
-
-    "ds.welcome.title": "How dataset generation works",
-    "ds.welcome.sub":
-      "Bibliary takes your source chunks (atomic knowledge units) and from each of them creates three training examples. The result is a JSONL file ready for fine-tuning.",
-    "ds.welcome.flow.input.body":
-      "Atomic knowledge: principle + explanation + domain + tags",
-    "ds.welcome.flow.engine.title": "BIG model (Qwen3.6-35B)",
-    "ds.welcome.flow.engine.body": "Three prompts per chunk: T1, T2, T3",
-    "ds.welcome.flow.output.body":
-      "Final file: 3 lines per chunk, ShareGPT format",
-    "ds.welcome.step.1": "Ready — verify LM Studio is up and the model is loaded",
-    "ds.welcome.step.2": "Configure — choose how many chunks to process now",
-    "ds.welcome.step.3": "Generate — watch T1/T2/T3 fill in real time",
-    "ds.welcome.step.4": "Review — see the result and optionally launch the next batch",
-    "ds.welcome.start": "Let's start",
-
-    "ds.step1.title": "Step 1 — Readiness check",
-    "ds.step1.sub": "Verify the environment before starting generation.",
-    "ds.step1.lm.label": "LM Studio server",
-    "ds.step1.lm.online": "Online{ver} · {url}",
-    "ds.step1.lm.offline":
-      "Offline. Start LM Studio and enable Local Server (port 1234).",
-    "ds.step1.lm.recheck": "Recheck",
-    "ds.step1.model.label": "Model BIG ({key})",
-    "ds.step1.model.need_lm": "Start LM Studio first.",
-    "ds.step1.model.loaded": "Loaded in memory.",
-    "ds.step1.model.not_loaded":
-      "Not loaded. Click Load — model ~22 GB, may take a minute.",
-    "ds.step1.model.load": "Load model",
-    "ds.step1.model.loading": "Loading…",
-    "ds.step1.source.label": "Source chunks",
-    "ds.step1.source.missing":
-      "File not found: {path}. Create a JSON array of objects {schema}.",
-    "ds.step1.source.empty":
-      "All {total} chunks are already processed. Add new ones or recreate progress.json.",
-    "ds.step1.source.has":
-      "{left} unprocessed of {total}.",
-    "ds.step1.source.open_folder": "Open folder",
-    "ds.step1.gold.label": "Gold examples (few-shot, optional)",
-    "ds.step1.gold.has": "{count} gold examples found in gold-examples.jsonl.",
-    "ds.step1.gold.missing":
-      "File is empty or missing. Few-shot is optional but improves quality.",
-    "ds.step1.recheck_all": "Recheck all",
-    "ds.step1.continue": "Continue →",
-
-    "ds.step2.title": "Step 2 — Configure batch",
-    "ds.step2.sub":
-      "Decide how many chunks to process in this run. One chunk = 3 training examples. You can cancel anytime.",
-    "ds.step2.chunks": "Chunks to process",
-    "ds.step2.eta": "≈ {examples} examples · ~{eta}",
-    "ds.step2.all_remaining": "All remaining ({n})",
-    "ds.step2.remaining_prefix": "Unprocessed remaining:",
-    "ds.step2.remaining_of": "of {total}",
-    "ds.step2.show_advanced": "Show advanced settings",
-    "ds.step2.back": "← Back",
-    "ds.step2.start": "Start generating →",
-
-    "ds.adv.title": "Advanced — generator settings",
-    "ds.adv.profile": "Profile",
-    "ds.adv.context": "Context window",
-    "ds.adv.batch_size": "Batch size (chunks)",
-    "ds.adv.delay": "Delay between calls, ms",
-    "ds.adv.fewshot": "Few-shot per phase",
-    "ds.adv.sampling": "Sampling (Qwen Team preset)",
-    "ds.adv.sampling.temperature": "temperature (creativity)",
-    "ds.adv.sampling.top_p": "top_p (nucleus sampling)",
-    "ds.adv.sampling.top_k": "top_k (candidate count)",
-    "ds.adv.sampling.min_p": "min_p (min probability)",
-    "ds.adv.sampling.presence_penalty": "presence_penalty (anti-repetition)",
-    "ds.adv.sampling.max_tokens": "max_tokens (answer length)",
-
-    "ds.resume.banner.title": "Unfinished batches detected",
-    "ds.resume.banner.sub": "These batches can be safely resumed — all intermediate data is saved.",
-    "ds.resume.banner.meta": "{processed} chunks · last save {ts}",
-    "ds.resume.banner.continue": "Resume",
-    "ds.resume.banner.discard": "Discard",
-    "ds.resume.banner.dismiss": "Dismiss",
-    "ds.resume.banner.confirm_discard": "Delete unfinished batch {batch}? This cannot be undone.",
-    "ds.resume.toast.resumed": "Batch {name} resumed — {count} new chunks processed",
-    "ds.resume.toast.discarded": "Batch {name} discarded",
-    "ds.resume.toast.resume_failed": "Resume failed: {msg}",
-
     "resilience.lmstudio.offline.banner": "LM Studio not responding — operation paused, awaiting recovery…",
     "resilience.lmstudio.online.banner": "LM Studio is back — resuming work",
-
-    "ds.step3.title": "Step 3 — Generating",
-    "ds.step3.sub":
-      "Generation in progress. Each chunk goes through T1, then T2, then T3 — all written to one JSONL as it goes.",
-    "ds.step3.cancel": "Cancel",
-
-    "ds.progress.title": "Live progress",
-    "ds.progress.loading": "Loading model & preparing…",
-    "ds.progress.chunk_phase":
-      "chunk <strong style=\"color:var(--cyan);\">{idx}</strong> / {total} — phase <strong style=\"color:var(--gold);\">{phase}</strong>",
-    "ds.progress.error": "ERROR: {msg}",
-    "ds.progress.elapsed": "Elapsed",
-    "ds.progress.avg": "Avg/chunk",
-    "ds.progress.eta": "ETA",
-    "ds.progress.done": "Done",
-
-    "ds.step4.title": "Step 4 — Review",
-    "ds.step4.no_data": "No data about the last batch.",
-    "ds.step4.batch_file": "Batch file",
-    "ds.step4.examples_written": "Examples written",
-    "ds.step4.chunks_processed": "Chunks processed",
-    "ds.step4.failed": "Failed",
-    "ds.step4.validate": "Validate",
-    "ds.step4.open_folder": "Open folder",
-    "ds.step4.run_another": "Run another batch →",
-    "ds.history.title": "Batch history",
-    "ds.history.empty": "No batches yet.",
-    "ds.history.line": "{name} · {chunks} chunks · {examples} examples",
 
     "models.toast.refresh_failed": "Refresh failed: {msg}",
     "models.toast.busy": "Another operation is already in progress",
@@ -1361,28 +1062,6 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
     "models.empty.no_downloaded":
       "Cannot reach LM Studio (or no LLMs downloaded).",
 
-    "glossary.chunk.title": "Chunk",
-    "glossary.chunk.body":
-      "An atomic knowledge unit — a JSON object with id, principle, explanation, domain, tags. Chunks live in data/finetune/source-chunks.json. The generator builds 3 training examples (T1, T2, T3) per chunk.",
-    "glossary.T1.title": "T1 — Book excerpt",
-    "glossary.T1.body":
-      "First example type: the model writes a simulated book excerpt (150–220 words) from which this chunk would naturally follow. Teaches the model to extract a chunk from dense prose.",
-    "glossary.T2.title": "T2 — User question",
-    "glossary.T2.body":
-      "A practical user question, 1–3 sentences, that this chunk answers. Teaches the model to respond to live queries with a chunk.",
-    "glossary.T3.title": "T3 — Brief idea",
-    "glossary.T3.body":
-      "A compressed 1–2 line idea to be expanded into a full chunk. Teaches the model to build a structured MECHANICUS chunk from a hint.",
-    "glossary.fewshot.title": "Few-shot",
-    "glossary.fewshot.body":
-      "A few gold examples mixed into the prompt before each generation so that the model copies their style and format. Stored in data/finetune/gold-examples.jsonl.",
-    "glossary.batch.title": "Batch",
-    "glossary.batch.body":
-      "A single run over N chunks. The result lands in data/finetune/batches/batch-NNN.jsonl. Each chunk yields 3 lines (T1+T2+T3). Progress is tracked in progress.json — the same chunk is never reprocessed.",
-    "glossary.mechanicus.title": "MECHANICUS",
-    "glossary.mechanicus.body":
-      "Internal compact knowledge format (principle + encoded explanation). The dataset's purpose is to teach the model to encode any input into this exact format.",
-
     "nav.docs": "Codex",
     "nav.docs.title": "Codex — built-in documentation",
     "nav.qdrant": "Knowledge",
@@ -1462,17 +1141,6 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
     "docs.section.chat.tips.1": "No collection — plain LM Studio chat without enrichment.",
     "docs.section.chat.tips.2": "Qdrant indicator on the right: green — online, gray — offline.",
     "docs.section.chat.tips.3": "Empty answer — the model is busy reasoning; raise max_tokens in roles or prompt.",
-
-    "docs.section.dataset.title": "IV · Dataset Generator",
-    "docs.section.dataset.sub": "From source-chunks to fine-tune JSONL",
-    "docs.section.dataset.flow.title": "Data flow",
-    "docs.section.dataset.flow.body":
-      "data/finetune/source-chunks.json → pick unprocessed chunks → 3 LLM calls per chunk (T1, T2, T3) → write to batches/batch-NNN.jsonl with atomic lockfile → update progress.json → resume anywhere.",
-    "docs.section.dataset.steps.title": "4-step wizard",
-    "docs.section.dataset.steps.1": "Readiness — verify LM Studio, source, models, gold-examples.",
-    "docs.section.dataset.steps.2": "Configure — batch size, BIG/SMALL profile, sampling, few-shot.",
-    "docs.section.dataset.steps.3": "Generate — watch T1/T2/T3 in real time, cancel anytime.",
-    "docs.section.dataset.steps.4": "Result — validate, open folder, start the next batch.",
 
     "docs.section.formats.title": "V · Formats & MECHANICUS",
     "docs.section.formats.sub": "The language your model will speak",
