@@ -25,6 +25,7 @@ import { registerDatasetV2Ipc, abortAllDatasetV2 } from "./dataset-v2.ipc.js";
 import { registerBookhunterIpc, abortAllBookhunter } from "./bookhunter.ipc.js";
 import { registerAgentIpc, abortAllAgents } from "./agent.ipc.js";
 import { registerPreferencesIpc } from "./preferences.ipc.js";
+import { registerChatHistoryIpc } from "./chat-history.ipc.js";
 
 import { abortAllBatches } from "../lib/batch/active-batches.js";
 
@@ -47,4 +48,5 @@ export function registerAllIpcHandlers(getMainWindow: () => BrowserWindow | null
   registerBookhunterIpc(getMainWindow);
   registerAgentIpc(getMainWindow);
   registerPreferencesIpc();
+  registerChatHistoryIpc();
 }

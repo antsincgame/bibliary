@@ -341,6 +341,14 @@ contextBridge.exposeInMainWorld("api", {
     reset: (): Promise<Record<string, unknown>> => ipcRenderer.invoke("preferences:reset"),
   },
 
+  chatHistory: {
+    load: (): Promise<Array<{ role: "user" | "assistant" | "system"; content: string }>> =>
+      ipcRenderer.invoke("chat-history:load"),
+    save: (messages: Array<{ role: string; content: string }>): Promise<{ saved: number }> =>
+      ipcRenderer.invoke("chat-history:save", messages),
+    clear: (): Promise<boolean> => ipcRenderer.invoke("chat-history:clear"),
+  },
+
   forge: {
     listSourceBatches: (): Promise<string[]> => ipcRenderer.invoke("forge:list-source-batches"),
     nextRunId: (): Promise<string> => ipcRenderer.invoke("forge:next-run-id"),

@@ -5,6 +5,8 @@ import { buildContextSlider } from "./components/context-slider.js";
 let SPIN_DURATION_MS = 600;
 const TEXTAREA_MAX_HEIGHT = 120;
 let TOAST_TTL_MS = 5000;
+let CHAT_HISTORY_CAP = 50;
+let CHAT_HISTORY_PERSIST = true;
 
 (async () => {
   try {
@@ -12,6 +14,8 @@ let TOAST_TTL_MS = 5000;
     if (!prefs) return;
     if (typeof prefs.spinDurationMs === "number") SPIN_DURATION_MS = prefs.spinDurationMs;
     if (typeof prefs.toastTtlMs === "number") TOAST_TTL_MS = prefs.toastTtlMs;
+    if (typeof prefs.chatHistoryCap === "number") CHAT_HISTORY_CAP = prefs.chatHistoryCap;
+    if (typeof prefs.chatHistoryPersist === "boolean") CHAT_HISTORY_PERSIST = prefs.chatHistoryPersist;
   } catch { /* defaults */ }
 })();
 
@@ -19,6 +23,52 @@ let TOAST_TTL_MS = 5000;
 const history = [];
 let isLoading = false;
 let compareMode = false;
+let pendingPersistTimer = null;
+
+/**
+ * Cap history at CHAT_HISTORY_CAP messages. FIFO eviction -- oldest
+ * user/assistant pairs drop first. Keeps IPC payload bounded.
+ */
+function trimHistory() {
+  if (history.length > CHAT_HISTORY_CAP) {
+    history.splice(0, history.length - CHAT_HISTORY_CAP);
+  }
+}
+
+/**
+ * Schedule a debounced save to disk. Multiple sends in quick succession
+ * collapse into a single write.
+ */
+function schedulePersist() {
+  if (!CHAT_HISTORY_PERSIST) return;
+  if (pendingPersistTimer) clearTimeout(pendingPersistTimer);
+  pendingPersistTimer = setTimeout(() => {
+    pendingPersistTimer = null;
+    void window.api?.chatHistory?.save(history.slice(-CHAT_HISTORY_CAP)).catch((err) => {
+      console.error("[chat] history save failed:", err instanceof Error ? err.message : err);
+    });
+  }, 800);
+}
+
+/**
+ * Restore history from disk on first chat mount. Re-renders bubbles
+ * for every restored message so the user sees a populated thread.
+ */
+async function restoreHistory(chatArea) {
+  if (!CHAT_HISTORY_PERSIST) return;
+  try {
+    const saved = await window.api?.chatHistory?.load();
+    if (!Array.isArray(saved) || saved.length === 0) return;
+    for (const m of saved) {
+      history.push({ role: m.role, content: m.content });
+      const cls = m.role === "user" ? "message message-user" : "message message-assistant";
+      appendChatBubble(chatArea, cls, m.content, m.role === "assistant");
+    }
+    trimHistory();
+  } catch (err) {
+    console.error("[chat] history restore failed:", err instanceof Error ? err.message : err);
+  }
+}
 
 /** @param {string} id @returns {HTMLElement} */
 function getEl(id) {
@@ -349,21 +399,28 @@ export function mountChat() {
     input.style.height = "auto";
     addMessage("user", text);
     history.push({ role: "user", content: text });
+    trimHistory();
     setLoading(true);
     showTyping();
     try {
       const collection = collectionSelect.value;
+      /* Send only the capped tail. Previously we spread the entire
+         history -- IPC payload grew linearly with conversation length
+         and eventually hit IPC size limits in long sessions. */
+      const sendable = history.slice(-CHAT_HISTORY_CAP);
       if (compareMode && collection) {
-        const result = await window.api.compareChat([...history], model, collection);
+        const result = await window.api.compareChat(sendable, model, collection);
         hideTyping();
         addCompareResult(result.withoutRag, result.withRag, result.usageBase, result.usageRag);
         history.push({ role: "assistant", content: result.withRag });
       } else {
-        const answer = await window.api.sendChat([...history], model, collection);
+        const answer = await window.api.sendChat(sendable, model, collection);
         hideTyping();
         addMessage("assistant", answer);
         history.push({ role: "assistant", content: answer });
       }
+      trimHistory();
+      schedulePersist();
     } catch (err) {
       hideTyping();
       addError(t("chat.error", { msg: err instanceof Error ? err.message : String(err) }));
@@ -392,5 +449,7 @@ export function mountChat() {
 
   loadCollections();
   loadModels();
+  /* Restore previous session before user starts typing -- non-blocking. */
+  void restoreHistory(chatArea);
   input.focus();
 }
