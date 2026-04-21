@@ -264,103 +264,118 @@ function setBusy(root, busy) {
   if (input) input.disabled = busy;
 }
 
+/* ───── handleAgentEvent: type handlers (dispatcher pattern) ───── */
+
+function handleThoughtEvent(root, payload) {
+  const last = lastAssistantMessage();
+  if (last && (last.tools?.length ?? 0) === 0 && !last.content) {
+    last.content = String(payload.content ?? "");
+  } else {
+    STATE.chatHistory.push({ role: "assistant", content: String(payload.content ?? ""), tools: [] });
+  }
+  pushActivity("thought", String(payload.content ?? "").slice(0, 80));
+  renderChat(root);
+}
+
+function handleToolCallEvent(root, payload) {
+  let last = lastAssistantMessage();
+  if (!last || !last.tools) {
+    last = { role: "assistant", content: "", tools: [] };
+    STATE.chatHistory.push(last);
+  }
+  last.tools.push({
+    callId: String(payload.callId),
+    name: String(payload.name),
+    args: payload.args,
+    expanded: false,
+  });
+  pushActivity("tool-call", `${payload.name}(${fmtJson(payload.args, 60)})`);
+  renderChat(root);
+}
+
+function handleToolResultEvent(root, payload) {
+  const last = lastAssistantMessage();
+  if (last?.tools) {
+    const tc = last.tools.find((x) => x.callId === payload.callId);
+    if (tc) {
+      try {
+        tc.result = JSON.parse(String(payload.preview ?? "null"));
+      } catch {
+        tc.result = String(payload.preview ?? "");
+      }
+      tc.ok = Boolean(payload.ok);
+      tc.durationMs = Number(payload.durationMs ?? 0);
+    }
+  }
+  pushActivity("tool-result", `ok=${payload.ok} ${fmtMs(payload.durationMs)}`);
+  renderChat(root);
+}
+
+function handleApprovalRequestEvent(root, payload) {
+  STATE.pendingApproval = {
+    callId: String(payload.callId),
+    toolName: String(payload.toolName),
+    description: String(payload.description),
+    args: payload.args,
+  };
+  pushActivity("approval", `${payload.toolName}: ${payload.description}`);
+  renderApproval(root);
+  renderActivity(root);
+}
+
+function handleApprovalResponseEvent(root, payload) {
+  pushActivity("approval-resp", `approved=${payload.approved}`);
+  renderActivity(root);
+}
+
+function handleDoneEvent(root, payload) {
+  pushActivity("done", `iter=${payload.iterations} tokens=${payload.tokensUsed}`);
+  renderActivity(root);
+  setBusy(root, false);
+}
+
+function handleAbortedEvent(root, payload) {
+  pushActivity("aborted", String(payload.reason ?? ""));
+  renderActivity(root);
+  setBusy(root, false);
+}
+
+function handleErrorEvent(root, payload) {
+  STATE.chatHistory.push({
+    role: "assistant",
+    content: `⚠ Ошибка: ${payload.error}`,
+    tools: [],
+  });
+  pushActivity("error", String(payload.error ?? ""));
+  renderActivity(root);
+  renderChat(root);
+  setBusy(root, false);
+}
+
+function handleBudgetEvent(root, payload) {
+  pushActivity("budget", `tokens=${payload.tokensUsed} iters=${payload.iterations}`);
+  renderActivity(root);
+}
+
+const AGENT_EVENT_HANDLERS = {
+  "agent.thought": handleThoughtEvent,
+  "agent.tool-call": handleToolCallEvent,
+  "agent.tool-result": handleToolResultEvent,
+  "agent.approval-request": handleApprovalRequestEvent,
+  "agent.approval-response": handleApprovalResponseEvent,
+  "agent.done": handleDoneEvent,
+  "agent.aborted": handleAbortedEvent,
+  "agent.error": handleErrorEvent,
+  "agent.budget": handleBudgetEvent,
+};
+
 function handleAgentEvent(root, payload) {
   /* Перехват agentId из первого события — это позволяет cancel работать ДО завершения invoke */
   if (payload.agentId && !STATE.currentAgentId) {
     STATE.currentAgentId = payload.agentId;
   }
-  const eventType = payload.type;
-  if (eventType === "agent.thought") {
-    const last = lastAssistantMessage();
-    if (last && (last.tools?.length ?? 0) === 0 && !last.content) {
-      last.content = String(payload.content ?? "");
-    } else {
-      STATE.chatHistory.push({ role: "assistant", content: String(payload.content ?? ""), tools: [] });
-    }
-    pushActivity("thought", String(payload.content ?? "").slice(0, 80));
-    renderChat(root);
-    return;
-  }
-  if (eventType === "agent.tool-call") {
-    let last = lastAssistantMessage();
-    if (!last || !last.tools) {
-      last = { role: "assistant", content: "", tools: [] };
-      STATE.chatHistory.push(last);
-    }
-    last.tools.push({
-      callId: String(payload.callId),
-      name: String(payload.name),
-      args: payload.args,
-      expanded: false,
-    });
-    pushActivity("tool-call", `${payload.name}(${fmtJson(payload.args, 60)})`);
-    renderChat(root);
-    return;
-  }
-  if (eventType === "agent.tool-result") {
-    const last = lastAssistantMessage();
-    if (last?.tools) {
-      const tc = last.tools.find((x) => x.callId === payload.callId);
-      if (tc) {
-        try {
-          tc.result = JSON.parse(String(payload.preview ?? "null"));
-        } catch {
-          tc.result = String(payload.preview ?? "");
-        }
-        tc.ok = Boolean(payload.ok);
-        tc.durationMs = Number(payload.durationMs ?? 0);
-      }
-    }
-    pushActivity("tool-result", `ok=${payload.ok} ${fmtMs(payload.durationMs)}`);
-    renderChat(root);
-    return;
-  }
-  if (eventType === "agent.approval-request") {
-    STATE.pendingApproval = {
-      callId: String(payload.callId),
-      toolName: String(payload.toolName),
-      description: String(payload.description),
-      args: payload.args,
-    };
-    pushActivity("approval", `${payload.toolName}: ${payload.description}`);
-    renderApproval(root);
-    renderActivity(root);
-    return;
-  }
-  if (eventType === "agent.approval-response") {
-    pushActivity("approval-resp", `approved=${payload.approved}`);
-    renderActivity(root);
-    return;
-  }
-  if (eventType === "agent.done") {
-    pushActivity("done", `iter=${payload.iterations} tokens=${payload.tokensUsed}`);
-    renderActivity(root);
-    setBusy(root, false);
-    return;
-  }
-  if (eventType === "agent.aborted") {
-    pushActivity("aborted", String(payload.reason ?? ""));
-    renderActivity(root);
-    setBusy(root, false);
-    return;
-  }
-  if (eventType === "agent.error") {
-    STATE.chatHistory.push({
-      role: "assistant",
-      content: `⚠ Ошибка: ${payload.error}`,
-      tools: [],
-    });
-    pushActivity("error", String(payload.error ?? ""));
-    renderActivity(root);
-    renderChat(root);
-    setBusy(root, false);
-    return;
-  }
-  if (eventType === "agent.budget") {
-    pushActivity("budget", `tokens=${payload.tokensUsed} iters=${payload.iterations}`);
-    renderActivity(root);
-    return;
-  }
+  const handler = AGENT_EVENT_HANDLERS[payload.type];
+  if (handler) handler(root, payload);
 }
 
 async function sendPrompt(root) {
