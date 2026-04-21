@@ -72,7 +72,41 @@
 run наследует новое значение без перезапуска приложения. 33/34 ключей wired,
 1 (`refreshIntervalMs`) зарезервирован для будущего auto-refresh.
 
-### P0.2. E2E тест полного цикла
+### P0.1.c. chat() / chatWithTools() через withPolicy ✅ DONE
+
+`electron/lmstudio-client.ts` теперь экспортирует `chatWithPolicy` и
+`chatWithToolsAndPolicy` -- обёртки через `withPolicy` (буфер таймаута,
+exp. backoff, abortGrace). `chat`/`chatWithTools` остались для скриптов.
+
+- `electron/ipc/lmstudio.ipc.ts` (chat / compare) → `chatWithPolicy`
+- `electron/ipc/agent.ipc.ts` (ReAct loop) → `chatWithToolsAndPolicy`
+- HF API (`electron/lib/hf/client.ts`) теперь имеет `fetchWithTimeout` (10s).
+
+Результат: один transient 5xx больше не убивает chat / agent действие
+пользователя -- сначала retry с adaptive backoff.
+
+### P0.1.d. Цикл forge/state ↔ resilience/bootstrap ✅ DONE
+
+- `electron/lib/forge/state.ts` импортирует только `batch-coordinator` и
+  `checkpoint-store` напрямую (не barrel).
+- `electron/lib/resilience/bootstrap.ts` больше не импортирует forge/state.
+- `electron/main.ts` вызывает `initForgeStore(dataDir)` после
+  `initResilienceLayer` и до `registerForgePipeline`.
+
+### P0.1.e. Crystallizer pipeline в coordinator ✅ DONE
+
+- Новый файл `electron/lib/dataset-v2/coordinator-pipeline.ts` --
+  PipelineHandle с `pause = abort`, `cancel = abort`, остальное no-op
+  (state в Qdrant).
+- `electron/main.ts` вызывает `registerExtractionPipeline()` после dataset
+  и forge.
+- `dataset-v2.ipc.ts` теперь репортит `reportBatchStart/End` и регистрирует
+  AbortController в `trackExtractionJob`.
+
+Результат: при offline LM Studio watchdog `pauseAll()` останавливает
+extraction наравне с dataset/forge, не оставляя зависшие LLM retries.
+
+### P0.2. E2E тест полного цикла -- pending
 
 **Проблема:** есть `scripts/e2e-book-ingest.ts` и `e2e-library-ux.ts`, но они
 покрывают только Library. Нет цепочки **drop → ingest → crystallize → forge bundle → eval**.
