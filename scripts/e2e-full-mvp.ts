@@ -66,6 +66,11 @@ import { ForgeSpecSchema, type ForgeSpec } from "../electron/lib/forge/configgen
 import { chat } from "../electron/lmstudio-client.js";
 import { embedQuery } from "../electron/lib/embedder/shared.js";
 import { getModelProfile, type ModelTag } from "../electron/lib/dataset-v2/model-profile.js";
+import {
+  buildExtractorResponseFormat,
+  buildJudgeResponseFormat,
+} from "../electron/lib/dataset-v2/json-schemas.js";
+import { ALLOWED_DOMAINS } from "../electron/mechanicus-prompt.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Config (env-overridable)
@@ -505,21 +510,40 @@ async function main(): Promise<void> {
   if (skipCrystal) {
     console.log(`  ${COLOR.yellow}skipped via --skip-crystal${COLOR.reset}`);
   } else {
-    /* Tag-based selection (Удар 3 плана crystal-quality-multi-tier).
-       Приоритет: tool-capable-coder > non-thinking-instruct > small-fast.
-       Это выбирает qwen3-coder-30b если он загружен (топ для structured extraction),
-       потом mistral-small / qwen3-14b (быстрые quality-инструкты),
-       и только в last resort падает на qwen3-4b. Раньше E2E хардкодил
-       qwen3-4b как первый choice — теперь живёт по реальному качеству.
-       Thinking-модели (qwen3.6) НЕ в приоритете для E2E, потому что
-       inline llm() в T6.3 пинит greedy decoding (temp=0, max_tokens=8192)
-       без stop=["</think>"] — они всё ещё могут выгореть. Production-код
-       через makeLlm в dataset-v2.ipc.ts применяет thinking-heavy профиль
-       автоматически и работает с qwen3.6. */
-    const CRYSTAL_TAG_PRIORITY: ModelTag[] = ["tool-capable-coder", "non-thinking-instruct", "small-fast"];
-    const LEGACY_HINTS = ["qwen3-coder", "mistral-small", "qwen3-14b", "qwen3-4b-2507"];
+    /* Tag-based selection — приоритет ПО РОЛИ, не "максимально мощная вообще".
+       Для Crystallizer (structured JSON extraction) reasoning-модели работают
+       плохо: они пишут всё в <think>...</think>, LM Studio парсит это в
+       reasoning_content, оставляя content="" — extractor видит 0 концептов.
+       Эмпирически на qwen3.6-35b: 912 completion tokens → 0 chars JSON.
+       Поэтому для EXTRACTOR/JUDGE приоритет:
+         1. tool-capable-coder (qwen3-coder-30b — best для structured)
+         2. non-thinking-instruct (mistral-small/qwen3-14b/qwen3-4b — direct JSON)
+         3. flagship (qwen3.6 — last resort, использует адаптивный профиль)
+         4. small-fast (любая мелкая — last-last resort)
+       Для CHAT/AGENT (chat.js, forge-agent.js) flagship остаётся первым —
+       там reasoning помогает. Это разделение по ролям — основа умного выбора. */
+    const CRYSTAL_TAG_PRIORITY: ModelTag[] = ["tool-capable-coder", "non-thinking-instruct", "flagship", "small-fast"];
+    const LEGACY_HINTS = ["qwen3-coder", "mistral-small", "qwen3-14b", "qwen3-4b-2507", "qwen3.6"];
     const extractModel = await pickModelByTags(lm.models, CRYSTAL_TAG_PRIORITY, LEGACY_HINTS);
     const judgeModel = await pickModelByTags(lm.models, CRYSTAL_TAG_PRIORITY, LEGACY_HINTS);
+
+    /* Умная подсказка: если для extractor выбран small-fast или flagship —
+       это работающие, но не оптимальные fallback'и. Подскажем пользователю
+       загрузить лучшую модель для Crystallizer. */
+    if (extractModel) {
+      const hintProfile = await getModelProfile(extractModel);
+      if (hintProfile.source === "small-fast") {
+        console.log(
+          `        ${COLOR.yellow}[hint] Crystallizer работает на small-fast модели. Для лучшего качества загрузите` +
+          ` qwen3-coder-30b-a3b, mistral-small-3.1, или qwen3-14b-instruct в LM Studio.${COLOR.reset}`,
+        );
+      } else if (hintProfile.source === "thinking-heavy") {
+        console.log(
+          `        ${COLOR.yellow}[hint] Crystallizer на reasoning-модели работает медленно (всё уходит в <think>).` +
+          ` Для structured extraction оптимальнее non-thinking instruct: qwen3-coder/14b или mistral-small.${COLOR.reset}`,
+        );
+      }
+    }
 
     await step("T6.1 -- LM Studio has a usable model loaded", () => {
       if (!extractModel) throw new Error("no model available");
@@ -527,19 +551,37 @@ async function main(): Promise<void> {
 
     if (extractModel && judgeModel && goodThemed.length > 0) {
       const longestBook = goodThemed.slice().sort((a, b) => b.totalChunks - a.totalChunks)[0];
+
+      /* Профиль модели применяется так же, как production makeLlm в
+         dataset-v2.ipc.ts. Это даёт корректные настройки для thinking-моделей
+         (qwen3.6 → max_tokens=16384, stop=["</think>"], chat_template_kwargs:
+         enable_thinking=false, response_format=json_schema), для tool-capable-coder,
+         и т.д. Кэшируется один раз на job — getModelProfile всё равно мемоизирован. */
+      const extractProfile = await getModelProfile(extractModel);
+      const judgeProfile = await getModelProfile(judgeModel);
+      const allowedDomainsArr = Array.from(ALLOWED_DOMAINS).sort();
+      const extractResponseFormat = extractProfile.useResponseFormat
+        ? buildExtractorResponseFormat(allowedDomainsArr)
+        : undefined;
+      const judgeResponseFormat = judgeProfile.useResponseFormat
+        ? buildJudgeResponseFormat()
+        : undefined;
+      console.log(
+        `        ${COLOR.dim}extractor profile: ${extractProfile.source} (maxTokens=${extractProfile.maxTokens}` +
+        `${extractProfile.stop ? `, stop=${JSON.stringify(extractProfile.stop)}` : ""}` +
+        `${extractResponseFormat ? `, response_format=json_schema` : ""}` +
+        `${extractProfile.chatTemplateKwargs ? `, ctk=${JSON.stringify(extractProfile.chatTemplateKwargs)}` : ""})${COLOR.reset}`,
+      );
+
       /* Determinism contract for THIS test:
          - temperature=0 (greedy sampling) for repeatability across runs
          - top_k=1 + top_p=1 forces hard greedy on backends where temp=0
            is interpreted loosely
-         - max_tokens generous so thinking models don't truncate the JSON
-           response halfway through
-         The Crystallizer code itself is unchanged -- the test just
-         pins the inputs so we measure code, not LLM stochasticity. */
-      /* Caller (concept-extractor) passes its own temperature/maxTokens,
-         but for this test we IGNORE them and pin greedy decoding. The
-         signature still accepts them for compatibility with the callbacks
-         contract (clearPromptCache + extractChapterConcepts both call us
-         with their own preferences). */
+         - max_tokens, stop, chat_template_kwargs берутся из профиля модели —
+           так test использует те же настройки что production
+         The Crystallizer code itself is unchanged -- the test just pins
+         the SAMPLING (temp/top_p/top_k) for reproducibility but uses real
+         adaptive profile for everything else. */
       const llm = async ({
         messages, maxTokens,
       }: {
@@ -556,8 +598,14 @@ async function main(): Promise<void> {
             top_k: 1,
             min_p: 0,
             presence_penalty: 0,
-            max_tokens: maxTokens ?? 8192,
+            /* Профиль = нижняя граница для thinking-моделей. Caller hint
+               может только увеличить (для длинных глав), но не уменьшить
+               ниже того что нужно модели чтобы не выгореть на reasoning. */
+            max_tokens: Math.max(maxTokens ?? 8192, extractProfile.maxTokens),
           },
+          stop: extractProfile.stop,
+          responseFormat: extractResponseFormat,
+          chatTemplateKwargs: extractProfile.chatTemplateKwargs,
         });
         return r.content;
       };
@@ -680,10 +728,15 @@ async function main(): Promise<void> {
                     top_k: 1,
                     min_p: 0,
                     presence_penalty: 0,
-                    /* 4k headroom for thinking models that may emit a
-                       <think>...</think> block before the JSON. */
-                    max_tokens: args.maxTokens ?? 4096,
+                    /* Те же правила, что для extractor: профиль = нижняя граница.
+                       Для thinking-моделей (qwen3.6) это даст 16k tokens чтобы
+                       судья успел и подумать (если включён <think>), и закрыть
+                       JSON. */
+                    max_tokens: Math.max(args.maxTokens ?? 4096, judgeProfile.maxTokens),
                   },
+                  stop: judgeProfile.stop,
+                  responseFormat: judgeResponseFormat,
+                  chatTemplateKwargs: judgeProfile.chatTemplateKwargs,
                 });
                 return r.content;
               },

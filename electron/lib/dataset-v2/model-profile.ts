@@ -133,9 +133,20 @@ export async function getModelProfile(modelKey: string): Promise<ModelProfile> {
     return {
       source: "thinking-heavy",
       tags,
-      maxTokens: 16384,
-      useResponseFormat: false /* thinking + json_schema редко работают вместе — предпочитаем большой budget */,
-      stop: ["</think>"],
+      /* 32k токенов — дать reasoning-модели возможность пройти полный
+         <think>...</think> цикл И написать структурированный JSON после.
+         Эмпирически: qwen3.6-35b с 16k тратит ~900 токенов на thinking
+         и обрезается на stop=</think> с пустым content. 32k — безопасный
+         запас для большинства глав книг. */
+      maxTokens: 32768,
+      /* response_format=json_schema критично для thinking-моделей: constrained
+         decoding принудит модель завершить JSON-структуру после thinking. Без
+         этого она может писать prose-ответ вместо JSON. */
+      useResponseFormat: true,
+      /* НЕ ставим stop=["</think>"]: эмпирически он обрезает thinking ДО того
+         как модель начала писать content/JSON, оставляя пустой ответ. Без stop
+         модель сама закроет </think> и продолжит JSON-output (constrained
+         response_format её обязывает). */
       chatTemplateKwargs: { enable_thinking: false },
     };
   }
