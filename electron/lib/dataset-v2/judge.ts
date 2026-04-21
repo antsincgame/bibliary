@@ -322,7 +322,11 @@ export async function judgeAndAccept(args: JudgeBatchArgs): Promise<JudgeBatchRe
      закрывает race без лишних round-trip'ов: если новый concept
      слишком похож на уже принятый в той же сессии — отбрасываем как
      in-batch duplicate. Группируем по domain, потому что cross-search
-     тоже фильтрует по domain. */
+     тоже фильтрует по domain.
+     AUDIT δ-6.3: cap на 200 per domain — без него batch=1000 в одном
+     domain даёт 10⁶ cosine-сравнений (O(N²)). FIFO eviction: старые
+     концепты уже индексированы в Qdrant и catchable через cross-search. */
+  const MAX_INBATCH_PER_DOMAIN = 200;
   const inBatchCache = new Map<string, Array<{ id: string; vector: number[] }>>();
 
   for (const concept of args.concepts) {
@@ -425,6 +429,9 @@ export async function judgeAndAccept(args: JudgeBatchArgs): Promise<JudgeBatchRe
        увидит дубликат даже если Qdrant ещё не обновил search-индекс. */
     const slot = inBatchCache.get(concept.domain) ?? [];
     slot.push({ id: concept.id, vector });
+    if (slot.length > MAX_INBATCH_PER_DOMAIN) {
+      slot.shift();
+    }
     inBatchCache.set(concept.domain, slot);
 
     args.callbacks.onEvent?.({
