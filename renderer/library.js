@@ -6,7 +6,14 @@ import { t } from "./i18n.js";
 /** @typedef {{ ingestId: string, phase: string, bookSourcePath: string, bookTitle: string, totalChunks: number, processedChunks: number, embeddedChunks: number, upsertedChunks: number, message?: string, errorMessage?: string }} ProgressEvent */
 /** @typedef {{ collection: string, books: Array<{ bookSourcePath: string, fileName: string, status: "running"|"done"|"error"|"paused", totalChunks: number, processedChunks: number, startedAt: string, lastUpdatedAt: string, errorMessage?: string }>, totalBooks: number, totalChunks: number }} HistoryGroup */
 
-const QUEUE_PARALLELISM = 3;
+let QUEUE_PARALLELISM = 3;
+
+(async () => {
+  try {
+    const prefs = await window.api.preferences.getAll();
+    if (prefs.ingestParallelism) QUEUE_PARALLELISM = prefs.ingestParallelism;
+  } catch { /* use default */ }
+})();
 
 const STATE = {
   /** @type {"browse"|"history"} */

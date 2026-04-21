@@ -9,13 +9,17 @@
 import { pipeline, type FeatureExtractionPipeline } from "@xenova/transformers";
 import { fetchQdrantJson, QDRANT_URL } from "../qdrant/http-client.js";
 
+async function loadPrefs() {
+  try {
+    const { getPreferencesStore } = await import("../preferences/store.js");
+    return getPreferencesStore().getAll();
+  } catch {
+    return null;
+  }
+}
+
 export const RAG_TOP_K = 15;
 
-/**
- * Минимальный cosine score для включения чанка в RAG-промпт.
- * 0.55 — эмпирически: e5-small даёт 0.45–0.55 на «средне релевантные»,
- * 0.6+ — на «точные совпадения». Override через ENV `BIBLIARY_RAG_SCORE_THRESHOLD`.
- */
 export const RAG_SCORE_THRESHOLD = (() => {
   const raw = process.env.BIBLIARY_RAG_SCORE_THRESHOLD;
   const parsed = raw ? Number(raw) : NaN;
@@ -30,6 +34,17 @@ export const CHAT_SAMPLING = {
   presence_penalty: 0,
   max_tokens: 16384,
 } as const;
+
+export async function getRagConfig() {
+  const p = await loadPrefs();
+  return {
+    topK: p?.ragTopK ?? RAG_TOP_K,
+    scoreThreshold: p?.ragScoreThreshold ?? RAG_SCORE_THRESHOLD,
+    temperature: p?.chatTemperature ?? CHAT_SAMPLING.temperature,
+    topP: p?.chatTopP ?? CHAT_SAMPLING.top_p,
+    maxTokens: p?.chatMaxTokens ?? CHAT_SAMPLING.max_tokens,
+  };
+}
 
 export interface QdrantSearchResult {
   id: string;

@@ -7,13 +7,14 @@ import { mountLibrary, isLibraryBusy } from "./library.js";
 import { mountAgent, isAgentBusy } from "./forge-agent.js";
 import { mountCrystal, isCrystalBusy } from "./dataset-v2.js";
 import { mountQdrant } from "./qdrant.js";
+import { mountSettings } from "./settings.js";
 import { applyI18n, getLocale, setLocale, listLocales, onLocaleChange, t } from "./i18n.js";
 import { mountResilienceBar } from "./components/resilience-bar.js";
 import { getMode, cycleMode, applyToDocument as applyMode, onModeChange } from "./ui-mode.js";
 import { openWelcomeWizard } from "./components/welcome-wizard.js";
 
-const ROUTES = ["chat", "library", "qdrant", "agent", "crystal", "dataset", "models", "forge", "docs"];
-const REMOUNT_ON_LOCALE = new Set(["library", "qdrant", "agent", "crystal", "dataset", "models", "forge", "docs"]);
+const ROUTES = ["chat", "library", "qdrant", "agent", "crystal", "dataset", "models", "forge", "docs", "settings"];
+const REMOUNT_ON_LOCALE = new Set(["library", "qdrant", "agent", "crystal", "dataset", "models", "forge", "docs", "settings"]);
 const mounted = new Set();
 
 function mountRoute(name) {
@@ -26,6 +27,7 @@ function mountRoute(name) {
   else if (name === "models") mountModels(document.getElementById("models-root"));
   else if (name === "forge") mountForge(document.getElementById("forge-root"));
   else if (name === "docs") mountDocs(document.getElementById("docs-root"));
+  else if (name === "settings") mountSettings(document.getElementById("settings-root"));
   mounted.add(name);
 }
 

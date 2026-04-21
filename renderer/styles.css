@@ -5257,3 +5257,96 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   background: rgba(13, 13, 18, 0.4);
 }
 
+/* ===== Settings page ===== */
+.settings-actions {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.settings-section {
+  margin-bottom: 14px;
+}
+.settings-section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.settings-section-title {
+  font-size: 15px;
+}
+.settings-mode-badge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  padding: 2px 8px;
+  border-radius: 2px;
+  border: 1px solid;
+}
+.settings-mode-advanced { color: var(--cyan); border-color: rgba(0, 240, 255, 0.4); }
+.settings-mode-pro { color: var(--gold); border-color: rgba(255, 215, 0, 0.4); }
+.settings-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 20px;
+}
+@media (max-width: 800px) {
+  .settings-fields { grid-template-columns: 1fr; }
+}
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.settings-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+}
+.settings-label-range {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+.settings-input-wrap {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.settings-input {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.4);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  border-radius: 2px;
+}
+.settings-input:focus { outline: 1px solid var(--gold); border-color: var(--gold); }
+.settings-reset-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  width: 28px;
+  height: 28px;
+  border-radius: 2px;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color var(--motion-fast) ease, border-color var(--motion-fast) ease;
+}
+.settings-reset-btn:hover { color: var(--gold); border-color: var(--gold); }
+.settings-loading, .settings-error {
+  padding: 32px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.settings-error { color: var(--accent-red); }
+

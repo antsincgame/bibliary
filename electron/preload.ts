@@ -333,6 +333,14 @@ contextBridge.exposeInMainWorld("api", {
     import: (): Promise<{ path: string; summary: unknown } | null> => ipcRenderer.invoke("profile:import"),
   },
 
+  preferences: {
+    getAll: (): Promise<Record<string, unknown>> => ipcRenderer.invoke("preferences:get-all"),
+    getDefaults: (): Promise<Record<string, unknown>> => ipcRenderer.invoke("preferences:get-defaults"),
+    set: (partial: Record<string, unknown>): Promise<Record<string, unknown>> =>
+      ipcRenderer.invoke("preferences:set", partial),
+    reset: (): Promise<Record<string, unknown>> => ipcRenderer.invoke("preferences:reset"),
+  },
+
   forge: {
     listSourceBatches: (): Promise<string[]> => ipcRenderer.invoke("forge:list-source-batches"),
     nextRunId: (): Promise<string> => ipcRenderer.invoke("forge:next-run-id"),

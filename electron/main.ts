@@ -9,6 +9,7 @@ import {
 } from "./ipc";
 import { disposeClient } from "./lmstudio-client";
 import { initResilienceLayer, coordinator, telemetry } from "./lib/resilience";
+import { initPreferencesStore } from "./lib/preferences/store.js";
 import { registerDatasetPipeline } from "./finetune-state";
 import { registerForgePipeline } from "./lib/forge";
 import { startWatchdog, stopWatchdog } from "./lib/resilience/lmstudio-watchdog";
@@ -57,6 +58,8 @@ if (!gotLock) {
 
   app.whenReady().then(async () => {
     await initResilienceLayer();
+    const prefsStore = initPreferencesStore(path.resolve("data"));
+    await prefsStore.ensureDefaults();
     registerDatasetPipeline();
     registerForgePipeline();
     startWatchdog(() => mainWindow);
