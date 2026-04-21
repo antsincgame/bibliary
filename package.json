@@ -23,6 +23,7 @@
     "test:e2e:scanner": "tsx scripts/e2e-book-ingest.ts",
     "test:e2e:library-ux": "tsx scripts/e2e-library-ux.ts",
     "test:dataset-v2": "tsx scripts/test-dataset-v2.ts",
+    "test:model-select": "tsx scripts/test-model-select.ts",
     "test:bookhunter": "tsx scripts/test-bookhunter.ts",
     "test:agent-live": "tsx scripts/test-agent-live.ts",
     "test:dataset-v2-live": "tsx scripts/test-dataset-v2-live.ts",

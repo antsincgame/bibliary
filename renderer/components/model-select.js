@@ -39,18 +39,20 @@ import { t } from "../i18n.js";
  * @property {() => string} getValue - текущее выбранное значение
  */
 
-/** Подписки для синхронизации между несколькими экземплярами на одной странице. */
-const _instances = new Set();
-
 /** Подсказки по умолчанию — порядок предпочтения моделей (substring match). */
-const DEFAULT_HINTS = ["qwen3.6", "qwen3-coder", "mistral-small", "qwen3.5", "qwen", "llama"];
+export const DEFAULT_MODEL_HINTS = ["qwen3.6", "qwen3-coder", "mistral-small", "qwen3.5", "qwen", "llama"];
 
 /**
+ * Выбирает лучшую модель из списка по приоритету подсказок (substring match по modelKey).
+ * Если ни одна подсказка не сматчилась — возвращает первую в списке. Пустой список → "".
+ *
+ * Pure function (нет side effects) — тестируется напрямую без DOM.
+ *
  * @param {LoadedModel[]} models
- * @param {string[]} hints
+ * @param {string[]} [hints=DEFAULT_MODEL_HINTS]
  * @returns {string}
  */
-function pickBestModel(models, hints) {
+export function pickBestModel(models, hints = DEFAULT_MODEL_HINTS) {
   if (!Array.isArray(models) || models.length === 0) return "";
   for (const h of hints) {
     const m = models.find((x) => x.modelKey?.toLowerCase().includes(h));
@@ -130,7 +132,7 @@ export function buildModelSelect(opts) {
   const labelClass = opts.labelClass ?? "model-select-label";
   const selectClass = opts.selectClass ?? "model-select";
   const showContext = opts.showContext === true;
-  const hints = Array.isArray(opts.hints) && opts.hints.length > 0 ? opts.hints : DEFAULT_HINTS;
+  const hints = Array.isArray(opts.hints) && opts.hints.length > 0 ? opts.hints : DEFAULT_MODEL_HINTS;
 
   const labelEl = el("label", { class: labelClass }, labelText);
   /** @type {Record<string, string>} */
@@ -181,22 +183,10 @@ export function buildModelSelect(opts) {
   /* Стартовая загрузка — асинхронно, не блокируем render. */
   void loadAndApply();
 
-  const instance = {
+  return {
     wrap,
     select,
     refresh: loadAndApply,
     getValue: () => currentValue,
   };
-  _instances.add(instance);
-  return instance;
-}
-
-/**
- * Перечитать listLoaded во ВСЕХ активных экземплярах. Полезно при глобальной
- * операции "обновить список" — например при mount нового экрана или после load/unload.
- * @returns {Promise<void>}
- */
-export async function refreshAllModelSelects() {
-  const all = Array.from(_instances);
-  await Promise.all(all.map((inst) => inst.refresh().catch(() => undefined)));
 }
