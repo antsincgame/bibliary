@@ -29,7 +29,7 @@
     "test:dataset-v2-live": "tsx scripts/test-dataset-v2-live.ts",
     "test:e2e:mvp": "tsx scripts/e2e-full-mvp.ts",
     "test:e2e:quality": "tsx scripts/e2e-quality.ts",
-    "lint": "tsc -p tsconfig.electron.json --noEmit && eslint \"renderer/**/*.js\" --max-warnings=9",
+    "lint": "tsc -p tsconfig.electron.json --noEmit && eslint \"renderer/**/*.js\" --max-warnings=0",
     "lint:fix": "eslint \"renderer/**/*.js\" --fix"
   },
   "dependencies": {

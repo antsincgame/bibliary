@@ -144,6 +144,5 @@ export function navigate(name) {
 
 // Tiny self-test: убедиться, что i18n загружен (иначе в логах увидим warning).
 if (typeof t !== "function") {
-  // eslint-disable-next-line no-console
   console.warn("[router] i18n is not initialised");
 }

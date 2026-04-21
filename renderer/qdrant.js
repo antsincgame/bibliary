@@ -37,7 +37,7 @@ function fmtNum(n) {
 async function loadCluster() {
   try {
     STATE.cluster = await api().qdrant.cluster();
-  } catch (e) {
+  } catch {
     STATE.cluster = { url: "?", online: false, collectionsCount: 0 };
   }
 }
@@ -46,7 +46,7 @@ async function loadCollections() {
   STATE.loading = true;
   try {
     STATE.collections = await api().qdrant.listDetailed();
-  } catch (e) {
+  } catch {
     STATE.collections = [];
   } finally {
     STATE.loading = false;
@@ -159,7 +159,7 @@ function renderInfoCard(info, root) {
   return wrapSacredCard([inner], "qdrant-card");
 }
 
-function renderSearchCard(name, root) {
+function renderSearchCard(name, _root) {
   const inner = el("div", {});
   inner.appendChild(el("div", { class: "qdrant-card-title neon-heading" }, t("qdrant.search.title")));
   const input = el("input", {

@@ -23,7 +23,7 @@ export function getMode() {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === "simple" || stored === "advanced" || stored === "pro") return stored;
-  } catch {}
+  } catch { /* localStorage недоступен (privacy mode / SSR) — fallback на дефолт */ }
   return DEFAULT;
 }
 
@@ -32,7 +32,7 @@ export function setMode(mode) {
   if (!ORDER.includes(mode)) return;
   try {
     localStorage.setItem(STORAGE_KEY, mode);
-  } catch {}
+  } catch { /* localStorage недоступен — режим применится только на текущую сессию */ }
   applyToDocument();
   for (const fn of listeners) fn(mode);
 }

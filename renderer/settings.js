@@ -273,7 +273,6 @@ function buildUrlField(field, root) {
       return true;
     }
     try {
-      // eslint-disable-next-line no-new
       new URL(v);
       if (v.endsWith("/")) {
         status.textContent = t("settings.url.noTrailingSlash");
