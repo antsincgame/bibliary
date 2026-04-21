@@ -26,7 +26,7 @@ export function buildContextSlider(opts) {
   const mode = opts.mode || "full";
   const root = el("div", { class: `context-slider context-slider-${mode}` });
 
-  /** @type {{ targetTokens: number; kvDtype: "fp16"|"q8_0"|"q4_0"; rec: any; arch: any; suggestions: any[]; hasActivePatch: boolean }} */
+  /** @type {{ targetTokens: number; kvDtype: "fp16"|"q8_0"|"q4_0"; rec: any; arch: any; suggestions: any[]; hasActivePatch: boolean; hasBackup: boolean | null }} */
   const STATE = {
     targetTokens: opts.initialTokens || 32768,
     kvDtype: "fp16",
@@ -34,6 +34,8 @@ export function buildContextSlider(opts) {
     arch: null,
     suggestions: [],
     hasActivePatch: false,
+    /** Tri-state: null while initial probe in flight, then boolean. */
+    hasBackup: null,
   };
 
   // ── Скелет ───────────────────────────────────────────────────────────────
@@ -128,6 +130,7 @@ export function buildContextSlider(opts) {
     } catch {
       STATE.hasActivePatch = false;
     }
+    await refreshBackupBadge();
     await refresh();
   }
 
@@ -290,6 +293,15 @@ export function buildContextSlider(opts) {
     }
   }
 
+  /**
+   * Render Apply / Revert buttons + a backup-availability badge.
+   *
+   * The backup badge is queried from the main process via
+   * `yarn.hasBackup(modelKey)`. If `true`, the user is shown that
+   * Revert is non-destructive (we have the original config to restore).
+   * If `false`, Revert button is hidden (we cannot guarantee a clean
+   * rollback).
+   */
   function renderActions() {
     if (mode !== "full") return;
     clear(actionsBar);
@@ -309,6 +321,7 @@ export function buildContextSlider(opts) {
       try {
         await opts.onApply(STATE.targetTokens, STATE.kvDtype);
         STATE.hasActivePatch = STATE.rec?.yarnRequired;
+        await refreshBackupBadge();
         renderActions();
       } finally {
         applyBtn.disabled = false;
@@ -316,23 +329,60 @@ export function buildContextSlider(opts) {
     });
     actionsBar.appendChild(applyBtn);
 
-    if (STATE.hasActivePatch && opts.onRevert) {
-      const revertBtn = el(
-        "button",
-        { class: "btn btn-ghost", type: "button" },
-        t("ctx.actions.revert")
-      );
-      revertBtn.addEventListener("click", async () => {
-        revertBtn.disabled = true;
-        try {
-          await opts.onRevert();
-          STATE.hasActivePatch = false;
-          renderActions();
-        } finally {
-          revertBtn.disabled = false;
-        }
-      });
-      actionsBar.appendChild(revertBtn);
+    if (STATE.hasActivePatch) {
+      actionsBar.appendChild(buildBackupBadge());
+      if (opts.onRevert && STATE.hasBackup) {
+        const revertBtn = el(
+          "button",
+          { class: "btn btn-ghost", type: "button" },
+          t("ctx.actions.revert")
+        );
+        revertBtn.addEventListener("click", async () => {
+          revertBtn.disabled = true;
+          try {
+            await opts.onRevert();
+            STATE.hasActivePatch = false;
+            await refreshBackupBadge();
+            renderActions();
+          } finally {
+            revertBtn.disabled = false;
+          }
+        });
+        actionsBar.appendChild(revertBtn);
+      }
+    }
+  }
+
+  function buildBackupBadge() {
+    const ok = STATE.hasBackup === true;
+    const checking = STATE.hasBackup === null;
+    const cls = checking
+      ? "ctx-backup-badge ctx-backup-checking"
+      : ok
+        ? "ctx-backup-badge ctx-backup-ok"
+        : "ctx-backup-badge ctx-backup-missing";
+    const labelKey = checking
+      ? "ctx.backup.checking"
+      : ok
+        ? "ctx.backup.available"
+        : "ctx.backup.missing";
+    const tooltipKey = checking
+      ? "ctx.backup.checking.tooltip"
+      : ok
+        ? "ctx.backup.available.tooltip"
+        : "ctx.backup.missing.tooltip";
+    return el("span", { class: cls, title: t(tooltipKey) }, t(labelKey));
+  }
+
+  async function refreshBackupBadge() {
+    if (!opts.modelKey) {
+      STATE.hasBackup = false;
+      return;
+    }
+    try {
+      STATE.hasBackup = Boolean(await window.api.yarn.hasBackup(opts.modelKey));
+    } catch {
+      STATE.hasBackup = false;
     }
   }
 

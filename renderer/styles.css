@@ -5679,6 +5679,77 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   background: rgba(255, 68, 68, 0.06);
 }
 
+/* ===== Settings: URL field with Test button ===== */
+.settings-field-url {
+  grid-column: 1 / -1;
+}
+.settings-test-btn {
+  background: rgba(0, 240, 255, 0.06);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  color: var(--cyan);
+  padding: 6px 12px;
+  border-radius: 2px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: all var(--motion-fast) ease;
+}
+.settings-test-btn:hover:not(:disabled) {
+  background: rgba(0, 240, 255, 0.12);
+  border-color: var(--cyan);
+}
+.settings-test-btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.settings-url-status {
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  min-height: 14px;
+}
+.settings-url-status-ok {
+  color: var(--neon-emerald);
+}
+.settings-url-status-error {
+  color: var(--accent-red);
+}
+.settings-url-status-info {
+  color: var(--text-dim);
+}
+
+/* ===== Models: yarn backup-availability badge ===== */
+.ctx-backup-badge {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  padding: 3px 8px;
+  border-radius: 2px;
+  border: 1px solid;
+  text-transform: uppercase;
+  margin-right: 8px;
+}
+.ctx-backup-ok {
+  color: var(--neon-emerald);
+  border-color: rgba(0, 255, 136, 0.4);
+  background: rgba(0, 255, 136, 0.06);
+}
+.ctx-backup-missing {
+  color: var(--accent-red);
+  border-color: rgba(255, 68, 68, 0.4);
+  background: rgba(255, 68, 68, 0.06);
+}
+.ctx-backup-checking {
+  color: var(--text-dim);
+  border-color: var(--border);
+  background: rgba(0, 0, 0, 0.2);
+}
+
 /* ===== Qdrant: search error block ===== */
 .qdrant-search-error {
   font-family: var(--font-mono);
