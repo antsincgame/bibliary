@@ -38,7 +38,7 @@ const STATE = {
   /** @type {Array<{ts: number, stage: string, summary: string, level: "info"|"good"|"warn"|"bad"}>} */
   events: [],
   /** Accepted в этой сессии (для bottom-list) */
-  /** @type {Array<{principle: string, domain: string, score: number}>} */
+  /** @type {Array<{conceptId: string, principle: string, domain: string, score: number, rejected?: boolean, rejectError?: string}>} */
   acceptedThisSession: [],
 };
 
@@ -266,16 +266,62 @@ function renderAccepted(root) {
     return;
   }
   for (const c of STATE.acceptedThisSession.slice().reverse()) {
-    wrap.appendChild(
-      el("div", { class: "cv-accepted-card" }, [
-        el("div", { class: "cv-accepted-row1" }, [
-          el("span", { class: "cv-accepted-domain" }, c.domain),
-          el("span", { class: "cv-accepted-score" }, fmtPct(c.score)),
-        ]),
-        el("div", { class: "cv-accepted-principle" }, c.principle),
-      ])
-    );
+    wrap.appendChild(buildAcceptedCard(c, root));
   }
+}
+
+function buildAcceptedCard(concept, root) {
+  const card = el("div", {
+    class: `cv-accepted-card${concept.rejected ? " cv-accepted-card-rejected" : ""}`,
+    "data-concept-id": concept.conceptId,
+  }, [
+    el("div", { class: "cv-accepted-row1" }, [
+      el("span", { class: "cv-accepted-domain" }, concept.domain || "?"),
+      el("span", { class: "cv-accepted-score" }, fmtPct(concept.score)),
+      buildRejectButton(concept, root),
+    ]),
+    el("div", { class: "cv-accepted-principle" }, concept.principle),
+    concept.rejectError
+      ? el("div", { class: "cv-accepted-error" }, concept.rejectError)
+      : null,
+  ]);
+  return card;
+}
+
+function buildRejectButton(concept, root) {
+  if (concept.rejected) {
+    return el("span", { class: "cv-accepted-rejected-badge", title: t("crystal.accepted.rejectedTooltip") },
+      t("crystal.accepted.rejected"));
+  }
+  if (!concept.conceptId) return null;
+  const btn = el("button", {
+    class: "cv-accepted-reject-btn",
+    type: "button",
+    title: t("crystal.accepted.reject.tooltip"),
+    "aria-label": t("crystal.accepted.reject.aria"),
+  }, "x");
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    try {
+      const ok = await window.api.datasetV2.rejectAccepted(concept.conceptId);
+      if (ok) {
+        concept.rejected = true;
+        STATE.stats.accepted = Math.max(0, STATE.stats.accepted - 1);
+        STATE.stats.rejected += 1;
+        pushEvent("judge", `MANUAL REJECT «${concept.principle}»`, "warn");
+        renderStats(root);
+        renderAccepted(root);
+        renderAcceptedTotal(root);
+      } else {
+        concept.rejectError = t("crystal.accepted.rejectFailed");
+        renderAccepted(root);
+      }
+    } catch (e) {
+      concept.rejectError = t("crystal.accepted.rejectFailed") + ": " + (e instanceof Error ? e.message : String(e));
+      renderAccepted(root);
+    }
+  });
+  return btn;
 }
 
 async function renderAcceptedTotal(root) {
@@ -355,8 +401,9 @@ function handleEvent(root, payload) {
       const score = Number(payload.score ?? 0);
       pushEvent("judge", `ACCEPT ${score.toFixed(2)} «${payload.principle}»`, "good");
       STATE.acceptedThisSession.push({
+        conceptId: String(payload.conceptId ?? ""),
         principle: String(payload.principle ?? ""),
-        domain: "?",
+        domain: String(payload.domain ?? "?"),
         score,
       });
       renderStats(root);
@@ -431,10 +478,11 @@ async function stopJob(root) {
   if (!STATE.currentJobId) return;
   try {
     await window.api.datasetV2.cancel(STATE.currentJobId);
-  } catch {
-    /* ignore */
+    pushEvent("job", t("crystal.event.stoppedByUser"), "warn");
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    pushEvent("job", t("crystal.event.stopFailed") + ": " + msg, "bad");
   }
-  pushEvent("job", "Остановлено пользователем", "warn");
   setBusy(root, false);
   renderLog(root);
 }

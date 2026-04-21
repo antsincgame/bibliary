@@ -41,7 +41,7 @@ export type JudgeEvent =
   | { type: "judge.score"; principle: string; score: number; novelty: number; actionability: number; domain_fit: number }
   | { type: "judge.reject.lowscore"; principle: string; score: number; reason: string }
   | { type: "judge.reject.error"; principle: string; reason: string }
-  | { type: "judge.accept"; principle: string; score: number };
+  | { type: "judge.accept"; conceptId: string; principle: string; domain: string; score: number };
 
 const PROMPT_CACHE: { template: string | null } = { template: null };
 
@@ -322,7 +322,13 @@ export async function judgeAndAccept(args: JudgeBatchArgs): Promise<JudgeBatchRe
       rejected.push({ concept, reason: `upsert-error: ${e instanceof Error ? e.message : e}` });
       continue;
     }
-    args.callbacks.onEvent?.({ type: "judge.accept", principle: concept.principle.slice(0, 60), score });
+    args.callbacks.onEvent?.({
+      type: "judge.accept",
+      conceptId: concept.id,
+      principle: concept.principle.slice(0, 60),
+      domain: concept.domain,
+      score,
+    });
     accepted.push(acceptedConcept);
   }
 
