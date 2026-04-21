@@ -1,9 +1,8 @@
 // Общие константы доменов и лимитов длины для пайплайна Crystallizer (v2)
-// и валидатора legacy v1 (validate-line). Старая константа MECHANICUS_SYSTEM_PROMPT
-// удалена в рамках Inquisitor-зачистки конкурирующих кодировок: единственная
-// разрешённая кодировка теперь живёт в defaults/prompts/concept-extractor-mechanicus.md
+// и standalone-валидатора batch-файлов. Единственная разрешённая кодировка
+// концептов живёт в defaults/prompts/concept-extractor-mechanicus.md
 // (для non-thinking моделей) и concept-extractor-cognitive.md (для thinking).
-// Legacy v1 dataset-generator держит свою кодировку inline (изолировано).
+// Legacy v1 dataset-generator вычищен экстерминатусом — см. docs/AUDIT-2026-04.md.
 
 export const ALLOWED_DOMAINS = new Set([
   "ui",

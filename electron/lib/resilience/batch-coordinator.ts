@@ -1,7 +1,7 @@
 import * as telemetry from "./telemetry";
 import type { CheckpointStore } from "./checkpoint-store";
 
-export type PipelineName = "dataset" | "extraction" | "forge";
+export type PipelineName = "extraction" | "forge";
 
 export interface BatchInfo {
   batchId: string;
@@ -64,7 +64,7 @@ class CoordinatorImpl implements BatchCoordinator {
       // Невозможно нормально cancel/discard — pipeline должен быть зарегистрирован
       // ДО старта батча. Это инвариант приложения, а не runtime ошибка пользователя.
       throw new Error(
-        `Coordinator: pipeline "${info.pipeline}" is not registered. Call registerDatasetPipeline() in bootstrap.`
+        `Coordinator: pipeline "${info.pipeline}" is not registered. Register it in main.ts bootstrap.`
       );
     }
     this.active.set(info.batchId, info);

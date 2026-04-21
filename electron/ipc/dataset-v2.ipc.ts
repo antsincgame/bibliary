@@ -5,9 +5,9 @@
  * одной книге (или диапазоне глав). Прогресс летит push-events `dataset-v2:event`
  * в renderer для alchemy log.
  *
- * Stage 5 (triplet generator) подключается в следующей итерации — пока
- * accepted-concepts писались в коллекцию `dataset-accepted-concepts` Qdrant,
- * откуда их забирает существующий dataset-generator (как обычные SourceChunks).
+ * Stage 5 (triplet generator) подключается в следующей итерации — accepted-concepts
+ * писались в коллекцию `dataset-accepted-concepts` Qdrant как промежуточный буфер
+ * для будущего v2-генератора batch-файлов (legacy v1 удалён экстерминатусом).
  */
 
 import { ipcMain, type BrowserWindow } from "electron";

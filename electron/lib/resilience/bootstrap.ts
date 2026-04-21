@@ -25,12 +25,10 @@ export async function initResilienceLayer(opts: ResilienceInitOptions = {}): Pro
   const dataDir = path.resolve(opts.dataDir ?? "data");
   const defaultsDir = path.resolve(opts.defaultsDir ?? path.join(__dirname, "..", "..", "defaults"));
   const checkpointsDir = path.join(dataDir, "checkpoints");
-  const datasetCheckpointsDir = path.join(dataDir, "finetune", "checkpoints", "dataset");
   const promptsDir = path.join(dataDir, "prompts");
   const telemetryPath = path.join(dataDir, "telemetry.jsonl");
 
   await fs.mkdir(checkpointsDir, { recursive: true });
-  await fs.mkdir(datasetCheckpointsDir, { recursive: true });
   await fs.mkdir(promptsDir, { recursive: true });
   await fs.mkdir(path.dirname(telemetryPath), { recursive: true });
 

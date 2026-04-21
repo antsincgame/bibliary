@@ -13,7 +13,6 @@
     "export": "tsx scripts/export-all.ts",
     "duplicates": "tsx scripts/find-duplicates.ts",
     "inventory": "tsx scripts/inventory.ts",
-    "generate-batch": "tsx scripts/generate-batch.ts",
     "validate-batch": "tsx scripts/validate-batch.ts",
     "electron:compile": "tsc -p tsconfig.electron.json",
     "electron:dev": "node scripts/prepare-electron.js && tsc -p tsconfig.electron.json && electron dist-electron/main.js",

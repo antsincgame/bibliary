@@ -15,7 +15,6 @@ import {
   configureFileLockDefaults,
 } from "./lib/resilience";
 import { initPreferencesStore } from "./lib/preferences/store.js";
-import { registerDatasetPipeline } from "./finetune-state";
 import { registerForgePipeline } from "./lib/forge";
 import { initForgeStore } from "./lib/forge/state";
 import { registerExtractionPipeline } from "./lib/dataset-v2/coordinator-pipeline";
@@ -135,7 +134,6 @@ if (!gotLock) {
     const endpoints = await getEndpoints();
     setQdrantUrl(endpoints.qdrantUrl);
 
-    registerDatasetPipeline();
     registerForgePipeline();
     /* Crystallizer (extraction) is now first-class in coordinator: when
        LM Studio goes offline the watchdog pauses it (= aborts in-flight

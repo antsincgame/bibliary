@@ -3,7 +3,7 @@ import * as path from "path";
 import { TELEMETRY_MAX_BYTES } from "./constants";
 
 export type TelemetryEvent =
-  | { type: "batch.start"; batchId: string; pipeline: "dataset" | "extraction" | "forge"; config: unknown; ts: string }
+  | { type: "batch.start"; batchId: string; pipeline: "extraction" | "forge"; config: unknown; ts: string }
   | { type: "forge.run.start"; runId: string; target: string; baseModel: string; method: string; ts: string }
   | { type: "forge.run.success"; runId: string; durationMs: number; ts: string }
   | { type: "forge.run.fail"; runId: string; target: string; error: string; ts: string }
