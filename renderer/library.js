@@ -668,7 +668,11 @@ function refreshSearchCardActions(card, candidate, root, dlState) {
 
 async function startCardDownload(candidate, root) {
   if (!STATE.collection) { alert(t("library.alert.collection")); return; }
-  if (DOWNLOAD_STATE.get(candidate.id)?.status === "downloading") return;
+  const cur = DOWNLOAD_STATE.get(candidate.id);
+  /* Block while still active (downloading OR ingesting). Allow restart
+     from terminal states (done / error / cancelled) -- e.g. retry, or
+     re-download into a different collection. */
+  if (cur && (cur.status === "downloading" || cur.status === "ingesting")) return;
   const downloadId = makeDownloadId();
   const initial = { downloadId, downloaded: 0, total: null, status: "downloading" };
   DOWNLOAD_STATE.set(candidate.id, initial);
