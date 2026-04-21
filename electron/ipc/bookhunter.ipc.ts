@@ -10,8 +10,9 @@ import { ipcMain, app, type BrowserWindow } from "electron";
 import * as path from "path";
 import * as crypto from "crypto";
 import { aggregateSearch, downloadBook, ALLOWED_LICENSES, type BookCandidate, type BookFileVariant } from "../lib/bookhunter/index.js";
-import { ingestBook, ScannerStateStore } from "../lib/scanner/index.js";
+import { ingestBook, ScannerStateStore, isOcrSupported } from "../lib/scanner/index.js";
 import { QDRANT_URL, QDRANT_API_KEY } from "../lib/qdrant/http-client.js";
+import { getPreferencesStore } from "../lib/preferences/store.js";
 
 const activeDownloads = new Map<string, AbortController>();
 
@@ -58,11 +59,12 @@ export function registerBookhunterIpc(getMainWindow: () => BrowserWindow | null)
     ): Promise<BookCandidate[]> => {
       if (!args || typeof args.query !== "string" || args.query.trim().length === 0) return [];
       try {
+        const prefs = await getPreferencesStore().getAll();
         return await aggregateSearch({
           query: args.query.trim(),
           sources: args.sources,
           language: args.language,
-          perSourceLimit: args.perSourceLimit ?? 8,
+          perSourceLimit: args.perSourceLimit ?? prefs.searchPerSourceLimit,
         });
       } catch (e) {
         console.error("[bookhunter:search]", e instanceof Error ? e.message : e);
@@ -93,10 +95,12 @@ export function registerBookhunterIpc(getMainWindow: () => BrowserWindow | null)
 
       const win = getMainWindow();
       try {
+        const prefs = await getPreferencesStore().getAll();
         const res = await downloadBook({
           variant,
           destPath,
           signal: ctrl.signal,
+          maxRetries: prefs.downloadMaxRetries,
           onProgress: (downloaded, total) => {
             if (win && !win.isDestroyed()) {
               win.webContents.send("bookhunter:download-progress", {
@@ -148,10 +152,12 @@ export function registerBookhunterIpc(getMainWindow: () => BrowserWindow | null)
       activeDownloads.set(dlId, ctrl);
       const win = getMainWindow();
       try {
+        const prefs = await getPreferencesStore().getAll();
         await downloadBook({
           variant,
           destPath,
           signal: ctrl.signal,
+          maxRetries: prefs.downloadMaxRetries,
           onProgress: (downloaded, total) => {
             if (win && !win.isDestroyed()) {
               win.webContents.send("bookhunter:download-progress", {
@@ -171,6 +177,15 @@ export function registerBookhunterIpc(getMainWindow: () => BrowserWindow | null)
           qdrantApiKey: QDRANT_API_KEY,
           state: stateStore,
           signal: ctrl.signal,
+          upsertBatch: prefs.ingestUpsertBatch,
+          maxBookChars: prefs.maxBookChars,
+          parseOptions: {
+            ocrEnabled: prefs.ocrEnabled && isOcrSupported(),
+            ocrLanguages: prefs.ocrLanguages,
+            ocrAccuracy: prefs.ocrAccuracy,
+            ocrPdfDpi: prefs.ocrPdfDpi,
+            signal: ctrl.signal,
+          },
           onProgress: (p) => {
             if (win && !win.isDestroyed()) {
               win.webContents.send("scanner:ingest-progress", { ingestId: `bh-${dlId}`, ...p });

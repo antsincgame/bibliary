@@ -29,9 +29,11 @@ import {
   coordinator,
   withPolicy,
   DEFAULT_POLICY,
+  buildRequestPolicy,
   isAbortError,
   telemetry,
 } from "./lib/resilience";
+import { getPreferencesStore } from "./lib/preferences/store";
 import { getPromptStore, type DatasetRoleSpec, type DatasetRoles } from "./lib/prompts/store";
 import { fitOrTrim, ContextOverflowError } from "./lib/token/overflow-guard";
 import { ChunkTooLargeError } from "./lib/token/budget";
@@ -39,6 +41,24 @@ import { ChunkTooLargeError } from "./lib/token/budget";
 const MODEL_SWITCH_TIMEOUT_MS = 180_000;
 const EXPECTED_TOKENS_PER_PHASE = 400;
 const ASSUMED_INITIAL_TPS = 8;
+
+/**
+ * Build a RequestPolicy reflecting the user's current preferences.
+ * Falls back to DEFAULT_POLICY if the store is unreachable (very early in
+ * boot or in unit tests).
+ */
+async function getRuntimePolicy() {
+  try {
+    const prefs = await getPreferencesStore().getAll();
+    return buildRequestPolicy({
+      policyMaxRetries: prefs.policyMaxRetries,
+      policyBaseBackoffMs: prefs.policyBaseBackoffMs,
+      hardTimeoutCapMs: prefs.hardTimeoutCapMs,
+    });
+  } catch {
+    return DEFAULT_POLICY;
+  }
+}
 
 export type { ChunkPhase, BatchSettings } from "./dataset-generator-config";
 
@@ -243,8 +263,9 @@ async function runPhase(
     safeMessages = messages;
   }
 
+  const policy = await getRuntimePolicy();
   const text = await withPolicy(
-    DEFAULT_POLICY,
+    policy,
     ctx.signal,
     { expectedTokens: maxCompletion, observedTps: ASSUMED_INITIAL_TPS },
     async (innerSignal) => {

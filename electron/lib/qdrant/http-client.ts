@@ -20,16 +20,23 @@ export const SCROLL_PAGE_SIZE = 256;
  */
 export const QDRANT_POINTS_HARD_CAP = 5000;
 
-export async function fetchQdrantJson<T>(url: string, options?: RequestInit): Promise<T> {
+export interface QdrantFetchOptions extends RequestInit {
+  /** Override the global QDRANT_TIMEOUT_MS for this call. */
+  timeoutMs?: number;
+}
+
+export async function fetchQdrantJson<T>(url: string, options?: QdrantFetchOptions): Promise<T> {
+  const timeoutMs = options?.timeoutMs ?? QDRANT_TIMEOUT_MS;
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(`qdrant timeout ${QDRANT_TIMEOUT_MS}ms`), QDRANT_TIMEOUT_MS);
+  const timer = setTimeout(() => ctl.abort(`qdrant timeout ${timeoutMs}ms`), timeoutMs);
   try {
     const headers: Record<string, string> = {
       "User-Agent": QDRANT_USER_AGENT,
       ...(QDRANT_API_KEY ? { "api-key": QDRANT_API_KEY } : {}),
       ...(options?.headers as Record<string, string> | undefined),
     };
-    const response = await fetch(url, { ...(options ?? {}), headers, signal: ctl.signal });
+    const { timeoutMs: _ignored, ...rest } = options ?? {};
+    const response = await fetch(url, { ...rest, headers, signal: ctl.signal });
     if (!response.ok) {
       throw new Error(`Qdrant HTTP ${response.status}: ${response.statusText}`);
     }

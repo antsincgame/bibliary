@@ -6,6 +6,7 @@ import {
   SCROLL_PAGE_SIZE,
   QDRANT_POINTS_HARD_CAP,
 } from "../lib/qdrant/http-client.js";
+import { getPreferencesStore } from "../lib/preferences/store.js";
 
 interface QdrantPoint {
   id: string;
@@ -230,6 +231,7 @@ export function registerQdrantIpc(): void {
           vector = await embedQuery(args.query);
         }
         if (!vector) return [];
+        const prefs = await getPreferencesStore().getAll();
         const data = await fetchQdrantJson<{
           result: Array<{ id: string | number; score: number; payload: Record<string, unknown> }>;
         }>(`${QDRANT_URL}/collections/${encodeURIComponent(args.collection)}/points/search`, {
@@ -237,9 +239,10 @@ export function registerQdrantIpc(): void {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             vector,
-            limit: args.limit ?? 20,
+            limit: args.limit ?? prefs.qdrantSearchLimit,
             with_payload: true,
           }),
+          timeoutMs: prefs.qdrantTimeoutMs,
         });
         return data.result.map((r) => ({
           id: String(r.id),

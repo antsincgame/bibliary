@@ -30,6 +30,29 @@ export const DEFAULT_POLICY: RequestPolicy = {
   abortGraceMs: ABORT_GRACE_MS,
 };
 
+/**
+ * Build a RequestPolicy from user preferences. Falls back to constants
+ * for any field that's missing. Use this when calling withPolicy() from
+ * IPC handlers so /Settings overrides actually take effect.
+ */
+export function buildRequestPolicy(prefs: {
+  policyMaxRetries?: number;
+  policyBaseBackoffMs?: number;
+  hardTimeoutCapMs?: number;
+}): RequestPolicy {
+  const cap = prefs.hardTimeoutCapMs ?? POLICY_HARD_TIMEOUT_CAP_MS;
+  return {
+    maxRetries: prefs.policyMaxRetries ?? POLICY_MAX_RETRIES,
+    baseBackoffMs: prefs.policyBaseBackoffMs ?? POLICY_BASE_BACKOFF_MS,
+    perRequestTimeout: ({ expectedTokens, observedTps }) => {
+      const tps = Math.max(observedTps, POLICY_MIN_OBSERVED_TPS);
+      const dynamic = Math.ceil((expectedTokens / tps) * 1000) + POLICY_TIMEOUT_BUFFER_MS;
+      return Math.min(dynamic, cap);
+    },
+    abortGraceMs: ABORT_GRACE_MS,
+  };
+}
+
 export interface PolicyContext {
   expectedTokens: number;
   observedTps: number;

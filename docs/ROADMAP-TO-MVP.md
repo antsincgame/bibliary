@@ -29,17 +29,34 @@
 
 ## P0 — Закрыть критические дыры (1-2 дня)
 
-### P0.1. Wire forge runtime preferences
+### P0.1. Wire forge / resilience / qdrant / bookhunter runtime preferences ✅ DONE
 
-**Проблема:** `forgeHeartbeatMs` / `forgeMaxWallMs` сохраняются в preferences,
-но `electron/lib/forge/local-runner.ts` использует hard-coded константы.
+**Было:** `forgeHeartbeatMs`, `forgeMaxWallMs`, `policyMaxRetries`,
+`policyBaseBackoffMs`, `hardTimeoutCapMs`, `qdrantTimeoutMs`,
+`qdrantSearchLimit`, `searchPerSourceLimit`, `downloadMaxRetries`,
+`ocrPdfDpi` -- сохранялись в preferences, видны в Settings, но backend
+их не читал.
 
-**Решение:** в `local-runner.ts` импортировать `getPreferencesStore()`,
-читать оба значения при `startLocalRun()`. Аналогично -- `policyMaxRetries`,
-`policyBaseBackoffMs`, `hardTimeoutCapMs` в `lib/resilience/lm-request-policy.ts`.
+**Сделано в коммите `<this commit>`:**
 
-**Критерий "сделано":** изменение значения в Settings → следующий run
-наследует новое значение без перезапуска приложения.
+- `electron/ipc/forge.ipc.ts` -> `LocalRunner.start({ heartbeatMs, maxWallMs })`
+  через `getPreferencesStore()`.
+- `electron/lib/resilience/lm-request-policy.ts` -- новая фабрика
+  `buildRequestPolicy(prefs)`. `electron/dataset-generator.ts` использует её
+  через локальный helper `getRuntimePolicy()`.
+- `electron/lib/qdrant/http-client.ts` -- `fetchQdrantJson(url, opts)` теперь
+  принимает `{ timeoutMs }`. `qdrant.ipc.ts` (search) пробрасывает
+  `prefs.qdrantTimeoutMs` и `prefs.qdrantSearchLimit`.
+- `electron/ipc/bookhunter.ipc.ts` -- `aggregateSearch` получает
+  `prefs.searchPerSourceLimit`, `downloadBook` -- `prefs.downloadMaxRetries`.
+  `download-and-ingest` дополнительно пробрасывает `parseOptions` (OCR,
+  upsertBatch, maxBookChars).
+- `electron/lib/scanner/parsers/pdf.ts` -- `rasterisePdfPages({ dpi })`
+  получает `opts.ocrPdfDpi` (OCR signal тоже пробрасывается в `recognize`).
+
+**Критерий "сделано" (выполнен):** изменение значения в Settings → следующий
+run наследует новое значение без перезапуска приложения. 33/34 ключей wired,
+1 (`refreshIntervalMs`) зарезервирован для будущего auto-refresh.
 
 ### P0.2. E2E тест полного цикла
 

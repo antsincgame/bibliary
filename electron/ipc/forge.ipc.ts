@@ -22,6 +22,7 @@ import {
 } from "../lib/forge/index.js";
 import { listBatchFiles } from "../finetune-state.js";
 import { coordinator, telemetry } from "../lib/resilience/index.js";
+import { getPreferencesStore } from "../lib/preferences/store.js";
 import { chat } from "../lmstudio-client.js";
 
 export function registerForgeIpc(getMainWindow: () => BrowserWindow | null): void {
@@ -186,7 +187,13 @@ export function registerForgeIpc(getMainWindow: () => BrowserWindow | null): voi
           win.webContents.send("forge:local-error", { runId: args.runId, error: err.message });
         }
       });
-      runner.start({ scriptWinPath: args.scriptWinPath, distro: args.distro ?? null });
+      const prefs = await getPreferencesStore().getAll();
+      runner.start({
+        scriptWinPath: args.scriptWinPath,
+        distro: args.distro ?? null,
+        heartbeatMs: prefs.forgeHeartbeatMs,
+        maxWallMs: prefs.forgeMaxWallMs,
+      });
       return { ok: true };
     }
   );

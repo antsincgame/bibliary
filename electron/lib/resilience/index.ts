@@ -8,6 +8,7 @@ export {
 export {
   withPolicy,
   DEFAULT_POLICY,
+  buildRequestPolicy,
   isAbortError,
   type RequestPolicy,
   type RequestPolicyContext,
