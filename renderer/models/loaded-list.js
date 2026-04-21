@@ -1,5 +1,6 @@
 // @ts-check
-import { el } from "./dom.js";
+import { el } from "../dom.js";
+import { t } from "../i18n.js";
 
 /**
  * @param {Array<{identifier:string,modelKey:string,contextLength?:number,quantization?:string}>} loaded
@@ -7,7 +8,11 @@ import { el } from "./dom.js";
  */
 export function loadedList(loaded, onUnload) {
   if (loaded.length === 0) {
-    return el("div", { style: "font-size:12px;color:var(--text-dim);" }, "No models in memory.");
+    return el(
+      "div",
+      { style: "font-size:12px;color:var(--text-dim);" },
+      t("models.empty.no_loaded")
+    );
   }
   return el(
     "div",
@@ -16,7 +21,9 @@ export function loadedList(loaded, onUnload) {
       const meta = [
         m.quantization ? m.quantization : null,
         m.contextLength ? `${m.contextLength.toLocaleString()} ctx` : null,
-      ].filter(Boolean).join(" · ");
+      ]
+        .filter(Boolean)
+        .join(" · ");
       return el("div", { class: "list-row" }, [
         el("div", { class: "col-main" }, [
           el("strong", { style: "color:var(--cyan);" }, m.modelKey),
@@ -30,7 +37,7 @@ export function loadedList(loaded, onUnload) {
             style: "padding:4px 10px;font-size:9px;",
             onclick: () => onUnload(m.identifier),
           },
-          "Unload"
+          t("models.btn.unload")
         ),
       ]);
     })

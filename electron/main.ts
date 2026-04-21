@@ -1,7 +1,18 @@
 import { app, BrowserWindow } from "electron";
 import * as path from "path";
-import { registerIpcHandlers, abortAllBatches } from "./ipc-handlers";
+import {
+  registerAllIpcHandlers,
+  abortAllBatches,
+  abortAllIngests,
+  abortAllDatasetV2,
+  abortAllBookhunter,
+} from "./ipc";
 import { disposeClient } from "./lmstudio-client";
+import { initResilienceLayer, coordinator, telemetry } from "./lib/resilience";
+import { registerDatasetPipeline } from "./finetune-state";
+import { registerForgePipeline } from "./lib/forge";
+import { startWatchdog, stopWatchdog } from "./lib/resilience/lmstudio-watchdog";
+import { SHUTDOWN_FLUSH_TIMEOUT_MS } from "./lib/resilience/constants";
 
 const WINDOW_WIDTH = 1280;
 const WINDOW_HEIGHT = 820;
@@ -44,8 +55,12 @@ if (!gotLock) {
     }
   });
 
-  app.whenReady().then(() => {
-    registerIpcHandlers(() => mainWindow);
+  app.whenReady().then(async () => {
+    await initResilienceLayer();
+    registerDatasetPipeline();
+    registerForgePipeline();
+    startWatchdog(() => mainWindow);
+    registerAllIpcHandlers(() => mainWindow);
     createWindow();
   });
 
@@ -53,8 +68,75 @@ if (!gotLock) {
     app.quit();
   });
 
-  app.on("before-quit", () => {
-    abortAllBatches("app-quit");
-    disposeClient();
+  let isQuitting = false;
+  app.on("before-quit", (event) => {
+    if (isQuitting) return;
+    if (!coordinator.isAnyActive()) {
+      stopWatchdog();
+      abortAllBatches("app-quit");
+      abortAllIngests("app-quit");
+      abortAllDatasetV2("app-quit");
+      abortAllBookhunter("app-quit");
+      disposeClient();
+      return;
+    }
+
+    event.preventDefault();
+    isQuitting = true;
+    const startedAt = Date.now();
+    const pendingIds = coordinator.listActive().map((b) => b.batchId);
+    telemetry.logEvent({ type: "shutdown.flush.start", pendingBatches: pendingIds });
+
+    void (async () => {
+      let exitCode = 0;
+      try {
+        const result = await coordinator.flushAll(SHUTDOWN_FLUSH_TIMEOUT_MS);
+        if (result.ok) {
+          telemetry.logEvent({ type: "shutdown.flush.ok", durationMs: Date.now() - startedAt });
+        } else {
+          telemetry.logEvent({ type: "shutdown.flush.timeout", pendingBatches: result.pending });
+          exitCode = 2;
+        }
+      } catch (e) {
+        telemetry.logEvent({
+          type: "shutdown.flush.error",
+          error: e instanceof Error ? e.message : String(e),
+        });
+        exitCode = 3;
+      } finally {
+        try {
+          stopWatchdog();
+        } catch {
+          // ignore
+        }
+        try {
+          abortAllBatches("app-quit");
+        } catch {
+          // ignore
+        }
+        try {
+          abortAllIngests("app-quit");
+        } catch {
+          // ignore
+        }
+        try {
+          abortAllDatasetV2("app-quit");
+        } catch {
+          // ignore
+        }
+        try {
+          abortAllBookhunter("app-quit");
+        } catch {
+          // ignore
+        }
+        try {
+          disposeClient();
+        } catch {
+          // ignore
+        }
+        await telemetry.flush().catch(() => undefined);
+        app.exit(exitCode);
+      }
+    })();
   });
 }

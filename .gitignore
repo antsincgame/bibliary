@@ -28,3 +28,9 @@ data/finetune/*
 !data/finetune/README.md
 !data/finetune/gold-examples.jsonl
 !data/finetune/source-chunks.json
+
+# Resilience layer (Phase 2.5R)
+data/telemetry.jsonl
+data/telemetry-*.jsonl
+data/checkpoints/
+data/prompts/

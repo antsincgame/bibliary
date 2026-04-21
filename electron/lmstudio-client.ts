@@ -1,4 +1,5 @@
 import { LMStudioClient } from "@lmstudio/sdk";
+import { registerModelContext, unregisterModelContext } from "./lib/token/overflow-guard";
 
 const HTTP_URL = process.env.LM_STUDIO_URL || "http://localhost:1234";
 const WS_URL = HTTP_URL.replace(/^http/, "ws");
@@ -79,8 +80,16 @@ interface OpenAiChatPayload {
 }
 
 interface OpenAiChatResponse {
-  choices: Array<{ message: { content: string } }>;
-  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+  choices: Array<{
+    message: { content: string; reasoning_content?: string };
+    finish_reason?: string;
+  }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+    completion_tokens_details?: { reasoning_tokens?: number };
+  };
 }
 
 interface OpenAiModelsResponse {
@@ -160,8 +169,151 @@ export async function chat(request: ChatRequest): Promise<ChatResponse> {
     throw new Error("LM Studio returned no completion choice");
   }
 
+  const content = choice.message.content ?? "";
+  const reasoningContent = choice.message.reasoning_content ?? "";
+  const finishReason = choice.finish_reason;
+  const reasoningTokens = data.usage?.completion_tokens_details?.reasoning_tokens ?? 0;
+
+  // Thinking-модели (Qwen3.x, DeepSeek-R1) могут исчерпать max_tokens на reasoning,
+  // оставив content="". Бросаем явную ошибку с подсказкой увеличить max_tokens —
+  // это понятнее для pipeline чем «empty response».
+  if (content.trim().length === 0 && reasoningContent.length > 0 && finishReason === "length") {
+    throw new Error(
+      `LM Studio: max_tokens exhausted on reasoning (${reasoningTokens} tokens). ` +
+        `Increase max_tokens for this thinking-style model.`
+    );
+  }
+
   return {
-    content: choice.message.content,
+    content,
+    usage: data.usage
+      ? {
+          prompt: data.usage.prompt_tokens ?? 0,
+          completion: data.usage.completion_tokens ?? 0,
+          total: data.usage.total_tokens ?? 0,
+        }
+      : undefined,
+  };
+}
+
+/* ────────────────── Phase 4.0 — tools-aware chat ──────────────────
+ * Расширение `chat()` для function calling. Не модифицирует существующий
+ * `chat()` (Strangler Fig) — добавляет соседнюю функцию с `tools` параметром.
+ * Использует тот же endpoint /v1/chat/completions, тот же error-handling.
+ *
+ * Контракт совместим с OpenAI tools API (Qwen3 4B+ поддерживает native).
+ */
+
+/**
+ * Сообщение в формате OpenAI tools API. Не наследует `ChatMessage`,
+ * потому что добавляет роль `"tool"` и поля `tool_call_id` / `tool_calls`.
+ */
+export interface ToolMessage {
+  role: "system" | "user" | "assistant" | "tool";
+  content: string;
+  tool_call_id?: string;
+  tool_calls?: Array<{
+    id: string;
+    type: "function";
+    function: { name: string; arguments: string };
+  }>;
+}
+
+export interface ToolDefinitionWire {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
+
+export interface ChatWithToolsRequest {
+  model: string;
+  messages: ToolMessage[];
+  tools: ToolDefinitionWire[];
+  toolChoice?: "auto" | "none" | "required";
+  sampling?: Partial<SamplingParams>;
+  signal?: AbortSignal;
+}
+
+export interface ChatToolCall {
+  id: string;
+  name: string;
+  argsJson: string;
+}
+
+export interface ChatWithToolsResponse {
+  content: string;
+  toolCalls?: ChatToolCall[];
+  finishReason?: string;
+  usage?: ChatUsage;
+}
+
+interface OpenAiToolCallWire {
+  id?: string;
+  type: "function";
+  function: { name: string; arguments: string };
+}
+
+interface OpenAiChatWithToolsResponse {
+  choices: Array<{
+    message: {
+      content?: string | null;
+      reasoning_content?: string;
+      tool_calls?: OpenAiToolCallWire[];
+    };
+    finish_reason?: string;
+  }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  };
+}
+
+export async function chatWithTools(request: ChatWithToolsRequest): Promise<ChatWithToolsResponse> {
+  const sampling = { ...DEFAULT_SAMPLING, ...request.sampling };
+  const payload = {
+    model: request.model,
+    messages: request.messages,
+    tools: request.tools,
+    tool_choice: request.toolChoice ?? "auto",
+    temperature: sampling.temperature,
+    top_p: sampling.top_p,
+    top_k: sampling.top_k,
+    min_p: sampling.min_p,
+    presence_penalty: sampling.presence_penalty,
+    max_tokens: sampling.max_tokens,
+  };
+
+  const response = await fetch(`${HTTP_URL}/v1/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal: request.signal,
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`LM Studio HTTP ${response.status}: ${response.statusText}${text ? ` — ${text.slice(0, 200)}` : ""}`);
+  }
+
+  const data = (await response.json()) as OpenAiChatWithToolsResponse;
+  const choice = data.choices[0];
+  if (!choice) throw new Error("LM Studio returned no completion choice");
+
+  const content = choice.message.content ?? "";
+  const toolCalls = choice.message.tool_calls?.map((tc) => ({
+    id: tc.id ?? `tc_${Math.random().toString(36).slice(2, 12)}`,
+    name: tc.function.name,
+    argsJson: tc.function.arguments,
+  }));
+
+  return {
+    content,
+    toolCalls,
+    finishReason: choice.finish_reason,
     usage: data.usage
       ? {
           prompt: data.usage.prompt_tokens ?? 0,
@@ -237,6 +389,9 @@ export async function loadModel(modelKey: string, opts: LoadOptions = {}): Promi
     ttl: opts.ttlSec,
   });
   const info = await handle.getModelInfo();
+  if (typeof info.contextLength === "number" && info.contextLength > 0) {
+    registerModelContext(info.modelKey, info.contextLength);
+  }
   return {
     identifier: info.identifier,
     modelKey: info.modelKey,
@@ -246,7 +401,15 @@ export async function loadModel(modelKey: string, opts: LoadOptions = {}): Promi
 
 export async function unloadModel(identifier: string): Promise<void> {
   const client = getClient();
+  let modelKey: string | null = null;
+  try {
+    const loaded = await listLoaded();
+    modelKey = loaded.find((m) => m.identifier === identifier)?.modelKey ?? null;
+  } catch {
+    // ignore lookup error
+  }
   await client.llm.unload(identifier);
+  if (modelKey) unregisterModelContext(modelKey);
 }
 
 export async function switchProfile(profileName: ProfileName, contextLength = 32768): Promise<LoadedModelInfo> {

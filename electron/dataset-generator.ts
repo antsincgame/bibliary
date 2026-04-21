@@ -2,36 +2,45 @@ import {
   chat,
   switchProfile,
   type ChatMessage,
-  type SamplingParams,
-  type ProfileName,
   PROFILE,
 } from "./lmstudio-client";
 import {
   readProgress,
   readSourceChunks,
   readGoldExamples,
-  commitBatch,
+  startBatch,
+  appendChunkLines,
+  finalizeBatch,
   nextBatchName,
+  registerDatasetAbort,
+  unregisterDatasetAbort,
   type SourceChunk,
   type GoldExample,
   type Progress,
+  type DatasetBatchState,
 } from "./finetune-state";
 import { MECHANICUS_SYSTEM_PROMPT } from "./mechanicus-prompt";
+import {
+  PHASES,
+  type ChunkPhase,
+  type BatchSettings,
+} from "./dataset-generator-config";
+import {
+  coordinator,
+  withPolicy,
+  DEFAULT_POLICY,
+  isAbortError,
+  telemetry,
+} from "./lib/resilience";
+import { getPromptStore, type DatasetRoleSpec, type DatasetRoles } from "./lib/prompts/store";
+import { fitOrTrim, ContextOverflowError } from "./lib/token/overflow-guard";
+import { ChunkTooLargeError } from "./lib/token/budget";
 
-const MAX_RETRIES = 2;
-const RETRY_BASE_MS = 1000;
 const MODEL_SWITCH_TIMEOUT_MS = 180_000;
+const EXPECTED_TOKENS_PER_PHASE = 400;
+const ASSUMED_INITIAL_TPS = 8;
 
-export type ChunkPhase = "T1" | "T2" | "T3";
-
-export interface BatchSettings {
-  profile: ProfileName;
-  contextLength: number;
-  batchSize: number;
-  delayMs: number;
-  fewShotCount: number;
-  sampling: Partial<SamplingParams>;
-}
+export type { ChunkPhase, BatchSettings } from "./dataset-generator-config";
 
 export interface ChunkProgressEvent {
   batchId: string;
@@ -58,20 +67,39 @@ export interface BatchResult {
 
 export type ProgressEmitter = (event: ChunkProgressEvent) => void;
 
+export interface BatchRunOptions {
+  resume?: boolean;
+  resumeBatchName?: string;
+  resumeBatchFile?: string;
+}
+
 interface RuntimeContext {
   batchId: string;
   signal: AbortSignal;
   emitter: ProgressEmitter;
   settings: BatchSettings;
+  roles: DatasetRoles;
 }
 
-function fewShotBlock(goldExamples: GoldExample[], domain: string, type: ChunkPhase, limit: number): string {
-  if (limit <= 0) return "";
+function pickFewShot(
+  goldExamples: GoldExample[],
+  domain: string,
+  type: ChunkPhase,
+  limit: number
+): GoldExample[] {
+  if (limit <= 0) return [];
   const matching = goldExamples.filter((ex) => ex.meta.type === type && ex.meta.domain === domain);
-  const fallback = goldExamples.filter((ex) => ex.meta.type === type);
-  const examples = (matching.length >= limit ? matching : fallback).slice(0, limit);
-  if (examples.length === 0) return "";
+  if (matching.length >= limit) return matching.slice(0, limit);
+  const seen = new Set(matching.map((ex) => ex.meta.source_chunk_id));
+  const fallback = goldExamples.filter(
+    (ex) => ex.meta.type === type && !seen.has(ex.meta.source_chunk_id)
+  );
+  const need = limit - matching.length;
+  return [...matching, ...fallback.slice(0, need)];
+}
 
+function fewShotBlock(examples: GoldExample[], type: ChunkPhase): string {
+  if (examples.length === 0) return "";
   const blocks = examples.map((ex, i) => {
     const human = ex.conversations.find((c) => c.from === "human")?.value ?? "";
     const gpt = ex.conversations.find((c) => c.from === "gpt")?.value ?? "";
@@ -79,30 +107,64 @@ function fewShotBlock(goldExamples: GoldExample[], domain: string, type: ChunkPh
 Input (${type}): ${human.slice(0, 300)}${human.length > 300 ? "…" : ""}
 Output chunk: ${gpt.slice(0, 200)}…`;
   });
-
   return `FEW-SHOT EXAMPLES:\n${blocks.join("\n\n")}`;
 }
 
-function buildPrompt(chunk: SourceChunk, fewShot: string, type: ChunkPhase): string {
-  const requirements: Record<ChunkPhase, string> = {
-    T1: `Generate a T1 input — a simulated book excerpt (150-220 words) that would produce this chunk.
-Requirements: read like a real book excerpt; varied author voices; self-contained; mix English and Russian across the dataset.`,
-    T2: `Generate a T2 input — a practical user question that this chunk answers.
-Requirements: real practitioner problem; one concrete question 1-3 sentences; mix Russian and English roughly 50/50.`,
-    T3: `Generate a T3 input — a 1-2 line brief idea/hint to be expanded into the full MECHANICUS chunk.
-Requirements: compress core idea in 1-2 lines; can be in Russian or English.`,
-  };
+function buildPrompt(
+  spec: DatasetRoleSpec,
+  chunk: SourceChunk,
+  type: ChunkPhase,
+  fewShot: string
+): string {
+  const antiList = spec.anti_examples
+    .slice(0, 3)
+    .map((a) => `- ${a}`)
+    .join("\n");
+  const chunkJson = JSON.stringify(
+    { principle: chunk.principle, explanation: chunk.explanation, domain: chunk.domain, tags: chunk.tags },
+    null,
+    2
+  );
+  return `TASK: Generate a ${type} input for a MECHANICUS training pair.
 
-  return `You are a dataset engineer creating training data for a MECHANICUS knowledge encoder.
+VOICE: ${spec.voice}
+FORMAT: ${spec.format}
 
-${requirements[type]}
+GOOD EXAMPLE OF ${type}:
+${spec.exemplar}
+
+DO NOT WRITE LIKE THIS (these are wrong):
+${antiList}
+
+TARGET MECHANICUS CHUNK:
+${chunkJson}
 
 ${fewShot}
 
-TARGET CHUNK:
-${JSON.stringify(chunk, null, 2)}
+Now generate ONLY the ${type} text. No labels. No JSON. No commentary. No markdown fences.`;
+}
 
-Generate ONLY the ${type} text. No JSON, no commentary, no labels.`;
+function buildExampleLine(type: ChunkPhase, humanInput: string, chunk: SourceChunk): string {
+  const chunkJson = JSON.stringify({
+    principle: chunk.principle,
+    explanation: chunk.explanation,
+    domain: chunk.domain,
+    tags: chunk.tags,
+  });
+
+  return JSON.stringify({
+    conversations: [
+      { from: "system", value: MECHANICUS_SYSTEM_PROMPT },
+      { from: "human", value: humanInput },
+      { from: "gpt", value: chunkJson },
+    ],
+    meta: {
+      type,
+      domain: chunk.domain,
+      source_chunk_id: chunk.id,
+      principle_head: chunk.principle.slice(0, 60),
+    },
+  });
 }
 
 async function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
@@ -137,171 +199,6 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-async function generatePhase(
-  ctx: RuntimeContext,
-  modelKey: string,
-  chunk: SourceChunk,
-  goldExamples: GoldExample[],
-  type: ChunkPhase
-): Promise<string> {
-  const fewShot = fewShotBlock(goldExamples, chunk.domain, type, ctx.settings.fewShotCount);
-  const userPrompt = buildPrompt(chunk, fewShot, type);
-  const messages: ChatMessage[] = [
-    { role: "system", content: "You are a dataset engineer. Follow instructions precisely." },
-    { role: "user", content: userPrompt },
-  ];
-
-  let lastError: unknown = null;
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    if (ctx.signal.aborted) throw new Error("aborted");
-    try {
-      const response = await chat({
-        model: modelKey,
-        messages,
-        sampling: ctx.settings.sampling,
-        signal: ctx.signal,
-      });
-      return response.content.trim();
-    } catch (e) {
-      lastError = e;
-      if (ctx.signal.aborted) throw new Error("aborted");
-      if (attempt < MAX_RETRIES) {
-        await sleep(RETRY_BASE_MS * (attempt + 1), ctx.signal);
-      }
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error(String(lastError));
-}
-
-function buildExampleLine(type: ChunkPhase, humanInput: string, chunk: SourceChunk): string {
-  const chunkJson = JSON.stringify({
-    principle: chunk.principle,
-    explanation: chunk.explanation,
-    domain: chunk.domain,
-    tags: chunk.tags,
-  });
-
-  return JSON.stringify({
-    conversations: [
-      { from: "system", value: MECHANICUS_SYSTEM_PROMPT },
-      { from: "human", value: humanInput },
-      { from: "gpt", value: chunkJson },
-    ],
-    meta: {
-      type,
-      domain: chunk.domain,
-      source_chunk_id: chunk.id,
-      principle_head: chunk.principle.slice(0, 60),
-    },
-  });
-}
-
-export async function generateBatch(
-  batchId: string,
-  signal: AbortSignal,
-  settings: BatchSettings,
-  emitter: ProgressEmitter
-): Promise<BatchResult> {
-  const profile = PROFILE[settings.profile];
-  const [allChunks, progress, goldExamples] = await Promise.all([
-    readSourceChunks(),
-    readProgress(),
-    readGoldExamples(),
-  ]);
-
-  const processedSet = new Set(progress.processed_chunk_ids);
-  const unprocessed = allChunks.filter((c) => !processedSet.has(c.id));
-  const batch = unprocessed.slice(0, settings.batchSize);
-
-  if (batch.length === 0) {
-    throw new Error("All chunks have been processed.");
-  }
-
-  await withTimeout(
-    switchProfile(settings.profile, settings.contextLength),
-    MODEL_SWITCH_TIMEOUT_MS,
-    `LM Studio model switch exceeded ${MODEL_SWITCH_TIMEOUT_MS / 1000}s`
-  );
-
-  const { name: batchName, file: batchFile } = nextBatchName(progress);
-  const ctx: RuntimeContext = { batchId, signal, emitter, settings };
-
-  const lines: string[] = [];
-  const processedIds: string[] = [];
-  let failedCount = 0;
-
-  for (let i = 0; i < batch.length; i++) {
-    if (signal.aborted) break;
-    const chunk = batch[i];
-    const principleHead = chunk.principle.slice(0, 80);
-    const startedAt = Date.now();
-
-    try {
-      const t1 = await runPhase(ctx, profile.key, chunk, goldExamples, "T1", i, batch.length);
-      const t2 = await runPhase(ctx, profile.key, chunk, goldExamples, "T2", i, batch.length);
-      const t3 = await runPhase(ctx, profile.key, chunk, goldExamples, "T3", i, batch.length);
-
-      lines.push(buildExampleLine("T1", t1, chunk));
-      lines.push(buildExampleLine("T2", t2, chunk));
-      lines.push(buildExampleLine("T3", t3, chunk));
-      processedIds.push(chunk.id);
-
-      emitter({
-        batchId,
-        index: i + 1,
-        total: batch.length,
-        chunkId: chunk.id,
-        domain: chunk.domain,
-        principleHead,
-        phase: "done",
-        elapsedMs: Date.now() - startedAt,
-      });
-    } catch (e) {
-      const err = e instanceof Error ? e.message : String(e);
-      failedCount++;
-      emitter({
-        batchId,
-        index: i + 1,
-        total: batch.length,
-        chunkId: chunk.id,
-        domain: chunk.domain,
-        principleHead,
-        phase: "error",
-        error: err,
-        elapsedMs: Date.now() - startedAt,
-      });
-      if (err === "aborted") break;
-    }
-
-    if (settings.delayMs > 0 && i < batch.length - 1 && !signal.aborted) {
-      try {
-        await sleep(settings.delayMs, signal);
-      } catch {
-        break;
-      }
-    }
-  }
-
-  if (lines.length === 0) {
-    if (signal.aborted) {
-      throw new Error("Batch aborted before any chunk completed.");
-    }
-    throw new Error(`Batch produced 0 examples (${failedCount} chunks failed).`);
-  }
-
-  const newProgress = await commitBatch(batchName, batchFile, lines, processedIds);
-
-  return {
-    batchId,
-    batchName,
-    batchFile,
-    examplesCount: lines.length,
-    processedCount: processedIds.length,
-    failedCount,
-    progress: newProgress,
-  };
-}
-
 async function runPhase(
   ctx: RuntimeContext,
   modelKey: string,
@@ -320,7 +217,42 @@ async function runPhase(
     principleHead: chunk.principle.slice(0, 80),
     phase: type,
   });
-  const text = await generatePhase(ctx, modelKey, chunk, goldExamples, type);
+
+  const spec = ctx.roles[type];
+  const fewShotPicked = pickFewShot(goldExamples, chunk.domain, type, ctx.settings.fewShotCount);
+  const fewShot = fewShotBlock(fewShotPicked, type);
+  const userPrompt = buildPrompt(spec, chunk, type, fewShot);
+  const messages: ChatMessage[] = [
+    { role: "system", content: spec.system },
+    { role: "user", content: userPrompt },
+  ];
+
+  const samplingOverride = ctx.settings.samplingOverrides?.[type];
+  const sampling = { ...ctx.settings.sampling, ...spec.sampling, ...(samplingOverride ?? {}) };
+  const maxCompletion = sampling.max_tokens ?? EXPECTED_TOKENS_PER_PHASE;
+
+  // Token Budget guard: если контекст модели зарегистрирован — пробуем вместить,
+  // иначе trim few-shot. ChunkTooLargeError → пометка failed, без падения batch.
+  let safeMessages: ChatMessage[];
+  try {
+    safeMessages = (await fitOrTrim(modelKey, messages, maxCompletion)) as ChatMessage[];
+  } catch (err) {
+    if (err instanceof ContextOverflowError || err instanceof ChunkTooLargeError) {
+      throw err;
+    }
+    safeMessages = messages;
+  }
+
+  const text = await withPolicy(
+    DEFAULT_POLICY,
+    ctx.signal,
+    { expectedTokens: maxCompletion, observedTps: ASSUMED_INITIAL_TPS },
+    async (innerSignal) => {
+      const response = await chat({ model: modelKey, messages: safeMessages, sampling, signal: innerSignal });
+      return response.content.trim();
+    }
+  );
+
   ctx.emitter({
     batchId: ctx.batchId,
     index: index + 1,
@@ -331,5 +263,173 @@ async function runPhase(
     phase: type,
     preview: text.slice(0, 200),
   });
+
   return text;
+}
+
+export async function generateBatch(
+  /**
+   * Идентификатор запуска. Из IPC передаётся batchName (например, "batch-001"),
+   * из CLI — произвольная метка ("cli-{timestamp}"). Используется только для
+   * логирования; **внутри** generateBatch события прогресса и coordinator всегда
+   * получают единый batchName, чтобы UI cancel/resume работали без mismatch.
+   */
+  _runId: string,
+  signal: AbortSignal,
+  settings: BatchSettings,
+  emitter: ProgressEmitter,
+  options: BatchRunOptions = {}
+): Promise<BatchResult> {
+  const profile = PROFILE[settings.profile];
+  const [allChunks, progress, goldExamples, roles] = await Promise.all([
+    readSourceChunks(),
+    readProgress(),
+    readGoldExamples(),
+    getPromptStore().readDatasetRoles(),
+  ]);
+
+  const processedSet = new Set(progress.processed_chunk_ids);
+  const unprocessed = allChunks.filter((c) => !processedSet.has(c.id));
+
+  let batchName: string;
+  let batchFile: string;
+  let resumed = false;
+  let preState: DatasetBatchState | null = null;
+
+  if (options.resume && options.resumeBatchName && options.resumeBatchFile) {
+    batchName = options.resumeBatchName;
+    batchFile = options.resumeBatchFile;
+    resumed = true;
+  } else {
+    const next = nextBatchName(progress);
+    batchName = next.name;
+    batchFile = next.file;
+  }
+
+  preState = await startBatch(batchName, batchFile, settings, resumed);
+  const alreadyProcessed = new Set(preState.processedChunkIds);
+  const queue = unprocessed.filter((c) => !alreadyProcessed.has(c.id)).slice(0, settings.batchSize);
+
+  if (queue.length === 0 && preState.processedChunkIds.length === 0) {
+    throw new Error("All chunks have been processed.");
+  }
+
+  await withTimeout(
+    switchProfile(settings.profile, settings.contextLength),
+    MODEL_SWITCH_TIMEOUT_MS,
+    `LM Studio model switch exceeded ${MODEL_SWITCH_TIMEOUT_MS / 1000}s`
+  );
+
+  const controller = new AbortController();
+  const onParentAbort = (): void => controller.abort((signal as AbortSignal & { reason?: unknown }).reason ?? "parent-aborted");
+  signal.addEventListener("abort", onParentAbort, { once: true });
+  registerDatasetAbort(batchName, controller);
+
+  coordinator.reportBatchStart({
+    batchId: batchName,
+    pipeline: "dataset",
+    startedAt: preState.startedAt,
+    config: settings,
+  });
+
+  // ВАЖНО: batchId в событиях прогресса == batchName, чтобы UI и coordinator
+  // оперировали одним идентификатором. Параметр _runId — только для логов CLI.
+  const ctx: RuntimeContext = { batchId: batchName, signal: controller.signal, emitter, settings, roles };
+
+  let processedThisRun = 0;
+  let failedCount = 0;
+  let lastProcessedCount = preState.processedChunkIds.length;
+
+  try {
+    for (let i = 0; i < queue.length; i++) {
+      if (controller.signal.aborted) break;
+      const chunk = queue[i];
+      const principleHead = chunk.principle.slice(0, 80);
+      const startedAt = Date.now();
+
+      try {
+        const phaseLines: string[] = [];
+        for (const phase of PHASES) {
+          const text = await runPhase(ctx, profile.key, chunk, goldExamples, phase, i, queue.length);
+          phaseLines.push(buildExampleLine(phase, text, chunk));
+        }
+        const append = await appendChunkLines(batchName, batchFile, phaseLines, chunk.id);
+        lastProcessedCount = append.state.processedChunkIds.length;
+        processedThisRun++;
+
+        telemetry.logEvent({
+          type: "batch.chunk.ok",
+          batchId: batchName,
+          chunkId: chunk.id,
+          latencyMs: Date.now() - startedAt,
+        });
+
+        emitter({
+          batchId: batchName,
+          index: i + 1,
+          total: queue.length,
+          chunkId: chunk.id,
+          domain: chunk.domain,
+          principleHead,
+          phase: "done",
+          elapsedMs: Date.now() - startedAt,
+        });
+      } catch (e) {
+        const err = e instanceof Error ? e.message : String(e);
+        failedCount++;
+        telemetry.logEvent({
+          type: "batch.chunk.fail",
+          batchId: batchName,
+          chunkId: chunk.id,
+          error: err,
+          attempt: 0,
+        });
+        emitter({
+          batchId: batchName,
+          index: i + 1,
+          total: queue.length,
+          chunkId: chunk.id,
+          domain: chunk.domain,
+          principleHead,
+          phase: "error",
+          error: err,
+          elapsedMs: Date.now() - startedAt,
+        });
+        if (isAbortError(e)) break;
+      }
+
+      if (settings.delayMs > 0 && i < queue.length - 1 && !controller.signal.aborted) {
+        try {
+          await sleep(settings.delayMs, controller.signal);
+        } catch {
+          break;
+        }
+      }
+    }
+
+    if (controller.signal.aborted && lastProcessedCount === 0) {
+      throw new Error("Batch aborted before any chunk completed.");
+    }
+
+    let progressAfter: Progress;
+    if (!controller.signal.aborted) {
+      progressAfter = await finalizeBatch(batchName, batchFile);
+    } else {
+      progressAfter = await readProgress();
+    }
+
+    return {
+      batchId: batchName,
+      batchName,
+      batchFile,
+      examplesCount: lastProcessedCount * PHASES.length,
+      processedCount: lastProcessedCount,
+      failedCount,
+      progress: progressAfter,
+    };
+  } finally {
+    coordinator.reportBatchEnd(batchName);
+    unregisterDatasetAbort(batchName);
+    signal.removeEventListener("abort", onParentAbort);
+  }
 }

@@ -1,5 +1,6 @@
 // @ts-check
-import { el, fmtBytes } from "./dom.js";
+import { el, fmtBytes } from "../dom.js";
+import { t } from "../i18n.js";
 
 /**
  * @param {Array<{modelKey:string,displayName?:string,format?:string,paramsString?:string,architecture?:string,quantization?:string,sizeBytes?:number}>} downloaded
@@ -8,7 +9,11 @@ import { el, fmtBytes } from "./dom.js";
  */
 export function downloadedList(downloaded, onLoad, loadedKeys) {
   if (downloaded.length === 0) {
-    return el("div", { style: "font-size:12px;color:var(--text-dim);" }, "Cannot reach LM Studio (or no LLMs downloaded).");
+    return el(
+      "div",
+      { style: "font-size:12px;color:var(--text-dim);" },
+      t("models.empty.no_downloaded")
+    );
   }
   const sorted = [...downloaded].sort((a, b) => a.modelKey.localeCompare(b.modelKey));
   return el(
@@ -22,14 +27,15 @@ export function downloadedList(downloaded, onLoad, loadedKeys) {
         m.quantization,
         m.format,
         fmtBytes(m.sizeBytes),
-      ].filter(Boolean).join(" · ");
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      const main = [el("strong", { style: "color:var(--text);" }, m.modelKey)];
+      if (m.displayName && m.displayName !== m.modelKey) {
+        main.push(document.createTextNode(`  · ${m.displayName}`));
+      }
       return el("div", { class: "list-row" }, [
-        el("div", { class: "col-main" }, [
-          el("strong", { style: "color:var(--text);" }, m.modelKey),
-          m.displayName && m.displayName !== m.modelKey
-            ? document.createTextNode(`  · ${m.displayName}`)
-            : null,
-        ].filter(Boolean)),
+        el("div", { class: "col-main" }, main),
         el("div", { class: "col-meta" }, meta),
         el(
           "button",
@@ -39,7 +45,7 @@ export function downloadedList(downloaded, onLoad, loadedKeys) {
             disabled: isLoaded ? "true" : null,
             onclick: () => onLoad(m.modelKey),
           },
-          isLoaded ? "Loaded" : "Load"
+          isLoaded ? t("models.btn.loaded") : t("models.btn.load")
         ),
       ]);
     })

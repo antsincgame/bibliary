@@ -1,6 +1,6 @@
 {
   "name": "bibliary",
-  "version": "2.1.0",
+  "version": "2.3.0",
   "type": "module",
   "main": "dist-electron/main.js",
   "description": "Vector knowledge store — natural language concepts for site generation",
@@ -17,19 +17,34 @@
     "validate-batch": "tsx scripts/validate-batch.ts",
     "electron:compile": "tsc -p tsconfig.electron.json",
     "electron:dev": "node scripts/prepare-electron.js && tsc -p tsconfig.electron.json && electron dist-electron/main.js",
-    "electron:build": "node scripts/prepare-electron.js && tsc -p tsconfig.electron.json && electron-builder"
+    "electron:build": "node scripts/prepare-electron.js && tsc -p tsconfig.electron.json && electron-builder",
+    "electron:build-portable": "node scripts/prepare-electron.js && tsc -p tsconfig.electron.json && node scripts/build-portable.js && node scripts/copy-portable-dist.js",
+    "test:scanner": "tsx scripts/test-scanner.ts",
+    "test:e2e:scanner": "tsx scripts/e2e-book-ingest.ts",
+    "test:e2e:library-ux": "tsx scripts/e2e-library-ux.ts",
+    "test:dataset-v2": "tsx scripts/test-dataset-v2.ts",
+    "test:bookhunter": "tsx scripts/test-bookhunter.ts",
+    "test:agent-live": "tsx scripts/test-agent-live.ts",
+    "test:dataset-v2-live": "tsx scripts/test-dataset-v2-live.ts",
+    "lint": "tsc -p tsconfig.electron.json --noEmit"
   },
   "dependencies": {
     "@lmstudio/sdk": "^1.5.0",
     "@qdrant/js-client-rest": "^1.12.0",
     "@xenova/transformers": "^2.17.2",
     "dotenv": "^16.4.7",
+    "fast-xml-parser": "^4.5.1",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.8.0",
     "marked": "^18.0.0",
+    "pdfjs-dist": "^4.10.38",
+    "proper-lockfile": "^4.1.2",
     "uuid": "^11.1.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
     "@types/node": "^22.13.0",
+    "@types/proper-lockfile": "^4.1.4",
     "@types/uuid": "^10.0.0",
     "electron": "^41.2.0",
     "electron-builder": "^26.8.1",

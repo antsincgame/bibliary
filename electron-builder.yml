@@ -1,5 +1,9 @@
 appId: com.bibliary.app
 productName: Bibliary
+# Output: по умолчанию `release/` рядом с проектом.
+# Для OneDrive-папок переопределяйте через CLI:
+#   electron-builder --win portable --config.directories.output=C:\Temp\bibliary-build
+# (cloud-sync блокирует app.asar 266 МБ при повторной сборке).
 directories:
   output: release
 files:
@@ -8,13 +12,12 @@ files:
   - node_modules/**/*
   - package.json
 win:
-  target: nsis
+  target:
+    - nsis
+    - portable
   forceCodeSigning: false
   signAndEditExecutable: false
 nsis:
   oneClick: true
   perMachine: false
 asar: true
-asarUnpack:
-  - "**/onnxruntime-node/**"
-  - "**/sharp/**"

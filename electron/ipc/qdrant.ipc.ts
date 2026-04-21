@@ -1,0 +1,277 @@
+import { ipcMain } from "electron";
+import {
+  fetchQdrantJson,
+  QDRANT_URL,
+  QDRANT_API_KEY,
+  SCROLL_PAGE_SIZE,
+  QDRANT_POINTS_HARD_CAP,
+} from "../lib/qdrant/http-client.js";
+
+interface QdrantPoint {
+  id: string;
+  principle: string;
+  explanation: string;
+  domain: string;
+  tags: string[];
+}
+
+interface CollectionInfo {
+  name: string;
+  pointsCount: number;
+  vectorsCount: number;
+  segmentsCount: number;
+  status: string;
+  vectorSize?: number;
+  distance?: string;
+  diskDataSize?: number;
+  ramDataSize?: number;
+}
+
+interface CollectionsListItem {
+  name: string;
+  pointsCount: number;
+  vectorSize?: number;
+  status: string;
+}
+
+function authHeaders(extra?: Record<string, string>): Record<string, string> {
+  const h: Record<string, string> = { ...(extra ?? {}) };
+  if (QDRANT_API_KEY) h["api-key"] = QDRANT_API_KEY;
+  return h;
+}
+
+async function qdrantRaw(url: string, init?: RequestInit): Promise<Response> {
+  return fetch(url, { ...(init ?? {}), headers: authHeaders(init?.headers as Record<string, string> | undefined) });
+}
+
+export function registerQdrantIpc(): void {
+  ipcMain.handle("qdrant:collections", async (): Promise<string[]> => {
+    try {
+      const data = await fetchQdrantJson<{ result: { collections: Array<{ name: string }> } }>(
+        `${QDRANT_URL}/collections`
+      );
+      return data.result.collections.map((c) => c.name);
+    } catch (e) {
+      console.error("[qdrant:collections]", e instanceof Error ? e.message : e);
+      return [];
+    }
+  });
+
+  ipcMain.handle("qdrant:points", async (_e, collection: string): Promise<QdrantPoint[]> => {
+    try {
+      const all: QdrantPoint[] = [];
+      let offset: string | number | undefined = undefined;
+      while (all.length < QDRANT_POINTS_HARD_CAP) {
+        const body: Record<string, unknown> = {
+          limit: Math.min(SCROLL_PAGE_SIZE, QDRANT_POINTS_HARD_CAP - all.length),
+          with_payload: true,
+          with_vector: false,
+        };
+        if (offset !== undefined) body.offset = offset;
+        const data = await fetchQdrantJson<{
+          result: {
+            points: Array<{ id: string | number; payload: Record<string, unknown> }>;
+            next_page_offset?: string | number | null;
+          };
+        }>(`${QDRANT_URL}/collections/${encodeURIComponent(collection)}/points/scroll`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        for (const p of data.result.points) {
+          all.push({
+            id: String(p.id),
+            principle: String(p.payload.principle ?? ""),
+            explanation: String(p.payload.explanation ?? ""),
+            domain: String(p.payload.domain ?? ""),
+            tags: Array.isArray(p.payload.tags) ? p.payload.tags.map(String) : [],
+          });
+        }
+        const nextOffset = data.result.next_page_offset;
+        if (nextOffset === null || nextOffset === undefined) break;
+        offset = nextOffset;
+      }
+      if (all.length >= QDRANT_POINTS_HARD_CAP) {
+        console.warn(
+          `[qdrant:points] hit hard cap of ${QDRANT_POINTS_HARD_CAP} for "${collection}"; consider in-app search instead of full scroll`
+        );
+      }
+      return all;
+    } catch (e) {
+      console.error("[qdrant:points]", e instanceof Error ? e.message : e);
+      return [];
+    }
+  });
+
+  /* ──────────────── Management: list / info / create / delete ──────────────── */
+
+  ipcMain.handle("qdrant:collections-detailed", async (): Promise<CollectionsListItem[]> => {
+    try {
+      const data = await fetchQdrantJson<{ result: { collections: Array<{ name: string }> } }>(
+        `${QDRANT_URL}/collections`
+      );
+      const items: CollectionsListItem[] = [];
+      for (const c of data.result.collections) {
+        try {
+          const info = await fetchQdrantJson<{
+            result: {
+              points_count?: number;
+              status?: string;
+              config?: { params?: { vectors?: { size?: number } } };
+            };
+          }>(`${QDRANT_URL}/collections/${encodeURIComponent(c.name)}`);
+          items.push({
+            name: c.name,
+            pointsCount: info.result.points_count ?? 0,
+            vectorSize: info.result.config?.params?.vectors?.size,
+            status: info.result.status ?? "unknown",
+          });
+        } catch {
+          items.push({ name: c.name, pointsCount: 0, status: "error" });
+        }
+      }
+      return items.sort((a, b) => a.name.localeCompare(b.name));
+    } catch (e) {
+      console.error("[qdrant:collections-detailed]", e instanceof Error ? e.message : e);
+      return [];
+    }
+  });
+
+  ipcMain.handle("qdrant:collection-info", async (_e, name: string): Promise<CollectionInfo | null> => {
+    if (typeof name !== "string" || !name) return null;
+    try {
+      const data = await fetchQdrantJson<{
+        result: {
+          points_count?: number;
+          vectors_count?: number;
+          segments_count?: number;
+          status?: string;
+          config?: {
+            params?: { vectors?: { size?: number; distance?: string } };
+          };
+          payload_schema?: Record<string, unknown>;
+          disk_data_size?: number;
+          ram_data_size?: number;
+        };
+      }>(`${QDRANT_URL}/collections/${encodeURIComponent(name)}`);
+      return {
+        name,
+        pointsCount: data.result.points_count ?? 0,
+        vectorsCount: data.result.vectors_count ?? 0,
+        segmentsCount: data.result.segments_count ?? 0,
+        status: data.result.status ?? "unknown",
+        vectorSize: data.result.config?.params?.vectors?.size,
+        distance: data.result.config?.params?.vectors?.distance,
+        diskDataSize: data.result.disk_data_size,
+        ramDataSize: data.result.ram_data_size,
+      };
+    } catch (e) {
+      console.error("[qdrant:collection-info]", e instanceof Error ? e.message : e);
+      return null;
+    }
+  });
+
+  ipcMain.handle(
+    "qdrant:create-collection",
+    async (
+      _e,
+      args: { name: string; vectorSize?: number; distance?: "Cosine" | "Euclid" | "Dot" }
+    ): Promise<{ ok: boolean; error?: string }> => {
+      if (!args || typeof args.name !== "string" || !args.name) return { ok: false, error: "name required" };
+      const size = args.vectorSize ?? 384;
+      const distance = args.distance ?? "Cosine";
+      try {
+        const resp = await qdrantRaw(`${QDRANT_URL}/collections/${encodeURIComponent(args.name)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ vectors: { size, distance } }),
+        });
+        if (!resp.ok) {
+          const txt = await resp.text().catch(() => "");
+          return { ok: false, error: `HTTP ${resp.status}: ${txt.slice(0, 240)}` };
+        }
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    "qdrant:delete-collection",
+    async (_e, name: string): Promise<{ ok: boolean; error?: string }> => {
+      if (typeof name !== "string" || !name) return { ok: false, error: "name required" };
+      try {
+        const resp = await qdrantRaw(`${QDRANT_URL}/collections/${encodeURIComponent(name)}`, {
+          method: "DELETE",
+        });
+        if (!resp.ok) {
+          const txt = await resp.text().catch(() => "");
+          return { ok: false, error: `HTTP ${resp.status}: ${txt.slice(0, 240)}` };
+        }
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    "qdrant:search",
+    async (
+      _e,
+      args: { collection: string; vector?: number[]; query?: string; limit?: number }
+    ): Promise<Array<{ id: string; score: number; payload: Record<string, unknown> }>> => {
+      if (!args || !args.collection) return [];
+      try {
+        let vector = args.vector;
+        if (!vector && args.query) {
+          const { embedQuery } = await import("../lib/rag/index.js");
+          vector = await embedQuery(args.query);
+        }
+        if (!vector) return [];
+        const data = await fetchQdrantJson<{
+          result: Array<{ id: string | number; score: number; payload: Record<string, unknown> }>;
+        }>(`${QDRANT_URL}/collections/${encodeURIComponent(args.collection)}/points/search`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            vector,
+            limit: args.limit ?? 20,
+            with_payload: true,
+          }),
+        });
+        return data.result.map((r) => ({
+          id: String(r.id),
+          score: r.score,
+          payload: r.payload,
+        }));
+      } catch (e) {
+        console.error("[qdrant:search]", e instanceof Error ? e.message : e);
+        return [];
+      }
+    }
+  );
+
+  ipcMain.handle(
+    "qdrant:cluster-info",
+    async (): Promise<{ url: string; online: boolean; version?: string; collectionsCount: number }> => {
+      try {
+        const resp = await qdrantRaw(`${QDRANT_URL}/`);
+        if (!resp.ok) return { url: QDRANT_URL, online: false, collectionsCount: 0 };
+        const root = (await resp.json().catch(() => ({}))) as { version?: string };
+        const data = await fetchQdrantJson<{ result: { collections: Array<{ name: string }> } }>(
+          `${QDRANT_URL}/collections`
+        );
+        return {
+          url: QDRANT_URL,
+          online: true,
+          version: root.version,
+          collectionsCount: data.result.collections.length,
+        };
+      } catch {
+        return { url: QDRANT_URL, online: false, collectionsCount: 0 };
+      }
+    }
+  );
+}

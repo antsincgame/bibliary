@@ -1,13 +1,15 @@
 // @ts-check
+import { t } from "./i18n.js";
+import { buildContextSlider } from "./components/context-slider.js";
 
 const SPIN_DURATION_MS = 600;
 const TEXTAREA_MAX_HEIGHT = 120;
+const TOAST_TTL_MS = 5000;
 
 /** @type {Array<{role: string, content: string}>} */
 const history = [];
 let isLoading = false;
 let compareMode = false;
-let mounted = false;
 
 /** @param {string} id @returns {HTMLElement} */
 function getEl(id) {
@@ -21,7 +23,11 @@ function renderMarkdown(md) {
   if (typeof window.marked !== "undefined" && window.marked.parse) {
     return window.marked.parse(md, { breaks: true });
   }
-  return md.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
+  return md
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\n/g, "<br>");
 }
 
 /** @param {HTMLDivElement} chatArea */
@@ -30,7 +36,12 @@ function removeWelcome(chatArea) {
   if (welcome) welcome.remove();
 }
 
-/** @param {HTMLDivElement} chatArea @param {string} className @param {string} content @param {boolean} isMarkdown */
+/**
+ * @param {HTMLDivElement} chatArea
+ * @param {string} className
+ * @param {string} content
+ * @param {boolean} [isMarkdown]
+ */
 function appendChatBubble(chatArea, className, content, isMarkdown = false) {
   removeWelcome(chatArea);
   const div = document.createElement("div");
@@ -47,7 +58,7 @@ function populateSelect(select, items) {
   if (items.length === 0) {
     const opt = document.createElement("option");
     opt.value = "";
-    opt.textContent = "none found";
+    opt.textContent = t("chat.none");
     select.appendChild(opt);
     return;
   }
@@ -67,9 +78,123 @@ async function withSpin(btn, action) {
   setTimeout(() => btn.classList.remove("spinning"), SPIN_DURATION_MS);
 }
 
+let initialized = false;
+
+function chatToast(text, kind = "success") {
+  const area = document.body;
+  const node = document.createElement("div");
+  node.className = `chat-toast chat-toast-${kind}`;
+  node.textContent = text;
+  area.appendChild(node);
+  setTimeout(() => node.remove(), TOAST_TTL_MS);
+}
+
+function setupMemoryPopover({ modelSelect, btnMemory, btnMemoryLabel, memoryPopover }) {
+  let activeForKey = null; // ключ модели, для которой сейчас построен слайдер
+
+  async function refreshLabel() {
+    const modelKey = modelSelect.value;
+    if (!modelKey) {
+      btnMemoryLabel.textContent = t("ctx.btn.default");
+      return;
+    }
+    try {
+      const cur = await window.api.yarn.readCurrent(modelKey);
+      if (cur && typeof cur.factor === "number" && typeof cur.original_max_position_embeddings === "number") {
+        const tokens = Math.round(cur.factor * cur.original_max_position_embeddings);
+        btnMemoryLabel.textContent = formatTokensShort(tokens);
+      } else {
+        btnMemoryLabel.textContent = t("ctx.btn.default");
+      }
+    } catch {
+      btnMemoryLabel.textContent = t("ctx.btn.default");
+    }
+  }
+
+  function rebuildSlider() {
+    const modelKey = modelSelect.value;
+    activeForKey = modelKey;
+    memoryPopover.innerHTML = "";
+    if (!modelKey) {
+      const empty = document.createElement("div");
+      empty.className = "memory-popover-empty";
+      empty.textContent = t("ctx.btn.no_model");
+      memoryPopover.appendChild(empty);
+      return;
+    }
+    const slider = buildContextSlider({
+      modelKey,
+      mode: "compact",
+      onApply: async (target, kvDtype) => {
+        try {
+          await window.api.yarn.apply(modelKey, target, kvDtype);
+          chatToast(t("ctx.toast.applied"), "success");
+          await refreshLabel();
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          chatToast(t("ctx.toast.apply_fail", { msg }), "error");
+        }
+      },
+      onRevert: async () => {
+        try {
+          await window.api.yarn.revert(modelKey);
+          chatToast(t("ctx.toast.reverted"), "success");
+          await refreshLabel();
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          chatToast(t("ctx.toast.revert_fail", { msg }), "error");
+        }
+      },
+    });
+    memoryPopover.appendChild(slider);
+  }
+
+  function open() {
+    if (memoryPopover.hidden) {
+      const modelKey = modelSelect.value;
+      if (activeForKey !== modelKey) rebuildSlider();
+      memoryPopover.hidden = false;
+      btnMemory.classList.add("active");
+    }
+  }
+  function close() {
+    if (!memoryPopover.hidden) {
+      memoryPopover.hidden = true;
+      btnMemory.classList.remove("active");
+    }
+  }
+  function toggle() {
+    if (memoryPopover.hidden) open();
+    else close();
+  }
+
+  btnMemory.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggle();
+  });
+  document.addEventListener("click", (e) => {
+    if (memoryPopover.hidden) return;
+    const target = e.target;
+    if (target instanceof Node && (memoryPopover.contains(target) || btnMemory.contains(target))) return;
+    close();
+  });
+  modelSelect.addEventListener("change", () => {
+    refreshLabel();
+    if (!memoryPopover.hidden) rebuildSlider();
+  });
+
+  refreshLabel();
+}
+
+function formatTokensShort(n) {
+  if (n >= 1_000_000) return `${Math.round((n / 1_000_000) * 10) / 10}M`;
+  if (n >= 1_000) return `${Math.round(n / 1024)}K`;
+  return String(n);
+}
+
 export function mountChat() {
-  if (mounted) return;
-  mounted = true;
+  if (initialized) return;
+  initialized = true;
 
   const chatArea = /** @type {HTMLDivElement} */ (getEl("chat-area"));
   const input = /** @type {HTMLTextAreaElement} */ (getEl("input"));
@@ -80,6 +205,11 @@ export function mountChat() {
   const btnRefreshModels = /** @type {HTMLButtonElement} */ (getEl("btn-refresh-models"));
   const btnCompare = /** @type {HTMLButtonElement} */ (getEl("btn-compare"));
   const statusDot = /** @type {HTMLDivElement} */ (getEl("status-dot"));
+  const btnMemory = /** @type {HTMLButtonElement} */ (getEl("btn-memory"));
+  const btnMemoryLabel = /** @type {HTMLSpanElement} */ (getEl("btn-memory-label"));
+  const memoryPopover = /** @type {HTMLDivElement} */ (getEl("memory-popover"));
+
+  setupMemoryPopover({ modelSelect, btnMemory, btnMemoryLabel, memoryPopover });
 
   /** @param {string} role @param {string} content */
   function addMessage(role, content) {
@@ -121,7 +251,7 @@ export function mountChat() {
   /** @param {boolean} qdrantOk */
   function updateStatus(qdrantOk) {
     statusDot.classList.toggle("online", qdrantOk);
-    statusDot.title = qdrantOk ? "Qdrant online" : "Qdrant offline";
+    statusDot.title = qdrantOk ? t("chat.status.online") : t("chat.status.offline");
   }
 
   async function loadCollections() {
@@ -162,7 +292,7 @@ export function mountChat() {
     colBase.className = "compare-col";
     const labelBase = document.createElement("div");
     labelBase.className = "compare-label compare-label-base";
-    labelBase.textContent = "Without RAG";
+    labelBase.textContent = t("chat.label.without_rag");
     const textBase = document.createElement("div");
     textBase.className = "compare-text compare-text-base";
     textBase.innerHTML = renderMarkdown(withoutRag);
@@ -178,7 +308,7 @@ export function mountChat() {
     colRag.className = "compare-col";
     const labelRag = document.createElement("div");
     labelRag.className = "compare-label compare-label-rag";
-    labelRag.textContent = "With RAG";
+    labelRag.textContent = t("chat.label.with_rag");
     const textRag = document.createElement("div");
     textRag.className = "compare-text compare-text-rag";
     textRag.innerHTML = renderMarkdown(withRag);
@@ -200,7 +330,7 @@ export function mountChat() {
     if (!text || isLoading) return;
     const model = modelSelect.value;
     if (!model) {
-      addError("No model selected. Load a model in LM Studio first.");
+      addError(t("chat.no_model"));
       return;
     }
     input.value = "";
@@ -224,7 +354,7 @@ export function mountChat() {
       }
     } catch (err) {
       hideTyping();
-      addError("Error: " + (err instanceof Error ? err.message : String(err)));
+      addError(t("chat.error", { msg: err instanceof Error ? err.message : String(err) }));
     }
     setLoading(false);
     input.focus();

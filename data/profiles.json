@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "profiles": [
+    {
+      "id": "BIG",
+      "label": "Qwen3.6 35B-A3B (BIG)",
+      "modelKey": "qwen/qwen3.6-35b-a3b",
+      "quant": "Q4_K_M",
+      "sizeGB": 22.07,
+      "minVramGB": 24,
+      "capabilities": [
+        "reasoning",
+        "vision",
+        "tool"
+      ],
+      "ttlSec": 1800,
+      "defaultContextLength": 32768,
+      "builtin": true
+    },
+    {
+      "id": "SMALL",
+      "label": "Qwen3 4B-Instruct (SMALL)",
+      "modelKey": "qwen/qwen3-4b-2507",
+      "quant": "Q8_0",
+      "sizeGB": 4.28,
+      "minVramGB": 8,
+      "capabilities": [
+        "tool"
+      ],
+      "ttlSec": 600,
+      "defaultContextLength": 32768,
+      "builtin": true
+    }
+  ]
+}
