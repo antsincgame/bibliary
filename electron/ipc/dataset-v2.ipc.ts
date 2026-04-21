@@ -23,7 +23,7 @@ import {
   type JudgeEvent,
   type AcceptedConcept,
 } from "../lib/dataset-v2/index.js";
-import { chat, PROFILE } from "../lmstudio-client.js";
+import { chatWithPolicy, PROFILE } from "../lmstudio-client.js";
 import { getPreferencesStore } from "../lib/preferences/store.js";
 import { coordinator } from "../lib/resilience/batch-coordinator.js";
 import {
@@ -63,24 +63,38 @@ export function abortAllDatasetV2(reason: string): void {
   abortAllExtractionJobs(reason);
 }
 
-function makeLlm(modelKey: string): (args: {
+/**
+ * Crystallizer LLM wrapper.
+ *
+ * Two guarantees vs the previous direct `chat()` call:
+ *   1. `chatWithPolicy` provides retry/backoff/adaptive timeout (closes
+ *      AUDIT-2026-04 heresy #1 -- pipeline no longer dies on a single
+ *      network blip).
+ *   2. `signal` is captured by closure and forwarded as `externalSignal`
+ *      so `dataset-v2:cancel` aborts the in-flight HTTP request, not just
+ *      the gap between requests.
+ */
+function makeLlm(modelKey: string, signal: AbortSignal): (args: {
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
   temperature?: number;
   maxTokens?: number;
 }) => Promise<string> {
   return async ({ messages, temperature, maxTokens }) => {
-    const response = await chat({
-      model: modelKey,
-      messages,
-      sampling: {
-        temperature: temperature ?? 0.4,
-        top_p: 0.9,
-        top_k: 30,
-        min_p: 0,
-        presence_penalty: 0,
-        max_tokens: maxTokens ?? 4096,
+    const response = await chatWithPolicy(
+      {
+        model: modelKey,
+        messages,
+        sampling: {
+          temperature: temperature ?? 0.4,
+          top_p: 0.9,
+          top_k: 30,
+          min_p: 0,
+          presence_penalty: 0,
+          max_tokens: maxTokens ?? 4096,
+        },
       },
-    });
+      { externalSignal: signal },
+    );
     return response.content;
   };
 }
@@ -116,8 +130,8 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
 
       const extractModel = args.extractModel ?? PROFILE.BIG.key;
       const judgeModel = args.judgeModel ?? PROFILE.BIG.key;
-      const llmExtract = makeLlm(extractModel);
-      const llmJudge = makeLlm(judgeModel);
+      const llmExtract = makeLlm(extractModel, ctrl.signal);
+      const llmJudge = makeLlm(judgeModel, ctrl.signal);
 
       const prefs = await getPreferencesStore().getAll();
 
