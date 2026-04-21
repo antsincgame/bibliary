@@ -255,7 +255,7 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
     "forge.step.run": "Запуск",
     "forge.source.title": "Шаг 1 — Источник датасета",
     "forge.source.sub": "Выберите готовый batch JSONL из data/finetune/batches/. Bibliary автоматически конвертирует ShareGPT в ChatML.",
-    "forge.source.empty": "Нет batch-файлов. Сначала сгенерируйте их в Dataset route.",
+    "forge.source.empty": "Нет batch-файлов. Сначала сгенерируйте их в Кристаллизаторе.",
     "forge.source.error": "Не удалось получить список: {msg}",
     "forge.source.pick": "Выбрать",
     "forge.source.preview": "Распознано {count} строк, ошибок: {errors}",
@@ -488,7 +488,7 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
       "docs/RESILIENCE.md — 600 строк инженерной документации resilience-слоя.",
 
     "docs.cta.ready": "Готовы создать свою модель",
-    "docs.cta.action": "Открыть Датасет",
+    "docs.cta.action": "Открыть Кристаллизатор",
 
     "ctx.eyebrow": "Memory Forge",
     "ctx.title": "Память модели",
@@ -972,7 +972,7 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
     "forge.step.run": "Run",
     "forge.source.title": "Step 1 — Dataset source",
     "forge.source.sub": "Pick a ready batch JSONL from data/finetune/batches/. Bibliary auto-converts ShareGPT to ChatML.",
-    "forge.source.empty": "No batch files yet. Generate them in Dataset route first.",
+    "forge.source.empty": "No batch files yet. Generate them in Crystallizer first.",
     "forge.source.error": "Failed to list: {msg}",
     "forge.source.pick": "Pick",
     "forge.source.preview": "Parsed {count} lines, errors: {errors}",
@@ -1203,7 +1203,7 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
       "docs/RESILIENCE.md — 600 lines of engineering docs for the resilience layer.",
 
     "docs.cta.ready": "Ready to forge your model",
-    "docs.cta.action": "Open Dataset",
+    "docs.cta.action": "Open Crystallizer",
 
     "ctx.eyebrow": "Memory Forge",
     "ctx.title": "Model memory",
