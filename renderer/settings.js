@@ -96,6 +96,19 @@ const SECTIONS = [
     fields: [
       { key: "refreshIntervalMs", type: "int", min: 2000, max: 60000, labelKey: "settings.refreshIntervalMs" },
       { key: "toastTtlMs", type: "int", min: 1000, max: 30000, labelKey: "settings.toastTtlMs" },
+      { key: "spinDurationMs", type: "int", min: 100, max: 3000, labelKey: "settings.spinDurationMs" },
+      { key: "resilienceBarHideDelayMs", type: "int", min: 1000, max: 30000, labelKey: "settings.resilienceBarHideDelayMs" },
+    ],
+  },
+  {
+    id: "ocr",
+    titleKey: "settings.section.ocr",
+    mode: "simple",
+    fields: [
+      { key: "ocrEnabled", type: "bool", labelKey: "settings.ocrEnabled" },
+      { key: "ocrAccuracy", type: "enum", options: ["fast", "accurate"], labelKey: "settings.ocrAccuracy" },
+      { key: "ocrLanguages", type: "tags", labelKey: "settings.ocrLanguages", placeholder: "en, ru, fr" },
+      { key: "ocrPdfDpi", type: "int", min: 100, max: 400, labelKey: "settings.ocrPdfDpi" },
     ],
   },
 ];
@@ -104,7 +117,7 @@ function modeRank(mode) {
   return mode === "pro" ? 2 : mode === "advanced" ? 1 : 0;
 }
 
-function buildField(field, root) {
+function buildNumberField(field, root) {
   const value = STATE.prefs[field.key] ?? STATE.defaults[field.key];
   const dflt = STATE.defaults[field.key];
   const isDefault = value === dflt;
@@ -126,27 +139,96 @@ function buildField(field, root) {
     }
   });
 
-  const resetBtn = el("button", {
+  const resetBtn = buildResetBtn(field.key, dflt, () => { input.value = String(dflt); }, isDefault, root);
+  return wrapField(field, [input, resetBtn], `${field.min} -- ${field.max}`);
+}
+
+function buildBoolField(field, root) {
+  const value = Boolean(STATE.prefs[field.key] ?? STATE.defaults[field.key]);
+  const dflt = STATE.defaults[field.key];
+  const cb = el("input", { type: "checkbox", class: "settings-input settings-input-bool" });
+  if (value) cb.checked = true;
+  cb.addEventListener("change", () => {
+    STATE.prefs[field.key] = cb.checked;
+    STATE.dirty = true;
+    updateSaveBtn(root);
+  });
+  const resetBtn = buildResetBtn(field.key, dflt, () => { cb.checked = Boolean(dflt); }, value === dflt, root);
+  return wrapField(field, [cb, resetBtn], "");
+}
+
+function buildEnumField(field, root) {
+  const value = String(STATE.prefs[field.key] ?? STATE.defaults[field.key]);
+  const dflt = STATE.defaults[field.key];
+  const sel = el("select", { class: "settings-input settings-input-select" });
+  for (const opt of field.options) {
+    const o = el("option", { value: opt }, opt);
+    if (opt === value) o.selected = true;
+    sel.appendChild(o);
+  }
+  sel.addEventListener("change", () => {
+    STATE.prefs[field.key] = sel.value;
+    STATE.dirty = true;
+    updateSaveBtn(root);
+  });
+  const resetBtn = buildResetBtn(field.key, dflt, () => { sel.value = String(dflt); }, value === dflt, root);
+  return wrapField(field, [sel, resetBtn], field.options.join(" / "));
+}
+
+function buildTagsField(field, root) {
+  const arr = Array.isArray(STATE.prefs[field.key]) ? STATE.prefs[field.key] : (STATE.defaults[field.key] || []);
+  const dflt = STATE.defaults[field.key] || [];
+  const input = el("input", {
+    type: "text",
+    class: "settings-input",
+    value: arr.join(", "),
+    placeholder: field.placeholder || "tag1, tag2",
+  });
+  input.addEventListener("input", () => {
+    const next = String(input.value)
+      .split(/[,\s]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0 && s.length <= 10);
+    STATE.prefs[field.key] = next;
+    STATE.dirty = true;
+    updateSaveBtn(root);
+  });
+  const resetBtn = buildResetBtn(field.key, dflt, () => { input.value = (dflt || []).join(", "); }, arr.join(",") === (dflt || []).join(","), root);
+  return wrapField(field, [input, resetBtn], t("settings.tags.hint"));
+}
+
+function buildResetBtn(key, dflt, applyToInput, isDefault, root) {
+  const btn = el("button", {
     class: "settings-reset-btn",
     type: "button",
-    title: `Default: ${dflt}`,
+    title: `Default: ${Array.isArray(dflt) ? dflt.join(", ") : dflt}`,
     style: isDefault ? "opacity:0.3" : "",
-    onclick: () => {
-      STATE.prefs[field.key] = dflt;
-      input.value = String(dflt);
-      STATE.dirty = true;
-      resetBtn.style.opacity = "0.3";
-      updateSaveBtn(root);
-    },
   }, "\u21BA");
+  btn.addEventListener("click", () => {
+    STATE.prefs[key] = Array.isArray(dflt) ? [...dflt] : dflt;
+    applyToInput();
+    STATE.dirty = true;
+    btn.style.opacity = "0.3";
+    updateSaveBtn(root);
+  });
+  return btn;
+}
 
+function wrapField(field, inputs, hint) {
   return el("div", { class: "settings-field" }, [
     el("label", { class: "settings-label" }, [
       el("span", { class: "settings-label-text" }, t(field.labelKey)),
-      el("span", { class: "settings-label-range" }, `${field.min} -- ${field.max}`),
-    ]),
-    el("div", { class: "settings-input-wrap" }, [input, resetBtn]),
+      hint ? el("span", { class: "settings-label-range" }, hint) : null,
+    ].filter(Boolean)),
+    el("div", { class: "settings-input-wrap" }, inputs),
   ]);
+}
+
+function buildField(field, root) {
+  if (field.type === "bool") return buildBoolField(field, root);
+  if (field.type === "enum") return buildEnumField(field, root);
+  if (field.type === "tags") return buildTagsField(field, root);
+  return buildNumberField(field, root);
 }
 
 function updateSaveBtn(root) {

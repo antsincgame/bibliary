@@ -61,6 +61,17 @@ export const PreferencesSchema = z.object({
   // -- UI --
   refreshIntervalMs: z.number().int().min(2000).max(60_000).default(7000),
   toastTtlMs: z.number().int().min(1000).max(30_000).default(5000),
+  spinDurationMs: z.number().int().min(100).max(3000).default(600),
+  resilienceBarHideDelayMs: z.number().int().min(1000).max(30_000).default(4000),
+
+  // -- OCR (Phase 6.0, OS-native via @napi-rs/system-ocr) --
+  ocrEnabled: z.boolean().default(false),
+  ocrLanguages: z.array(z.string().min(2).max(10)).max(8).default([]),
+  ocrAccuracy: z.enum(["fast", "accurate"]).default("accurate"),
+  ocrPdfDpi: z.number().int().min(100).max(400).default(200),
+
+  // -- Library UI --
+  libraryGroupBy: z.enum(["none", "ext", "status", "folder"]).default("none"),
 });
 
 export type Preferences = z.infer<typeof PreferencesSchema>;
