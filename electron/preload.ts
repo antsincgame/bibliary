@@ -378,6 +378,12 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.invoke("scanner:probe-folder"),
     probePath: (folder: string): Promise<Array<{ absPath: string; fileName: string; ext: string; sizeBytes: number; mtimeMs: number }>> =>
       ipcRenderer.invoke("scanner:probe-path", folder),
+    probeFiles: (paths: string[]): Promise<Array<{ absPath: string; fileName: string; ext: string; sizeBytes: number; mtimeMs: number }>> =>
+      ipcRenderer.invoke("scanner:probe-files", paths),
+    openFiles: (): Promise<Array<{ absPath: string; fileName: string; ext: string; sizeBytes: number; mtimeMs: number }>> =>
+      ipcRenderer.invoke("scanner:open-files"),
+    ocrSupport: (): Promise<{ supported: boolean; platform: string; reason?: string }> =>
+      ipcRenderer.invoke("scanner:ocr-support"),
     parsePreview: (
       filePath: string
     ): Promise<{
@@ -391,6 +397,7 @@ contextBridge.exposeInMainWorld("api", {
       filePath: string;
       collection: string;
       chunkerOptions?: { targetChars?: number; maxChars?: number; minChars?: number };
+      ocrOverride?: boolean;
     }): Promise<{ ingestId: string; result: unknown }> => ipcRenderer.invoke("scanner:start-ingest", args),
     cancelIngest: (ingestId: string): Promise<boolean> => ipcRenderer.invoke("scanner:cancel-ingest", ingestId),
     listState: (): Promise<unknown> => ipcRenderer.invoke("scanner:list-state"),

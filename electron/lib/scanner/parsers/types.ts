@@ -31,11 +31,36 @@ export interface ParseResult {
   rawCharCount: number;
 }
 
-export type SupportedExt = "pdf" | "epub" | "fb2" | "docx" | "txt";
+export type SupportedExt =
+  | "pdf"
+  | "epub"
+  | "fb2"
+  | "docx"
+  | "txt"
+  | "png"
+  | "jpg"
+  | "jpeg"
+  | "bmp"
+  | "tif"
+  | "tiff"
+  | "webp";
+
+/**
+ * Options that any parser may consume. Extending this is non-breaking:
+ * parsers ignore unknown fields. Concrete parsers (PDF, image) read their
+ * own subset (e.g. ocrEnabled / ocrLanguages).
+ */
+export interface ParseOptions {
+  ocrEnabled?: boolean;
+  ocrLanguages?: string[];
+  ocrAccuracy?: "fast" | "accurate";
+  /** Caller-side abort. Honoured by long-running parsers (PDF OCR). */
+  signal?: AbortSignal;
+}
 
 export interface BookParser {
   ext: SupportedExt;
-  parse(filePath: string): Promise<ParseResult>;
+  parse(filePath: string, opts?: ParseOptions): Promise<ParseResult>;
 }
 
 /**

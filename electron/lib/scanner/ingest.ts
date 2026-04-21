@@ -1,5 +1,6 @@
 import { pipeline, type FeatureExtractionPipeline } from "@xenova/transformers";
 import { parseBook } from "./parsers/index.js";
+import type { ParseOptions } from "./parsers/types.js";
 import { chunkBook, type BookChunk, type ChunkerOptions } from "./chunker.js";
 import { ScannerStateStore } from "./state.js";
 
@@ -49,6 +50,8 @@ export interface IngestOptions {
   maxBookChars?: number;
   /** Размер batch для upsert. */
   upsertBatch?: number;
+  /** Опции, передаваемые в parseBook (OCR флаги, языки, accuracy). */
+  parseOptions?: ParseOptions;
   onProgress?: (p: IngestProgress) => void;
 }
 
@@ -169,7 +172,7 @@ export async function ingestBook(filePath: string, opts: IngestOptions): Promise
   };
 
   emit({ phase: "parse", bookSourcePath: filePath, bookTitle: filePath });
-  const parsed = await parseBook(filePath);
+  const parsed = await parseBook(filePath, opts.parseOptions);
   if (parsed.rawCharCount > maxChars) {
     parsed.metadata.warnings.push(`book truncated: rawCharCount=${parsed.rawCharCount} > maxBookChars=${maxChars}`);
   }

@@ -21,16 +21,20 @@ import { getPreferencesStore } from "../lib/preferences/store.js";
 import { randomUUID } from "crypto";
 import {
   probeBooks,
+  probeFiles,
   parseBook,
   chunkBook,
   ingestBook,
   ScannerStateStore,
   isSupportedBook,
+  isOcrSupported,
+  getOcrSupport,
   type BookFileSummary,
   type IngestResult,
   type IngestProgress,
   type ScannerState,
   type ScannerBookState,
+  type OcrSupportInfo,
 } from "../lib/scanner/index.js";
 
 const QDRANT_URL = process.env.QDRANT_URL || "http://localhost:6333";
@@ -78,11 +82,41 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
     return probeBooks(folder);
   });
 
+  ipcMain.handle("scanner:probe-files", async (_e, paths: string[]): Promise<BookFileSummary[]> => {
+    if (!Array.isArray(paths) || paths.length === 0) return [];
+    return probeFiles(paths);
+  });
+
+  ipcMain.handle("scanner:open-files", async (): Promise<BookFileSummary[]> => {
+    const win = getMainWindow();
+    const sel = await dialog.showOpenDialog(win ?? undefined!, {
+      title: "Add books",
+      properties: ["openFile", "multiSelections"],
+      filters: [
+        { name: "Books & Images", extensions: ["pdf", "epub", "fb2", "docx", "txt", "png", "jpg", "jpeg", "bmp", "tif", "tiff", "webp"] },
+        { name: "Books", extensions: ["pdf", "epub", "fb2", "docx", "txt"] },
+        { name: "Images (OCR)", extensions: ["png", "jpg", "jpeg", "bmp", "tif", "tiff", "webp"] },
+        { name: "All files", extensions: ["*"] },
+      ],
+    });
+    if (sel.canceled || sel.filePaths.length === 0) return [];
+    return probeFiles(sel.filePaths);
+  });
+
+  ipcMain.handle("scanner:ocr-support", async (): Promise<OcrSupportInfo> => {
+    return getOcrSupport();
+  });
+
   ipcMain.handle("scanner:parse-preview", async (_e, filePath: string): Promise<ParsePreview> => {
     if (typeof filePath !== "string" || !isSupportedBook(filePath)) {
       throw new Error("unsupported file");
     }
-    const parsed = await parseBook(filePath);
+    const prefs = await getPreferencesStore().getAll();
+    const parsed = await parseBook(filePath, {
+      ocrEnabled: prefs.ocrEnabled && isOcrSupported(),
+      ocrLanguages: prefs.ocrLanguages,
+      ocrAccuracy: prefs.ocrAccuracy,
+    });
     const chunks = chunkBook(parsed, filePath);
     return {
       metadata: {
@@ -112,6 +146,7 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
         filePath: string;
         collection: string;
         chunkerOptions?: { targetChars?: number; maxChars?: number; minChars?: number };
+        ocrOverride?: boolean;
       }
     ): Promise<{ ingestId: string; result: IngestResult }> => {
       if (!args || typeof args.filePath !== "string" || !isSupportedBook(args.filePath)) {
@@ -127,6 +162,7 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
 
       try {
         const prefs = await getPreferencesStore().getAll();
+        const ocrWanted = typeof args.ocrOverride === "boolean" ? args.ocrOverride : prefs.ocrEnabled;
         const result = await ingestBook(args.filePath, {
           collection: args.collection,
           qdrantUrl: QDRANT_URL,
@@ -136,6 +172,12 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
           chunkerOptions: args.chunkerOptions,
           upsertBatch: prefs.ingestUpsertBatch,
           maxBookChars: prefs.maxBookChars,
+          parseOptions: {
+            ocrEnabled: ocrWanted && isOcrSupported(),
+            ocrLanguages: prefs.ocrLanguages,
+            ocrAccuracy: prefs.ocrAccuracy,
+            signal: ctrl.signal,
+          },
           onProgress: (p: IngestProgress) => {
             if (win && !win.isDestroyed()) {
               win.webContents.send("scanner:ingest-progress", { ingestId, ...p });

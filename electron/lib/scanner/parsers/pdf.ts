@@ -1,16 +1,19 @@
 import { promises as fs } from "fs";
 import * as path from "path";
-import { cleanParagraph, looksLikeHeading, type BookParser, type ParseResult, type BookSection } from "./types.js";
+import { cleanParagraph, looksLikeHeading, type BookParser, type ParseOptions, type ParseResult, type BookSection } from "./types.js";
+import { isOcrSupported, rasterisePdfPages, recognizeImageBuffer } from "../ocr/index.js";
 
 /**
- * PDF-парсер на pdfjs-dist (legacy build, не требует canvas/worker).
- * Извлекает текст по страницам, склеивает в параграфы (heuristic по
- * межстрочным интервалам), пытается реконструировать главы из TOC outline.
+ * PDF parser based on pdfjs-dist (legacy build).
  *
- * Не делает OCR: если PDF — только сканы изображений, текста не будет.
- * В этом случае sections останется пустым, warnings содержит "no text".
+ * Extracts text by page, merges into paragraphs heuristically (based on
+ * line gaps), reconstructs chapters from TOC outline.
+ *
+ * If `opts.ocrEnabled === true` and the PDF yields no text (scanned/image
+ * PDF) — falls back to OS-native OCR via @napi-rs/system-ocr by rasterising
+ * pages with @napi-rs/canvas. OCR is opt-in: heavy operation.
  */
-async function parsePdf(filePath: string): Promise<ParseResult> {
+async function parsePdf(filePath: string, opts: ParseOptions = {}): Promise<ParseResult> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const buf = await fs.readFile(filePath);
   const data = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
@@ -97,8 +100,43 @@ async function parsePdf(filePath: string): Promise<ParseResult> {
     page.cleanup();
   }
 
+  let ocrAppliedPages = 0;
   if (allParagraphs.length === 0) {
-    warnings.push("no text extracted (likely a scanned/image PDF — OCR not enabled)");
+    if (opts.ocrEnabled && isOcrSupported()) {
+      try {
+        for await (const page of rasterisePdfPages(filePath, { signal: opts.signal })) {
+          const result = await recognizeImageBuffer(
+            page.pngBuffer,
+            page.pageIndex,
+            opts.ocrLanguages ?? [],
+            opts.ocrAccuracy ?? "accurate",
+          );
+          const txt = result.text.trim();
+          if (!txt) continue;
+          const paragraphs = txt
+            .split(/\n{2,}/)
+            .map((p) => cleanParagraph(p))
+            .filter((p) => p.length > 0);
+          for (const para of paragraphs) {
+            allParagraphs.push({ page: page.pageIndex + 1, text: para });
+            totalChars += para.length;
+          }
+          ocrAppliedPages++;
+        }
+        if (ocrAppliedPages > 0) {
+          warnings.push(`OCR applied to ${ocrAppliedPages} page(s) -- text reconstructed from images`);
+        } else {
+          warnings.push("OCR ran but produced no text (poor image quality?)");
+        }
+      } catch (err) {
+        warnings.push(`OCR failed: ${(err as Error).message.slice(0, 200)}`);
+      }
+    } else {
+      const reason = opts.ocrEnabled
+        ? "OCR not supported on this OS (requires Windows or macOS)"
+        : "OCR not enabled (turn it on in Settings to recognise scanned PDFs)";
+      warnings.push(`no text extracted (likely a scanned/image PDF — ${reason})`);
+    }
   }
 
   const sections: BookSection[] = [];
