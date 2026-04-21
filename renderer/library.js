@@ -1,22 +1,25 @@
 // @ts-check
+/**
+ * Library page (Phase 6.0+).
+ *
+ * Adds drag&drop ingestion, multi-file open dialog, grouping (none/ext/status/folder)
+ * and an OCR per-task override on top of the existing browse / search / history flow.
+ *
+ * Hardcoded constants (parallelism, OCR defaults) are sourced from preferences
+ * at mount-time so settings changes propagate next visit.
+ */
 import { el, clear } from "./dom.js";
 import { t } from "./i18n.js";
 
 /** @typedef {{ absPath: string, fileName: string, ext: string, sizeBytes: number, mtimeMs: number }} BookFile */
 /** @typedef {{ ingestId: string, phase: string, bookSourcePath: string, bookTitle: string, totalChunks: number, processedChunks: number, embeddedChunks: number, upsertedChunks: number, message?: string, errorMessage?: string }} ProgressEvent */
 /** @typedef {{ collection: string, books: Array<{ bookSourcePath: string, fileName: string, status: "running"|"done"|"error"|"paused", totalChunks: number, processedChunks: number, startedAt: string, lastUpdatedAt: string, errorMessage?: string }>, totalBooks: number, totalChunks: number }} HistoryGroup */
+/** @typedef {"none"|"ext"|"status"|"folder"} GroupMode */
 
-let QUEUE_PARALLELISM = 3;
-
-(async () => {
-  try {
-    const prefs = await window.api.preferences.getAll();
-    if (prefs.ingestParallelism) QUEUE_PARALLELISM = prefs.ingestParallelism;
-  } catch { /* use default */ }
-})();
+const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "bmp", "tif", "tiff", "webp"]);
 
 const STATE = {
-  /** @type {"browse"|"history"} */
+  /** @type {"browse"|"history"|"search"} */
   tab: "browse",
   /** @type {BookFile[]} */
   books: [],
@@ -24,20 +27,16 @@ const STATE = {
   selected: new Map(),
   /** @type {Map<string, ProgressEvent>} */
   progress: new Map(),
-  /** Set путей, которые уже есть в scanner-history (для smart resume) */
   /** @type {Set<string>} */
   knownPaths: new Set(),
   /** @type {string} */
   collection: "",
   /** @type {string[]} */
   collections: [],
-  /** Активные ingest-ы по bookSourcePath → ingestId */
   /** @type {Map<string, string>} */
   activeIngests: new Map(),
-  /** Очередь ожидающих книг (FIFO) */
   /** @type {BookFile[]} */
   queue: [],
-  /** Selected для preview */
   /** @type {BookFile | null} */
   previewBook: null,
   /** @type {"idle"|"loading"|"ready"|"error"} */
@@ -47,39 +46,55 @@ const STATE = {
   history: [],
   busy: false,
   paused: false,
+  /** Runtime preferences -- loaded from preferences store on mount. */
+  prefs: {
+    queueParallelism: 3,
+    ocrEnabled: false,
+    ocrSupported: false,
+    ocrPlatform: "unknown",
+    ocrReason: "",
+    /** @type {GroupMode} */
+    groupBy: "none",
+  },
+  /** Per-mount UI overrides (applied to startIngest). */
+  ocrOverride: /** @type {boolean | null} */ (null),
 };
 
 let unsubscribeProgress = null;
 
 function fmtMB(bytes) {
-  if (!bytes) return "—";
+  if (!bytes) return "--";
   return (bytes / 1024 / 1024).toFixed(2) + " MB";
 }
 
 function fmtDate(iso) {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString();
-  } catch {
-    return iso;
-  }
+  try { return new Date(iso).toLocaleString(); } catch { return iso; }
 }
 
 function extBadge(ext) {
-  return el("span", { class: `lib-ext lib-ext-${ext}` }, ext.toUpperCase());
+  const norm = String(ext || "").toLowerCase();
+  return el("span", { class: `lib-ext lib-ext-${norm}` }, norm.toUpperCase());
 }
 
 function statusForBook(book) {
   const prog = STATE.progress.get(book.absPath);
   const known = STATE.knownPaths.has(book.absPath);
-  if (!prog && known) {
-    return el("span", { class: "lib-status lib-status-known" }, t("library.status.alreadyIngested"));
-  }
+  if (!prog && known) return el("span", { class: "lib-status lib-status-known" }, t("library.status.alreadyIngested"));
   if (!prog) return el("span", { class: "lib-status lib-status-pending" }, t("library.status.pending"));
   if (prog.phase === "done") return el("span", { class: "lib-status lib-status-done" }, t("library.status.done"));
   if (prog.phase === "error") return el("span", { class: "lib-status lib-status-error" }, prog.errorMessage || t("library.status.error"));
   const pct = prog.totalChunks > 0 ? Math.floor((prog.processedChunks / prog.totalChunks) * 100) : 0;
   return el("span", { class: "lib-status lib-status-running" }, `${prog.phase} ${pct}% (${prog.processedChunks}/${prog.totalChunks})`);
+}
+
+function statusKeyForBook(book) {
+  const prog = STATE.progress.get(book.absPath);
+  const known = STATE.knownPaths.has(book.absPath);
+  if (prog?.phase === "done") return "done";
+  if (prog?.phase === "error") return "error";
+  if (prog) return "running";
+  if (known) return "known";
+  return "pending";
 }
 
 function refreshSummary(root) {
@@ -116,14 +131,63 @@ function row(book, root) {
   return node;
 }
 
+/* ───── grouping ───── */
+
+function groupKeyForBook(book, mode) {
+  if (mode === "ext") return String(book.ext || "?").toLowerCase();
+  if (mode === "status") return statusKeyForBook(book);
+  if (mode === "folder") {
+    const sep = book.absPath.includes("\\") ? "\\" : "/";
+    const parts = book.absPath.split(sep);
+    return parts.slice(0, -1).pop() || "(root)";
+  }
+  return "all";
+}
+
+function groupedBooks(mode) {
+  /** @type {Map<string, BookFile[]>} */
+  const map = new Map();
+  for (const b of STATE.books) {
+    const key = groupKeyForBook(b, mode);
+    const arr = map.get(key) ?? [];
+    arr.push(b);
+    map.set(key, arr);
+  }
+  return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+}
+
 function renderBooks(listEl, root) {
   clear(listEl);
   if (STATE.books.length === 0) {
     listEl.appendChild(el("div", { class: "lib-empty" }, t("library.empty")));
     return;
   }
-  for (const b of STATE.books) listEl.appendChild(row(b, root));
+  const mode = STATE.prefs.groupBy;
+  if (mode === "none") {
+    for (const b of STATE.books) listEl.appendChild(row(b, root));
+    return;
+  }
+  for (const [key, books] of groupedBooks(mode)) {
+    const head = el("div", { class: "lib-group-head" }, [
+      el("span", { class: "lib-group-key" }, t(`library.group.label.${mode}`) + ": " + key),
+      el("span", { class: "lib-group-count" }, `${books.length}`),
+      el("button", {
+        class: "lib-group-select",
+        type: "button",
+        onclick: () => {
+          for (const b of books) STATE.selected.set(b.absPath, b);
+          renderBooks(listEl, root);
+          refreshSummary(root);
+        },
+      }, t("library.group.selectAll")),
+    ]);
+    const body = el("div", { class: "lib-group-body" });
+    for (const b of books) body.appendChild(row(b, root));
+    listEl.appendChild(el("div", { class: "lib-group" }, [head, body]));
+  }
 }
+
+/* ───── preview ───── */
 
 async function selectForPreview(book, root) {
   STATE.previewBook = book;
@@ -155,7 +219,7 @@ function renderPreview(root) {
   const header = el("div", { class: "lib-preview-header" }, [
     el("div", { class: "lib-preview-title" }, STATE.previewBook.fileName),
     el("button", { class: "lib-preview-close", type: "button", "aria-label": "close",
-      onclick: () => { STATE.previewBook = null; renderPreview(root); renderBooks(root.querySelector(".lib-list"), root); } }, "×"),
+      onclick: () => { STATE.previewBook = null; renderPreview(root); renderBooks(root.querySelector(".lib-list"), root); } }, "x"),
   ]);
   pane.appendChild(header);
   if (STATE.previewState === "loading") {
@@ -163,7 +227,7 @@ function renderPreview(root) {
     return;
   }
   if (STATE.previewState === "error" || !STATE.previewData) {
-    const msg = STATE.previewData?.error || "—";
+    const msg = STATE.previewData?.error || "--";
     pane.appendChild(el("div", { class: "lib-preview-error" }, [t("library.preview.error") + ": ", msg]));
     return;
   }
@@ -171,9 +235,9 @@ function renderPreview(root) {
   const d = STATE.previewData;
   const meta = d.metadata ?? {};
   const stats = el("div", { class: "lib-preview-stats" }, [
-    el("div", {}, [el("strong", {}, t("library.preview.stat.title") + ": "), meta.title ?? "—"]),
-    el("div", {}, [el("strong", {}, t("library.preview.stat.author") + ": "), meta.author ?? "—"]),
-    el("div", {}, [el("strong", {}, t("library.preview.stat.lang") + ": "), meta.language ?? "—"]),
+    el("div", {}, [el("strong", {}, t("library.preview.stat.title") + ": "), meta.title ?? "--"]),
+    el("div", {}, [el("strong", {}, t("library.preview.stat.author") + ": "), meta.author ?? "--"]),
+    el("div", {}, [el("strong", {}, t("library.preview.stat.lang") + ": "), meta.language ?? "--"]),
     el("div", {}, [el("strong", {}, t("library.preview.stat.sections") + ": "), String(d.sectionCount)]),
     el("div", {}, [el("strong", {}, t("library.preview.stat.estChunks") + ": "), String(d.estimatedChunks)]),
     el("div", {}, [el("strong", {}, t("library.preview.stat.chars") + ": "), String(d.rawCharCount)]),
@@ -182,22 +246,13 @@ function renderPreview(root) {
   if (Array.isArray(meta.warnings) && meta.warnings.length > 0) {
     const w = el("div", { class: "lib-preview-warnings" }, [
       el("strong", {}, t("library.preview.warnings") + ":"),
-      ...meta.warnings.map((wm) => el("div", { class: "lib-warning" }, "• " + wm)),
+      ...meta.warnings.map((wm) => el("div", { class: "lib-warning" }, "* " + wm)),
     ]);
     pane.appendChild(w);
 
-    /* Phase 6.0 prep: actionable hint for image-only PDFs */
     const hasOcrCandidate = meta.warnings.some((wm) => /scanned|image|OCR|no text/i.test(String(wm)));
     if (hasOcrCandidate && d.rawCharCount === 0) {
-      pane.appendChild(
-        el("div", { class: "lib-warning-ocr", role: "note" }, [
-          el("span", { class: "lib-warning-ocr-icon", "aria-hidden": "true" }, "i"),
-          el("div", {}, [
-            el("span", { class: "lib-warning-ocr-title" }, t("library.preview.ocr.title")),
-            el("span", { class: "lib-warning-ocr-body" }, t("library.preview.ocr.body")),
-          ]),
-        ])
-      );
+      pane.appendChild(buildOcrHintCard());
     }
   }
   const samples = el("div", { class: "lib-preview-samples" }, [
@@ -206,21 +261,60 @@ function renderPreview(root) {
   for (const c of d.sampleChunks ?? []) {
     samples.appendChild(
       el("div", { class: "lib-sample" }, [
-        el("div", { class: "lib-sample-head" }, `${c.chapterTitle} · #${c.chunkIndex} · ${c.charCount} chars`),
+        el("div", { class: "lib-sample-head" }, `${c.chapterTitle} - #${c.chunkIndex} - ${c.charCount} chars`),
         el("div", { class: "lib-sample-body" }, c.text),
       ])
     );
   }
   pane.appendChild(samples);
+
+  const ocrToggleWrap = STATE.prefs.ocrSupported ? buildOcrToggle(root) : null;
+
   const actions = el("div", { class: "lib-preview-actions" }, [
     el("button", { class: "lib-btn lib-btn-accent", type: "button",
       onclick: () => {
         STATE.selected.set(STATE.previewBook.absPath, STATE.previewBook);
         enqueueAndStart([STATE.previewBook], root);
       } }, t("library.preview.btn.ingestThis")),
-  ]);
+    ocrToggleWrap,
+  ].filter(Boolean));
   pane.appendChild(actions);
 }
+
+function buildOcrHintCard() {
+  if (STATE.prefs.ocrSupported) {
+    return el("div", { class: "lib-warning-ocr lib-warning-ocr-actionable", role: "note" }, [
+      el("span", { class: "lib-warning-ocr-icon", "aria-hidden": "true" }, "i"),
+      el("div", {}, [
+        el("span", { class: "lib-warning-ocr-title" }, t("library.preview.ocr.actionable.title")),
+        el("span", { class: "lib-warning-ocr-body" }, t("library.preview.ocr.actionable.body")),
+      ]),
+    ]);
+  }
+  return el("div", { class: "lib-warning-ocr", role: "note" }, [
+    el("span", { class: "lib-warning-ocr-icon", "aria-hidden": "true" }, "i"),
+    el("div", {}, [
+      el("span", { class: "lib-warning-ocr-title" }, t("library.preview.ocr.title")),
+      el("span", { class: "lib-warning-ocr-body" }, t("library.preview.ocr.body")),
+    ]),
+  ]);
+}
+
+function buildOcrToggle(root) {
+  const checked = STATE.ocrOverride !== null ? STATE.ocrOverride : STATE.prefs.ocrEnabled;
+  const cb = el("input", { type: "checkbox", class: "lib-ocr-cb", id: "lib-ocr-toggle" });
+  if (checked) cb.checked = true;
+  cb.addEventListener("change", () => {
+    STATE.ocrOverride = cb.checked;
+    renderPreview(root);
+  });
+  return el("label", { class: "lib-ocr-toggle", for: "lib-ocr-toggle", title: t("library.ocr.tooltip") }, [
+    cb,
+    el("span", {}, t("library.ocr.label")),
+  ]);
+}
+
+/* ───── data loaders ───── */
 
 async function loadCollections() {
   try {
@@ -245,13 +339,27 @@ async function loadHistory() {
   }
 }
 
+async function loadPrefs() {
+  try {
+    const prefs = await window.api.preferences.getAll();
+    STATE.prefs.queueParallelism = Number(prefs.ingestParallelism) || 3;
+    STATE.prefs.ocrEnabled = Boolean(prefs.ocrEnabled);
+    STATE.prefs.groupBy = String(prefs.libraryGroupBy || "none");
+  } catch { /* defaults already set */ }
+  try {
+    const support = await window.api.scanner.ocrSupport();
+    STATE.prefs.ocrSupported = Boolean(support?.supported);
+    STATE.prefs.ocrPlatform = String(support?.platform || "unknown");
+    STATE.prefs.ocrReason = String(support?.reason || "");
+  } catch { /* leave defaults */ }
+}
+
 async function probeFolder(root, listEl) {
   if (STATE.busy) return;
   STATE.busy = true;
   try {
     const files = await window.api.scanner.probeFolder();
-    STATE.books = files;
-    STATE.selected.clear();
+    mergeFiles(files);
     refreshSummary(root);
     renderBooks(listEl, root);
   } finally {
@@ -259,7 +367,46 @@ async function probeFolder(root, listEl) {
   }
 }
 
-/* ─── Queue runner ─── */
+async function openFiles(root, listEl) {
+  if (STATE.busy) return;
+  STATE.busy = true;
+  try {
+    const files = await window.api.scanner.openFiles();
+    mergeFiles(files);
+    refreshSummary(root);
+    renderBooks(listEl, root);
+  } finally {
+    STATE.busy = false;
+  }
+}
+
+async function ingestDroppedPaths(paths, root, listEl) {
+  if (!paths.length) return;
+  STATE.busy = true;
+  try {
+    const files = await window.api.scanner.probeFiles(paths);
+    if (files.length === 0) return;
+    mergeFiles(files);
+    refreshSummary(root);
+    renderBooks(listEl, root);
+  } finally {
+    STATE.busy = false;
+  }
+}
+
+/** Append-only merge that preserves existing selection and never duplicates. */
+function mergeFiles(files) {
+  const seen = new Set(STATE.books.map((b) => b.absPath));
+  for (const f of files) {
+    if (!seen.has(f.absPath)) {
+      STATE.books.push(f);
+      seen.add(f.absPath);
+    }
+  }
+  STATE.books.sort((a, b) => b.mtimeMs - a.mtimeMs);
+}
+
+/* ───── queue runner ───── */
 
 function enqueueAndStart(books, root) {
   for (const b of books) {
@@ -273,7 +420,7 @@ function enqueueAndStart(books, root) {
 
 async function pumpQueue(root) {
   if (STATE.paused) return;
-  while (STATE.activeIngests.size < QUEUE_PARALLELISM && STATE.queue.length > 0) {
+  while (STATE.activeIngests.size < STATE.prefs.queueParallelism && STATE.queue.length > 0) {
     const next = STATE.queue.shift();
     if (!next) break;
     if (!STATE.collection) {
@@ -289,9 +436,11 @@ async function pumpQueue(root) {
 async function runOne(book, root) {
   STATE.activeIngests.set(book.absPath, "pending");
   try {
+    const ocrOverride = STATE.ocrOverride !== null ? STATE.ocrOverride : undefined;
     const res = await window.api.scanner.startIngest({
       filePath: book.absPath,
       collection: STATE.collection,
+      ocrOverride,
     });
     STATE.activeIngests.set(book.absPath, res.ingestId);
   } catch (e) {
@@ -333,7 +482,7 @@ async function cancelAll(root) {
   STATE.paused = false;
 }
 
-/* ─── History tab ─── */
+/* ───── history tab ───── */
 
 function renderHistory(root) {
   const wrap = root.querySelector(".lib-history");
@@ -346,7 +495,7 @@ function renderHistory(root) {
   for (const group of STATE.history) {
     const head = el("div", { class: "lib-hist-group-head" }, [
       el("strong", { class: "lib-hist-collection" }, group.collection),
-      el("span", { class: "lib-hist-meta" }, ` · ${group.totalBooks} ${t("library.history.books")} · ${group.totalChunks} ${t("library.history.chunks")}`),
+      el("span", { class: "lib-hist-meta" }, ` - ${group.totalBooks} ${t("library.history.books")} - ${group.totalChunks} ${t("library.history.chunks")}`),
     ]);
     const list = el("div", { class: "lib-hist-list" });
     for (const b of group.books) {
@@ -374,7 +523,7 @@ function renderHistory(root) {
   }
 }
 
-/* ─── Search tab (BookHunter) ─── */
+/* ───── search tab (BookHunter) ───── */
 
 /** @type {{ query: string, results: Array<any>, searching: boolean }} */
 const SEARCH_STATE = { query: "", results: [], searching: false };
@@ -386,15 +535,12 @@ function renderSearch(root) {
 
   const bar = el("div", { class: "lib-search-bar" }, [
     el("input", {
-      type: "text",
-      class: "lib-search-input",
+      type: "text", class: "lib-search-input",
       placeholder: t("library.search.placeholder"),
-      value: SEARCH_STATE.query,
-      id: "lib-search-q",
+      value: SEARCH_STATE.query, id: "lib-search-q",
     }),
     el("button", {
-      class: "lib-btn lib-btn-primary",
-      type: "button",
+      class: "lib-btn lib-btn-primary", type: "button",
       disabled: SEARCH_STATE.searching ? "true" : undefined,
       onclick: () => doSearch(root),
     }, SEARCH_STATE.searching ? "..." : t("library.search.btn")),
@@ -403,12 +549,8 @@ function renderSearch(root) {
 
   const qInput = wrap.querySelector("#lib-search-q");
   if (qInput) {
-    qInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") doSearch(root);
-    });
-    qInput.addEventListener("input", (e) => {
-      SEARCH_STATE.query = e.target.value;
-    });
+    qInput.addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(root); });
+    qInput.addEventListener("input", (e) => { SEARCH_STATE.query = e.target.value; });
   }
 
   if (SEARCH_STATE.results.length === 0 && !SEARCH_STATE.searching) {
@@ -422,27 +564,22 @@ function renderSearch(root) {
     const card = el("div", { class: "lib-search-card" }, [
       el("div", { class: "lib-search-title" }, r.title),
       el("div", { class: "lib-search-meta" }, [
-        r.authors?.join(", ") || "—",
-        r.year ? ` · ${r.year}` : "",
-        ` · ${r.sourceTag}`,
-        ` · ${r.license}`,
-        fmts ? ` · ${fmts}` : "",
+        r.authors?.join(", ") || "--",
+        r.year ? ` - ${r.year}` : "",
+        ` - ${r.sourceTag}`,
+        ` - ${r.license}`,
+        fmts ? ` - ${fmts}` : "",
       ].join("")),
       r.description ? el("div", { class: "lib-search-desc" }, r.description.slice(0, 200)) : null,
       el("div", { class: "lib-search-actions" }, [
         el("button", {
-          class: "lib-btn lib-btn-accent lib-btn-small",
-          type: "button",
+          class: "lib-btn lib-btn-accent lib-btn-small", type: "button",
           onclick: async () => {
-            if (!STATE.collection) {
-              alert(t("library.alert.collection"));
-              return;
-            }
+            if (!STATE.collection) { alert(t("library.alert.collection")); return; }
             try {
               card.querySelector(".lib-btn-accent").textContent = "...";
               const res = await window.api.bookhunter.downloadAndIngest({
-                candidate: r,
-                collection: STATE.collection,
+                candidate: r, collection: STATE.collection,
               });
               card.querySelector(".lib-btn-accent").textContent = `done (${res.upserted} chunks)`;
               card.querySelector(".lib-btn-accent").disabled = true;
@@ -455,10 +592,8 @@ function renderSearch(root) {
         }, t("library.search.btn.downloadIngest")),
         r.webPageUrl
           ? el("a", {
-              class: "lib-search-link",
-              href: r.webPageUrl,
-              target: "_blank",
-              rel: "noopener",
+              class: "lib-search-link", href: r.webPageUrl,
+              target: "_blank", rel: "noopener",
             }, t("library.search.btn.openPage"))
           : null,
       ]),
@@ -492,19 +627,95 @@ function switchTab(tab, root) {
   root.querySelector(".lib-pane-browse")?.classList.toggle("lib-pane-active", tab === "browse");
   root.querySelector(".lib-pane-history")?.classList.toggle("lib-pane-active", tab === "history");
   root.querySelector(".lib-pane-search")?.classList.toggle("lib-pane-active", tab === "search");
-  if (tab === "history") {
-    loadHistory().then(() => renderHistory(root));
-  }
-  if (tab === "search") {
-    renderSearch(root);
-  }
+  if (tab === "history") loadHistory().then(() => renderHistory(root));
+  if (tab === "search") renderSearch(root);
 }
 
-export function mountLibrary(root) {
+/* ───── dropzone ───── */
+
+function buildDropzone(root, listEl) {
+  const dz = el("div", {
+    class: "lib-dropzone",
+    role: "button",
+    tabindex: "0",
+    "aria-label": t("library.dropzone.aria"),
+  }, [
+    el("div", { class: "lib-dropzone-icon", "aria-hidden": "true" }, "+"),
+    el("div", { class: "lib-dropzone-title" }, t("library.dropzone.title")),
+    el("div", { class: "lib-dropzone-hint" }, t("library.dropzone.hint")),
+  ]);
+
+  const stop = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
+
+  ["dragenter", "dragover"].forEach((evName) => {
+    dz.addEventListener(evName, (ev) => { stop(ev); dz.classList.add("lib-dropzone-active"); });
+  });
+  ["dragleave", "drop"].forEach((evName) => {
+    dz.addEventListener(evName, (ev) => { stop(ev); dz.classList.remove("lib-dropzone-active"); });
+  });
+
+  dz.addEventListener("drop", (ev) => {
+    const dt = ev.dataTransfer;
+    if (!dt) return;
+    const paths = collectDroppedPaths(dt);
+    if (paths.length === 0) {
+      alert(t("library.dropzone.unsupported"));
+      return;
+    }
+    ingestDroppedPaths(paths, root, listEl);
+  });
+
+  dz.addEventListener("click", () => { openFiles(root, listEl); });
+  dz.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" || ev.key === " ") {
+      ev.preventDefault();
+      openFiles(root, listEl);
+    }
+  });
+  return dz;
+}
+
+function collectDroppedPaths(dt) {
+  /** @type {string[]} */
+  const out = [];
+  if (dt.files && dt.files.length > 0) {
+    for (const f of dt.files) {
+      const p = /** @type {{ path?: string }} */ (f).path;
+      if (typeof p === "string" && p.length > 0) out.push(p);
+    }
+  }
+  return out;
+}
+
+/* ───── group control ───── */
+
+function buildGroupControl(root, listEl) {
+  const select = el("select", { class: "lib-group-select-mode", id: "lib-group-mode" });
+  for (const opt of /** @type {GroupMode[]} */ (["none", "ext", "status", "folder"])) {
+    const o = el("option", { value: opt }, t("library.group.mode." + opt));
+    if (STATE.prefs.groupBy === opt) o.selected = true;
+    select.appendChild(o);
+  }
+  select.addEventListener("change", async () => {
+    STATE.prefs.groupBy = /** @type {GroupMode} */ (select.value);
+    renderBooks(listEl, root);
+    try { await window.api.preferences.set({ libraryGroupBy: STATE.prefs.groupBy }); } catch { /* persist best-effort */ }
+  });
+  return el("label", { class: "lib-group-wrap" }, [
+    el("span", {}, t("library.group.title")),
+    select,
+  ]);
+}
+
+/* ───── mount ───── */
+
+export async function mountLibrary(root) {
   if (!root) return;
   if (root.dataset.mounted === "1") return;
   root.dataset.mounted = "1";
   clear(root);
+
+  await loadPrefs();
 
   const tabs = el("div", { class: "lib-tabs" }, [
     el("button", { class: "lib-tab lib-tab-active", type: "button", "data-tab": "browse",
@@ -515,14 +726,11 @@ export function mountLibrary(root) {
       onclick: () => switchTab("history", root) }, t("library.tab.history")),
   ]);
 
-  /* ----- Browse pane ----- */
   const collectionWrap = el("div", { class: "lib-collection-wrap" });
   const collectionLabel = el("label", { class: "lib-collection-label" }, t("library.collection.label"));
   const collectionInput = el("input", {
-    type: "text",
-    class: "lib-collection-input",
-    placeholder: "library",
-    list: "lib-collection-suggestions",
+    type: "text", class: "lib-collection-input",
+    placeholder: "library", list: "lib-collection-suggestions",
   });
   collectionInput.value = STATE.collection || "library";
   collectionInput.addEventListener("input", () => {
@@ -542,6 +750,7 @@ export function mountLibrary(root) {
   });
 
   const btnPick = el("button", { class: "lib-btn lib-btn-primary", type: "button" }, t("library.btn.pickFolder"));
+  const btnOpenFiles = el("button", { class: "lib-btn", type: "button" }, t("library.btn.openFiles"));
   const btnStart = el("button", { class: "lib-btn lib-btn-accent", type: "button", disabled: "true" }, t("library.btn.ingest"));
   const btnCancel = el("button", { class: "lib-btn", type: "button" }, t("library.btn.cancelAll"));
   const summary = el("div", { class: "lib-summary" }, [
@@ -549,16 +758,27 @@ export function mountLibrary(root) {
     el("strong", { id: "lib-selected-count" }, "0"),
     " / ",
     el("strong", { id: "lib-total-count" }, "0"),
-    " · ",
+    " - ",
     t("library.summary.queue") + " ",
     el("strong", { id: "lib-queue-count" }, "0"),
   ]);
 
-  const toolbar = el("div", { class: "lib-toolbar" }, [collectionWrap, btnPick, btnStart, btnCancel, summary]);
-
   const listEl = el("div", { class: "lib-list" });
   const previewEl = el("div", { class: "lib-preview" });
 
+  const groupControl = buildGroupControl(root, listEl);
+
+  const ocrBadge = STATE.prefs.ocrSupported
+    ? el("span", { class: "lib-ocr-badge lib-ocr-badge-ok", title: t("library.ocr.badge.ok.tooltip") },
+        t("library.ocr.badge.ok").replace("{platform}", STATE.prefs.ocrPlatform))
+    : el("span", { class: "lib-ocr-badge lib-ocr-badge-off", title: STATE.prefs.ocrReason || t("library.ocr.badge.off.tooltip") },
+        t("library.ocr.badge.off"));
+
+  const toolbar = el("div", { class: "lib-toolbar" }, [
+    collectionWrap, btnPick, btnOpenFiles, btnStart, btnCancel, groupControl, ocrBadge, summary,
+  ]);
+
+  const dropzone = buildDropzone(root, listEl);
   const splitPane = el("div", { class: "lib-split" }, [listEl, previewEl]);
 
   btnPick.addEventListener("click", async () => {
@@ -572,13 +792,22 @@ export function mountLibrary(root) {
     }
   });
 
+  btnOpenFiles.addEventListener("click", async () => {
+    btnOpenFiles.disabled = true;
+    try {
+      await loadHistory();
+      await openFiles(root, listEl);
+      btnStart.disabled = STATE.books.length === 0;
+    } finally {
+      btnOpenFiles.disabled = false;
+    }
+  });
+
   btnStart.addEventListener("click", () => {
     const books = Array.from(STATE.selected.values());
     enqueueAndStart(books, root);
   });
-  btnCancel.addEventListener("click", () => {
-    cancelAll(root);
-  });
+  btnCancel.addEventListener("click", () => { cancelAll(root); });
 
   if (unsubscribeProgress) unsubscribeProgress();
   unsubscribeProgress = window.api.scanner.onProgress((p) => {
@@ -586,7 +815,7 @@ export function mountLibrary(root) {
     renderBooks(listEl, root);
   });
 
-  const browsePane = el("div", { class: "lib-pane lib-pane-browse lib-pane-active" }, [toolbar, splitPane]);
+  const browsePane = el("div", { class: "lib-pane lib-pane-browse lib-pane-active" }, [toolbar, dropzone, splitPane]);
   const searchPane = el("div", { class: "lib-pane lib-pane-search" }, [el("div", { class: "lib-search" })]);
   const historyPane = el("div", { class: "lib-pane lib-pane-history" }, [el("div", { class: "lib-history" })]);
 
@@ -594,6 +823,15 @@ export function mountLibrary(root) {
   root.appendChild(browsePane);
   root.appendChild(searchPane);
   root.appendChild(historyPane);
+
+  /* Window-level guards: prevent the OS from navigating away from the app
+     when the user accidentally drops a file outside the dropzone. */
+  if (!root.dataset.dropGuard) {
+    root.dataset.dropGuard = "1";
+    window.addEventListener("dragover", (ev) => ev.preventDefault());
+    window.addEventListener("drop", (ev) => ev.preventDefault());
+  }
+
   refreshSummary(root);
   renderPreview(root);
   renderBooks(listEl, root);
@@ -601,4 +839,8 @@ export function mountLibrary(root) {
 
 export function isLibraryBusy() {
   return STATE.activeIngests.size > 0 || STATE.queue.length > 0;
+}
+
+export function isImageBookExt(ext) {
+  return IMAGE_EXTS.has(String(ext || "").toLowerCase());
 }

@@ -5350,3 +5350,170 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
 }
 .settings-error { color: var(--accent-red); }
 
+.settings-input-bool {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--gold);
+  cursor: pointer;
+}
+.settings-input-select {
+  cursor: pointer;
+}
+
+/* ===== Library: Phase 6.0 Dropzone, grouping, OCR controls ===== */
+.lib-dropzone {
+  margin: 12px 0 16px;
+  padding: 22px 18px;
+  border: 1.5px dashed rgba(0, 240, 255, 0.35);
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(0, 240, 255, 0.04), rgba(13, 13, 18, 0.5));
+  text-align: center;
+  cursor: pointer;
+  transition: border-color var(--motion-fast) ease, background var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
+}
+.lib-dropzone:hover,
+.lib-dropzone:focus {
+  outline: none;
+  border-color: var(--cyan);
+  background: linear-gradient(180deg, rgba(0, 240, 255, 0.09), rgba(13, 13, 18, 0.55));
+  box-shadow: var(--glow-cyan-soft);
+}
+.lib-dropzone-active {
+  border-color: var(--gold);
+  background: linear-gradient(180deg, rgba(255, 215, 0, 0.10), rgba(13, 13, 18, 0.55));
+  box-shadow: var(--glow-gold-soft);
+}
+.lib-dropzone-icon {
+  font-family: var(--font-display);
+  font-size: 28px;
+  color: var(--gold);
+  line-height: 1;
+  margin-bottom: 6px;
+}
+.lib-dropzone-title {
+  font-family: var(--font-heading);
+  font-size: 13px;
+  color: var(--text-primary);
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+.lib-dropzone-hint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.lib-group-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.lib-group-select-mode {
+  background: rgba(0, 0, 0, 0.4);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 4px 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.lib-group {
+  margin: 6px 0 10px;
+  border-left: 2px solid rgba(255, 215, 0, 0.18);
+  padding-left: 8px;
+}
+.lib-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 4px 0;
+  margin-bottom: 4px;
+  border-bottom: 1px dashed rgba(255, 215, 0, 0.10);
+}
+.lib-group-key {
+  color: var(--gold-pale);
+  letter-spacing: 0.04em;
+}
+.lib-group-count {
+  color: var(--text-dim);
+}
+.lib-group-select {
+  background: transparent;
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  color: var(--cyan);
+  padding: 2px 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background var(--motion-fast) ease;
+}
+.lib-group-select:hover {
+  background: rgba(0, 240, 255, 0.10);
+}
+
+.lib-ocr-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  padding: 3px 8px;
+  border-radius: 2px;
+  border: 1px solid;
+  text-transform: uppercase;
+}
+.lib-ocr-badge-ok {
+  color: var(--neon-emerald);
+  border-color: rgba(0, 255, 136, 0.4);
+  background: rgba(0, 255, 136, 0.06);
+}
+.lib-ocr-badge-off {
+  color: var(--text-dim);
+  border-color: var(--border);
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.lib-ocr-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  padding: 4px 8px;
+  border: 1px solid rgba(0, 240, 255, 0.25);
+  border-radius: 2px;
+  transition: border-color var(--motion-fast) ease, background var(--motion-fast) ease;
+}
+.lib-ocr-toggle:hover {
+  border-color: var(--cyan);
+  background: rgba(0, 240, 255, 0.06);
+}
+.lib-ocr-cb {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--cyan);
+  cursor: pointer;
+}
+
+.lib-warning-ocr-actionable {
+  border-color: rgba(0, 255, 136, 0.35);
+  background: rgba(0, 255, 136, 0.06);
+}
+.lib-warning-ocr-actionable .lib-warning-ocr-title {
+  color: var(--neon-emerald);
+}
+
