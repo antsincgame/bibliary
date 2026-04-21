@@ -1,12 +1,19 @@
 import { promises as fs } from "fs";
 import * as path from "path";
+import { withFileLock } from "../resilience/file-lock.js";
 
 /**
- * Stateless-friendly хранилище прогресса сканера.
- * Один JSON-файл `scanner-progress.json` в data-dir пользователя.
+ * Persistent scanner-progress storage. One JSON file
+ * `scanner-progress.json` in the user data dir.
  *
- * Формат сделан так, чтобы можно было резюмировать ingest книги после краша:
- * по `bookSourcePath` и `processedChunkIds`.
+ * Format: { version, books: Record<bookSourcePath, ScannerBookState> }.
+ * Designed so an ingest can resume after crash via processedChunkIds.
+ *
+ * Phase 2.5R-bis: every mutation goes through `withFileLock` to make
+ * parallel ingests safe. Without the lock the read-modify-write pattern
+ * would lose progress when `ingestParallelism > 1` (default 3) -- two
+ * books finishing a flush at the same time would last-write-wins on the
+ * single shared file.
  */
 
 export interface ScannerBookState {
@@ -47,20 +54,20 @@ export class ScannerStateStore {
   }
 
   async upsertBook(book: ScannerBookState): Promise<void> {
-    const cur = await this.read();
-    cur.books[book.bookSourcePath] = book;
-    await this.write(cur);
+    await this.mutate((cur) => {
+      cur.books[book.bookSourcePath] = book;
+    });
   }
 
   async markProgress(bookPath: string, addedChunkIds: string[]): Promise<void> {
-    const cur = await this.read();
-    const b = cur.books[bookPath];
-    if (!b) return;
-    const seen = new Set(b.processedChunkIds);
-    for (const id of addedChunkIds) seen.add(id);
-    b.processedChunkIds = Array.from(seen);
-    b.lastUpdatedAt = new Date().toISOString();
-    await this.write(cur);
+    await this.mutate((cur) => {
+      const b = cur.books[bookPath];
+      if (!b) return;
+      const seen = new Set(b.processedChunkIds);
+      for (const id of addedChunkIds) seen.add(id);
+      b.processedChunkIds = Array.from(seen);
+      b.lastUpdatedAt = new Date().toISOString();
+    });
   }
 
   async markStatus(
@@ -68,12 +75,28 @@ export class ScannerStateStore {
     status: ScannerBookState["status"],
     errorMessage?: string
   ): Promise<void> {
-    const cur = await this.read();
-    const b = cur.books[bookPath];
-    if (!b) return;
-    b.status = status;
-    if (errorMessage !== undefined) b.errorMessage = errorMessage;
-    b.lastUpdatedAt = new Date().toISOString();
-    await this.write(cur);
+    await this.mutate((cur) => {
+      const b = cur.books[bookPath];
+      if (!b) return;
+      b.status = status;
+      if (errorMessage !== undefined) b.errorMessage = errorMessage;
+      b.lastUpdatedAt = new Date().toISOString();
+    });
+  }
+
+  /**
+   * Atomic read-modify-write under a cross-process file lock. This is
+   * the only safe way to mutate when several ingests share the same
+   * progress file (queueParallelism > 1).
+   *
+   * `withFileLock` ensures the file exists, so we can read straight away.
+   */
+  private async mutate(modify: (state: ScannerState) => void | Promise<void>): Promise<void> {
+    await fs.mkdir(path.dirname(this.filePath), { recursive: true });
+    await withFileLock(this.filePath, async () => {
+      const cur = await this.read();
+      await modify(cur);
+      await this.write(cur);
+    });
   }
 }
