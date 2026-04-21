@@ -22,7 +22,6 @@ import {
   type ExtractEvent,
   type IntraDedupEvent,
   type JudgeEvent,
-  type AcceptedConcept,
 } from "../lib/dataset-v2/index.js";
 import { chatWithPolicy, PROFILE } from "../lmstudio-client.js";
 import { getPreferencesStore } from "../lib/preferences/store.js";
@@ -352,7 +351,15 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
       }
 
       return { total, byDomain };
-    } catch {
+    } catch (e) {
+      /* AUDIT P0 (Inquisitor): раньше любая ошибка Qdrant (сеть, 401,
+         таймаут, отсутствие коллекции) превращалась в "0 концептов" —
+         UI показывал пустой бейдж и пользователь не понимал, что
+         сервер недоступен. Логируем, но contract не меняем чтобы
+         не ломать renderer (badge просто покажет 0 — это видно
+         в resilience-bar по offline-индикатору LM Studio/Qdrant). */
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(`[dataset-v2:list-accepted] Qdrant unavailable: ${msg}`);
       return { total: 0, byDomain: {} };
     }
   });
@@ -372,6 +379,4 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
     return resp.ok;
   });
 
-  /** Не используется напрямую, но экспортируется для shutdown в main.ts */
-  void ((): AcceptedConcept | null => null)();
 }

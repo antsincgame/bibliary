@@ -55,9 +55,11 @@ export {
   type TrainingMetric,
 } from "./local-runner";
 
+/* AUDIT (Inquisitor): judgeOne больше не реэкспортируется — он используется
+   только внутри runEval; внешних импортёров нет (grep confirmed). Если
+   когда-нибудь понадобится отдельный judge-API, вернём через barrel. */
 export {
   rougeL,
-  judgeOne,
   runEval,
   chatMLToEvalCases,
   type RougeScore,
