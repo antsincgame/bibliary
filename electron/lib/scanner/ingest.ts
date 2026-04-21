@@ -3,6 +3,7 @@ import { parseBook } from "./parsers/index.js";
 import type { ParseOptions } from "./parsers/types.js";
 import { chunkBook, type BookChunk, type ChunkerOptions } from "./chunker.js";
 import { ScannerStateStore } from "./state.js";
+import { DEFAULT_EMBED_MODEL, EMBEDDING_DIM, EMBED_MAX_INPUT_CHARS } from "./embedding.js";
 
 /**
  * Phase 2.6 — Book Ingest pipeline.
@@ -55,7 +56,6 @@ export interface IngestOptions {
   onProgress?: (p: IngestProgress) => void;
 }
 
-const DEFAULT_EMBED_MODEL = "Xenova/multilingual-e5-small";
 const DEFAULT_UPSERT_BATCH = 32;
 const DEFAULT_MAX_BOOK_CHARS = 5_000_000;
 
@@ -129,7 +129,7 @@ async function ensureCollection(
   const create = await fetch(`${url}/collections/${encodeURIComponent(collection)}`, {
     method: "PUT",
     headers,
-    body: JSON.stringify({ vectors: { size: 384, distance: "Cosine" } }),
+    body: JSON.stringify({ vectors: { size: EMBEDDING_DIM, distance: "Cosine" } }),
     signal,
   });
   if (!create.ok) {
@@ -234,7 +234,7 @@ export async function ingestBook(filePath: string, opts: IngestOptions): Promise
         skipped++;
         continue;
       }
-      const truncated = c.text.length > 8000 ? c.text.slice(0, 8000) : c.text;
+      const truncated = c.text.length > EMBED_MAX_INPUT_CHARS ? c.text.slice(0, EMBED_MAX_INPUT_CHARS) : c.text;
       const vector = await embedPassage(truncated, model);
       embedded++;
       buf.push({

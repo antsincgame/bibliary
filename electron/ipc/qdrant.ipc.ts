@@ -6,6 +6,7 @@ import {
   SCROLL_PAGE_SIZE,
   QDRANT_POINTS_HARD_CAP,
 } from "../lib/qdrant/http-client.js";
+import { EMBEDDING_DIM } from "../lib/scanner/embedding.js";
 import { getPreferencesStore } from "../lib/preferences/store.js";
 
 interface QdrantPoint {
@@ -179,7 +180,7 @@ export function registerQdrantIpc(): void {
       args: { name: string; vectorSize?: number; distance?: "Cosine" | "Euclid" | "Dot" }
     ): Promise<{ ok: boolean; error?: string }> => {
       if (!args || typeof args.name !== "string" || !args.name) return { ok: false, error: "name required" };
-      const size = args.vectorSize ?? 384;
+      const size = args.vectorSize ?? EMBEDDING_DIM;
       const distance = args.distance ?? "Cosine";
       try {
         const resp = await qdrantRaw(`${QDRANT_URL}/collections/${encodeURIComponent(args.name)}`, {

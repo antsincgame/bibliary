@@ -20,6 +20,7 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import { embedQuery } from "../rag/index.js";
 import { fetchQdrantJson, QDRANT_URL, QDRANT_API_KEY } from "../qdrant/http-client.js";
+import { EMBEDDING_DIM } from "../scanner/embedding.js";
 import { JudgeResultSchema, type AcceptedConcept, type DedupedConcept, type JudgeResult } from "./types.js";
 
 export const ACCEPTED_COLLECTION = "dataset-accepted-concepts";
@@ -100,7 +101,7 @@ async function ensureAcceptedCollection(): Promise<void> {
     await fetchQdrantJson(`${QDRANT_URL}/collections/${ACCEPTED_COLLECTION}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ vectors: { size: 384, distance: "Cosine" } }),
+      body: JSON.stringify({ vectors: { size: EMBEDDING_DIM, distance: "Cosine" } }),
     });
     /* best-effort indexes */
     for (const field of ["domain", "tags", "bookSourcePath"]) {
