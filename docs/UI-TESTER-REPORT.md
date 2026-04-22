@@ -1,5 +1,15 @@
 # UI-TESTER REPORT — Bibliary v2.5.4
 
+> **АРХИВНЫЙ СНИМОК НА 2026-04-21.** Этот отчёт фиксирует состояние UI
+> ДО v2.4 self-hosted рефактора и v2.5+ wizard / chat / docs обновлений.
+> Конкретно устарели:
+> - `forge.target.local.disabled_hint` и весь блок про Forge target picker
+>   — таргет-шаг удалён в v2.4 (Forge теперь self-hosted only, 3 шага).
+> - Welcome wizard (4 шага: Hero/Connect/Setup/Done) и его действия
+>   на финальном экране (3 action-карточки) — реализованы позже.
+> - Chat: `+`-кнопка коллекции, авто-загрузка downloaded модели,
+>   welcome-message от ассистента — добавлены позже.
+>
 > Скилл `/ui-tester` -- статический инспектор интерактивных элементов.
 > Дата отчёта: 2026-04-21 (revision 3 после Phase 2.5R wiring + diamond cleanup).
 >

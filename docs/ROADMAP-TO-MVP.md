@@ -80,8 +80,8 @@ exp. backoff, abortGrace). `chat`/`chatWithTools` остались для скр
 
 - `electron/ipc/lmstudio.ipc.ts` (chat / compare) → `chatWithPolicy`
 - `electron/ipc/agent.ipc.ts` (ReAct loop) → `chatWithToolsAndPolicy`
-- HF API (`electron/lib/hf/client.ts`) теперь имеет `fetchWithTimeout` (10s).
-  *(Удалено в v2.4 при переходе на self-hosted-only — см. `docs/FINE-TUNING.md`.)*
+- ~~HF API (`electron/lib/hf/client.ts`) теперь имеет `fetchWithTimeout` (10s).~~
+  **Удалено в v2.4 при переходе на self-hosted-only** — см. `docs/FINE-TUNING.md`.
 
 Результат: один transient 5xx больше не убивает chat / agent действие
 пользователя -- сначала retry с adaptive backoff.

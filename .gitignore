@@ -8,6 +8,7 @@ release/
 
 # IDE / AI local config
 .claude/
+.git-commit-msg.tmp
 
 # Source texts (copyrighted books — not for redistribution)
 data/*.pdf
