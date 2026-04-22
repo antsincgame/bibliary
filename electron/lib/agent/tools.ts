@@ -22,6 +22,7 @@ import { ingestBook, ScannerStateStore } from "../scanner/index.js";
 import { fetchQdrantJson, QDRANT_URL, QDRANT_API_KEY } from "../qdrant/http-client.js";
 import { searchRelevantChunks, getRagConfig } from "../rag/index.js";
 import { getPromptStore, DatasetRolesSchema } from "../prompts/store.js";
+import { searchHelp } from "../help-kb/index.js";
 import type { ToolDefinition, OpenAiToolDefinition } from "./types.js";
 
 /* ───────────────── helpers ───────────────── */
@@ -118,6 +119,32 @@ const listBooksTool: ToolDefinition<{ folder: string }, Array<{ fileName: string
       fileName: p.fileName,
       ext: p.ext,
       sizeMB: +(p.sizeBytes / 1024 / 1024).toFixed(2),
+    }));
+  },
+};
+
+const searchHelpTool: ToolDefinition<
+  { query: string; limit?: number },
+  Array<{ source: string; heading: string; text: string; score: number }>
+> = {
+  name: "search_help",
+  description:
+    "Семантический поиск по встроенной справке Bibliary (FINE-TUNING, STATE-OF-PROJECT, ROADMAP). " +
+    "ВСЕГДА используй когда пользователь спрашивает 'как сделать X в Bibliary', 'что такое Y', " +
+    "'почему UI ведёт себя так-то' — это знание о самом приложении, не выдумывай из общих знаний LLM. " +
+    "Возвращает топ-K фрагментов с указанием файла и заголовка раздела.",
+  policy: "auto",
+  argsSchema: z.object({
+    query: z.string().min(1).describe("вопрос на естественном языке про работу Bibliary"),
+    limit: z.number().int().min(1).max(10).optional().describe("сколько фрагментов вернуть (default 5)"),
+  }),
+  execute: async ({ query, limit }, ctx) => {
+    const hits = await searchHelp(query, { limit: limit ?? 5, signal: ctx.signal });
+    return hits.map((h) => ({
+      source: `docs/${h.source}.md`,
+      heading: h.headingPath.length > 0 ? h.headingPath.join(" › ") : h.docTitle,
+      text: h.text.length > 1200 ? h.text.slice(0, 1200) + "…" : h.text,
+      score: +h.score.toFixed(3),
     }));
   },
 };
@@ -228,6 +255,7 @@ const writeRoleTool: ToolDefinition<
 /* ───────── Registry ───────── */
 
 const ALL_TOOLS: ToolDefinition<never, unknown>[] = [
+  searchHelpTool as unknown as ToolDefinition<never, unknown>,
   listCollectionsTool as unknown as ToolDefinition<never, unknown>,
   searchCollectionTool as unknown as ToolDefinition<never, unknown>,
   listBooksTool as unknown as ToolDefinition<never, unknown>,

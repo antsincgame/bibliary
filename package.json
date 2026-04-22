@@ -28,6 +28,8 @@
     "test:dataset-v2-live": "tsx scripts/test-dataset-v2-live.ts",
     "test:e2e:mvp": "tsx scripts/e2e-full-mvp.ts",
     "test:e2e:quality": "tsx scripts/e2e-quality.ts",
+    "build:help-kb": "tsx scripts/build-help-kb.ts",
+    "test:help-kb": "tsx scripts/test-help-kb.ts",
     "lint": "tsc -p tsconfig.electron.json --noEmit && eslint \"renderer/**/*.js\" --ignore-pattern \"renderer/vendor/**\" --max-warnings=0",
     "lint:fix": "eslint \"renderer/**/*.js\" --ignore-pattern \"renderer/vendor/**\" --fix"
   },
