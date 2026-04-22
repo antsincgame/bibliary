@@ -377,8 +377,8 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
     "models.empty.no_downloaded":
       "Нет связи с LM Studio (или нет скачанных LLM).",
 
-    "nav.docs": "Книга",
-    "nav.docs.title": "Кодекс -- встроенная документация",
+    "nav.docs": "Справка",
+    "nav.docs.title": "Справка — как пользоваться Bibliary",
     "nav.settings": "Настройки",
     "nav.settings.title": "Настройки приложения",
     "nav.qdrant": "База знаний",
@@ -425,102 +425,64 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
     "qdrant.delete.go": "Удалить навсегда",
     "qdrant.delete.errorMismatch": "Имя не совпадает.",
     "qdrant.delete.errorGeneric": "Не удалось удалить коллекцию.",
-    "docs.hero.eyebrow": "Кодекс Bibliary",
-    "docs.hero.title": "Книга Знания",
-    "docs.hero.sub": "Полный путь от первого запуска до production-датасета. Глубина шахты, ясность алмаза.",
-    "docs.hero.cta": "Открыть путь",
-    "docs.toc.title": "Скрижали",
-    "docs.section.overview.title": "I · Сущность",
-    "docs.section.overview.sub": "Что такое Bibliary и для кого",
-    "docs.section.overview.body":
-      "Bibliary — это коммерческое окружение для построения собственной MECHANICUS-модели: чат-интерфейс RAG поверх Qdrant, генератор тренировочного датасета на базе локального LM Studio и мастерская управления моделями. Три инструмента в одном теле, единая телеметрия, единый язык данных.",
-    "docs.section.overview.points.1": "Чат: спрашивайте свою коллекцию знаний; ответы обогащены релевантными чанками.",
-    "docs.section.overview.points.2": "Датасет: автоматическая генерация T1/T2/T3-троек ShareGPT для fine-tune.",
-    "docs.section.overview.points.3": "Мастерская: загрузка/выгрузка моделей, переключение профилей BIG/SMALL.",
-    "docs.section.overview.points.4": "Resilience: graceful shutdown, append-only batch, watchdog LM Studio, файловые блокировки.",
+    "docs.hero.eyebrow": "Bibliary · Справка",
+    "docs.hero.title": "Как пользоваться",
+    "docs.hero.sub": "Локальный AI-стек: RAG-чат, извлечение знаний из книг, дообучение моделей. Без облака, без подписок.",
+    "docs.toc.title": "Содержание",
 
-    "docs.section.start.title": "II · Первый запуск",
-    "docs.section.start.sub": "Десять минут от установки до первого диалога",
-    "docs.section.start.req.title": "Требования",
-    "docs.section.start.req.1": "Docker (для Qdrant) или работающий внешний Qdrant.",
-    "docs.section.start.req.2": "LM Studio v0.4.12+ запущен на :1234, модель в формате GGUF.",
-    "docs.section.start.req.3": "Node.js 20+ для разработки (для портативной сборки не требуется).",
-    "docs.section.start.steps.title": "Шаги",
-    "docs.section.start.steps.1": "Скопируйте .env.example в .env, проверьте QDRANT_URL.",
-    "docs.section.start.steps.2": "Поднимите Qdrant: docker compose up -d.",
-    "docs.section.start.steps.3": "Запустите LM Studio, загрузите модель и стартуйте локальный сервер.",
-    "docs.section.start.steps.4": "Откройте Bibliary → Чат: выберите коллекцию и модель в верхней панели.",
+    "docs.section.start.title": "1. Локальный старт",
+    "docs.section.start.sub": "От установки до первого диалога — 10 минут",
+    "docs.section.start.body":
+      "Bibliary запускается полностью локально. Нужны два сервиса рядом: LM Studio для LLM (chat / embed / tools) и Qdrant как векторная БД для RAG. Оба могут жить на той же машине.",
+    "docs.section.start.steps.1":
+      "Установите LM Studio (lmstudio.ai), скачайте через UI любую GGUF-модель и нажмите ▷ Start Server. По умолчанию слушает http://localhost:1234.",
+    "docs.section.start.steps.2":
+      "Запустите Qdrant: docker run -p 6333:6333 qdrant/qdrant. Он поднимется на http://localhost:6333.",
+    "docs.section.start.steps.3":
+      "Откройте Bibliary, в чате нажмите «+» рядом с селектором коллекции и создайте свою первую коллекцию (например knowledge-test).",
+    "docs.section.start.steps.4":
+      "Выберите модель в селекторе. Если в LM Studio есть скачанные но не активные модели — Bibliary автоматически загрузит выбранную.",
+    "docs.section.start.env":
+      "ENV для override: LM_STUDIO_URL, QDRANT_URL. Можно задать в Settings → Подключения.",
 
-    "docs.section.chat.title": "III · Чат и RAG",
-    "docs.section.chat.sub": "Знание, разлитое по сосудам",
-    "docs.section.chat.body":
-      "Чат отправляет ваш вопрос в LM Studio. Если выбрана коллекция Qdrant — Bibliary заранее находит до 15 релевантных чанков и подмешивает их в системное сообщение. Кнопка Сравнить покажет два ответа: с RAG и без, чтобы вы убедились в ценности контекста.",
-    "docs.section.chat.tips.1": "Без коллекции — обычный чат с LM Studio, без обогащения.",
-    "docs.section.chat.tips.2": "Индикатор Qdrant справа: зелёный — онлайн, серый — offline.",
-    "docs.section.chat.tips.3": "Если ответ пустой — модель занята reasoning-токенами; увеличьте max_tokens в промпте или ролях.",
+    "docs.section.ingest.title": "2. Книга → датасет",
+    "docs.section.ingest.sub": "Pipeline ingest и извлечение знаний",
+    "docs.section.ingest.body":
+      "В разделе «Библиотека» перетащите PDF/EPUB/FB2/DOCX/TXT (картинки для OCR — отдельным выбором файлов). Bibliary режет книгу на семантические чанки, считает эмбеддинги локально (Xenova all-MiniLM) и кладёт в Qdrant. Раздел «Извлечение знаний» (Crystallizer) выгоняет из чанков ShareGPT-датасет для дообучения.",
+    "docs.section.ingest.points.1":
+      "Семантический чанкер делит на куски по предложениям с overlap; bordersize и overlap настраиваются в Settings → Семантический чанкер.",
+    "docs.section.ingest.points.2":
+      "Дедупликация (in-batch + cross-chunk) убирает повторы с порогом cosine similarity, настройка в Settings → Судья.",
+    "docs.section.ingest.points.3":
+      "Извлечение знаний использует роли T1/T2/T3 (academic / question / TL;DR). Промпты живут в data/prompts/dataset-roles.json — редактируйте на лету.",
+    "docs.section.ingest.points.4":
+      "Append-only batch + lockfile + resume на reload: можно остановить процесс и продолжить позже без потери данных.",
 
-    "docs.section.formats.title": "V · Форматы и MECHANICUS",
-    "docs.section.formats.sub": "Язык, на котором говорит ваша модель",
-    "docs.section.formats.chunk.title": "source-chunk",
-    "docs.section.formats.chunk.body":
-      "{ id, principle (10–120), explanation (50–1200, MECHANICUS-кодировано), domain (одно из allowed), tags[1..10] }",
-    "docs.section.formats.t.title": "Роли T1/T2/T3",
-    "docs.section.formats.t.body":
-      "T1 — академический отрывок книги. T2 — реальный вопрос разработчика. T3 — TL;DR в 1–2 предложения. Каждая роль имеет свой system-промпт и sampling в data/prompts/dataset-roles.json.",
-    "docs.section.formats.sharegpt.title": "ShareGPT JSONL",
-    "docs.section.formats.sharegpt.body":
-      "Каждая строка — { conversations: [system, human, gpt], meta: { type, domain, source_chunk_id } }. Готово для axolotl, llama-factory, unsloth.",
+    "docs.section.rag.title": "3. RAG в чате",
+    "docs.section.rag.sub": "Контекст из своей коллекции",
+    "docs.section.rag.body":
+      "Когда в чате выбрана коллекция Qdrant, Bibliary перед ответом находит до 15 релевантных чанков и подмешивает их в system message. Кнопка «Сравнить» включает A/B-режим: ответ без RAG vs с RAG — наглядно видна ценность вашей коллекции.",
+    "docs.section.rag.tips.1":
+      "Селектор коллекции пустой → обычный чат с LM Studio, без RAG-обогащения.",
+    "docs.section.rag.tips.2":
+      "Индикатор Qdrant справа: зелёный — online, серый — offline. Если серый — проверьте docker ps и URL в Settings.",
+    "docs.section.rag.tips.3":
+      "Reasoning-модели (Qwen3 thinking, GLM-4.5) тратят токены на CoT — увеличьте max_tokens в data/prompts/dataset-roles.json или в чат-настройках.",
 
-    "docs.section.resilience.title": "VI · Надёжность",
-    "docs.section.resilience.sub": "Когда модель устаёт, а файл не должен рваться",
-    "docs.section.resilience.points.1":
-      "Append-only batch: каждая успешная тройка пишется немедленно с lockfile. Дубли исключены проверкой processedChunkIds.",
-    "docs.section.resilience.points.2":
-      "Watchdog LM Studio: периодически проверяет /v1/models. При offline — пауза всех активных батчей и баннер пользователю.",
-    "docs.section.resilience.points.3":
-      "Resume banner: при следующем открытии Датасета видите незавершённые батчи и можете продолжить или сбросить.",
-    "docs.section.resilience.points.4":
-      "Graceful shutdown: при закрытии окна координатор выполняет flushAll до 3 секунд, затем app.exit с кодом результата.",
-    "docs.section.resilience.points.5":
+    "docs.section.custom.title": "4. Кастомизация и дообучение",
+    "docs.section.custom.sub": "Промпты, роли, контекст, fine-tune",
+    "docs.section.custom.body":
+      "Bibliary спроектирован под кастомизацию без перекомпиляции: все промпты, роли и параметры лежат в data/. Чат-помощник дообучения собирает workspace для запуска train.py локально через WSL — никакого Colab или HF Spaces.",
+    "docs.section.custom.points.1":
+      "data/prompts/ — редактируемые промпты для chat / extractor / judge / agent. Изменения подхватываются на следующий запрос.",
+    "docs.section.custom.points.2":
+      "Расширение контекста (кнопка «Память» в чате) — YaRN-патч config.json модели в LM Studio. Атомарно, с backup, реверсивно.",
+    "docs.section.custom.points.3":
+      "Раздел «Дообучение» — 3-step wizard: подготовка датасета → параметры (LoRA / QLoRA / YaRN) → workspace для запуска в WSL/RunPod.",
+    "docs.section.custom.points.4":
       "Telemetry: data/telemetry.jsonl — структурированные события (batch.start, chunk.ok/fail, watchdog, shutdown). Ротация при 50 МБ.",
-
-    "docs.section.troubleshoot.title": "VII · Что если",
-    "docs.section.troubleshoot.sub": "Семь типичных тупиков и выходов",
-    "docs.section.troubleshoot.q1": "LM Studio offline",
-    "docs.section.troubleshoot.a1":
-      "Откройте LM Studio, проверьте Local Server. Watchdog вернёт всё в строй автоматически в течение 10 секунд.",
-    "docs.section.troubleshoot.q2": "Источник пуст / все чанки обработаны",
-    "docs.section.troubleshoot.a2":
-      "Bibliary берёт source-chunks.json из data/finetune/. Откройте Шаг 1 → Открыть папку и проверьте файл. Чтобы пересобрать — удалите progress.json.",
-    "docs.section.troubleshoot.q3": "Незавершённый батч",
-    "docs.section.troubleshoot.a3":
-      "На Шаге 1 или 2 появится золотой баннер. Нажмите Продолжить чтобы возобновить с последнего сохранённого чанка, или Сбросить чтобы удалить незавершённое и начать заново.",
-    "docs.section.troubleshoot.q4": "Промпты сбились или хочется вернуть дефолты",
-    "docs.section.troubleshoot.a4":
-      "Удалите файл data/prompts/dataset-roles.json — при следующем запуске Bibliary воссоздаст его из bundled defaults.",
-    "docs.section.troubleshoot.q5": "Модель Qwen3.6 thinking возвращает пустой content",
-    "docs.section.troubleshoot.a5":
-      "Это reasoning-модель, она тратит токены на размышление. Увеличьте max_tokens в dataset-roles.json (T1=6144, T2=4096, T3=3072 уже стоят по умолчанию).",
-    "docs.section.troubleshoot.q6": "Где смотреть телеметрию",
-    "docs.section.troubleshoot.a6":
-      "data/telemetry.jsonl. Каждая строка — JSON с полем type. Ищите batch.chunk.fail, watchdog.lmstudio.down, shutdown.flush.error.",
-    "docs.section.troubleshoot.q7": "UI и CLI запущены одновременно",
-    "docs.section.troubleshoot.a7":
-      "Можно. Файловые блокировки proper-lockfile сериализуют запись. Но не запускайте два батча с одним именем — IPC проверит и откажет.",
-
-    "docs.section.advanced.title": "VIII · Глубина",
-    "docs.section.advanced.sub": "Для тех, кто хочет понять до конца",
-    "docs.section.advanced.points.1":
-      "data/prompts/ — редактируемые промпты MECHANICUS, грамматика, dataset-roles. Изменения подхватываются на лету.",
-    "docs.section.advanced.points.2":
-      "scripts/generate-batch.ts — CLI-эквивалент UI; полезно для серверной автоматизации.",
-    "docs.section.advanced.points.3":
-      "scripts/test-*.ts — 41 unit-теста + live LM-тест ролей. Прогон: npx tsx scripts/test-platform.ts.",
-    "docs.section.advanced.points.4":
-      "docs/RESILIENCE.md — 600 строк инженерной документации resilience-слоя.",
-
-    "docs.cta.ready": "Готовы создать свою модель",
-    "docs.cta.action": "Открыть «Извлечение знаний»",
+    "docs.section.custom.note":
+      "CLI-аналог UI: scripts/generate-batch.ts, scripts/test-*.ts. Полная инструкция по дообучению — docs/FINE-TUNING.md.",
 
     "ctx.eyebrow": "Расширение контекста",
     "ctx.title": "Размер окна контекста",
@@ -537,7 +499,7 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
     "ctx.preset.book.label": "Книга",
     "ctx.preset.book.meta": "128K · ~250 стр.",
     "ctx.preset.book.tooltip": "Краткий пересказ или анализ книги",
-    "ctx.preset.codex.label": "Кодекс",
+    "ctx.preset.codex.label": "Репо",
     "ctx.preset.codex.meta": "256K · ~500 стр.",
     "ctx.preset.codex.tooltip": "Анализ репозитория или толстого тома",
     "ctx.preset.library.label": "Библиотека",
@@ -634,7 +596,7 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
     "ww.done.sub": "Bibliary настроен. Вот что попробовать прямо сейчас:",
     "ww.done.next1": "Запустите LM Studio и загрузите рекомендованную модель",
     "ww.done.next2": "Откройте «Модели» → «Расширение контекста» — растяните окно до сценария «Книга»",
-    "ww.done.next3": "Кодекс расскажет всё остальное",
+    "ww.done.next3": "Откройте «Справку» — там все остальные сценарии",
     "ww.skip": "Пропустить",
     "ww.back": "Назад",
     "ww.next": "Далее",
@@ -669,24 +631,6 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
     "ww.models.role.judge": "Извлечение знаний — судья:",
     "ww.models.role.noLoaded": "нет загруженных моделей",
     "ww.models.smart.btn": "✦ Назначить под железо",
-
-    "docs.section.memory.title": "II½ · Расширение контекста",
-    "docs.section.memory.sub": "Слайдер вместо ручного JSON",
-    "docs.section.memory.what.title": "Что такое контекст",
-    "docs.section.memory.what.body":
-      "Контекст — это рабочий стол модели. Чем он шире, тем больше она помнит за раз: длинный диалог, целая книга, репозиторий, библиотека. Большинство моделей умеют 32K-128K «из коробки». YaRN — это очки, которые позволяют видеть в 4-8 раз дальше нативного.",
-    "docs.section.memory.how.title": "Как пользоваться",
-    "docs.section.memory.how.1": "Откройте Models route, нажмите «Открыть слайдер» рядом с моделью.",
-    "docs.section.memory.how.2": "Выберите сценарий: Чат / Документ / Книга / Кодекс / Библиотека.",
-    "docs.section.memory.how.3": "VRAM-bar внизу покажет, поместится ли в ваш GPU. Зелёный — да, жёлтый — впритык, красный — нет.",
-    "docs.section.memory.how.4": "Если есть подсказка «включить Q4 KV-cache» — нажмите её. Bibliary автоматически экономит память.",
-    "docs.section.memory.how.5": "Нажмите «Применить к модели». Перезагрузите модель в LM Studio — новый контекст активен.",
-    "docs.section.memory.under.title": "Что Bibliary делает за вас",
-    "docs.section.memory.under.body":
-      "Считает factor = target / native. Подбирает оптимальный KV-dtype под ваш VRAM. Атомарно патчит config.json модели в LM Studio. Создаёт backup перед первой правкой — кнопка «Откатить YaRN» возвращает оригинал. Параллельные процессы (UI + CLI) сериализуются через файловые блокировки.",
-    "docs.section.memory.under.advanced": "Технические детали",
-    "docs.section.memory.under.advanced_body":
-      "Под капотом Bibliary пишет в config.json модели поле rope_scaling: { rope_type: \"yarn\", factor, original_max_position_embeddings }. Factor округляется до ближайшего шага {1.5, 2, 3, 4, 6, 8, 12, 16} — Qwen team рекомендует целые / полуцелые значения для минимизации деградации. KV-cache считается по формуле bytes = 2 × n_layers × n_kv_heads × head_dim × context × dtype_bytes (источник: flozi.net 2026). Полная документация: docs/CONTEXT-EXPANSION.md.",
 
     "settings.header.title": "Настройки",
     "settings.header.sub": "Управление параметрами приложения. Расширенные секции зависят от режима UI (Simple / Advanced / Pro).",
@@ -1130,8 +1074,8 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
     "models.empty.no_downloaded":
       "Cannot reach LM Studio (or no LLMs downloaded).",
 
-    "nav.docs": "Codex",
-    "nav.docs.title": "Codex — built-in documentation",
+    "nav.docs": "Help",
+    "nav.docs.title": "Help — how to use Bibliary",
     "nav.qdrant": "Knowledge",
     "nav.qdrant.title": "Qdrant — vector collections management",
     "qdrant.header.title": "Knowledge base — Qdrant",
@@ -1176,102 +1120,64 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
     "qdrant.delete.go": "Delete forever",
     "qdrant.delete.errorMismatch": "Name does not match.",
     "qdrant.delete.errorGeneric": "Failed to delete collection.",
-    "docs.hero.eyebrow": "Bibliary Codex",
-    "docs.hero.title": "Book of Knowledge",
-    "docs.hero.sub": "Full path from first launch to production-grade dataset. Mine deep, polish like a diamond.",
-    "docs.hero.cta": "Enter the path",
-    "docs.toc.title": "Tablets",
-    "docs.section.overview.title": "I · Essence",
-    "docs.section.overview.sub": "What Bibliary is and who it serves",
-    "docs.section.overview.body":
-      "Bibliary is a commercial-grade environment to build your own MECHANICUS model: a RAG chat over Qdrant, a training-dataset generator powered by local LM Studio, and a model workshop. Three tools in one body, one telemetry, one data language.",
-    "docs.section.overview.points.1": "Chat: query your knowledge collection; answers enriched with relevant chunks.",
-    "docs.section.overview.points.2": "Dataset: automatic generation of T1/T2/T3 ShareGPT triples for fine-tuning.",
-    "docs.section.overview.points.3": "Workshop: load/unload models, switch BIG/SMALL profiles.",
-    "docs.section.overview.points.4": "Resilience: graceful shutdown, append-only batches, LM Studio watchdog, file locks.",
+    "docs.hero.eyebrow": "Bibliary · Help",
+    "docs.hero.title": "How to use",
+    "docs.hero.sub": "Local AI stack: RAG chat, knowledge extraction from books, model fine-tuning. No cloud, no subscriptions.",
+    "docs.toc.title": "Contents",
 
-    "docs.section.start.title": "II · First Launch",
-    "docs.section.start.sub": "Ten minutes from install to first dialog",
-    "docs.section.start.req.title": "Requirements",
-    "docs.section.start.req.1": "Docker (for Qdrant) or a running external Qdrant.",
-    "docs.section.start.req.2": "LM Studio v0.4.12+ on :1234, GGUF-format model.",
-    "docs.section.start.req.3": "Node.js 20+ for development (not needed for the portable build).",
-    "docs.section.start.steps.title": "Steps",
-    "docs.section.start.steps.1": "Copy .env.example to .env, verify QDRANT_URL.",
-    "docs.section.start.steps.2": "Bring up Qdrant: docker compose up -d.",
-    "docs.section.start.steps.3": "Start LM Studio, load a model, run the local server.",
-    "docs.section.start.steps.4": "Open Bibliary → Chat: pick collection and model in the top bar.",
+    "docs.section.start.title": "1. Local start",
+    "docs.section.start.sub": "From install to first dialog — 10 minutes",
+    "docs.section.start.body":
+      "Bibliary runs fully locally. You need two services next to it: LM Studio for the LLM (chat / embed / tools) and Qdrant as the vector DB for RAG. Both can live on the same machine.",
+    "docs.section.start.steps.1":
+      "Install LM Studio (lmstudio.ai), download any GGUF model from its UI and click ▷ Start Server. Default port: http://localhost:1234.",
+    "docs.section.start.steps.2":
+      "Run Qdrant: docker run -p 6333:6333 qdrant/qdrant. It listens on http://localhost:6333.",
+    "docs.section.start.steps.3":
+      "Open Bibliary, click «+» next to the collection selector in chat and create your first collection (e.g. knowledge-test).",
+    "docs.section.start.steps.4":
+      "Pick a model in the selector. If LM Studio has downloaded but inactive models — Bibliary will auto-load the one you select.",
+    "docs.section.start.env":
+      "ENV overrides: LM_STUDIO_URL, QDRANT_URL. Or set them in Settings → Connections.",
 
-    "docs.section.chat.title": "III · Chat & RAG",
-    "docs.section.chat.sub": "Knowledge poured into vessels",
-    "docs.section.chat.body":
-      "Chat sends your prompt to LM Studio. If a Qdrant collection is selected — Bibliary first fetches up to 15 relevant chunks and injects them into the system prompt. The Compare button shows two answers: with RAG and without, so you see the value of context.",
-    "docs.section.chat.tips.1": "No collection — plain LM Studio chat without enrichment.",
-    "docs.section.chat.tips.2": "Qdrant indicator on the right: green — online, gray — offline.",
-    "docs.section.chat.tips.3": "Empty answer — the model is busy reasoning; raise max_tokens in roles or prompt.",
+    "docs.section.ingest.title": "2. Book → dataset",
+    "docs.section.ingest.sub": "Ingest pipeline and knowledge extraction",
+    "docs.section.ingest.body":
+      "In «Library», drop PDF/EPUB/FB2/DOCX/TXT files (images for OCR — pick separately). Bibliary chunks the book semantically, computes embeddings locally (Xenova all-MiniLM) and pushes them to Qdrant. The «Knowledge Extraction» tab (Crystallizer) turns chunks into a ShareGPT dataset for fine-tuning.",
+    "docs.section.ingest.points.1":
+      "Semantic chunker splits by sentences with overlap; size and overlap are tunable in Settings → Semantic chunker.",
+    "docs.section.ingest.points.2":
+      "Deduplication (in-batch + cross-chunk) removes near-duplicates by cosine similarity threshold, set in Settings → Judge.",
+    "docs.section.ingest.points.3":
+      "Knowledge Extraction uses T1/T2/T3 roles (academic / question / TL;DR). Prompts live in data/prompts/dataset-roles.json — edit them on the fly.",
+    "docs.section.ingest.points.4":
+      "Append-only batch + lockfile + resume on reload: stop the process and continue later without losing data.",
 
-    "docs.section.formats.title": "V · Formats & MECHANICUS",
-    "docs.section.formats.sub": "The language your model will speak",
-    "docs.section.formats.chunk.title": "source-chunk",
-    "docs.section.formats.chunk.body":
-      "{ id, principle (10–120), explanation (50–1200, MECHANICUS-encoded), domain (one of allowed), tags[1..10] }",
-    "docs.section.formats.t.title": "Roles T1/T2/T3",
-    "docs.section.formats.t.body":
-      "T1 — academic textbook excerpt. T2 — real developer question. T3 — TL;DR in 1–2 sentences. Each role has its own system prompt and sampling in data/prompts/dataset-roles.json.",
-    "docs.section.formats.sharegpt.title": "ShareGPT JSONL",
-    "docs.section.formats.sharegpt.body":
-      "Each line — { conversations: [system, human, gpt], meta: { type, domain, source_chunk_id } }. Ready for axolotl, llama-factory, unsloth.",
+    "docs.section.rag.title": "3. RAG in chat",
+    "docs.section.rag.sub": "Context from your own collection",
+    "docs.section.rag.body":
+      "When a Qdrant collection is selected in chat, Bibliary fetches up to 15 relevant chunks before answering and injects them into the system message. The «Compare» button toggles A/B mode: answer without RAG vs with RAG — the value of your collection becomes obvious.",
+    "docs.section.rag.tips.1":
+      "Empty collection selector → plain LM Studio chat without RAG enrichment.",
+    "docs.section.rag.tips.2":
+      "Qdrant indicator on the right: green — online, gray — offline. If gray — check docker ps and the URL in Settings.",
+    "docs.section.rag.tips.3":
+      "Reasoning models (Qwen3 thinking, GLM-4.5) burn tokens on CoT — increase max_tokens in data/prompts/dataset-roles.json or in chat settings.",
 
-    "docs.section.resilience.title": "VI · Reliability",
-    "docs.section.resilience.sub": "When the model tires, the file must not tear",
-    "docs.section.resilience.points.1":
-      "Append-only batch: every successful triple is written immediately under a lockfile. Duplicates are rejected by processedChunkIds.",
-    "docs.section.resilience.points.2":
-      "LM Studio watchdog: polls /v1/models periodically. On offline — pause all active batches and show a banner.",
-    "docs.section.resilience.points.3":
-      "Resume banner: on next Dataset open, see unfinished batches and choose Continue or Discard.",
-    "docs.section.resilience.points.4":
-      "Graceful shutdown: on window close the coordinator runs flushAll for up to 3 seconds, then app.exit with status code.",
-    "docs.section.resilience.points.5":
-      "Telemetry: data/telemetry.jsonl — structured events (batch.start, chunk.ok/fail, watchdog, shutdown). Rotation at 50 MB.",
-
-    "docs.section.troubleshoot.title": "VII · What if",
-    "docs.section.troubleshoot.sub": "Seven common dead ends and exits",
-    "docs.section.troubleshoot.q1": "LM Studio offline",
-    "docs.section.troubleshoot.a1":
-      "Open LM Studio, verify Local Server is on. The watchdog will recover within ~10 seconds automatically.",
-    "docs.section.troubleshoot.q2": "Source empty / all chunks processed",
-    "docs.section.troubleshoot.a2":
-      "Bibliary reads source-chunks.json from data/finetune/. Open Step 1 → Open folder. To regenerate — delete progress.json.",
-    "docs.section.troubleshoot.q3": "Unfinished batch",
-    "docs.section.troubleshoot.a3":
-      "On Step 1 or 2 a gold banner appears. Click Continue to resume from the last saved chunk, or Discard to delete and start over.",
-    "docs.section.troubleshoot.q4": "Prompts drifted or want defaults back",
-    "docs.section.troubleshoot.a4":
-      "Delete data/prompts/dataset-roles.json — Bibliary will re-seed it from bundled defaults on next start.",
-    "docs.section.troubleshoot.q5": "Qwen3.6 thinking model returns empty content",
-    "docs.section.troubleshoot.a5":
-      "It is a reasoning model — it spends tokens thinking. Increase max_tokens in dataset-roles.json (defaults T1=6144, T2=4096, T3=3072).",
-    "docs.section.troubleshoot.q6": "Where to find telemetry",
-    "docs.section.troubleshoot.a6":
-      "data/telemetry.jsonl. One JSON per line, look for batch.chunk.fail, watchdog.lmstudio.down, shutdown.flush.error.",
-    "docs.section.troubleshoot.q7": "UI and CLI run at the same time",
-    "docs.section.troubleshoot.a7":
-      "Allowed. proper-lockfile serializes writes. Just don't run two batches with the same name — IPC will reject it.",
-
-    "docs.section.advanced.title": "VIII · Depth",
-    "docs.section.advanced.sub": "For those who want to go all the way",
-    "docs.section.advanced.points.1":
-      "data/prompts/ — editable MECHANICUS prompts, grammar, dataset-roles. Picked up on the fly.",
-    "docs.section.advanced.points.2":
-      "scripts/generate-batch.ts — CLI equivalent of the UI; useful for server automation.",
-    "docs.section.advanced.points.3":
-      "scripts/test-*.ts — 41 unit tests + a live LM role test. Run: npx tsx scripts/test-platform.ts.",
-    "docs.section.advanced.points.4":
-      "docs/RESILIENCE.md — 600 lines of engineering docs for the resilience layer.",
-
-    "docs.cta.ready": "Ready to forge your model",
-    "docs.cta.action": "Open Knowledge Extraction",
+    "docs.section.custom.title": "4. Customization & fine-tuning",
+    "docs.section.custom.sub": "Prompts, roles, context, fine-tune",
+    "docs.section.custom.body":
+      "Bibliary is built for customization without rebuilds: every prompt, role and parameter lives in data/. The fine-tuning assistant prepares a workspace for local train.py via WSL — no Colab or HF Spaces.",
+    "docs.section.custom.points.1":
+      "data/prompts/ — editable prompts for chat / extractor / judge / agent. Changes are picked up on the next request.",
+    "docs.section.custom.points.2":
+      "Context expansion («Memory» button in chat) — YaRN patch for the model's config.json in LM Studio. Atomic, with backup, reversible.",
+    "docs.section.custom.points.3":
+      "«Fine-tuning» tab — 3-step wizard: prepare dataset → parameters (LoRA / QLoRA / YaRN) → workspace for WSL/RunPod runs.",
+    "docs.section.custom.points.4":
+      "Telemetry: data/telemetry.jsonl — structured events (batch.start, chunk.ok/fail, watchdog, shutdown). Rotates at 50 MB.",
+    "docs.section.custom.note":
+      "CLI counterpart of the UI: scripts/generate-batch.ts, scripts/test-*.ts. Full fine-tuning guide — docs/FINE-TUNING.md.",
 
     "ctx.eyebrow": "Context Expansion",
     "ctx.title": "Context window size",
@@ -1288,7 +1194,7 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
     "ctx.preset.book.label": "Book",
     "ctx.preset.book.meta": "128K · ~250 pgs",
     "ctx.preset.book.tooltip": "Book summary or analysis",
-    "ctx.preset.codex.label": "Codex",
+    "ctx.preset.codex.label": "Repo",
     "ctx.preset.codex.meta": "256K · ~500 pgs",
     "ctx.preset.codex.tooltip": "Repository or thick volume",
     "ctx.preset.library.label": "Library",
@@ -1385,7 +1291,7 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
     "ww.done.sub": "Bibliary is configured. Try this right now:",
     "ww.done.next1": "Launch LM Studio and download the recommended model",
     "ww.done.next2": "Open Models → Context Expansion — stretch the window to the Book preset",
-    "ww.done.next3": "The Codex covers everything else",
+    "ww.done.next3": "Open Help — it covers all the rest",
     "ww.skip": "Skip",
     "ww.back": "Back",
     "ww.next": "Next",
@@ -1420,24 +1326,6 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
     "ww.models.role.judge": "Knowledge Extraction — judge:",
     "ww.models.role.noLoaded": "no loaded models",
     "ww.models.smart.btn": "✦ Auto-assign by hardware",
-
-    "docs.section.memory.title": "II½ · Context Expansion",
-    "docs.section.memory.sub": "A slider instead of hand-edited JSON",
-    "docs.section.memory.what.title": "What is context",
-    "docs.section.memory.what.body":
-      "Context is the model's desk. The wider it is, the more it remembers at once: long dialog, whole book, repository, library. Most models do 32K-128K out of the box. YaRN is a pair of glasses that lets it see 4-8× further than native.",
-    "docs.section.memory.how.title": "How to use",
-    "docs.section.memory.how.1": "Open Models route, click \"Open slider\" next to a model.",
-    "docs.section.memory.how.2": "Pick a scenario: Chat / Document / Book / Codex / Library.",
-    "docs.section.memory.how.3": "VRAM bar below shows whether it fits your GPU. Green — yes, yellow — tight, red — no.",
-    "docs.section.memory.how.4": "If a hint suggests \"enable Q4 KV-cache\" — click it. Bibliary saves memory for you.",
-    "docs.section.memory.how.5": "Click \"Apply to model\". Reload the model in LM Studio — new context active.",
-    "docs.section.memory.under.title": "What Bibliary does for you",
-    "docs.section.memory.under.body":
-      "Computes factor = target / native. Picks the best KV-dtype for your VRAM. Atomically patches config.json of the model in LM Studio. Creates a backup before the first edit — the \"Revert YaRN\" button restores the original. Parallel processes (UI + CLI) serialize through file locks.",
-    "docs.section.memory.under.advanced": "Technical details",
-    "docs.section.memory.under.advanced_body":
-      "Under the hood Bibliary writes rope_scaling: { rope_type: \"yarn\", factor, original_max_position_embeddings } into the model's config.json. Factor is snapped to the nearest step from {1.5, 2, 3, 4, 6, 8, 12, 16} — Qwen team recommends integer/half-integer values to minimize degradation. KV-cache is computed as bytes = 2 × n_layers × n_kv_heads × head_dim × context × dtype_bytes (source: flozi.net 2026). Full docs: docs/CONTEXT-EXPANSION.md.",
 
     "nav.settings": "Settings",
     "nav.settings.title": "Application settings",
