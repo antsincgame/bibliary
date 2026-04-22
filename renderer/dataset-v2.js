@@ -577,14 +577,26 @@ export function mountCrystal(root) {
   root.appendChild(layout);
 
   /* model-select экземпляры самозагружаются при создании внутри renderControls.
-     Здесь параллельно подгружаем history (для buildSourceRow) и threshold (slider). */
-  Promise.all([loadHistory(), loadThresholdFromPrefs()]).then(() => {
-    renderControls(root);
-    renderStats(root);
-    renderLog(root);
-    renderAccepted(root);
-    renderAcceptedTotal(root);
-  });
+     Здесь параллельно подгружаем history (для buildSourceRow) и threshold (slider).
+     AUDIT 2026-04-21: добавлен .catch — без него любая ошибка IPC (preferences,
+     scanner.listHistory) превращалась в unhandledrejection и Crystallizer
+     оставался полупустым без диагностики. */
+  Promise.all([loadHistory(), loadThresholdFromPrefs()])
+    .then(() => {
+      renderControls(root);
+      renderStats(root);
+      renderLog(root);
+      renderAccepted(root);
+      renderAcceptedTotal(root);
+    })
+    .catch((e) => {
+      console.error("[crystal] bootstrap failed:", e);
+      renderControls(root);
+      renderStats(root);
+      renderLog(root);
+      renderAccepted(root);
+      renderAcceptedTotal(root);
+    });
 
   if (unsub) unsub();
   unsub = window.api.datasetV2.onEvent((payload) => handleEvent(root, payload));
