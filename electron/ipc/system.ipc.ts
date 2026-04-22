@@ -1,8 +1,7 @@
 import { ipcMain } from "electron";
-import { detectHardware, clearHardwareCache } from "../lib/hardware/profiler.js";
-import hardwarePresetsRaw from "../defaults/hardware-presets.json";
+import { detectHardware } from "../lib/hardware/profiler.js";
 import curatedModelsRaw from "../defaults/curated-models.json";
-import { getEndpoints, getEndpointsSource } from "../lib/endpoints/index.js";
+import { getEndpoints } from "../lib/endpoints/index.js";
 import { getServerStatus } from "../lmstudio-client.js";
 import { QDRANT_URL, QDRANT_API_KEY } from "../lib/qdrant/http-client.js";
 
@@ -35,31 +34,12 @@ export function registerSystemIpc(): void {
     return detectHardware({ force: opts?.force === true });
   });
 
-  ipcMain.handle("system:env-summary", async () => {
-    const { lmStudioUrl, qdrantUrl } = await getEndpoints();
-    return {
-      lmStudioUrl,
-      qdrantUrl,
-      /** Where the URLs were resolved from: prefs / env / default. */
-      source: getEndpointsSource(),
-      platform: process.platform,
-      arch: process.arch,
-    };
-  });
-
-  ipcMain.handle("system:hardware-presets", async () => hardwarePresetsRaw);
-
   /**
    * Кураторский список рекомендованных моделей (electron/defaults/curated-models.json).
    * Для onboarding wizard "Models"-step. Защищает от выбора мусорных квантов через
    * свободный HF-search.
    */
   ipcMain.handle("system:curated-models", async () => curatedModelsRaw);
-
-  ipcMain.handle("system:invalidate-hardware-cache", async () => {
-    clearHardwareCache();
-    return true;
-  });
 
   /**
    * Параллельный health-check обоих внешних сервисов для onboarding wizard.

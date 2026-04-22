@@ -73,51 +73,6 @@ export function registerBookhunterIpc(getMainWindow: () => BrowserWindow | null)
     }
   );
 
-  ipcMain.handle(
-    "bookhunter:download",
-    async (
-      _e,
-      args: { candidate: BookCandidate; preferredFormat?: BookFileVariant["format"] }
-    ): Promise<{ downloadId: string; destPath: string; bytesWritten: number; format: string }> => {
-      if (!args || !args.candidate) throw new Error("candidate required");
-      const c = args.candidate;
-      if (!ALLOWED_LICENSES.has(c.license)) {
-        throw new Error(`license '${c.license}' not in whitelist`);
-      }
-      const variant = pickFormat(c, args.preferredFormat);
-      const dir = defaultDownloadDir(c.sourceTag);
-      const fileName = `${safeFileName(c.title)}__${c.id}.${variant.format}`;
-      const destPath = path.join(dir, fileName);
-
-      const id = downloadId();
-      const ctrl = new AbortController();
-      activeDownloads.set(id, ctrl);
-
-      const win = getMainWindow();
-      try {
-        const prefs = await getPreferencesStore().getAll();
-        const res = await downloadBook({
-          variant,
-          destPath,
-          signal: ctrl.signal,
-          maxRetries: prefs.downloadMaxRetries,
-          onProgress: (downloaded, total) => {
-            if (win && !win.isDestroyed()) {
-              win.webContents.send("bookhunter:download-progress", {
-                downloadId: id,
-                downloaded,
-                total,
-              });
-            }
-          },
-        });
-        return { downloadId: id, destPath: res.destPath, bytesWritten: res.bytesWritten, format: res.format };
-      } finally {
-        activeDownloads.delete(id);
-      }
-    }
-  );
-
   ipcMain.handle("bookhunter:cancel-download", async (_e, id: string): Promise<boolean> => {
     const ctrl = activeDownloads.get(id);
     if (!ctrl) return false;

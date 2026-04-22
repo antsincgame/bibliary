@@ -1,13 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
 
-interface QdrantPoint {
-  id: string;
-  principle: string;
-  explanation: string;
-  domain: string;
-  tags: string[];
-}
-
 interface ChatUsage {
   prompt: number;
   completion: number;
@@ -90,12 +82,24 @@ interface QdrantSearchHit {
   payload: Record<string, unknown>;
 }
 
+/* Inquisitor sweep 2026-04-22 (после OMNISSIAH deep-check):
+   Удалено 13 dead preload методов и соответствующие IPC handlers в main:
+   - getPoints (top), qdrant.points, qdrant.list, getModels (top): дубликаты LIVE-методов
+   - bookhunter.download: замещён downloadAndIngest (LIVE)
+   - scanner.probePath: замещён probeFolder + probeFiles (LIVE)
+   - profile.get, yarn.listModels: одиночные геттеры без UI-потребителя
+   - system.envSummary: замещён probeServices + prefs + renderer-probe
+   - system.hardwarePresets: замещён curated-models + hardware(force)
+   - system.invalidateHardwareCache: замещён hardware(force=true)
+   - hf.openModelPage: renderer открывает HF страницу через window.open напрямую
+   - scanner.listState: замещён listHistory (агрегирует state)
+   SCAFFOLDING (сохранены): forge.genConfig/listRuns, hf.searchModels/modelInfo,
+   wsl.detect, chatHistory.clear, resilience.scanUnfinished/telemetryTail,
+   forgeLocal.* (Phase 3.3 Pro tier UI ждёт реализации). */
 contextBridge.exposeInMainWorld("api", {
   getCollections: (): Promise<string[]> => ipcRenderer.invoke("qdrant:collections"),
-  getPoints: (collection: string): Promise<QdrantPoint[]> => ipcRenderer.invoke("qdrant:points", collection),
 
   qdrant: {
-    list: (): Promise<string[]> => ipcRenderer.invoke("qdrant:collections"),
     listDetailed: (): Promise<QdrantCollectionsListItem[]> =>
       ipcRenderer.invoke("qdrant:collections-detailed"),
     info: (name: string): Promise<QdrantCollectionInfo | null> =>
@@ -109,10 +113,8 @@ contextBridge.exposeInMainWorld("api", {
       args: { collection: string; query?: string; vector?: number[]; limit?: number }
     ): Promise<QdrantSearchHit[]> => ipcRenderer.invoke("qdrant:search", args),
     cluster: (): Promise<QdrantClusterInfo> => ipcRenderer.invoke("qdrant:cluster-info"),
-    points: (collection: string): Promise<QdrantPoint[]> => ipcRenderer.invoke("qdrant:points", collection),
   },
 
-  getModels: (): Promise<Array<{ id: string }>> => ipcRenderer.invoke("lmstudio:models"),
   sendChat: (
     messages: Array<{ role: string; content: string }>,
     model: string,
@@ -167,9 +169,6 @@ contextBridge.exposeInMainWorld("api", {
     /** Откатить YaRN: восстановить config из backup. */
     revert: (modelKey: string): Promise<{ ok: true; restored: boolean }> =>
       ipcRenderer.invoke("yarn:revert", modelKey),
-    /** Список known моделей с их native/yarnMax. Для UI presets. */
-    listModels: (): Promise<Array<{ modelKey: string; displayName: string; nativeTokens: number; yarnMaxTokens: number }>> =>
-      ipcRenderer.invoke("yarn:list-models"),
     /** Доступен ли активный backup (значит можно revert). */
     hasBackup: (modelKey: string): Promise<boolean> => ipcRenderer.invoke("yarn:has-backup", modelKey),
   },
@@ -177,12 +176,8 @@ contextBridge.exposeInMainWorld("api", {
   system: {
     hardware: (force?: boolean): Promise<unknown> =>
       ipcRenderer.invoke("system:hardware-info", { force: force === true }),
-    envSummary: (): Promise<{ lmStudioUrl: string; qdrantUrl: string; platform: string; arch: string }> =>
-      ipcRenderer.invoke("system:env-summary"),
-    hardwarePresets: (): Promise<unknown> => ipcRenderer.invoke("system:hardware-presets"),
     /** Кураторский список рекомендованных моделей для wizard. */
     curatedModels: (): Promise<unknown> => ipcRenderer.invoke("system:curated-models"),
-    invalidateHardwareCache: (): Promise<boolean> => ipcRenderer.invoke("system:invalidate-hardware-cache"),
     /** Параллельный health-check LM Studio + Qdrant для onboarding wizard. */
     probeServices: (): Promise<{
       lmStudio: { online: boolean; version?: string; url: string };
@@ -192,7 +187,6 @@ contextBridge.exposeInMainWorld("api", {
 
   profile: {
     list: (): Promise<unknown[]> => ipcRenderer.invoke("profile:list"),
-    get: (id: string): Promise<unknown> => ipcRenderer.invoke("profile:get", id),
     upsert: (profile: unknown): Promise<unknown> => ipcRenderer.invoke("profile:upsert", profile),
     remove: (id: string): Promise<boolean> => ipcRenderer.invoke("profile:remove", id),
     resetToDefaults: (): Promise<unknown[]> => ipcRenderer.invoke("profile:reset-to-defaults"),
@@ -241,7 +235,6 @@ contextBridge.exposeInMainWorld("api", {
     modelInfo: (repoId: string): Promise<unknown> => ipcRenderer.invoke("hf:model-info", repoId),
     openColab: (): Promise<{ url: string }> => ipcRenderer.invoke("hf:open-colab"),
     openAutoTrain: (): Promise<{ url: string }> => ipcRenderer.invoke("hf:open-autotrain"),
-    openModelPage: (repoId: string): Promise<{ url: string }> => ipcRenderer.invoke("hf:open-model-page", repoId),
   },
 
   wsl: {
@@ -251,8 +244,6 @@ contextBridge.exposeInMainWorld("api", {
   scanner: {
     probeFolder: (): Promise<Array<{ absPath: string; fileName: string; ext: string; sizeBytes: number; mtimeMs: number }>> =>
       ipcRenderer.invoke("scanner:probe-folder"),
-    probePath: (folder: string): Promise<Array<{ absPath: string; fileName: string; ext: string; sizeBytes: number; mtimeMs: number }>> =>
-      ipcRenderer.invoke("scanner:probe-path", folder),
     probeFiles: (paths: string[]): Promise<Array<{ absPath: string; fileName: string; ext: string; sizeBytes: number; mtimeMs: number }>> =>
       ipcRenderer.invoke("scanner:probe-files", paths),
     openFiles: (): Promise<Array<{ absPath: string; fileName: string; ext: string; sizeBytes: number; mtimeMs: number }>> =>
@@ -275,7 +266,6 @@ contextBridge.exposeInMainWorld("api", {
       ocrOverride?: boolean;
     }): Promise<{ ingestId: string; result: unknown }> => ipcRenderer.invoke("scanner:start-ingest", args),
     cancelIngest: (ingestId: string): Promise<boolean> => ipcRenderer.invoke("scanner:cancel-ingest", ingestId),
-    listState: (): Promise<unknown> => ipcRenderer.invoke("scanner:list-state"),
     listHistory: (): Promise<
       Array<{
         collection: string;
@@ -350,8 +340,6 @@ contextBridge.exposeInMainWorld("api", {
         description?: string;
       }>
     > => ipcRenderer.invoke("bookhunter:search", args),
-    download: (args: { candidate: unknown; preferredFormat?: string }): Promise<{ downloadId: string; destPath: string; bytesWritten: number; format: string }> =>
-      ipcRenderer.invoke("bookhunter:download", args),
     cancelDownload: (downloadId: string): Promise<boolean> =>
       ipcRenderer.invoke("bookhunter:cancel-download", downloadId),
     downloadAndIngest: (args: {

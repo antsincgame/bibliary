@@ -249,8 +249,8 @@ function buildField(field, root) {
 
 /**
  * URL input with Test button. Empty value = "use env var or default".
- * Test button calls api.system.envSummary() after a quick save to a
- * scratch in-memory buffer + a real probe to the entered endpoint.
+ * Test button делает прямой fetch на введённый endpoint через probeEndpoint
+ * (реализован ниже) — без отдельного IPC, т.к. URL ещё не сохранён в prefs.
  */
 function buildUrlField(field, root) {
   const value = String(STATE.prefs[field.key] ?? STATE.defaults[field.key] ?? "");

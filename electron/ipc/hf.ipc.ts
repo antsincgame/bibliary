@@ -9,7 +9,6 @@ import {
   getModelInfo as hfGetModelInfo,
   buildColabUrl,
   buildAutoTrainUrl,
-  buildModelPageUrl,
 } from "../lib/hf/client.js";
 
 const hfDataDir = path.resolve("data");
@@ -44,12 +43,6 @@ export function registerHfIpc(): void {
 
   ipcMain.handle("hf:open-autotrain", async (): Promise<{ url: string }> => {
     const url = buildAutoTrainUrl();
-    await electronShell.openExternal(url);
-    return { url };
-  });
-
-  ipcMain.handle("hf:open-model-page", async (_e, repoId: string): Promise<{ url: string }> => {
-    const url = buildModelPageUrl(repoId);
     await electronShell.openExternal(url);
     return { url };
   });

@@ -5,12 +5,15 @@
  * монолитный файл и зафиксировать новый паттерн "один домен → один ipc-модуль".
  *
  * Каналы:
- *   - scanner:probe-folder   → BookFileSummary[]  (опционально открывает диалог)
- *   - scanner:probe-path     → BookFileSummary[]  (по уже выбранному пути)
+ *   - scanner:probe-folder   → BookFileSummary[]  (открывает диалог выбора папки)
+ *   - scanner:probe-files    → BookFileSummary[]  (по уже выбранным путям)
+ *   - scanner:open-files     → BookFileSummary[]  (открывает диалог выбора файлов)
+ *   - scanner:ocr-support    → OcrSupportInfo
  *   - scanner:parse-preview  → ParsePreview       (TOC + первые 2 чанка, без embed)
  *   - scanner:start-ingest   → IngestResult       (полный pipeline с прогрессом)
  *   - scanner:cancel-ingest  → boolean            (по ingestId)
- *   - scanner:list-state     → ScannerState       (что обработано раньше)
+ *   - scanner:list-history   → агрегированная история по коллекциям
+ *   - scanner:delete-from-collection → удаление книги из Qdrant + state cleanup
  *
  * Прогресс летит в renderer через 'scanner:ingest-progress' (push event).
  */
@@ -38,7 +41,6 @@ import {
   type BookFileSummary,
   type IngestResult,
   type IngestProgress,
-  type ScannerState,
   type ScannerBookState,
   type OcrSupportInfo,
 } from "../lib/scanner/index.js";
@@ -83,11 +85,6 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
     });
     if (sel.canceled || sel.filePaths.length === 0) return [];
     return probeBooks(sel.filePaths[0]);
-  });
-
-  ipcMain.handle("scanner:probe-path", async (_e, folder: string): Promise<BookFileSummary[]> => {
-    if (typeof folder !== "string" || folder.length === 0) return [];
-    return probeBooks(folder);
   });
 
   ipcMain.handle("scanner:probe-files", async (_e, raw): Promise<BookFileSummary[]> => {
@@ -209,10 +206,6 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
     ctrl.abort("user-cancel");
     activeIngests.delete(ingestId);
     return true;
-  });
-
-  ipcMain.handle("scanner:list-state", async (): Promise<ScannerState> => {
-    return stateStore().read();
   });
 
   /**

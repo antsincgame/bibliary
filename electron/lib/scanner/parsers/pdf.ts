@@ -4,6 +4,26 @@ import { cleanParagraph, looksLikeHeading, type BookParser, type ParseOptions, t
 import { isOcrSupported, rasterisePdfPages, recognizeImageBuffer } from "../ocr/index.js";
 
 /**
+ * Жёсткие потолки памяти для PDF parser — защита от OOM на огромных книгах.
+ * Применяются до того как `maxBookChars` из prefs (он работает уже после
+ * парсинга для warning'а). Если файл/текст превышает эти лимиты — парсер
+ * отказывается от работы или прерывает её и возвращает partial результат
+ * с warning, чтобы вызывающий ingest pipeline увидел причину.
+ *
+ * Источник цифр:
+ *   - 200 MB файл — pdfjs raster decode может занять до 3x = 600 MB пиковой
+ *     RAM, что уже опасно для 8 GB машин. Большинство книг в OSP-каталогах
+ *     укладываются в 50 MB; 200 MB — это уже отсканированные тома или
+ *     publisher PDF с embedded fonts на сотни мегабайт.
+ *   - 50 M chars текста = ~100 MB UTF-8 в `allParagraphs[]`. Даже книга
+ *     "Война и мир" — ~3 M chars, так что 50 M — это худший случай для
+ *     корпуса (учебник/энциклопедия), за пределами которого запускать
+ *     ingest бессмысленно (LLM context всё равно не охватит).
+ */
+const MAX_PDF_FILE_BYTES = 200 * 1024 * 1024;
+const MAX_PDF_TEXT_CHARS = 50_000_000;
+
+/**
  * PDF parser based on pdfjs-dist (legacy build).
  *
  * Extracts text by page, merges into paragraphs heuristically (based on
@@ -14,6 +34,22 @@ import { isOcrSupported, rasterisePdfPages, recognizeImageBuffer } from "../ocr/
  * pages with @napi-rs/canvas. OCR is opt-in: heavy operation.
  */
 async function parsePdf(filePath: string, opts: ParseOptions = {}): Promise<ParseResult> {
+  // OOM-guard #1: отказ до чтения, если файл превышает MAX_PDF_FILE_BYTES.
+  // Это дёшево (только stat) и предотвращает 600+ MB пиковой RAM на raster decode.
+  const stat = await fs.stat(filePath);
+  if (stat.size > MAX_PDF_FILE_BYTES) {
+    const sizeMb = (stat.size / 1024 / 1024).toFixed(1);
+    const limitMb = (MAX_PDF_FILE_BYTES / 1024 / 1024).toFixed(0);
+    return {
+      metadata: {
+        title: path.basename(filePath, path.extname(filePath)),
+        warnings: [`PDF too large (${sizeMb} MB > ${limitMb} MB hard limit) — refused to parse`],
+      },
+      sections: [],
+      rawCharCount: 0,
+    };
+  }
+
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const buf = await fs.readFile(filePath);
   const data = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
@@ -67,6 +103,8 @@ async function parsePdf(filePath: string, opts: ParseOptions = {}): Promise<Pars
 
   const allParagraphs: Array<{ page: number; text: string }> = [];
   let totalChars = 0;
+  let pagesParsed = 0;
+  let truncatedAtPage: number | null = null;
   /* AUDIT MED-6: цикл по страницам мог идти минутами на 1000-страничном
      PDF и игнорировал opts.signal — cancel ingest'а не прерывал парсинг.
      Проверяем перед каждой страницей: дешёво, но мгновенно отвечает. */
@@ -74,6 +112,14 @@ async function parsePdf(filePath: string, opts: ParseOptions = {}): Promise<Pars
     if (opts.signal?.aborted) {
       await doc.destroy().catch(() => undefined);
       throw new Error(`pdf parse aborted at page ${pageNum}/${doc.numPages}`);
+    }
+    /* OOM-guard #2: накопленный текст превысил MAX_PDF_TEXT_CHARS.
+       Прерываем чтение и возвращаем то, что уже распарсили — partial
+       result лучше чем краш всего ingest'а. doc.destroy() в конце
+       освободит pdfjs internal structures. */
+    if (totalChars >= MAX_PDF_TEXT_CHARS) {
+      truncatedAtPage = pageNum;
+      break;
     }
     const page = await doc.getPage(pageNum);
     const tc = await page.getTextContent();
@@ -105,6 +151,15 @@ async function parsePdf(filePath: string, opts: ParseOptions = {}): Promise<Pars
       }
     }
     page.cleanup();
+    pagesParsed = pageNum;
+  }
+
+  if (truncatedAtPage !== null) {
+    const limitMchars = (MAX_PDF_TEXT_CHARS / 1_000_000).toFixed(0);
+    warnings.push(
+      `PDF truncated at page ${truncatedAtPage}/${doc.numPages} ` +
+      `(parsed ${pagesParsed}, ~${limitMchars}M chars hard limit reached)`,
+    );
   }
 
   let ocrAppliedPages = 0;

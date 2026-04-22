@@ -7,10 +7,6 @@ export function registerProfileIpc(getMainWindow: () => BrowserWindow | null): v
     return getProfileStore().readAll();
   });
 
-  ipcMain.handle("profile:get", async (_e, id: string): Promise<Profile | null> => {
-    return getProfileStore().getById(id);
-  });
-
   ipcMain.handle("profile:upsert", async (_e, raw: unknown): Promise<Profile> => {
     const validated = ProfileSchema.parse(raw);
     await getProfileStore().upsert(validated);

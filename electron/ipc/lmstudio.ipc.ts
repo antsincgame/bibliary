@@ -1,7 +1,6 @@
 import { ipcMain } from "electron";
 import {
   chatWithPolicy,
-  listOpenAiModels,
   listDownloaded,
   listLoaded,
   loadModel,
@@ -20,11 +19,6 @@ import {
 } from "../lib/rag/index.js";
 
 export function registerLmstudioIpc(): void {
-  ipcMain.handle("lmstudio:models", async (): Promise<Array<{ id: string }>> => {
-    const ids = await listOpenAiModels();
-    return ids.map((id) => ({ id }));
-  });
-
   ipcMain.handle(
     "lmstudio:chat",
     async (

@@ -3,20 +3,10 @@ import {
   fetchQdrantJson,
   QDRANT_URL,
   QDRANT_API_KEY,
-  SCROLL_PAGE_SIZE,
-  QDRANT_POINTS_HARD_CAP,
 } from "../lib/qdrant/http-client.js";
 import { EMBEDDING_DIM } from "../lib/scanner/embedding.js";
 import { getPreferencesStore } from "../lib/preferences/store.js";
 import { CollectionNameSchema, parseOrThrow } from "./validators.js";
-
-interface QdrantPoint {
-  id: string;
-  principle: string;
-  explanation: string;
-  domain: string;
-  tags: string[];
-}
 
 interface CollectionInfo {
   name: string;
@@ -75,52 +65,6 @@ export function registerQdrantIpc(): void {
       return data.result.collections.map((c) => c.name);
     } catch (e) {
       console.error("[qdrant:collections]", e instanceof Error ? e.message : e);
-      return [];
-    }
-  });
-
-  ipcMain.handle("qdrant:points", async (_e, collection: string): Promise<QdrantPoint[]> => {
-    try {
-      const all: QdrantPoint[] = [];
-      let offset: string | number | undefined = undefined;
-      while (all.length < QDRANT_POINTS_HARD_CAP) {
-        const body: Record<string, unknown> = {
-          limit: Math.min(SCROLL_PAGE_SIZE, QDRANT_POINTS_HARD_CAP - all.length),
-          with_payload: true,
-          with_vector: false,
-        };
-        if (offset !== undefined) body.offset = offset;
-        const data = await fetchQdrantJson<{
-          result: {
-            points: Array<{ id: string | number; payload: Record<string, unknown> }>;
-            next_page_offset?: string | number | null;
-          };
-        }>(`${QDRANT_URL}/collections/${encodeURIComponent(collection)}/points/scroll`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        for (const p of data.result.points) {
-          all.push({
-            id: String(p.id),
-            principle: String(p.payload.principle ?? ""),
-            explanation: String(p.payload.explanation ?? ""),
-            domain: String(p.payload.domain ?? ""),
-            tags: Array.isArray(p.payload.tags) ? p.payload.tags.map(String) : [],
-          });
-        }
-        const nextOffset = data.result.next_page_offset;
-        if (nextOffset === null || nextOffset === undefined) break;
-        offset = nextOffset;
-      }
-      if (all.length >= QDRANT_POINTS_HARD_CAP) {
-        console.warn(
-          `[qdrant:points] hit hard cap of ${QDRANT_POINTS_HARD_CAP} for "${collection}"; consider in-app search instead of full scroll`
-        );
-      }
-      return all;
-    } catch (e) {
-      console.error("[qdrant:points]", e instanceof Error ? e.message : e);
       return [];
     }
   });

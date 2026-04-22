@@ -7,7 +7,6 @@ import {
   hasBackup as yarnHasBackup,
   buildSuggestions,
   getModelArch,
-  listKnownModels,
   type KVDtype,
 } from "../lib/yarn/index.js";
 import { telemetry } from "../lib/resilience/index.js";
@@ -80,15 +79,6 @@ export function registerYarnIpc(): void {
       telemetry.logEvent({ type: "yarn.error", modelKey, error });
       throw err;
     }
-  });
-
-  ipcMain.handle("yarn:list-models", async () => {
-    return listKnownModels().map((m) => ({
-      modelKey: m.modelKey,
-      displayName: m.displayName,
-      nativeTokens: m.nativeTokens,
-      yarnMaxTokens: m.yarnMaxTokens,
-    }));
   });
 
   ipcMain.handle("yarn:has-backup", async (_e, modelKey: string) => yarnHasBackup(modelKey));

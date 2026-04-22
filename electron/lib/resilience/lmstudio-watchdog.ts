@@ -11,6 +11,7 @@ import { getLmStudioUrl } from "../endpoints/index.js";
 const DEFAULT_LIVENESS_TIMEOUT_MS = 3_000;
 
 let pollTimer: NodeJS.Timeout | null = null;
+let isActive = false;
 let consecutiveFailures = 0;
 let lastState: "online" | "offline" = "online";
 let unsubStart: (() => void) | null = null;
@@ -30,13 +31,24 @@ let activeConfig: WatchdogConfig = {
 };
 
 /**
- * Update the runtime watchdog configuration. Safe to call from preferences
- * IPC after a `set` -- next activate() reads the new values. If a poll is
- * already in flight it keeps the old interval until next deactivate/activate
- * cycle (caller responsibility if instant change matters).
+ * Update the runtime watchdog configuration. Безопасно вызывать из
+ * preferences IPC после `set`. Если меняется `pollIntervalMs` и watchdog
+ * сейчас активен с уже стоящим таймером (т.е. не во время полинга) —
+ * таймер немедленно перепланируется с новым интервалом. Если poll сейчас
+ * в полёте, новый интервал будет применён к следующему расписанию (его
+ * читают из `activeConfig` после завершения poll).
  */
 export function configureWatchdog(partial: Partial<WatchdogConfig>): void {
+  const prevIntervalMs = activeConfig.pollIntervalMs;
   activeConfig = { ...activeConfig, ...partial };
+  const intervalChanged =
+    typeof partial.pollIntervalMs === "number" &&
+    partial.pollIntervalMs !== prevIntervalMs;
+  if (isActive && pollTimer !== null && intervalChanged) {
+    clearTimeout(pollTimer);
+    pollTimer = null;
+    scheduleNextPoll(activeConfig.pollIntervalMs);
+  }
 }
 
 export function startWatchdog(windowGetter: () => BrowserWindow | null): void {
@@ -62,19 +74,49 @@ export function stopWatchdog(): void {
 }
 
 function activate(): void {
-  if (pollTimer) return;
+  if (isActive) return;
+  isActive = true;
   consecutiveFailures = 0;
   lastState = "online";
-  pollTimer = setInterval(() => {
-    void poll();
-  }, activeConfig.pollIntervalMs);
+  scheduleNextPoll(activeConfig.pollIntervalMs);
 }
 
 function deactivate(): void {
+  isActive = false;
   if (pollTimer) {
-    clearInterval(pollTimer);
+    clearTimeout(pollTimer);
     pollTimer = null;
   }
+}
+
+/**
+ * Планирует следующий запуск poll-цикла через recursive setTimeout.
+ * Гарантии: (1) полинги не накладываются — следующий стартует только после
+ * завершения предыдущего; (2) cadence сохраняется когда poll быстрый
+ * (next = interval - elapsed), но не уходит в минус если poll медленный;
+ * (3) изменения `activeConfig.pollIntervalMs` подхватываются на следующем
+ * scheduling без рестарта watchdog.
+ */
+function scheduleNextPoll(delayMs: number): void {
+  if (!isActive) return;
+  pollTimer = setTimeout(() => {
+    pollTimer = null;
+    void runPollCycle();
+  }, Math.max(0, delayMs));
+}
+
+async function runPollCycle(): Promise<void> {
+  if (!isActive) return;
+  const startedAt = Date.now();
+  try {
+    await poll();
+  } catch (err) {
+    console.error("[watchdog] poll cycle failed:", err instanceof Error ? err.message : err);
+  }
+  if (!isActive) return;
+  const elapsed = Date.now() - startedAt;
+  const wait = activeConfig.pollIntervalMs - elapsed;
+  scheduleNextPoll(wait);
 }
 
 async function poll(): Promise<void> {
@@ -85,7 +127,9 @@ async function poll(): Promise<void> {
       consecutiveFailures = 0;
       telemetry.logEvent({ type: "lmstudio.online" });
       emit("resilience:lmstudio-online", null);
-      void coordinator.resumeAll().catch(() => undefined);
+      void coordinator.resumeAll().catch((err) => {
+        console.error("[watchdog] resumeAll failed:", err instanceof Error ? err.message : err);
+      });
     } else {
       consecutiveFailures = 0;
     }
@@ -97,7 +141,9 @@ async function poll(): Promise<void> {
     lastState = "offline";
     telemetry.logEvent({ type: "lmstudio.offline", consecutiveFailures });
     emit("resilience:lmstudio-offline", { consecutiveFailures });
-    void coordinator.pauseAll("lmstudio-offline").catch(() => undefined);
+    void coordinator.pauseAll("lmstudio-offline").catch((err) => {
+      console.error("[watchdog] pauseAll failed:", err instanceof Error ? err.message : err);
+    });
   }
 }
 
