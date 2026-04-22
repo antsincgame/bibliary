@@ -61,8 +61,17 @@ export interface BookFileSummary {
 /**
  * Scan a directory recursively (capped depth) and return supported files
  * with basic metadata. Does not parse anything.
+ *
+ * `includeImages` defaults to false: при выборе папки пользователю показываем
+ * ТОЛЬКО книги (PDF/EPUB/FB2/DOCX/TXT), скрывая случайные скриншоты/обложки/
+ * фото — пользователь не должен видеть мусор. Картинки для OCR попадают через
+ * explicit drop/file pick (см. probeFiles).
  */
-export async function probeBooks(rootDir: string, maxDepth = 4): Promise<BookFileSummary[]> {
+export async function probeBooks(
+  rootDir: string,
+  maxDepth = 4,
+  includeImages = false,
+): Promise<BookFileSummary[]> {
   const out: BookFileSummary[] = [];
   async function walk(dir: string, depth: number): Promise<void> {
     if (depth > maxDepth) return;
@@ -80,6 +89,7 @@ export async function probeBooks(rootDir: string, maxDepth = 4): Promise<BookFil
       } else if (e.isFile()) {
         const ext = detectExt(e.name);
         if (!ext) continue;
+        if (!includeImages && isImageExt(ext)) continue;
         try {
           const st = await fs.stat(full);
           out.push({

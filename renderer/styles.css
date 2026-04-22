@@ -705,6 +705,15 @@ select option {
   animation: spin 0.6s linear;
 }
 
+.btn-refresh.btn-create {
+  color: var(--gold);
+  font-weight: 600;
+}
+.btn-refresh.btn-create:hover {
+  border-color: var(--gold);
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.3);
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
@@ -2961,17 +2970,19 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   gap: 0;
   border-bottom: 1px solid var(--border);
   margin-bottom: 12px;
+  flex-wrap: wrap;
 }
 .lib-tab {
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
   color: var(--text-dim);
-  padding: 10px 18px;
+  padding: 10px 14px;
   font-family: var(--font-mono);
   font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
   cursor: pointer;
 }
 .lib-tab:hover { color: var(--text); }
@@ -4552,6 +4563,7 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   display: flex;
   gap: 12px;
   margin-bottom: 18px;
+  flex-wrap: wrap;
 }
 .settings-section {
   margin-bottom: 14px;
@@ -4580,7 +4592,7 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   grid-template-columns: 1fr 1fr;
   gap: 10px 20px;
 }
-@media (max-width: 800px) {
+@media (max-width: 1100px) {
   .settings-fields { grid-template-columns: 1fr; }
 }
 .settings-field {
@@ -4604,9 +4616,11 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   display: flex;
   gap: 6px;
   align-items: center;
+  min-width: 0;
 }
 .settings-input {
   flex: 1;
+  min-width: 0;
   background: rgba(0, 0, 0, 0.4);
   color: var(--text);
   border: 1px solid var(--border);
@@ -5211,6 +5225,20 @@ details.forge-collapsible > .forge-collapsible-body {
 }
 .settings-url-status-info {
   color: var(--text-dim);
+}
+
+/* Settings responsive collapse: на узких окнах (включая electron minWidth=960) делаем
+   единую плотную колонку с переносом URL-кнопки и всех action-кнопок. */
+@media (max-width: 1100px) {
+  .settings-input-wrap { flex-wrap: wrap; }
+  .settings-test-btn { padding: 6px 10px; }
+}
+@media (max-width: 720px) {
+  .settings-section-title { font-size: 13px; }
+  .settings-label { font-size: 10px; gap: 6px; flex-wrap: wrap; }
+  .settings-label-range { font-size: 9px; }
+  .settings-input { font-size: 11px; padding: 5px 8px; }
+  .settings-actions .btn { padding: 6px 10px; font-size: 10px; }
 }
 
 /* ===== Models: yarn backup-availability badge ===== */

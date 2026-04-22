@@ -31,7 +31,14 @@ import { t } from "../i18n.js";
  * @property {string} [labelClass] - CSS-класс для label (default "model-select-label")
  * @property {boolean} [bare] - вернуть только select без обёртки (label не создаётся);
  *   полезно для случаев, когда родитель уже имеет свой layout (chat.js header).
+ * @property {boolean} [loadOnSelect] - если true, в опции добавляются скачанные но
+ *   не загруженные модели (с префиксом ↓), при выборе вызывается lmstudio.load().
+ *   Решает кейс "нет загруженных моделей" в чате: пользователь выбирает из ВСЕХ
+ *   доступных в LM Studio и Bibliary автоматически загружает выбранную.
  * @property {(modelKey: string) => void} [onChange] - дополнительный callback при изменении
+ * @property {(modelKey: string) => void} [onLoaded] - вызывается после успешной загрузки
+ *   модели через lmstudio.load (когда loadOnSelect=true и пользователь выбрал downloaded).
+ * @property {(error: Error) => void} [onLoadError] - вызывается при ошибке load.
  * @property {string[]} [hints] - подсказки для pickModel-fallback (substring match по modelKey)
  *
  * @typedef {Object} ModelSelectInstance
@@ -89,28 +96,50 @@ function persistChoice(role, modelKey) {
 }
 
 /**
- * @param {LoadedModel[]} models
+ * @param {LoadedModel[]} loaded
+ * @param {LoadedModel[]} downloaded
  * @param {string} currentValue
  * @param {boolean} showContext
  * @returns {DocumentFragment}
  */
-function buildOptions(models, currentValue, showContext) {
+function buildOptions(loaded, downloaded, currentValue, showContext) {
   const frag = document.createDocumentFragment();
-  if (!Array.isArray(models) || models.length === 0) {
-    frag.appendChild(
-      el("option", { value: "" }, t("modelSelect.noLoaded"))
-    );
+  const haveLoaded = Array.isArray(loaded) && loaded.length > 0;
+  const haveDownloaded = Array.isArray(downloaded) && downloaded.length > 0;
+
+  if (!haveLoaded && !haveDownloaded) {
+    frag.appendChild(el("option", { value: "" }, t("modelSelect.noLoaded")));
     return frag;
   }
-  for (const m of models) {
-    const key = String(m.modelKey ?? "");
-    const labelText = showContext && m.contextLength
-      ? `${key} (${m.contextLength})`
-      : key;
-    const opt = el("option", { value: key }, labelText);
-    if (key === currentValue) /** @type {HTMLOptionElement} */ (opt).selected = true;
-    frag.appendChild(opt);
+
+  if (haveLoaded) {
+    const grp = /** @type {HTMLOptGroupElement} */ (
+      el("optgroup", { label: t("modelSelect.group.loaded") })
+    );
+    for (const m of loaded) {
+      const key = String(m.modelKey ?? "");
+      const labelText = showContext && m.contextLength
+        ? `${key} (${m.contextLength})`
+        : key;
+      const opt = el("option", { value: key }, labelText);
+      if (key === currentValue) /** @type {HTMLOptionElement} */ (opt).selected = true;
+      grp.appendChild(opt);
+    }
+    frag.appendChild(grp);
   }
+
+  if (haveDownloaded) {
+    const grp = /** @type {HTMLOptGroupElement} */ (
+      el("optgroup", { label: t("modelSelect.group.downloaded") })
+    );
+    for (const m of downloaded) {
+      const key = String(m.modelKey ?? "");
+      const opt = el("option", { value: key }, `↓ ${key}`);
+      grp.appendChild(opt);
+    }
+    frag.appendChild(grp);
+  }
+
   return frag;
 }
 
@@ -146,8 +175,11 @@ export function buildModelSelect(opts) {
     : el("div", { class: wrapClass }, [el("label", { class: labelClass }, labelText), select]);
 
   /** @type {LoadedModel[]} */
-  let models = [];
+  let loadedModels = [];
+  /** @type {LoadedModel[]} */
+  let downloadedOnly = [];
   let currentValue = "";
+  let isLoading = false;
 
   async function loadAndApply() {
     /** @type {{ chatModel?: string, agentModel?: string, extractorModel?: string, judgeModel?: string }} */
@@ -156,14 +188,26 @@ export function buildModelSelect(opts) {
       prefs = /** @type {any} */ (await window.api.preferences.getAll());
     } catch { /* keep prefs empty */ }
     try {
-      models = /** @type {LoadedModel[]} */ (
+      loadedModels = /** @type {LoadedModel[]} */ (
         await window.api.lmstudio.listLoaded()
       );
-    } catch { models = []; }
+    } catch { loadedModels = []; }
+
+    if (opts.loadOnSelect) {
+      try {
+        const all = /** @type {LoadedModel[]} */ (
+          await window.api.lmstudio.listDownloaded()
+        );
+        const loadedKeys = new Set(loadedModels.map((m) => m.modelKey));
+        downloadedOnly = all.filter((m) => m.modelKey && !loadedKeys.has(m.modelKey));
+      } catch { downloadedOnly = []; }
+    } else {
+      downloadedOnly = [];
+    }
 
     const prefValue = String(prefs[role + "Model"] ?? "");
-    const stillLoaded = prefValue && models.some((m) => m.modelKey === prefValue);
-    currentValue = stillLoaded ? prefValue : pickBestModel(models, hints);
+    const stillLoaded = prefValue && loadedModels.some((m) => m.modelKey === prefValue);
+    currentValue = stillLoaded ? prefValue : pickBestModel(loadedModels, hints);
 
     /* Если pickBestModel дал значение и pref был пуст/устарел — сразу запишем,
        чтобы другие экземпляры/экраны видели согласованное состояние. */
@@ -172,17 +216,47 @@ export function buildModelSelect(opts) {
     }
 
     while (select.firstChild) select.removeChild(select.firstChild);
-    select.appendChild(buildOptions(models, currentValue, showContext));
-    select.disabled = models.length === 0;
+    select.appendChild(buildOptions(loadedModels, downloadedOnly, currentValue, showContext));
+    /* В loadOnSelect-режиме НЕ блокируем select даже при пустом loaded —
+       пользователь должен иметь возможность выбрать downloaded и автозагрузить. */
+    select.disabled = loadedModels.length === 0 && downloadedOnly.length === 0;
   }
 
-  select.addEventListener("change", () => {
+  async function handleSelectChange() {
+    const value = select.value;
+    const isDownloaded = downloadedOnly.some((m) => m.modelKey === value);
+    if (isDownloaded && opts.loadOnSelect && !isLoading) {
+      isLoading = true;
+      const previousLabel = select.options[select.selectedIndex]?.textContent ?? value;
+      const loadingOpt = select.options[select.selectedIndex];
+      if (loadingOpt) loadingOpt.textContent = `${t("modelSelect.loading")} ${value}`;
+      select.disabled = true;
+      try {
+        await window.api.lmstudio.load(value);
+        await loadAndApply();
+        if (typeof opts.onLoaded === "function") {
+          try { opts.onLoaded(value); } catch { /* user callback */ }
+        }
+      } catch (err) {
+        if (loadingOpt) loadingOpt.textContent = previousLabel;
+        select.disabled = false;
+        const error = err instanceof Error ? err : new Error(String(err));
+        if (typeof opts.onLoadError === "function") {
+          try { opts.onLoadError(error); } catch { /* user callback */ }
+        }
+        return;
+      } finally {
+        isLoading = false;
+      }
+    }
     currentValue = select.value;
     persistChoice(role, currentValue);
     if (typeof opts.onChange === "function") {
-      try { opts.onChange(currentValue); } catch { /* пользователь сам отвечает за свой callback */ }
+      try { opts.onChange(currentValue); } catch { /* user callback */ }
     }
-  });
+  }
+
+  select.addEventListener("change", () => { void handleSelectChange(); });
 
   /* Стартовая загрузка — асинхронно, не блокируем render. */
   void loadAndApply();

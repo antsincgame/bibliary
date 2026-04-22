@@ -311,11 +311,66 @@ export function mountChat() {
     role: "chat",
     selectId: "model-select",
     bare: true,
+    loadOnSelect: true,
+    onLoaded: (modelKey) => {
+      chatToast(t("chat.toast.model_loaded", { model: modelKey }), "success");
+      maybeShowAssistantWelcome();
+    },
+    onLoadError: (err) => {
+      chatToast(t("chat.toast.model_load_fail", { msg: err.message }), "error");
+    },
   });
   oldModelSelect.replaceWith(chatModelInstance.select);
   const modelSelect = chatModelInstance.select;
 
+  const btnCreateCollection = /** @type {HTMLButtonElement|null} */ (
+    document.getElementById("btn-create-collection")
+  );
+
   setupMemoryPopover({ modelSelect, btnMemory, btnMemoryLabel, memoryPopover });
+
+  /**
+   * Если в LM Studio есть модель и у пользователя нет истории — показать
+   * приветственное сообщение от ассистента с инструкцией с чего начать.
+   * Вызывается дважды: при первом mount (если уже есть loaded model) и
+   * после успешной auto-load выбранной downloaded model.
+   */
+  function maybeShowAssistantWelcome() {
+    if (history.length > 0) return;
+    if (!modelSelect.value) return;
+    if (chatArea.querySelector(".welcome-assistant")) return;
+    removeWelcome(chatArea);
+    const collection = collectionSelect.value || t("chat.welcome.no_collection");
+    const model = modelSelect.value;
+    const md = t("chat.welcome.assistant_md", { model, collection });
+    const div = document.createElement("div");
+    div.className = "message message-assistant welcome-assistant";
+    div.innerHTML = renderMarkdown(md);
+    chatArea.appendChild(div);
+    chatArea.scrollTop = chatArea.scrollHeight;
+  }
+
+  async function handleCreateCollection() {
+    const name = window.prompt(t("chat.toast.create_collection_prompt"), "");
+    if (!name) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    try {
+      const result = /** @type {any} */ (await window.api.qdrant.create({ name: trimmed }));
+      if (!result || result.ok === false) {
+        const errMsg = (result && result.error) || "unknown";
+        chatToast(t("chat.toast.create_collection_fail", { msg: errMsg }), "error");
+        return;
+      }
+      chatToast(t("chat.toast.create_collection_ok", { name: trimmed }), "success");
+      await loadCollections();
+      collectionSelect.value = trimmed;
+      maybeShowAssistantWelcome();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      chatToast(t("chat.toast.create_collection_fail", { msg }), "error");
+    }
+  }
 
   /** @param {string} role @param {string} content */
   function addMessage(role, content) {
@@ -485,10 +540,16 @@ export function mountChat() {
   btnSend.addEventListener("click", sendMessage);
   btnRefreshCollections.addEventListener("click", loadCollections);
   btnRefreshModels.addEventListener("click", refreshModels);
+  if (btnCreateCollection) {
+    btnCreateCollection.addEventListener("click", () => void handleCreateCollection());
+  }
+  modelSelect.addEventListener("change", () => {
+    if (modelSelect.value) maybeShowAssistantWelcome();
+  });
 
   loadCollections();
   /* Модели грузятся автоматически внутри buildModelSelect (см. mountChat выше). */
   /* Restore previous session before user starts typing -- non-blocking. */
-  void restoreHistory(chatArea);
+  void restoreHistory(chatArea).then(() => maybeShowAssistantWelcome());
   input.focus();
 }
