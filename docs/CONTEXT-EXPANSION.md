@@ -1,12 +1,14 @@
-# Memory Forge — Universal YaRN Slider
+# Расширение контекста — Universal YaRN Slider
 
 > Phase 3.0 · v2.1.5 · «сокровище индустрии»
+>
+> Внутреннее (исторические) название: Memory Forge. В UI начиная с v2.4 — **«Расширение контекста»** (RU) / **«Context Expansion»** (EN).
 
-Memory Forge — это первая в индустрии «бытовая» абстракция над YaRN. Vibecoder двигает слайдер с пиктограммами «Чат / Документ / Книга / Кодекс / Библиотека» — Bibliary сам считает factor, проверяет VRAM, рекомендует KV-cache dtype, и атомарно патчит `config.json` модели в LM Studio. Без единой строки JSON, без формул, без открывания terminal.
+Расширение контекста — это первая в индустрии «бытовая» абстракция над YaRN. Vibecoder двигает слайдер с пиктограммами «Чат / Документ / Книга / Кодекс / Библиотека» — Bibliary сам считает factor, проверяет VRAM, рекомендует KV-cache dtype, и атомарно патчит `config.json` модели в LM Studio. Без единой строки JSON, без формул, без открывания terminal.
 
 ## Что закрывает
 
-Без Memory Forge, чтобы расширить контекст модели в LM Studio, vibecoder должен:
+Без расширения контекста, чтобы растянуть окно модели в LM Studio, vibecoder должен:
 
 1. Знать что такое RoPE scaling.
 2. Открыть LM Studio → Custom config → ввести JSON руками:
@@ -17,7 +19,7 @@ Memory Forge — это первая в индустрии «бытовая» а
 4. Самому посчитать `factor = target / native`.
 5. Догадаться, что KV-cache раздуется в N раз и не влезет в VRAM.
 
-Memory Forge скрывает всё это под одним кликом по карточке «Книга».
+«Расширение контекста» скрывает всё это под одним кликом по карточке «Книга».
 
 ## Архитектура
 
@@ -165,7 +167,7 @@ const result = await revertRopeScaling("qwen/qwen3.6-35b-a3b");
 
 Только header + presets + range + текущее значение. Без VRAM bar и details — экономит место в небольшом popover'е. Apply + Revert работают.
 
-### `mode: "embedded"` — Forge wizard Step 3 (Phase 3.2)
+### `mode: "embedded"` — мастер дообучения, Step 3 (Phase 3.2)
 
 Без apply-кнопки. Значения экспортируются через `slider.getValue()` в config-generator.
 
@@ -201,7 +203,7 @@ npx tsx scripts/test-yarn-engine.ts
 Vibecoder, никогда не слышавший про YaRN, должен за **20 секунд** на новой модели:
 
 1. Models route → Load
-2. Раскрыть Memory Forge для модели
+2. Раскрыть «Расширение контекста» для модели
 3. Кликнуть пресет «Книга» 📖
 4. Увидеть «✓ помещается в ваш GPU»
 5. Нажать «Применить к модели»
@@ -212,6 +214,6 @@ Vibecoder, никогда не слышавший про YaRN, должен за
 ## Что дальше
 
 - **Phase 3.1** — Hardware Profiler передаёт точный `vramGB` в slider, recommendation становится автоматическим
-- **Phase 3.2** — Forge wizard Step 3 использует тот же slider в режиме `embedded` для выбора `max_seq_length`
-- **Phase 3.3** — после fine-tune, новая модель регистрируется в `ProfileStore` и сразу появляется в Memory Forge
+- **Phase 3.2** — мастер дообучения, Step 3 использует тот же slider в режиме `embedded` для выбора `max_seq_length`
+- **Phase 3.3** — после fine-tune, новая модель регистрируется в `ProfileStore` и сразу появляется в «Расширении контекста»
 - **Live HF lookup** (опционально) — для незнакомых моделей подтягивать `config.json` с Hugging Face и обновлять БД на лету

@@ -11,6 +11,7 @@ import { applyI18n, getLocale, setLocale, listLocales, onLocaleChange, t } from 
 import { mountResilienceBar } from "./components/resilience-bar.js";
 import { getMode, cycleMode, applyToDocument as applyMode, onModeChange } from "./ui-mode.js";
 import { openWelcomeWizard } from "./components/welcome-wizard.js";
+import { maybeShowRebrandToast } from "./components/changelog-toast.js";
 
 const ROUTES = ["chat", "library", "qdrant", "agent", "crystal", "models", "forge", "docs", "settings"];
 const REMOUNT_ON_LOCALE = new Set(["library", "qdrant", "agent", "crystal", "models", "forge", "docs", "settings"]);
@@ -129,6 +130,11 @@ mountResilienceBar();
   showRoute("chat");
   if (!onboardingDone) {
     openWelcomeWizard({ force: true });
+  } else {
+    /* Существующие пользователи: показать changelog-toast о ребрендинге v2.4
+       (Forge → Дообучение, Crystallizer → Извлечение знаний, Memory Forge →
+       Расширение контекста). Новички увидят актуальные термины в wizard. */
+    void maybeShowRebrandToast();
   }
 })();
 

@@ -96,7 +96,7 @@ test-e2e-mvp:     35/35 PASS
 
 ### Где Норад может улучшиться
 
-1. **Рассинхрон между документацией и кодом.** Доки `docs/RESILIENCE.md`, `docs/FORGE.md`, `docs/REPORT-USER-SKILLS.md` отстают от рефакторов (например, всё ещё упоминают `mechanicus.md`, `dataset.ipc.ts`, удалённые IPC). Рекомендация: после каждого экстерминатуса прогонять `Grep` по docs и обновлять.
+1. **Рассинхрон между документацией и кодом.** Доки `docs/RESILIENCE.md`, `docs/FINE-TUNING.md`, `docs/REPORT-USER-SKILLS.md` отстают от рефакторов (например, всё ещё упоминают `mechanicus.md`, `dataset.ipc.ts`, удалённые IPC). Рекомендация: после каждого экстерминатуса прогонять `Grep` по docs и обновлять.
 
 2. **"Pro/Simple/Advanced" 3-уровневый toggle усложняет UI.** UI-tester отметил: переключатель режима не решает проблему, что в Pro по-прежнему виден жаргон (LoRA r, DoRA, QLoRA, Q4_K_M). Рекомендация: 2 уровня "Default + Эксперт", и плотный mini-glossary с tooltip'ами.
 

@@ -1,10 +1,12 @@
-# Forge Local — WSL + Unsloth runner (Phase 3.3, Pro tier)
+# Дообучение (локально) — WSL + Unsloth runner (Phase 3.3, Pro tier)
 
 > v3.0.0 · «полный цикл fine-tune без выхода из Bibliary»
+>
+> Внутреннее (исторические) название: Forge Local. В UI — **«Дообучение → локально»** (RU) / **«Fine-tuning → local»** (EN). Идентификаторы кода (`forge:start-local`, `LocalRunner`, `electron/lib/forge/wsl.ts`) сохранены ради backward compatibility.
 
 ## Что это
 
-Phase 3.3 расширяет Forge до полного локального цикла:
+Phase 3.3 расширяет «Дообучение» до полного локального цикла:
 
 1. **WSL detector** — определяет наличие/версию/distros/CUDA passthrough
 2. **setup-wsl.sh** — one-click bootstrap (venv + unsloth + torch CUDA)
@@ -44,7 +46,7 @@ const info = await detectWSL();
 - `wsl.exe --list --verbose` (на не-Windows возвращает empty)
 - Проверка `nvidia-smi -L` внутри default distro для GPU passthrough
 
-UI рисует green/yellow badge в Forge wizard step 4: green если `installed && gpuPassthrough`, yellow при installed без CUDA.
+UI рисует green/yellow badge в мастере дообучения, step 4: green если `installed && gpuPassthrough`, yellow при installed без CUDA.
 
 ## Setup script (`electron/defaults/forge/setup-wsl.sh`)
 
@@ -57,7 +59,7 @@ UI рисует green/yellow badge в Forge wizard step 4: green если `insta
 5. `pip install -U trl peft accelerate bitsandbytes datasets transformers`
 6. Smoke test: `python -c "import unsloth"`
 
-Запуск из UI: `wsl bash /mnt/c/.../setup-wsl.sh`. Логи стримятся в Forge route.
+Запуск из UI: `wsl bash /mnt/c/.../setup-wsl.sh`. Логи стримятся в маршруте «Дообучение».
 
 ## LocalRunner
 
@@ -94,7 +96,7 @@ const { destPath, copied } = await importGgufToLMStudio(
 // copied: 1
 ```
 
-После копирования модель появляется в LM Studio listDownloaded → автоматически в Bibliary Models route → можно сразу применить Memory Forge YaRN.
+После копирования модель появляется в LM Studio listDownloaded → автоматически в Bibliary Models route → можно сразу применить «Расширение контекста» (YaRN).
 
 ## Eval Harness
 
@@ -176,7 +178,7 @@ const summary = await runEval({
 - `wsl --shutdown && wsl` для рестарта VM
 
 ### OOM во время тренировки
-- Откройте Forge wizard → Step 3 → переключите method на `qlora`
+- Откройте мастер дообучения → Step 3 → переключите method на `qlora`
 - Уменьшите `maxSeqLength` (например 2048 → 1024)
 - Уменьшите `perDeviceBatchSize` до 1
 - Увеличьте `gradientAccumulation` (например 4 → 16)
@@ -188,7 +190,7 @@ const summary = await runEval({
 
 ### Eval Harness падает на judge
 - Загрузите BIG модель в LM Studio с context ≥ 8K
-- Если модель thinking (Qwen3.x) — увеличьте `max_tokens` через Memory Forge
+- Если модель thinking (Qwen3.x) — увеличьте `max_tokens` через «Расширение контекста»
 
 ## Тесты
 

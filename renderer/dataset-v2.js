@@ -5,7 +5,7 @@ import { buildNeonHero, neonDivider } from "./components/neon-helpers.js";
 import { buildModelSelect } from "./components/model-select.js";
 
 /**
- * Phase 3.1 — UI экран «Кристаллизатор концептов».
+ * Phase 3.1 — UI экран «Извлечение знаний» (исторически: Crystallizer).
  * Все вызовы — против реальной LM Studio + реального Qdrant.
  *
  * Источник книг — Library history (scanner:list-history) или прямой пик файла.
@@ -507,7 +507,7 @@ async function startJob(root) {
   renderStats(root);
   renderLog(root);
   renderAccepted(root);
-  pushEvent("job", "Старт кристаллизации…", "info");
+  pushEvent("job", t("crystal.event.started"), "info");
   try {
     const result = await window.api.datasetV2.startExtraction({
       bookSourcePath: STATE.selectedBook,

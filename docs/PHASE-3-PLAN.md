@@ -3,6 +3,12 @@
 > После Phase 1 (5 bug fixes) и Phase 2 (5 extract-method refactors) кодовая
 > база renderer'а готова к feature work. Этот документ — глубокий план
 > следующей фазы с ROI-расчётом по `/omnissiah-docs/refactor-rubric`.
+>
+> **Глоссарий ребрендинга v2.4 (см. `data/CHANGELOG.md`):**
+> Crystallizer → Извлечение знаний (Knowledge Extraction);
+> Forge / Forge wizard → Дообучение (Fine-tuning);
+> Memory Forge → Расширение контекста (Context Expansion).
+> Идентификаторы кода и пути файлов сохранены ради backward compatibility.
 
 ---
 

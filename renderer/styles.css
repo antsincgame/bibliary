@@ -556,6 +556,54 @@ body::after {
   color: #00ff66;
 }
 
+/* Changelog toast — нижний правый угол, нон-блокирующий */
+.changelog-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  max-width: 380px;
+  background: var(--panel, #0d0d0d);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  border-left: 2px solid #00ff66;
+  border-radius: 2px;
+  padding: 14px 16px;
+  z-index: 9000;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  font-size: 12px;
+  line-height: 1.5;
+  animation: changelog-toast-in 220ms ease-out;
+}
+@keyframes changelog-toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.changelog-toast-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: #00ff66;
+  letter-spacing: 0.02em;
+}
+.changelog-toast-body {
+  color: var(--text, #e8e8e8);
+  margin-bottom: 10px;
+}
+.changelog-toast-dismiss {
+  background: transparent;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.2));
+  color: var(--text, #e8e8e8);
+  padding: 6px 14px;
+  font-size: 12px;
+  font-family: inherit;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.changelog-toast-dismiss:hover {
+  background: rgba(0, 255, 102, 0.08);
+  border-color: rgba(0, 255, 102, 0.4);
+}
+
 /* Top bar */
 .top-bar {
   display: flex;

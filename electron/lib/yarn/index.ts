@@ -1,7 +1,7 @@
 /**
- * Memory Forge (YaRN) — barrel.
+ * Context Expansion (YaRN) — barrel.
  *
- * См. docs/MEMORY-FORGE.md и план Phase 3.0.
+ * См. docs/CONTEXT-EXPANSION.md и план Phase 3.0.
  */
 
 export {

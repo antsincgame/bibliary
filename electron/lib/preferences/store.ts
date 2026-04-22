@@ -108,6 +108,11 @@ export const PreferencesSchema = z.object({
   onboardingDone: z.boolean().default(false),
   /** Версия пройденного wizard. Позволяет показать wizard повторно при major update. */
   onboardingVersion: z.number().int().min(0).max(1000).default(0),
+
+  // -- Changelog toasts (показываются 1 раз для существующих пользователей) --
+  /** True после того как пользователь увидел и закрыл toast о переименовании
+   *  Forge → Дообучение / Crystallizer → Извлечение знаний / Memory Forge → Расширение контекста (v2.4). */
+  seenRebrandV2: z.boolean().default(false),
 });
 
 export type Preferences = z.infer<typeof PreferencesSchema>;
