@@ -22,7 +22,7 @@ import { ingestBook, ScannerStateStore } from "../scanner/index.js";
 import { fetchQdrantJson, QDRANT_URL, QDRANT_API_KEY } from "../qdrant/http-client.js";
 import { searchRelevantChunks, getRagConfig } from "../rag/index.js";
 import { getPromptStore, DatasetRolesSchema } from "../prompts/store.js";
-import { searchHelp } from "../help-kb/index.js";
+import { searchHelp, recallMemory } from "../help-kb/index.js";
 import type { ToolDefinition, OpenAiToolDefinition } from "./types.js";
 
 /* ───────────────── helpers ───────────────── */
@@ -149,6 +149,32 @@ const searchHelpTool: ToolDefinition<
   },
 };
 
+const recallMemoryTool: ToolDefinition<
+  { query: string; limit?: number },
+  Array<{ ts: string; userMessage: string; assistantAnswer: string; score: number }>
+> = {
+  name: "recall_memory",
+  description:
+    "Поиск в long-term memory: прошлые user→assistant пары из всех предыдущих сессий агента. " +
+    "Используй когда пользователь говорит 'как ты предлагал в прошлый раз', 'мы это уже обсуждали', " +
+    "или когда вопрос похож на типичный — может быть готовое решение. " +
+    "Возвращает топ-K похожих пар с timestamp.",
+  policy: "auto",
+  argsSchema: z.object({
+    query: z.string().min(1).describe("вопрос или ключевые слова для поиска в прошлых разговорах"),
+    limit: z.number().int().min(1).max(10).optional().describe("сколько найти (default 5)"),
+  }),
+  execute: async ({ query, limit }, ctx) => {
+    const hits = await recallMemory(query, { limit: limit ?? 5, signal: ctx.signal });
+    return hits.map((h) => ({
+      ts: h.ts,
+      userMessage: h.userMessage.length > 200 ? h.userMessage.slice(0, 200) + "…" : h.userMessage,
+      assistantAnswer: h.assistantAnswer.length > 600 ? h.assistantAnswer.slice(0, 600) + "…" : h.assistantAnswer,
+      score: +h.score.toFixed(3),
+    }));
+  },
+};
+
 const bookhunterSearchTool: ToolDefinition<
   { query: string; sources?: Array<"gutendex" | "archive" | "openlibrary" | "arxiv">; language?: string },
   unknown
@@ -256,6 +282,7 @@ const writeRoleTool: ToolDefinition<
 
 const ALL_TOOLS: ToolDefinition<never, unknown>[] = [
   searchHelpTool as unknown as ToolDefinition<never, unknown>,
+  recallMemoryTool as unknown as ToolDefinition<never, unknown>,
   listCollectionsTool as unknown as ToolDefinition<never, unknown>,
   searchCollectionTool as unknown as ToolDefinition<never, unknown>,
   listBooksTool as unknown as ToolDefinition<never, unknown>,

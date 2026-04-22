@@ -23,6 +23,7 @@ import {
   type OpenAiToolDefinition,
 } from "../lib/agent/index.js";
 import { chatWithToolsAndPolicy, type ToolMessage } from "../lmstudio-client.js";
+import { rememberTurn } from "../lib/help-kb/index.js";
 
 const activeAgents = new Map<string, AbortController>();
 /* pendingApprovals хранит agentId, чтобы cancel одного агента не уронил
@@ -128,6 +129,17 @@ export function registerAgentIpc(getMainWindow: () => BrowserWindow | null): voi
             };
           },
         });
+        /* B7: long-term memory — fire-and-forget upsert успешного turn.
+           НЕ блокирует return: даже если Qdrant offline или embed упадёт,
+           пользователь получит ответ; ошибки только в console. */
+        if (result.finalAnswer && !result.aborted) {
+          void rememberTurn({
+            ts: new Date().toISOString(),
+            userMessage: args.userMessage,
+            assistantAnswer: result.finalAnswer,
+            agentId,
+          });
+        }
         return { ...result, agentId };
       } finally {
         activeAgents.delete(agentId);
