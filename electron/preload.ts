@@ -42,14 +42,6 @@ interface ServerStatus {
   version?: string;
 }
 
-type TelemetryEvent = Record<string, unknown> & { type: string; ts: string };
-
-interface UnfinishedBatch {
-  pipeline: string;
-  id: string;
-  snapshot: unknown;
-}
-
 interface QdrantCollectionsListItem {
   name: string;
   pointsCount: number;
@@ -82,20 +74,17 @@ interface QdrantSearchHit {
   payload: Record<string, unknown>;
 }
 
-/* Inquisitor sweep 2026-04-22 (после OMNISSIAH deep-check):
-   Удалено 13 dead preload методов и соответствующие IPC handlers в main:
-   - getPoints (top), qdrant.points, qdrant.list, getModels (top): дубликаты LIVE-методов
-   - bookhunter.download: замещён downloadAndIngest (LIVE)
-   - scanner.probePath: замещён probeFolder + probeFiles (LIVE)
-   - profile.get, yarn.listModels: одиночные геттеры без UI-потребителя
-   - system.envSummary: замещён probeServices + prefs + renderer-probe
-   - system.hardwarePresets: замещён curated-models + hardware(force)
-   - system.invalidateHardwareCache: замещён hardware(force=true)
-   - hf.openModelPage: renderer открывает HF страницу через window.open напрямую
-   - scanner.listState: замещён listHistory (агрегирует state)
-   SCAFFOLDING (сохранены): forge.genConfig/listRuns, hf.searchModels/modelInfo,
-   wsl.detect, chatHistory.clear, resilience.scanUnfinished/telemetryTail,
-   forgeLocal.* (Phase 3.3 Pro tier UI ждёт реализации). */
+/* Servitor sweep 2026-04-22 (вторая волна, после god+sherlok аудита):
+   Удалены 5 dead preload методов и соответствующие IPC handlers:
+   - resilience.scanUnfinished + resilience:scan-unfinished
+   - resilience.telemetryTail + resilience:telemetry-tail
+   - system.curatedModels + system:curated-models (curated JSON используется
+     только backend'ом model-profile/dataset-v2, не renderer'ом)
+   - chatHistory.clear + chat-history:clear (UI кнопки нет; load/save живут)
+   - forge.listRuns + forge:list-runs (нет management UI)
+   Оставлены: forge.genConfig (документирован как public API в FINE-TUNING.md),
+   resilience.onLmstudioOffline/Online (active в resilience-bar.js),
+   все *.ipc.ts экспорты abortAll* для shutdown-hook. */
 contextBridge.exposeInMainWorld("api", {
   getCollections: (): Promise<string[]> => ipcRenderer.invoke("qdrant:collections"),
 
@@ -141,9 +130,6 @@ contextBridge.exposeInMainWorld("api", {
   },
 
   resilience: {
-    scanUnfinished: (): Promise<UnfinishedBatch[]> => ipcRenderer.invoke("resilience:scan-unfinished"),
-    telemetryTail: (n: number): Promise<TelemetryEvent[]> =>
-      ipcRenderer.invoke("resilience:telemetry-tail", n),
     onLmstudioOffline: (callback: (payload: { consecutiveFailures: number }) => void): (() => void) => {
       const listener = (_e: unknown, payload: { consecutiveFailures: number }): void => callback(payload);
       ipcRenderer.on("resilience:lmstudio-offline", listener);
@@ -176,8 +162,6 @@ contextBridge.exposeInMainWorld("api", {
   system: {
     hardware: (force?: boolean): Promise<unknown> =>
       ipcRenderer.invoke("system:hardware-info", { force: force === true }),
-    /** Кураторский список рекомендованных моделей для wizard. */
-    curatedModels: (): Promise<unknown> => ipcRenderer.invoke("system:curated-models"),
     /** Параллельный health-check LM Studio + Qdrant для onboarding wizard. */
     probeServices: (): Promise<{
       lmStudio: { online: boolean; version?: string; url: string };
@@ -207,7 +191,6 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.invoke("chat-history:load"),
     save: (messages: Array<{ role: string; content: string }>): Promise<{ saved: number }> =>
       ipcRenderer.invoke("chat-history:save", messages),
-    clear: (): Promise<boolean> => ipcRenderer.invoke("chat-history:clear"),
   },
 
   forge: {
@@ -221,7 +204,6 @@ contextBridge.exposeInMainWorld("api", {
     genConfig: (args: { spec: unknown; kind: "unsloth" | "axolotl" }): Promise<{ content: string; ext: string }> =>
       ipcRenderer.invoke("forge:gen-config", args),
     openBundleFolder: (runId: string): Promise<string> => ipcRenderer.invoke("forge:open-bundle-folder", runId),
-    listRuns: (): Promise<unknown[]> => ipcRenderer.invoke("forge:list-runs"),
     markStatus: (runId: string, status: string): Promise<unknown> =>
       ipcRenderer.invoke("forge:mark-status", { runId, status }),
   },

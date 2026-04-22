@@ -74,12 +74,4 @@ export function registerChatHistoryIpc(): void {
     return { saved: messages.length };
   });
 
-  ipcMain.handle("chat-history:clear", async (): Promise<boolean> => {
-    try {
-      await fs.unlink(historyPath());
-      return true;
-    } catch {
-      return false;
-    }
-  });
 }

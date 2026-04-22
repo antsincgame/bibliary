@@ -15,7 +15,6 @@ import { registerForgeIpc, abortAllForgeLocal, abortAllForgeEval } from "./forge
 import { registerSystemIpc } from "./system.ipc.js";
 import { registerProfileIpc } from "./profile.ipc.js";
 import { registerYarnIpc } from "./yarn.ipc.js";
-import { registerResilienceIpc } from "./resilience.ipc.js";
 import { registerWslIpc } from "./wsl.ipc.js";
 import { registerScannerIpc, abortAllIngests } from "./scanner.ipc.js";
 import { registerDatasetV2Ipc, abortAllDatasetV2 } from "./dataset-v2.ipc.js";
@@ -40,7 +39,6 @@ export function registerAllIpcHandlers(getMainWindow: () => BrowserWindow | null
   registerSystemIpc();
   registerProfileIpc(getMainWindow);
   registerYarnIpc();
-  registerResilienceIpc();
   registerWslIpc();
   registerScannerIpc(getMainWindow);
   registerDatasetV2Ipc(getMainWindow);
