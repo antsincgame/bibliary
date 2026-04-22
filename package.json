@@ -30,6 +30,8 @@
     "test:e2e:quality": "tsx scripts/e2e-quality.ts",
     "build:help-kb": "tsx scripts/build-help-kb.ts",
     "test:help-kb": "tsx scripts/test-help-kb.ts",
+    "test:agent-internals": "tsx scripts/test-agent-internals.ts",
+    "test:agent-memory-live": "tsx scripts/test-agent-memory-live.ts",
     "lint": "tsc -p tsconfig.electron.json --noEmit && eslint \"renderer/**/*.js\" --ignore-pattern \"renderer/vendor/**\" --max-warnings=0",
     "lint:fix": "eslint \"renderer/**/*.js\" --ignore-pattern \"renderer/vendor/**\" --fix"
   },

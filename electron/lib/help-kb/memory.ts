@@ -24,9 +24,9 @@ import { DEFAULT_EMBED_MODEL, EMBEDDING_DIM, EMBED_MAX_INPUT_CHARS } from "../sc
 export const MEMORY_COLLECTION = "bibliary_memory";
 
 /** Минимальная длина user/assistant message чтобы попасть в память. */
-const MIN_REMEMBER_CHARS = 20;
+export const MIN_REMEMBER_CHARS = 20;
 /** Hard cap на длину одной memory entry чтобы не раздувать payload. */
-const MAX_MEMORY_TEXT_CHARS = 4000;
+export const MAX_MEMORY_TEXT_CHARS = 4000;
 
 export interface MemoryEntry {
   ts: string;
@@ -48,7 +48,7 @@ interface QdrantSearchResponse {
 
 let memoryCollectionEnsured = false;
 
-function deterministicId(seed: string): string {
+export function deterministicId(seed: string): string {
   const hex = createHash("sha256").update(seed).digest("hex");
   return [
     hex.slice(0, 8),
@@ -83,7 +83,7 @@ async function ensureMemoryCollection(signal?: AbortSignal): Promise<void> {
   memoryCollectionEnsured = true;
 }
 
-function shouldRemember(entry: MemoryEntry): boolean {
+export function shouldRemember(entry: MemoryEntry): boolean {
   const u = entry.userMessage.trim();
   const a = entry.assistantAnswer.trim();
   if (u.length < MIN_REMEMBER_CHARS) return false;
@@ -93,7 +93,7 @@ function shouldRemember(entry: MemoryEntry): boolean {
   return true;
 }
 
-function buildMemoryText(entry: MemoryEntry): string {
+export function buildMemoryText(entry: MemoryEntry): string {
   /* Embed обоих ролей вместе — это даёт лучший recall на похожих вопросах,
      потому что ответ часто содержит ключевые термины которых не было в
      вопросе. Format совпадает с Karpathy LLM Wiki entry. */

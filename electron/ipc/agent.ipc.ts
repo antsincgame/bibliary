@@ -17,6 +17,7 @@ import { ipcMain, type BrowserWindow } from "electron";
 import { randomUUID } from "crypto";
 import {
   runAgentLoop,
+  sanitizeAgentHistory,
   type AgentEvent,
   type AgentLoopResult,
   type AgentMessage,
@@ -80,26 +81,11 @@ export function registerAgentIpc(getMainWindow: () => BrowserWindow | null): voi
         }
       };
 
-      /* B1 (god+wiki): multiturn-история. Раньше runAgentLoop получал
-         ТОЛЬКО последнее user-сообщение → агент терял контекст между
-         реплик. Теперь UI присылает history (cap ~50, отфильтровано
-         от tool-блоков), мы санитизируем и аппендим userMessage. */
-      const sanitizedHistory: AgentMessage[] = Array.isArray(args.history)
-        ? args.history
-            .filter(
-              (m): m is { role: "user" | "assistant"; content: string } =>
-                m !== null
-                && typeof m === "object"
-                && (m.role === "user" || m.role === "assistant")
-                && typeof m.content === "string"
-                && m.content.length > 0
-            )
-            .slice(-50)
-            .map((m) => ({ role: m.role, content: m.content }))
-        : [];
-
+      /* B1 (god+wiki): multiturn-история. Логика санитизации вынесена
+         в чистый helper `sanitizeAgentHistory` чтобы покрыть unit-тестами
+         (см. scripts/test-agent-internals.ts). */
       const messages: AgentMessage[] = [
-        ...sanitizedHistory,
+        ...sanitizeAgentHistory(args.history),
         { role: "user", content: args.userMessage },
       ];
 

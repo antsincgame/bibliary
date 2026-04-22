@@ -14,3 +14,4 @@ export { DEFAULT_BUDGET } from "./types.js";
 export { getTool, listToolDefinitions, listToolNames, isPolicyAuto, describeToolCall } from "./tools.js";
 export { runAgentLoop } from "./loop.js";
 export type { AgentLoopArgs, AgentLoopResult } from "./loop.js";
+export { sanitizeAgentHistory, DEFAULT_HISTORY_CAP } from "./history-sanitize.js";
