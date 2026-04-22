@@ -3,28 +3,26 @@ import { el, clear } from "../dom.js";
 import { t } from "../i18n.js";
 
 const LEGACY_STORAGE_KEY = "bibliary_setup_done";
-const ONBOARDING_VERSION = 1;
-const STEP_COUNT = 5;
+const ONBOARDING_VERSION = 2;
+const STEP_COUNT = 4;
 
 /**
- * Smart Onboarding Wizard — 5 шагов:
- *   0 Hero          → приветствие
- *   1 Connectivity  → health-check LM Studio + Qdrant с soft-skip
- *   2 Hardware      → CPU/RAM/GPU/VRAM (детект через system.hardware)
- *   3 Models        → реальные loaded + downloaded + кураторские
- *                     рекомендации + 4 ролевых селектора (chat/agent/extractor/judge)
- *   4 Done          → persist в preferences (onboardingDone, *Model, URLs)
+ * Onboarding wizard v2 — 4 шага (был 5):
+ *   0 Hero       → приветствие
+ *   1 Connect    → health-check LM Studio + Qdrant с visible feedback
+ *   2 Setup      → железо (auto-detect) + дефолтная модель чата (single picker)
+ *                  Блок "кураторские рекомендации" удалён по требованию:
+ *                  пользователь умеет качать модели в LM Studio сам.
+ *   3 Done       → persist в preferences (onboardingDone, chatModel, URLs)
  *
- * Открывается:
- *   - На первом запуске (если preferences.onboardingDone !== true)
- *   - Через Settings → "Пройти setup заново" (opts.force)
+ * Визуально — /2666 HUD-нотация: моноширинный шрифт, кислотный акцент,
+ * угловые скобки, статус-бейджи [OK] / [ERR] / [..].
  *
  * @param {object} [opts]
- * @param {boolean} [opts.force] - открыть даже если уже пройден
+ * @param {boolean} [opts.force]
  */
 export function openWelcomeWizard(opts) {
   if (document.getElementById("welcome-wizard-overlay")) return;
-  /* Force-режим обходит проверку; иначе caller (router.js) уже проверил prefs. */
   if (opts?.force !== true && isLegacyDone()) return;
 
   const overlay = el("div", {
@@ -37,13 +35,12 @@ export function openWelcomeWizard(opts) {
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 
-  /** @type {{ step: number, hardware: any, services: any, curated: any, selected: { chat: string, agent: string, extractor: string, judge: string }, urlsTouched: { lm: boolean, qd: boolean } }} */
+  /** @type {{ step: number, hardware: any, services: any, chatModel: string, urlsTouched: { lm: boolean, qd: boolean } }} */
   const STATE = {
     step: 0,
     hardware: null,
     services: null,
-    curated: null,
-    selected: { chat: "", agent: "", extractor: "", judge: "" },
+    chatModel: "",
     urlsTouched: { lm: false, qd: false },
   };
 
@@ -54,9 +51,8 @@ export function openWelcomeWizard(opts) {
     modal.appendChild(buildHeader());
     if (STATE.step === 0) modal.appendChild(buildHero());
     else if (STATE.step === 1) modal.appendChild(await buildConnectivity());
-    else if (STATE.step === 2) modal.appendChild(await buildHardware());
-    else if (STATE.step === 3) modal.appendChild(await buildModels());
-    else if (STATE.step === 4) modal.appendChild(buildDone());
+    else if (STATE.step === 2) modal.appendChild(await buildSetup());
+    else if (STATE.step === 3) modal.appendChild(buildDone());
     modal.appendChild(buildFooter());
   }
 
@@ -94,7 +90,7 @@ export function openWelcomeWizard(opts) {
     ]);
   }
 
-  /* ─── Шаг 1: Connectivity ─────────────────────────────────────────────── */
+  /* ─── Step 1: Connectivity ────────────────────────────────────────────── */
 
   async function buildConnectivity() {
     const wrap = el("div", { class: "ww-step ww-step-conn" }, [
@@ -107,26 +103,24 @@ export function openWelcomeWizard(opts) {
     grid.append(lmCard, qdCard);
     wrap.appendChild(grid);
 
-    const retryBtn = el(
+    const retryBtn = /** @type {HTMLButtonElement} */ (el(
       "button",
       { class: "btn btn-ghost ww-conn-retry", type: "button" },
-      t("ww.conn.retry")
-    );
-    retryBtn.addEventListener("click", () => {
-      void doProbe();
-    });
-    wrap.appendChild(retryBtn);
-
-    /* soft-skip note — всегда показываем, даже если оба online */
-    wrap.appendChild(
-      el("p", { class: "ww-p ww-p-muted ww-conn-skip-note" }, t("ww.conn.skipNote"))
-    );
+      t("ww.conn.retry"),
+    ));
+    let isProbing = false;
 
     async function doProbe() {
+      if (isProbing) return;
+      isProbing = true;
+      retryBtn.disabled = true;
+      retryBtn.textContent = t("ww.conn.probing");
+      retryBtn.setAttribute("aria-busy", "true");
       lmCard.className = "ww-conn-card ww-conn-card-loading";
       qdCard.className = "ww-conn-card ww-conn-card-loading";
       lmCard.textContent = t("ww.conn.probing");
       qdCard.textContent = t("ww.conn.probing");
+      const startedAt = Date.now();
       try {
         STATE.services = /** @type {any} */ (await window.api.system.probeServices());
         renderConnCard(lmCard, "lm", STATE.services.lmStudio);
@@ -134,8 +128,21 @@ export function openWelcomeWizard(opts) {
       } catch (e) {
         renderConnCard(lmCard, "lm", { online: false, url: "?", error: errMsg(e) });
         renderConnCard(qdCard, "qd", { online: false, url: "?", error: errMsg(e) });
+      } finally {
+        const elapsed = Date.now() - startedAt;
+        if (elapsed < 250) await new Promise((r) => setTimeout(r, 250 - elapsed));
+        retryBtn.disabled = false;
+        retryBtn.textContent = t("ww.conn.retry");
+        retryBtn.removeAttribute("aria-busy");
+        isProbing = false;
       }
     }
+
+    retryBtn.addEventListener("click", () => { void doProbe(); });
+    wrap.appendChild(retryBtn);
+    wrap.appendChild(
+      el("p", { class: "ww-p ww-p-muted ww-conn-skip-note" }, t("ww.conn.skipNote"))
+    );
 
     void doProbe();
     return wrap;
@@ -153,8 +160,8 @@ export function openWelcomeWizard(opts) {
         "span",
         { class: "ww-conn-card-status" },
         isOnline
-          ? "✓ " + (status.version ? `v${status.version}` : t("ww.conn.online"))
-          : "✗ " + t("ww.conn.offline")
+          ? "[OK] " + (status.version ? `v${status.version}` : t("ww.conn.online"))
+          : "[ERR] " + t("ww.conn.offline")
       ),
     ]);
     card.appendChild(head);
@@ -186,26 +193,38 @@ export function openWelcomeWizard(opts) {
     }
   }
 
-  /* ─── Шаг 2: Hardware (как раньше) ────────────────────────────────────── */
+  /* ─── Step 2: Setup (Hardware + Default Model в одном шаге) ────────────── */
 
-  async function buildHardware() {
-    const wrap = el("div", { class: "ww-step" }, [
-      el("h2", { class: "ww-h2" }, t("ww.hardware.title")),
-      el("p", { class: "ww-p" }, t("ww.hardware.sub")),
+  async function buildSetup() {
+    const wrap = el("div", { class: "ww-step ww-step-setup" }, [
+      el("h2", { class: "ww-h2" }, t("ww.setup.title")),
+      el("p", { class: "ww-p" }, t("ww.setup.sub")),
     ]);
-    const card = el("div", { class: "ww-card ww-card-loading" }, t("ww.hardware.detecting"));
-    wrap.appendChild(card);
+
+    const hwBlock = el("div", { class: "ww-setup-block" }, [
+      el("div", { class: "ww-setup-block-label" }, t("ww.setup.hw_label")),
+    ]);
+    const hwCard = el("div", { class: "ww-card ww-card-loading" }, t("ww.hardware.detecting"));
+    hwBlock.appendChild(hwCard);
+    wrap.appendChild(hwBlock);
 
     try {
       const hw = /** @type {any} */ (await window.api.system.hardware(true));
       STATE.hardware = hw;
-      clear(card);
-      card.classList.remove("ww-card-loading");
-      card.appendChild(buildHardwareCard(hw));
+      clear(hwCard);
+      hwCard.classList.remove("ww-card-loading");
+      hwCard.appendChild(buildHardwareCard(hw));
     } catch (e) {
-      clear(card);
-      card.appendChild(el("div", { class: "ww-error" }, t("ww.hardware.error", { msg: errMsg(e) })));
+      clear(hwCard);
+      hwCard.appendChild(el("div", { class: "ww-error" }, t("ww.hardware.error", { msg: errMsg(e) })));
     }
+
+    const modelBlock = el("div", { class: "ww-setup-block" }, [
+      el("div", { class: "ww-setup-block-label" }, t("ww.setup.model_label")),
+      el("p", { class: "ww-p ww-p-muted ww-setup-model-hint" }, t("ww.setup.model_hint")),
+    ]);
+    modelBlock.appendChild(await buildDefaultModelPicker());
+    wrap.appendChild(modelBlock);
 
     return wrap;
   }
@@ -225,212 +244,52 @@ export function openWelcomeWizard(opts) {
     return grid;
   }
 
-  /* ─── Шаг 3: Models — реальные loaded + downloaded + кураторские ──────── */
-
-  async function buildModels() {
-    const wrap = el("div", { class: "ww-step ww-step-models" }, [
-      el("h2", { class: "ww-h2" }, t("ww.models.title")),
-      el("p", { class: "ww-p" }, t("ww.models.sub")),
-    ]);
-
+  /**
+   * Один селектор default chat model. Показывает union loaded + downloaded,
+   * downloaded помечены префиксом ↓. Persist в preferences.chatModel при
+   * выборе. Никаких ролевых селекторов / smart-кнопки / curated-блока.
+   */
+  async function buildDefaultModelPicker() {
     /** @type {any[]} */
     let loaded = [];
     /** @type {any[]} */
     let downloaded = [];
-    try {
-      loaded = /** @type {any[]} */ (await window.api.lmstudio.listLoaded());
-    } catch { loaded = []; }
-    try {
-      downloaded = /** @type {any[]} */ (await window.api.lmstudio.listDownloaded());
-    } catch { downloaded = []; }
+    try { loaded = /** @type {any[]} */ (await window.api.lmstudio.listLoaded()); } catch { loaded = []; }
+    try { downloaded = /** @type {any[]} */ (await window.api.lmstudio.listDownloaded()); } catch { downloaded = []; }
 
-    if (!STATE.curated) {
-      try {
-        STATE.curated = /** @type {any} */ (await window.api.system.curatedModels());
-      } catch { STATE.curated = { models: [] }; }
-    }
-
-    /* Загруженные модели */
-    wrap.appendChild(
-      buildModelSection("ww.models.loaded.title", loaded, (m) => m.modelKey, true)
-    );
-
-    /* Скачанные но не активные */
     const loadedKeys = new Set(loaded.map((m) => m.modelKey));
-    const onlyDownloaded = downloaded.filter((m) => !loadedKeys.has(m.modelKey));
-    wrap.appendChild(
-      buildModelSection("ww.models.downloaded.title", onlyDownloaded, (m) => m.modelKey, false)
-    );
+    const downloadedOnly = downloaded.filter((m) => m.modelKey && !loadedKeys.has(m.modelKey));
 
-    /* Кураторский список под VRAM */
-    const vram = STATE.hardware?.bestGpu?.vramGB ?? 0;
-    const fitting = (STATE.curated?.models ?? []).filter((m) => vram === 0 || m.minVramGB <= vram);
-    wrap.appendChild(buildCuratedSection(fitting));
-
-    /* 4 ролевых селектора + smart-кнопка */
-    wrap.appendChild(buildRolePickers(loaded));
-
-    return wrap;
-  }
-
-  function buildModelSection(titleKey, models, getKey, isLoaded) {
-    const sec = el("div", { class: "ww-models-sec" }, [
-      el("h3", { class: "ww-h3" }, t(titleKey) + ` (${models.length})`),
-    ]);
-    if (models.length === 0) {
-      sec.appendChild(el("div", { class: "ww-models-empty" }, t("ww.models.empty")));
-      return sec;
-    }
-    const list = el("div", { class: "ww-models-list" });
-    for (const m of models) {
-      const key = getKey(m);
-      const ctx = m.contextLength ? ` · ${(m.contextLength / 1024).toFixed(0)}K ctx` : "";
-      const quant = m.quantization ? ` · ${m.quantization}` : "";
-      list.appendChild(
-        el("div", { class: "ww-model-row" + (isLoaded ? " ww-model-row-loaded" : "") }, [
-          el("span", { class: "ww-model-key" }, key),
-          el("span", { class: "ww-model-meta" }, `${quant}${ctx}`),
-        ])
-      );
-    }
-    sec.appendChild(list);
-    return sec;
-  }
-
-  function buildCuratedSection(fitting) {
-    const sec = el("div", { class: "ww-models-sec ww-models-sec-curated" }, [
-      el("h3", { class: "ww-h3" }, t("ww.models.curated.title") + ` (${fitting.length})`),
-      el("p", { class: "ww-p ww-p-muted" }, t("ww.models.curated.sub")),
-    ]);
-    if (fitting.length === 0) {
-      sec.appendChild(el("div", { class: "ww-models-empty" }, t("ww.models.curated.empty")));
-      return sec;
-    }
-    const list = el("div", { class: "ww-models-list" });
-    for (const m of fitting) {
-      const card = el("div", { class: "ww-curated-card" }, [
-        el("div", { class: "ww-curated-head" }, [
-          el("span", { class: "ww-curated-name" }, m.displayName),
-          el("span", { class: "ww-curated-vram" }, `${m.minVramGB}-${m.recommendedVramGB} GB VRAM`),
-        ]),
-        el("div", { class: "ww-curated-desc" }, m.description),
-        el("div", { class: "ww-curated-meta" }, `${m.modelKey} · ${m.quant} · ${m.sizeGB} GB`),
-      ]);
-      const openBtn = el(
-        "button",
-        { class: "btn btn-ghost ww-curated-btn", type: "button" },
-        t("ww.models.curated.open")
-      );
-      openBtn.addEventListener("click", () => {
-        const url = `https://huggingface.co/${m.hfQuantRepo}`;
-        try {
-          window.open(url, "_blank", "noopener,noreferrer");
-        } catch { /* popup blocker — игнорируем */ }
-      });
-      card.appendChild(openBtn);
-      list.appendChild(card);
-    }
-    sec.appendChild(list);
-    return sec;
-  }
-
-  function buildRolePickers(loaded) {
-    const sec = el("div", { class: "ww-models-sec ww-models-sec-roles" }, [
-      el("h3", { class: "ww-h3" }, t("ww.models.roles.title")),
-      el("p", { class: "ww-p ww-p-muted" }, t("ww.models.roles.sub")),
-    ]);
-
-    /** @type {Array<{role: "chat"|"agent"|"extractor"|"judge", labelKey: string}>} */
-    const roles = [
-      { role: "chat", labelKey: "ww.models.role.chat" },
-      { role: "agent", labelKey: "ww.models.role.agent" },
-      { role: "extractor", labelKey: "ww.models.role.extractor" },
-      { role: "judge", labelKey: "ww.models.role.judge" },
-    ];
-
-    const grid = el("div", { class: "ww-roles-grid" });
-    /** @type {Record<string, HTMLSelectElement>} */
-    const selects = {};
-    for (const r of roles) {
-      const select = /** @type {HTMLSelectElement} */ (el("select", { class: "ww-role-select" }));
-      if (loaded.length === 0) {
-        select.appendChild(el("option", { value: "" }, t("ww.models.role.noLoaded")));
-        select.disabled = true;
-      } else {
-        select.appendChild(el("option", { value: "" }, "—"));
+    const select = /** @type {HTMLSelectElement} */ (el("select", { class: "ww-role-select" }));
+    if (loaded.length === 0 && downloadedOnly.length === 0) {
+      select.appendChild(el("option", { value: "" }, t("ww.setup.model_empty")));
+      select.disabled = true;
+    } else {
+      select.appendChild(el("option", { value: "" }, t("ww.setup.model_placeholder")));
+      if (loaded.length > 0) {
+        const grp = el("optgroup", { label: t("modelSelect.group.loaded") });
         for (const m of loaded) {
-          select.appendChild(el("option", { value: m.modelKey }, m.modelKey));
+          grp.appendChild(el("option", { value: m.modelKey }, m.modelKey));
         }
+        select.appendChild(grp);
       }
-      select.addEventListener("change", () => {
-        STATE.selected[r.role] = select.value;
-      });
-      selects[r.role] = select;
-      grid.appendChild(
-        el("div", { class: "ww-role-row" }, [
-          el("label", { class: "ww-role-label" }, t(r.labelKey)),
-          select,
-        ])
-      );
+      if (downloadedOnly.length > 0) {
+        const grp = el("optgroup", { label: t("modelSelect.group.downloaded") });
+        for (const m of downloadedOnly) {
+          grp.appendChild(el("option", { value: m.modelKey }, `↓ ${m.modelKey}`));
+        }
+        select.appendChild(grp);
+      }
     }
-    sec.appendChild(grid);
 
-    /* Smart-кнопка "Назначить под железо" */
-    const smartBtn = el(
-      "button",
-      { class: "btn btn-gold ww-smart-btn", type: "button" },
-      t("ww.models.smart.btn")
-    );
-    smartBtn.addEventListener("click", () => {
-      const auto = autoAssignByVram(loaded);
-      for (const r of roles) {
-        STATE.selected[r.role] = auto[r.role] || "";
-        selects[r.role].value = auto[r.role] || "";
-      }
+    select.addEventListener("change", () => {
+      STATE.chatModel = select.value;
     });
-    sec.appendChild(smartBtn);
 
-    return sec;
+    return el("div", { class: "ww-setup-model-row" }, [select]);
   }
 
-  /**
-   * Smart auto-assignment: подбирает по одной модели на роль из loaded,
-   * учитывая VRAM и приоритет подсказок.
-   * @param {any[]} loaded
-   * @returns {{ chat: string, agent: string, extractor: string, judge: string }}
-   */
-  function autoAssignByVram(loaded) {
-    if (loaded.length === 0) return { chat: "", agent: "", extractor: "", judge: "" };
-    const vram = STATE.hardware?.bestGpu?.vramGB ?? 0;
-    const keys = loaded.map((m) => String(m.modelKey).toLowerCase());
-
-    /** @param {string[]} hints */
-    const pick = (hints) => {
-      for (const h of hints) {
-        const idx = keys.findIndex((k) => k.includes(h));
-        if (idx !== -1) return loaded[idx].modelKey;
-      }
-      return loaded[0].modelKey;
-    };
-
-    /* < 8GB → одна лёгкая модель на все роли (qwen3-4b или llama-3.2-3b) */
-    if (vram > 0 && vram < 8) {
-      const small = pick(["qwen3-4b", "llama-3.2-3b", "qwen3", "llama"]);
-      return { chat: small, agent: small, extractor: small, judge: small };
-    }
-    /* 8-16GB → среднее: qwen3.6 или 14b на chat/agent, любая на extractor/judge */
-    if (vram > 0 && vram < 16) {
-      const mid = pick(["qwen3.6", "qwen3-14b", "qwen3", "mistral-small"]);
-      const ext = pick(["qwen3-4b", "qwen3", "llama"]);
-      return { chat: mid, agent: mid, extractor: ext, judge: ext };
-    }
-    /* 16+ или unknown → топ на chat/agent, средняя на extractor/judge */
-    const top = pick(["qwen3.6", "qwen3-coder", "mistral-small", "qwen3"]);
-    const mid = pick(["qwen3-4b", "qwen3-14b", "llama"]);
-    return { chat: top, agent: top, extractor: mid, judge: mid };
-  }
-
-  /* ─── Шаг 4: Done ─────────────────────────────────────────────────────── */
+  /* ─── Step 3: Done ────────────────────────────────────────────────────── */
 
   function buildDone() {
     return el("div", { class: "ww-step ww-step-done" }, [
@@ -447,7 +306,7 @@ export function openWelcomeWizard(opts) {
     ]);
   }
 
-  /* ─── Footer / навигация ──────────────────────────────────────────────── */
+  /* ─── Footer ──────────────────────────────────────────────────────────── */
 
   function buildFooter() {
     const footer = el("div", { class: "ww-footer" });
@@ -465,8 +324,6 @@ export function openWelcomeWizard(opts) {
     }
 
     if (STATE.step < STEP_COUNT - 1) {
-      /* Соft-skip на Connectivity: Next всегда активен; если оба сервиса offline,
-         текст становится "Продолжить без подключения" с предупреждающим стилем. */
       const isConn = STATE.step === 1;
       const bothOffline =
         isConn && STATE.services
@@ -504,15 +361,10 @@ export function openWelcomeWizard(opts) {
       onboardingDone: true,
       onboardingVersion: ONBOARDING_VERSION,
     };
-    /* Записываем выбор моделей только если пользователь явно выбрал (не пусто) */
-    if (STATE.selected.chat) patch.chatModel = STATE.selected.chat;
-    if (STATE.selected.agent) patch.agentModel = STATE.selected.agent;
-    if (STATE.selected.extractor) patch.extractorModel = STATE.selected.extractor;
-    if (STATE.selected.judge) patch.judgeModel = STATE.selected.judge;
+    if (STATE.chatModel) patch.chatModel = STATE.chatModel;
     try {
       await window.api.preferences.set(patch);
-    } catch { /* ignore — wizard всё равно закроется */ }
-    /* Чистим legacy localStorage чтобы не было двух источников истины */
+    } catch { /* ignore */ }
     try { localStorage.removeItem(LEGACY_STORAGE_KEY); } catch { /* ignore */ }
     overlay.remove();
   }
@@ -523,12 +375,6 @@ export function openWelcomeWizard(opts) {
   }
 }
 
-/**
- * Legacy localStorage-флаг от старой версии wizard'а. Используется только
- * как дополнительная страховка от повторного показа при свежей установке
- * новой версии — основной источник истины это preferences.onboardingDone
- * (проверяется в router.js до вызова openWelcomeWizard).
- */
 function isLegacyDone() {
   try {
     return localStorage.getItem(LEGACY_STORAGE_KEY) === "1";
@@ -537,15 +383,11 @@ function isLegacyDone() {
   }
 }
 
-/**
- * Сбросить wizard — Settings вызывает это перед openWelcomeWizard({force:true})
- * чтобы пользователь мог пройти заново.
- */
 export async function resetWelcomeWizard() {
   try { localStorage.removeItem(LEGACY_STORAGE_KEY); } catch { /* ignore */ }
   try {
     await window.api.preferences.set({ onboardingDone: false, onboardingVersion: 0 });
-  } catch { /* ignore — пользователь увидит wizard если router заметит false */ }
+  } catch { /* ignore */ }
 }
 
 function errMsg(e) {
