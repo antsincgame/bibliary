@@ -1,8 +1,15 @@
-import { ipcMain } from "electron";
+import { ipcMain, shell } from "electron";
 import { detectHardware } from "../lib/hardware/profiler.js";
 import { getEndpoints } from "../lib/endpoints/index.js";
 import { getServerStatus } from "../lmstudio-client.js";
 import { QDRANT_URL, QDRANT_API_KEY } from "../lib/qdrant/http-client.js";
+
+/**
+ * Whitelist схем для system:open-external. Защита от prompt-injection /
+ * UI бага, который мог бы открыть file:// или javascript: URL.
+ * lmstudio:// — protocol handler LM Studio; http(s) — браузер.
+ */
+const ALLOWED_OPEN_SCHEMES = ["http:", "https:", "lmstudio:"];
 
 /**
  * Лёгкий ping Qdrant root для onboarding wizard.
@@ -55,4 +62,32 @@ export function registerSystemIpc(): void {
       };
     }
   );
+
+  /**
+   * A4 (welcome wizard helper): открыть внешний URL в системном браузере /
+   * протокол-хэндлере. Используется wizard'ом для кнопки "Open LM Studio"
+   * и потенциально другими местами, где нужно увести пользователя из
+   * Bibliary без копирования URL вручную.
+   * Защита: только http(s) и lmstudio:// схемы. Всё остальное игнорируется.
+   */
+  ipcMain.handle("system:open-external", async (_e, url: unknown): Promise<{ ok: boolean; reason?: string }> => {
+    if (typeof url !== "string" || url.length === 0) {
+      return { ok: false, reason: "url required" };
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return { ok: false, reason: "invalid url" };
+    }
+    if (!ALLOWED_OPEN_SCHEMES.includes(parsed.protocol)) {
+      return { ok: false, reason: `scheme not allowed: ${parsed.protocol}` };
+    }
+    try {
+      await shell.openExternal(url);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, reason: e instanceof Error ? e.message : String(e) };
+    }
+  });
 }

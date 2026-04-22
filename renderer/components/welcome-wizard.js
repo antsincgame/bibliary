@@ -35,7 +35,7 @@ export function openWelcomeWizard(opts) {
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 
-  /** @type {{ step: number, hardware: any, services: any, chatModel: string, chatModelIsDownloaded: boolean, urlsTouched: { lm: boolean, qd: boolean } }} */
+  /** @type {{ step: number, hardware: any, services: any, chatModel: string, chatModelIsDownloaded: boolean, urlsTouched: { lm: boolean, qd: boolean }, prefsHydrated: boolean }} */
   const STATE = {
     step: 0,
     hardware: null,
@@ -43,9 +43,23 @@ export function openWelcomeWizard(opts) {
     chatModel: "",
     chatModelIsDownloaded: false,
     urlsTouched: { lm: false, qd: false },
+    prefsHydrated: false,
   };
 
-  void renderStep();
+  /* A3: гидрация существующих preferences. Если пользователь уже настраивал
+     wizard и переоткрывает его (Settings → Replay onboarding), селектор
+     модели должен предзаполниться его текущим выбором, а не сбрасываться. */
+  void hydrateFromPreferences().then(() => void renderStep());
+
+  async function hydrateFromPreferences() {
+    try {
+      const prefs = /** @type {any} */ (await window.api?.preferences?.getAll());
+      if (prefs && typeof prefs.chatModel === "string" && prefs.chatModel.trim().length > 0) {
+        STATE.chatModel = prefs.chatModel;
+      }
+    } catch { /* defaults */ }
+    STATE.prefsHydrated = true;
+  }
 
   async function renderStep() {
     clear(modal);
@@ -285,12 +299,49 @@ export function openWelcomeWizard(opts) {
       }
     }
 
+    /* A3: восстанавливаем сохранённое значение из preferences. Если модель
+       всё ещё доступна в LM Studio — селект подсветит её; если её больше
+       нет (удалили из LM Studio) — value останется пустым и пользователь
+       перевыберет. */
+    if (STATE.chatModel) {
+      const stillAvailable = loadedKeys.has(STATE.chatModel) || downloadedOnlyKeys.has(STATE.chatModel);
+      if (stillAvailable) {
+        select.value = STATE.chatModel;
+        STATE.chatModelIsDownloaded = downloadedOnlyKeys.has(STATE.chatModel);
+      } else {
+        STATE.chatModel = "";
+        STATE.chatModelIsDownloaded = false;
+      }
+    }
+
     select.addEventListener("change", () => {
       STATE.chatModel = select.value;
       STATE.chatModelIsDownloaded = downloadedOnlyKeys.has(select.value);
     });
 
-    return el("div", { class: "ww-setup-model-row" }, [select]);
+    /* A4 helper: если LM Studio пуст — даём кнопку открыть его внешним
+       приложением. Пытаемся через protocol handler (lmstudio://), fallback
+       на сайт через window.open. Внутри webContents.openExternal недоступен
+       без preload-метода, поэтому используем оба пути best-effort. */
+    const row = el("div", { class: "ww-setup-model-row" }, [select]);
+    if (loaded.length === 0 && downloadedOnly.length === 0) {
+      const openBtn = /** @type {HTMLButtonElement} */ (el("button", {
+        class: "btn btn-ghost ww-setup-open-lmstudio",
+        type: "button",
+      }, t("ww.setup.open_lmstudio")));
+      openBtn.addEventListener("click", () => {
+        try {
+          const api = /** @type {any} */ (window.api);
+          if (api?.system?.openExternal) {
+            void api.system.openExternal("lmstudio://");
+          } else {
+            window.open("https://lmstudio.ai/", "_blank");
+          }
+        } catch { /* ignore */ }
+      });
+      row.appendChild(openBtn);
+    }
+    return row;
   }
 
   /* ─── Step 3: Done ────────────────────────────────────────────────────── */
@@ -341,7 +392,16 @@ export function openWelcomeWizard(opts) {
   function buildFooter() {
     const footer = el("div", { class: "ww-footer" });
     const skip = el("button", { class: "btn btn-ghost", type: "button" }, t("ww.skip"));
-    skip.addEventListener("click", () => void finish());
+    /* A10: настоящий skip — confirm если пользователь уходит без модели
+       со step >= 2 (значит он реально дошёл до setup). На step 0/1 не
+       спрашиваем — там ещё нечего терять. */
+    skip.addEventListener("click", () => {
+      if (STATE.step >= 2 && !STATE.chatModel) {
+        const confirmed = window.confirm(t("ww.skip.confirm_no_model"));
+        if (!confirmed) return;
+      }
+      void finish();
+    });
     footer.appendChild(skip);
 
     if (STATE.step > 0) {
@@ -371,6 +431,14 @@ export function openWelcomeWizard(opts) {
         nextLabel
       );
       next.addEventListener("click", () => {
+        /* A4: блок перехода со step 2 (Setup) если модель не выбрана.
+           Без модели onboarding бессмыслен — у нас всё держится на
+           preferences.chatModel. Показываем toast вместо disable, чтобы
+           пользователь понял ПОЧЕМУ кнопка не сработала. */
+        if (STATE.step === 2 && !STATE.chatModel) {
+          showWizardToast(t("ww.setup.no_model_warn"), "info");
+          return;
+        }
         STATE.step++;
         void renderStep();
       });

@@ -706,6 +706,15 @@ function buildFooter() {
         showToast(t("forge.toast.prepare_first_unified"), "error");
         return;
       }
+      /* A5: валидация перехода Step 1 (Параметры) → Step 2 (Workspace).
+         baseModel — единственное обязательное поле, которое пользователь
+         может оставить пустым через поле ввода. Остальное (datasetPath,
+         maxSeqLength) гарантировано из step 0 / defaults. Без модели
+         генерация workspace создаст битый Unsloth/Axolotl конфиг. */
+      if (STATE.step === 1 && !String(STATE.spec.baseModel ?? "").trim()) {
+        showToast(t("forge.toast.basemodel_required"), "error");
+        return;
+      }
       STATE.step++;
       render();
     });

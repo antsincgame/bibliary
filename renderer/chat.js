@@ -425,6 +425,9 @@ export function mountChat() {
         populateSelect(collectionSelect, []);
         updateStatus(false);
       }
+      /* A6: после re-populate коллекция могла стать пустой (backend оффлайн)
+         или появиться/исчезнуть выбранная — пересчитаем availability */
+      updateCompareAvailability();
     });
   }
 
@@ -527,10 +530,33 @@ export function mountChat() {
     input.focus();
   }
 
+  /* A6: Compare без коллекции бессмысленна — backend в `compareChat`
+     отдаёт два почти идентичных ответа на пустой коллекции. Раньше юзер
+     включал режим, получал две одинаковые колонки и думал что баг.
+     Теперь:
+       - кнопка disabled пока коллекция пуста
+       - tooltip объясняет почему
+       - клик при пустой коллекции (на disabled-кнопку браузер не пошлёт,
+         но keyboard accessibility) показывает toast */
+  function updateCompareAvailability() {
+    const hasCollection = collectionSelect.value.trim().length > 0;
+    btnCompare.disabled = !hasCollection;
+    btnCompare.title = hasCollection ? "" : t("chat.compare.tooltip_no_collection");
+    if (!hasCollection && compareMode) {
+      compareMode = false;
+      btnCompare.classList.remove("active");
+    }
+  }
   btnCompare.addEventListener("click", () => {
+    if (!collectionSelect.value.trim()) {
+      chatToast(t("chat.compare.no_collection"), "info");
+      return;
+    }
     compareMode = !compareMode;
     btnCompare.classList.toggle("active", compareMode);
   });
+  collectionSelect.addEventListener("change", updateCompareAvailability);
+  updateCompareAvailability();
   input.addEventListener("input", () => {
     input.style.height = "auto";
     input.style.height = Math.min(input.scrollHeight, TEXTAREA_MAX_HEIGHT) + "px";

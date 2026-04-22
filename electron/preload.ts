@@ -167,6 +167,9 @@ contextBridge.exposeInMainWorld("api", {
       lmStudio: { online: boolean; version?: string; url: string };
       qdrant: { online: boolean; version?: string; url: string };
     }> => ipcRenderer.invoke("system:probe-services"),
+    /** Открыть внешний URL (http/https/lmstudio://) в системном браузере. */
+    openExternal: (url: string): Promise<{ ok: boolean; reason?: string }> =>
+      ipcRenderer.invoke("system:open-external", url),
   },
 
   profile: {
