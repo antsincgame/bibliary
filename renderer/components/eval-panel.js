@@ -33,6 +33,19 @@ export function buildEvalPanel(opts) {
   const summaryHost = el("div", { class: "eval-summary" });
 
   const runBtn = el("button", { class: "btn btn-gold", type: "button" }, t("eval.run"));
+  const cancelBtn = /** @type {HTMLButtonElement} */ (
+    el("button", { class: "btn btn-secondary", type: "button" }, t("eval.cancel"))
+  );
+  cancelBtn.style.display = "none";
+  cancelBtn.addEventListener("click", () => {
+    cancelBtn.disabled = true;
+    window.api.forgeLocal.cancelEval().catch((e) => {
+      console.warn("[eval-panel] cancelEval failed:", e);
+    });
+  });
+
+  const btnRow = el("div", { class: "eval-btn-row" }, [runBtn, cancelBtn]);
+
   let progressUnsub = null;
   runBtn.addEventListener("click", async () => {
     const baseModel = baseInput.value.trim();
@@ -46,6 +59,8 @@ export function buildEvalPanel(opts) {
     }
 
     runBtn.disabled = true;
+    cancelBtn.disabled = false;
+    cancelBtn.style.display = "";
     progress.textContent = t("eval.running", { done: 0, total: maxCases });
     clear(summaryHost);
 
@@ -65,14 +80,20 @@ export function buildEvalPanel(opts) {
       progress.textContent = t("eval.done");
       summaryHost.appendChild(buildSummary(summary));
     } catch (e) {
-      progress.textContent = t("eval.error.run", { msg: e instanceof Error ? e.message : String(e) });
+      const msg = e instanceof Error ? e.message : String(e);
+      /* AbortError из chatWithPolicy → пользовательская отмена, не ошибка. */
+      const cancelled = /abort|cancel/i.test(msg);
+      progress.textContent = cancelled
+        ? t("eval.cancelled")
+        : t("eval.error.run", { msg });
     } finally {
       runBtn.disabled = false;
+      cancelBtn.style.display = "none";
       if (progressUnsub) progressUnsub();
       progressUnsub = null;
     }
   });
-  root.appendChild(runBtn);
+  root.appendChild(btnRow);
   root.appendChild(progress);
   root.appendChild(summaryHost);
   return root;
