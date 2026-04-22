@@ -1,7 +1,7 @@
 import { mountChat } from "./chat.js";
 import { mountModels } from "./models/models-page.js";
 import { mountDocs } from "./docs.js";
-import { mountForge } from "./forge.js";
+import { mountForge, isForgeBusy } from "./forge.js";
 import { mountLibrary, isLibraryBusy } from "./library.js";
 import { mountAgent, isAgentBusy } from "./forge-agent.js";
 import { mountCrystal, isCrystalBusy } from "./dataset-v2.js";
@@ -47,6 +47,8 @@ function canRemount(name) {
   if (name === "agent" && isAgentBusy()) return false;
   // То же для активной crystallization job.
   if (name === "crystal" && isCrystalBusy()) return false;
+  // Не выкидывать активный local fine-tune run сменой локали.
+  if (name === "forge" && isForgeBusy()) return false;
   return true;
 }
 
