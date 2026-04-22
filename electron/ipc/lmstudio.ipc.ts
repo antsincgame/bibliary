@@ -33,13 +33,16 @@ export function registerLmstudioIpc(): void {
         try {
           const query = extractUserQuery(messages);
           if (query) {
-            const results = await searchRelevantChunks(collection, query, ragCfg.topK, ragCfg.scoreThreshold);
+            const results = await searchRelevantChunks(collection, query, ragCfg.topK, ragCfg.scoreThreshold, ragCfg.qdrantTimeoutMs);
             if (results.length > 0) {
               systemPrompt = buildRagPrompt(formatChunksForPrompt(results));
             }
           }
-        } catch {
-          /* RAG fallback: proceed without context */
+        } catch (e) {
+          /* S2.3: RAG fallback — proceed without context. Раньше глушили
+             молча, и при сломанном Qdrant было непонятно почему ответы
+             "без знаний". Теперь пишем в лог — UX не меняется. */
+          console.warn("[lmstudio:chat] RAG search failed, proceeding without context:", e instanceof Error ? e.message : e);
         }
       }
 
@@ -75,13 +78,14 @@ export function registerLmstudioIpc(): void {
         try {
           const query = extractUserQuery(messages);
           if (query) {
-            const results = await searchRelevantChunks(collection, query, ragCfg.topK, ragCfg.scoreThreshold);
+            const results = await searchRelevantChunks(collection, query, ragCfg.topK, ragCfg.scoreThreshold, ragCfg.qdrantTimeoutMs);
             if (results.length > 0) {
               ragSystemPrompt = buildRagPrompt(formatChunksForPrompt(results));
             }
           }
-        } catch {
-          /* RAG fallback: proceed without context */
+        } catch (e) {
+          /* S2.3: см. комментарий в lmstudio:chat выше. */
+          console.warn("[lmstudio:compare] RAG search failed, proceeding without context:", e instanceof Error ? e.message : e);
         }
       }
 

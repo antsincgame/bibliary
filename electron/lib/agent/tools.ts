@@ -95,7 +95,7 @@ const searchCollectionTool: ToolDefinition<{ query: string; collection: string; 
   }),
   execute: async ({ query, collection, k }) => {
     const ragCfg = await getRagConfig();
-    const results = await searchRelevantChunks(collection, query, k ?? 5, ragCfg.scoreThreshold);
+    const results = await searchRelevantChunks(collection, query, k ?? 5, ragCfg.scoreThreshold, ragCfg.qdrantTimeoutMs);
     return results.map((r) => ({
       score: r.score,
       principle: String(r.payload.principle ?? ""),

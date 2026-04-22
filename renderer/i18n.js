@@ -309,6 +309,7 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
     "forge.step.indicator.active": "Текущий шаг",
     "forge.step.indicator.done": "Шаг завершён",
     "forge.step.indicator.future": "Шаг ещё не доступен",
+    "forge.stepper.aria_label": "Прогресс мастера дообучения",
     "chat.compare.no_collection": "Compare работает только с выбранной коллекцией — выберите её слева",
     "chat.compare.tooltip_no_collection": "Compare нужна коллекция: выберите слева",
 
@@ -1009,6 +1010,7 @@ const DICT = /** @type {Record<Locale, Record<string,string>>} */ ({
     "forge.step.indicator.active": "Current step",
     "forge.step.indicator.done": "Step completed",
     "forge.step.indicator.future": "Step not yet available",
+    "forge.stepper.aria_label": "Fine-tuning wizard progress",
     "chat.compare.no_collection": "Compare needs a selected collection — pick one on the left",
     "chat.compare.tooltip_no_collection": "Compare needs a collection: pick one on the left",
 

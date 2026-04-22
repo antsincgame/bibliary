@@ -99,8 +99,12 @@ export async function probeBooks(
             sizeBytes: st.size,
             mtimeMs: st.mtimeMs,
           });
-        } catch {
-          /* ignore */
+        } catch (statErr) {
+          /* S2.3: stat() может упасть из-за permission denied / dangling
+             symlink / гонки удаления — продолжаем walk(), но пишем
+             диагностический warning, чтобы пользователь видел в DevTools
+             почему файл не появился в превью библиотеки. */
+          console.warn(`[scanner.probe] stat failed for ${full}:`, statErr instanceof Error ? statErr.message : statErr);
         }
       }
     }

@@ -38,6 +38,10 @@ export const CHAT_SAMPLING = {
 export interface RagConfig {
   topK: number;
   scoreThreshold: number;
+  /* S2.2: ранее RAG-search всегда падал в default QDRANT_TIMEOUT_MS (8s)
+     даже если пользователь поставил в Settings меньше/больше. Слайдер
+     "Qdrant timeout" работал только для bookhunter и dataset-v2. */
+  qdrantTimeoutMs: number;
   temperature: number;
   topP: number;
   maxTokens: number;
@@ -60,6 +64,7 @@ export async function getRagConfig(): Promise<RagConfig> {
   return {
     topK: p?.ragTopK ?? RAG_TOP_K,
     scoreThreshold: p?.ragScoreThreshold ?? RAG_SCORE_THRESHOLD,
+    qdrantTimeoutMs: p?.qdrantTimeoutMs ?? 8000,
     temperature,
     topP,
     maxTokens,
@@ -98,6 +103,7 @@ export async function searchRelevantChunks(
   query: string,
   limit: number = RAG_TOP_K,
   scoreThreshold: number = RAG_SCORE_THRESHOLD,
+  timeoutMs?: number,
 ): Promise<QdrantSearchResult[]> {
   const vector = await embedQuery(query);
   const data = await fetchQdrantJson<{ result: QdrantSearchResult[] }>(
@@ -111,6 +117,7 @@ export async function searchRelevantChunks(
         with_payload: true,
         score_threshold: scoreThreshold,
       }),
+      timeoutMs,
     }
   );
   return data.result;

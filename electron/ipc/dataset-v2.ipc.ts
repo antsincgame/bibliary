@@ -324,6 +324,13 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
       const total = data.result.points_count ?? 0;
       const byDomain: Record<string, number> = {};
 
+      /* S2.5: при коллекции > 50k концептов scroll-fetch отключён ради OOM,
+         но раньше это происходило молча — UI просто видел пустой byDomain
+         без объяснения. Теперь пишем diag-warning, чтобы dev/power-user
+         видел в DevTools, что breakdown подавлен из-за объёма. */
+      if (total > 50_000) {
+        console.warn(`[dataset-v2:list-accepted] domain breakdown skipped: collection has ${total} points (> 50000 cap)`);
+      }
       if (total > 0 && total <= 50_000) {
         /* AUDIT MED-3: scroll fetch шёл голым `fetch()` без timeout — при
            зависшем Qdrant IPC-handler висел навсегда, блокируя UI-бейдж.

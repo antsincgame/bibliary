@@ -203,24 +203,28 @@ function render() {
 }
 
 function buildStepper() {
-  const wrap = el("div", { class: "forge-stepper", role: "tablist" });
+  /* S2.4: было role="tablist" + role="tab" + aria-disabled — антипаттерн:
+     ARIA tabs обязаны быть фокусируемыми и кликабельными, иначе скринридер
+     обещает интерактивность, которой нет. Правильный паттерн для
+     индикатора шагов мастера: role="group" + aria-current="step" на
+     активном пункте (WAI-ARIA Authoring Practices: "Steps Pattern"). */
+  const wrap = el("div", {
+    class: "forge-stepper",
+    role: "group",
+    "aria-label": t("forge.stepper.aria_label"),
+  });
   STEP_KEYS.forEach((key, i) => {
-    /* A7: индикатор прогресса, не tabs. Раньше pill выглядел кликабельным
-       (cursor по умолчанию), но click-handler'ов не было — пользователь
-       тыкал и ничего не происходило. Теперь явно: cursor:default,
-       aria-disabled, понятный tooltip про статус шага. */
     const status = i === STATE.step ? "active" : i < STATE.step ? "done" : "future";
     const tooltipText = t(`forge.step.indicator.${status}`);
+    const attrs = {
+      class: "forge-step-pill forge-step-indicator" +
+        (i === STATE.step ? " forge-step-active" : "") +
+        (i < STATE.step ? " forge-step-done" : ""),
+      title: tooltipText,
+    };
+    if (i === STATE.step) attrs["aria-current"] = "step";
     wrap.appendChild(
-      el("div", {
-        class: "forge-step-pill forge-step-indicator" +
-          (i === STATE.step ? " forge-step-active" : "") +
-          (i < STATE.step ? " forge-step-done" : ""),
-        role: "tab",
-        "aria-selected": i === STATE.step ? "true" : "false",
-        "aria-disabled": "true",
-        title: tooltipText,
-      }, [
+      el("div", attrs, [
         el("span", { class: "forge-step-num" }, String(i + 1)),
         el("span", { class: "forge-step-label" }, t(key)),
       ])

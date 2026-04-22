@@ -582,15 +582,30 @@ export async function switchProfile(profileName: ProfileName, contextLength = 32
   });
 }
 
+/* S2.1: in-flight dedup для getServerStatus(). Watchdog (lmstudio-watchdog.ts)
+   опрашивает раз в 5s, параллельно UI Settings/Welcome Wizard может вызвать
+   тот же ping. До дедупа на каждый вызов уходил отдельный WS-handshake
+   к LM Studio — при недоступном сервере оба ловили reject и дважды
+   звали dropClient() (идемпотентно, но всё равно лишняя нагрузка
+   на event loop). Singleton Promise сворачивает это в один inflight
+   запрос; новые вызовы за время полёта возвращают тот же результат. */
+let inflightStatus: Promise<{ online: boolean; version?: string }> | null = null;
+
 export async function getServerStatus(): Promise<{ online: boolean; version?: string }> {
-  try {
-    const client = getClient();
-    const v = await client.system.getLMStudioVersion();
-    return { online: true, version: v.version };
-  } catch {
-    dropClient();
-    return { online: false };
-  }
+  if (inflightStatus) return inflightStatus;
+  inflightStatus = (async () => {
+    try {
+      const client = getClient();
+      const v = await client.system.getLMStudioVersion();
+      return { online: true, version: v.version };
+    } catch {
+      dropClient();
+      return { online: false };
+    } finally {
+      inflightStatus = null;
+    }
+  })();
+  return inflightStatus;
 }
 
 export function disposeClient(): void {
