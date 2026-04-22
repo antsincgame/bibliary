@@ -2154,6 +2154,117 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   left: 0;
   color: var(--gold);
 }
+
+/* Done step — action grid (заменил статичный список инструкций
+   на 3 действия: чат / библиотека / справка). */
+.ww-done-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+  margin-top: 16px;
+  text-align: left;
+}
+@media (max-width: 720px) {
+  .ww-done-actions {
+    grid-template-columns: 1fr;
+  }
+}
+.ww-done-action {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 14px 12px;
+  background: rgba(13, 13, 18, 0.65);
+  border: 1px solid var(--border);
+  border-top: 1px solid rgba(255, 215, 0, 0.22);
+  color: var(--text);
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.05s ease;
+  text-align: left;
+}
+.ww-done-action:hover {
+  border-color: rgba(255, 215, 0, 0.6);
+  background: rgba(20, 18, 8, 0.7);
+}
+.ww-done-action:active {
+  transform: translateY(1px);
+}
+.ww-done-action:focus-visible {
+  outline: 1px solid var(--gold);
+  outline-offset: 2px;
+}
+.ww-done-action-primary {
+  border-top-color: var(--gold);
+  background: rgba(28, 22, 6, 0.75);
+}
+.ww-done-action-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: #fff;
+}
+.ww-done-action-primary .ww-done-action-title {
+  color: var(--gold);
+}
+.ww-done-action-desc {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-dim);
+  margin: 0;
+  flex: 1;
+}
+.ww-done-action-cta {
+  margin-top: 4px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+/* Wizard toasts (внутри overlay — пока wizard ещё видим). */
+.ww-toast {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 14px;
+  background: rgba(13, 13, 18, 0.92);
+  border: 1px solid var(--border);
+  border-top: 1px solid var(--gold);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  z-index: 10;
+  pointer-events: none;
+}
+.ww-toast-info { border-top-color: rgba(255, 215, 0, 0.6); }
+.ww-toast-error { border-top-color: #d83a3a; }
+
+/* Глобальные тосты (показываются после закрытия wizard — например,
+   результат фоновой автозагрузки модели в LM Studio). */
+.ww-global-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  padding: 12px 16px;
+  background: rgba(13, 13, 18, 0.96);
+  border: 1px solid var(--border);
+  border-top: 1px solid var(--gold);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  z-index: 9999;
+  max-width: 360px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.ww-global-toast-success { border-top-color: #2ecc71; }
+.ww-global-toast-error { border-top-color: #d83a3a; }
+.ww-global-toast-info { border-top-color: rgba(255, 215, 0, 0.6); }
 .ww-card {
   padding: 14px 16px;
   background: rgba(13, 13, 18, 0.6);

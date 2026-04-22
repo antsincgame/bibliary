@@ -35,12 +35,13 @@ export function openWelcomeWizard(opts) {
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 
-  /** @type {{ step: number, hardware: any, services: any, chatModel: string, urlsTouched: { lm: boolean, qd: boolean } }} */
+  /** @type {{ step: number, hardware: any, services: any, chatModel: string, chatModelIsDownloaded: boolean, urlsTouched: { lm: boolean, qd: boolean } }} */
   const STATE = {
     step: 0,
     hardware: null,
     services: null,
     chatModel: "",
+    chatModelIsDownloaded: false,
     urlsTouched: { lm: false, qd: false },
   };
 
@@ -260,6 +261,8 @@ export function openWelcomeWizard(opts) {
     const loadedKeys = new Set(loaded.map((m) => m.modelKey));
     const downloadedOnly = downloaded.filter((m) => m.modelKey && !loadedKeys.has(m.modelKey));
 
+    const downloadedOnlyKeys = new Set(downloadedOnly.map((m) => m.modelKey));
+
     const select = /** @type {HTMLSelectElement} */ (el("select", { class: "ww-role-select" }));
     if (loaded.length === 0 && downloadedOnly.length === 0) {
       select.appendChild(el("option", { value: "" }, t("ww.setup.model_empty")));
@@ -284,6 +287,7 @@ export function openWelcomeWizard(opts) {
 
     select.addEventListener("change", () => {
       STATE.chatModel = select.value;
+      STATE.chatModelIsDownloaded = downloadedOnlyKeys.has(select.value);
     });
 
     return el("div", { class: "ww-setup-model-row" }, [select]);
@@ -291,17 +295,43 @@ export function openWelcomeWizard(opts) {
 
   /* ─── Step 3: Done ────────────────────────────────────────────────────── */
 
+  /**
+   * Заменили статичный список инструкций на 3 action-карточки.
+   * Каждая карточка: finish(persist+autoload) + переход на route через
+   * клик по уже существующей sidebar-кнопке (showRoute не экспортирован,
+   * но обработчик клика sidebar-icon делает ровно то, что нужно).
+   */
   function buildDone() {
+    /** @type {Array<{ route: string, primary?: boolean, key: string }>} */
+    const actions = [
+      { route: "chat", primary: true, key: "chat" },
+      { route: "library", key: "library" },
+      { route: "docs", key: "docs" },
+    ];
+    const grid = el("div", { class: "ww-done-actions" });
+    for (const a of actions) {
+      const card = /** @type {HTMLButtonElement} */ (el(
+        "button",
+        {
+          type: "button",
+          class: "ww-done-action" + (a.primary ? " ww-done-action-primary" : ""),
+        },
+        [
+          el("div", { class: "ww-done-action-title" }, t(`ww.done.action.${a.key}.title`)),
+          el("p", { class: "ww-done-action-desc" }, t(`ww.done.action.${a.key}.desc`)),
+          el("span", { class: "ww-done-action-cta" }, t(`ww.done.action.${a.key}.cta`)),
+        ]
+      ));
+      card.addEventListener("click", () => void finish({ goto: a.route }));
+      grid.appendChild(card);
+    }
+
     return el("div", { class: "ww-step ww-step-done" }, [
       el("div", { class: "ww-glow", "aria-hidden": "true" }),
       el("div", { class: "ww-hero-inner" }, [
         el("h2", { class: "ww-title" }, t("ww.done.title")),
         el("p", { class: "ww-sub" }, t("ww.done.sub")),
-        el("ul", { class: "ww-features" }, [
-          el("li", {}, t("ww.done.next1")),
-          el("li", {}, t("ww.done.next2")),
-          el("li", {}, t("ww.done.next3")),
-        ]),
+        grid,
       ]),
     ]);
   }
@@ -355,7 +385,13 @@ export function openWelcomeWizard(opts) {
 
   /* ─── Persist + close ─────────────────────────────────────────────────── */
 
-  async function finish() {
+  /**
+   * @param {object} [opts]
+   * @param {string} [opts.goto] data-route value to switch to after closing
+   *                              (chat/library/docs/...). Если undefined —
+   *                              просто закрываем wizard.
+   */
+  async function finish(opts) {
     /** @type {Record<string, unknown>} */
     const patch = {
       onboardingDone: true,
@@ -366,7 +402,54 @@ export function openWelcomeWizard(opts) {
       await window.api.preferences.set(patch);
     } catch { /* ignore */ }
     try { localStorage.removeItem(LEGACY_STORAGE_KEY); } catch { /* ignore */ }
+
+    // Авто-загрузка в LM Studio: если пользователь выбрал downloaded модель
+    // (не loaded), грузим её фоном — чтобы при переходе в чат она уже
+    // была доступна. Без блокировки UI: показываем тост, не ждём результата.
+    if (STATE.chatModel && STATE.chatModelIsDownloaded) {
+      const modelKey = STATE.chatModel;
+      showWizardToast(t("ww.done.toast.loading", { model: modelKey }), "info");
+      void window.api.lmstudio
+        .load(modelKey)
+        .then(() => {
+          showGlobalToast(t("ww.done.toast.loaded", { model: modelKey }), "success");
+        })
+        .catch((e) => {
+          showGlobalToast(t("ww.done.toast.load_fail", { model: modelKey, msg: errMsg(e) }), "error");
+        });
+    }
+
     overlay.remove();
+
+    if (opts?.goto) {
+      // showRoute() в router.js не экспортирован, но кликаем по уже
+      // навешанному обработчику sidebar-кнопки — это единственный публичный
+      // способ переключить route отсюда, и он вызывает applyI18n + mountRoute.
+      const btn = /** @type {HTMLButtonElement | null} */ (
+        document.querySelector(`.sidebar-icon[data-route="${opts.goto}"]`)
+      );
+      if (btn) btn.click();
+    }
+  }
+
+  /**
+   * Локальный toast внутри wizard overlay. Используется только пока wizard
+   * ещё видим (например, между установкой preferences и закрытием).
+   */
+  function showWizardToast(text, kind = "info") {
+    const node = el("div", { class: `ww-toast ww-toast-${kind}` }, text);
+    overlay.appendChild(node);
+    setTimeout(() => node.remove(), 4000);
+  }
+
+  /**
+   * Глобальный toast в body — для feedback после закрытия wizard
+   * (например, результат фоновой автозагрузки модели в LM Studio).
+   */
+  function showGlobalToast(text, kind = "success") {
+    const node = el("div", { class: `ww-global-toast ww-global-toast-${kind}` }, text);
+    document.body.appendChild(node);
+    setTimeout(() => node.remove(), 5000);
   }
 
   function appendKv(parent, labelKey, value) {
