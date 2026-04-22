@@ -84,17 +84,28 @@
 - Resume через checkpoint store
 - через `withPolicy` (LLM-аware retry)
 
-### Phase 3.3 -- Forge (80% done)
+### Phase 3.3 -- Дообучение (Forge) -- v2.4 self-hosted, 95% done
 
-- 4 target: bundle / colab / autotrain / **local** (WSL+venv)
-- Local runner: heartbeat watchdog (`forgeHeartbeatMs`), max-wall-clock
+- **3-step wizard** (Подготовка → Параметры → Workspace), 100% локально
+- **2 target**: workspace (Unsloth Python + Axolotl YAML + README) +
+  inline LocalRunner ("Запустить в WSL") с live-стримом метрик
+- **YaRN** интегрирован: пресет «Глубокий контекст», auto-suggest при
+  превышении native context, rope_scaling в Unsloth/Axolotl configs
+- LocalRunner: heartbeat watchdog (`forgeHeartbeatMs`), max-wall-clock
   (`forgeMaxWallMs`), оба runtime configurable
-- HF token widget на Colab/AutoTrain step (`13433fd`)
-- Eval harness (ROUGE + judge)
+- Eval harness (ROUGE + LLM-as-judge) с AbortSignal
+- **Удалено в v2.4** (бритва Оккама, см. `docs/FINE-TUNING.md`):
+  Colab notebook generator, AutoTrain YAML generator, HuggingFace token
+  widget, hf:* IPC namespace, electron/lib/hf/, поля pushToHub/hubModelId.
+  Bibliary стал 100% private + local. Backward-compat: enum target в
+  ForgeRunStateSchema принимает "colab"/"autotrain" для чтения старых
+  чекпоинтов; новый код пишет только "bundle".
 
 **Не покрыто:**
-- target=local в renderer disabled (требует first-run wizard для venv setup)
-- `runEval` button условно показан только если eval-set готов
+- Auto-import GGUF в LM Studio после успешной тренировки (есть ручная
+  кнопка, авто-флоу пока не делали)
+- Multi-run experiment matrix (запуск N spec'ов параллельно с разными
+  hyperparams)
 
 ### Phase 4.0 -- Forge Agent (70% done)
 
