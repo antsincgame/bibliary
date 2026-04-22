@@ -41,6 +41,45 @@ let agentModelSelect = /** @type {ReturnType<typeof buildModelSelect> | null} */
 /** Подсказки для подбора tool-capable модели по умолчанию. */
 const AGENT_TOOL_HINTS = ["qwen3.6", "qwen3-coder", "qwen3.5", "mistral-small", "qwen2.5-coder"];
 
+/**
+ * Максимум сообщений в STATE.chatHistory. Cap нужен по двум причинам:
+ *   (1) UI memory: каждое сообщение хранит content + tool-вызовы с args+result;
+ *       при долгом диалоге это растёт без границ.
+ *   (2) IPC payload: с B1 (multiturn) мы шлём историю в backend, агент
+ *       получает её как контекст — чем длиннее, тем больше токенов LLM.
+ *
+ * 50 сообщений ≈ 25 user/assistant пар — покрывает реалистичный диалог,
+ * но не даёт расти бесконечно. FIFO-eviction.
+ */
+const AGENT_HISTORY_CAP = 50;
+
+function trimAgentHistory() {
+  if (STATE.chatHistory.length > AGENT_HISTORY_CAP) {
+    STATE.chatHistory = STATE.chatHistory.slice(-AGENT_HISTORY_CAP);
+  }
+}
+
+/**
+ * Готовит историю для отправки в agent:start. Берёт последние N сообщений,
+ * отфильтровывает по role, оставляет только text content (без tool-блоков —
+ * backend не нужно знать про conversation-level tool history, ему важна
+ * только семантика разговора).
+ */
+function buildHistoryForBackend() {
+  const out = [];
+  for (const m of STATE.chatHistory.slice(-AGENT_HISTORY_CAP)) {
+    if ((m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.length > 0) {
+      out.push({ role: m.role, content: m.content });
+    }
+  }
+  /* Последнее сообщение — это только что добавленный user prompt; его шлём
+     отдельным полем userMessage. Здесь убираем его, чтобы не дублировать. */
+  if (out.length > 0 && out[out.length - 1].role === "user") {
+    out.pop();
+  }
+  return out;
+}
+
 function fmtMs(ms) {
   if (!ms || ms < 1000) return `${ms ?? "?"}ms`;
   return (ms / 1000).toFixed(1) + "s";
@@ -364,6 +403,7 @@ async function sendPrompt(root) {
     return;
   }
   STATE.chatHistory.push({ role: "user", content: text });
+  trimAgentHistory();
   renderChat(root);
   input.value = "";
   setBusy(root, true);
@@ -374,6 +414,7 @@ async function sendPrompt(root) {
       userMessage: text,
       model,
       budget: { maxIterations: 12, maxTokens: 30_000 },
+      history: buildHistoryForBackend(),
     });
     /* agentId приходит в onEvent-payload; до этого — слушаем первое событие */
     const result = await resultPromise;
@@ -381,6 +422,7 @@ async function sendPrompt(root) {
     const last = lastAssistantMessage();
     if (result.finalAnswer && (!last || (last.content !== result.finalAnswer && (last.tools?.length ?? 0) > 0))) {
       STATE.chatHistory.push({ role: "assistant", content: result.finalAnswer, tools: [] });
+      trimAgentHistory();
       renderChat(root);
     }
   } catch (e) {

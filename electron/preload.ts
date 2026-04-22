@@ -272,6 +272,8 @@ contextBridge.exposeInMainWorld("api", {
       /** Обязательно: имя модели, загруженной в LM Studio (см. lmstudio.listLoaded). */
       model: string;
       budget?: { maxIterations?: number; maxTokens?: number };
+      /** Multiturn-история диалога (без текущего userMessage). Cap ~50 в UI. */
+      history?: Array<{ role: "user" | "assistant"; content: string }>;
     }): Promise<{
       agentId: string;
       finalAnswer: string;

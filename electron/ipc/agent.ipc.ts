@@ -58,6 +58,7 @@ export function registerAgentIpc(getMainWindow: () => BrowserWindow | null): voi
         userMessage: string;
         model: string;
         budget?: { maxIterations?: number; maxTokens?: number };
+        history?: Array<{ role: "user" | "assistant"; content: string }>;
       }
     ): Promise<AgentLoopResult & { agentId: string }> => {
       if (!args || typeof args.userMessage !== "string" || args.userMessage.trim().length === 0) {
@@ -78,9 +79,32 @@ export function registerAgentIpc(getMainWindow: () => BrowserWindow | null): voi
         }
       };
 
+      /* B1 (god+wiki): multiturn-история. Раньше runAgentLoop получал
+         ТОЛЬКО последнее user-сообщение → агент терял контекст между
+         реплик. Теперь UI присылает history (cap ~50, отфильтровано
+         от tool-блоков), мы санитизируем и аппендим userMessage. */
+      const sanitizedHistory: AgentMessage[] = Array.isArray(args.history)
+        ? args.history
+            .filter(
+              (m): m is { role: "user" | "assistant"; content: string } =>
+                m !== null
+                && typeof m === "object"
+                && (m.role === "user" || m.role === "assistant")
+                && typeof m.content === "string"
+                && m.content.length > 0
+            )
+            .slice(-50)
+            .map((m) => ({ role: m.role, content: m.content }))
+        : [];
+
+      const messages: AgentMessage[] = [
+        ...sanitizedHistory,
+        { role: "user", content: args.userMessage },
+      ];
+
       try {
         const result = await runAgentLoop({
-          messages: [{ role: "user", content: args.userMessage }],
+          messages,
           budget: args.budget,
           signal: ctrl.signal,
           emit,
