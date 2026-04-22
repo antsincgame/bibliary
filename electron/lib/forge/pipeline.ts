@@ -1,15 +1,18 @@
 /**
- * Forge pipeline — оркестрация preparation + bundle.
+ * Forge pipeline — оркестрация preparation + workspace generation.
  *
  * Шаги:
  *   1. Прочитать batch JSONL (ShareGPT) → парсинг → конверсия в ChatML
  *   2. Train/val/eval split с seed
  *   3. Записать train.jsonl, val.jsonl, eval.jsonl в forge/<runId>/
- *   4. Сгенерировать configs (unsloth.py, autotrain.yaml, colab.ipynb, axolotl.yaml)
+ *   4. Сгенерировать configs для self-hosted запуска: unsloth.py, axolotl.yaml, README.md
  *
- * Bundle = папка. ZIP-упаковка пока не входит в MVP — пользователь
- * упаковывает вручную (Compress-Archive / 7z), либо см. roadmap раздела
- * Forge в plans/ для интеграции `archiver`/`adm-zip`.
+ * Workspace = папка. ZIP-упаковки нет — это локальный self-hosted
+ * workspace, пользователь сам выбирает что и как делать с папкой
+ * (запуск in-place, копирование на удалённый GPU через rsync/scp).
+ *
+ * История: до v2.4 пайплайн также генерировал AutoTrain YAML и Colab notebook —
+ * удалены вместе с облачной инфраструктурой.
  *
  * Использует resilience-stack: writeJsonAtomic, withFileLock.
  */
@@ -17,7 +20,6 @@
 import { promises as fs } from "fs";
 import * as path from "path";
 
-import { writeJsonAtomic } from "../resilience";
 import {
   parseAsChatML,
   chatMLLinesToJsonl,
@@ -25,9 +27,7 @@ import {
   type ChatMLLine,
 } from "./format";
 import {
-  generateAutoTrainYaml,
   generateAxolotlYaml,
-  generateColabNotebook,
   generateUnslothPython,
   generateBundleReadme,
   type ForgeSpec,
@@ -113,27 +113,14 @@ export async function generateBundle(opts: {
 
   const files: string[] = [];
 
-  // Unsloth Python
   const pyPath = path.join(opts.workspaceDir, `${opts.spec.runId}.py`);
   await fs.writeFile(pyPath, generateUnslothPython(opts.spec), "utf8");
   files.push(`${opts.spec.runId}.py`);
 
-  // AutoTrain YAML
-  const ytPath = path.join(opts.workspaceDir, `${opts.spec.runId}.yaml`);
-  await fs.writeFile(ytPath, generateAutoTrainYaml(opts.spec), "utf8");
-  files.push(`${opts.spec.runId}.yaml`);
-
-  // Colab notebook
-  const ipynbPath = path.join(opts.workspaceDir, `${opts.spec.runId}.ipynb`);
-  await writeJsonAtomic(ipynbPath, generateColabNotebook(opts.spec));
-  files.push(`${opts.spec.runId}.ipynb`);
-
-  // Axolotl YAML
   const axPath = path.join(opts.workspaceDir, `${opts.spec.runId}-axolotl.yaml`);
   await fs.writeFile(axPath, generateAxolotlYaml(opts.spec), "utf8");
   files.push(`${opts.spec.runId}-axolotl.yaml`);
 
-  // README
   const readmePath = path.join(opts.workspaceDir, "README.md");
   await fs.writeFile(readmePath, generateBundleReadme(opts.spec, files), "utf8");
   files.push("README.md");

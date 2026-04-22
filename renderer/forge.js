@@ -1,4 +1,14 @@
 // @ts-check
+/**
+ * Forge wizard v2.4 (self-hosted-only, 3-step):
+ *   Step 0 — Подготовка (источник + опционально advanced split)
+ *   Step 1 — Параметры (3 пресета + base model + ctx slider + YaRN секция + VRAM + Advanced)
+ *   Step 2 — Локальный Workspace (генерация файлов для запуска на своём железе)
+ *
+ * Облачные target'ы (Colab/AutoTrain) и HF token widget удалены при переходе
+ * на 100% self-hosted философию. Backward compat: старые сериализованные
+ * STATE с полем `target` молча игнорируются (Zod default strip).
+ */
 import { el, clear } from "./dom.js";
 import { t } from "./i18n.js";
 import { buildContextSlider } from "./components/context-slider.js";
@@ -7,6 +17,8 @@ import { buildEvalPanel } from "./components/eval-panel.js";
 import { buildNeonHero, neonDivider } from "./components/neon-helpers.js";
 
 const TOAST_TTL_MS = 5000;
+const STEP_KEYS = ["forge.step.prepare", "forge.step.params", "forge.step.run"];
+const LAST_STEP = STEP_KEYS.length - 1;
 
 const STATE = {
   step: 0,
@@ -17,7 +29,8 @@ const STATE = {
   /** @type {any} */ spec: defaultSpec(),
   trainRatio: 0.9,
   evalRatio: 0.05,
-  /** @type {"colab"|"autotrain"|"local"|"bundle"} */ target: "colab",
+  /** @type {number|null} */ nativeContext: null,
+  yarnSuggestShown: false,
 };
 
 function defaultSpec() {
@@ -42,15 +55,35 @@ function defaultSpec() {
     datasetPath: "",
     outputDir: "out/forge-run",
     quantization: "int4",
-    pushToHub: false,
     exportGguf: true,
+    useYarn: false,
+    yarnFactor: 1.0,
+    /** @type {number|undefined} */ nativeContextLength: undefined,
   };
 }
 
+/**
+ * Self-hosted-friendly пресеты (v2.4):
+ *   - basic   — быстрый знакомый прогон, дефолт
+ *   - quality — лучший adapter, долго (8 эпох, ctx 16K, bf16, r=128)
+ *   - yarn    — YaRN ×4 → ctx 131K для книг/codebase/юр-корпусов
+ */
 const PRESETS_BY_QUALITY = {
-  fast: { method: "qlora", loraR: 16, loraAlpha: 32, useDora: true, learningRate: 0.0002, numEpochs: 2 },
-  balanced: { method: "qlora", loraR: 32, loraAlpha: 64, useDora: true, learningRate: 0.0001, numEpochs: 3 },
-  quality: { method: "lora", loraR: 64, loraAlpha: 128, useDora: true, learningRate: 0.00005, numEpochs: 5 },
+  basic: {
+    method: "qlora", loraR: 32, loraAlpha: 64, useDora: true,
+    learningRate: 0.0001, numEpochs: 3, perDeviceBatchSize: 2, gradientAccumulation: 4,
+    maxSeqLength: 8192, useYarn: false, yarnFactor: 1.0, quantization: "int4",
+  },
+  quality: {
+    method: "lora", loraR: 128, loraAlpha: 256, useDora: true,
+    learningRate: 0.00003, numEpochs: 8, perDeviceBatchSize: 1, gradientAccumulation: 8,
+    maxSeqLength: 16384, useYarn: false, yarnFactor: 1.0, quantization: "bf16",
+  },
+  yarn: {
+    method: "qlora", loraR: 32, loraAlpha: 64, useDora: true,
+    learningRate: 0.0001, numEpochs: 4, perDeviceBatchSize: 1, gradientAccumulation: 4,
+    maxSeqLength: 131072, useYarn: true, yarnFactor: 4.0, quantization: "int4",
+  },
 };
 
 let pageRoot = null;
@@ -73,7 +106,28 @@ async function initialize() {
       STATE.spec.runId = STATE.runId;
     }
   }
+  void refreshNativeContext();
   render();
+}
+
+/**
+ * Подгружает родное окно контекста для текущей baseModel из yarn engine.
+ * Используется YaRN-секцией и VRAM-калькулятором.
+ */
+async function refreshNativeContext() {
+  try {
+    const result = /** @type {any} */ (await window.api.yarn.recommend(
+      STATE.spec.baseModel,
+      STATE.spec.maxSeqLength,
+      null,
+    ));
+    STATE.nativeContext = result?.arch?.nativeTokens ?? null;
+    if (STATE.nativeContext) {
+      STATE.spec.nativeContextLength = STATE.nativeContext;
+    }
+  } catch {
+    STATE.nativeContext = null;
+  }
 }
 
 function render() {
@@ -87,18 +141,15 @@ function render() {
   pageRoot.appendChild(neonDivider());
   pageRoot.appendChild(buildStepper());
   pageRoot.appendChild(buildToastArea());
-  if (STATE.step === 0) pageRoot.appendChild(buildStepSource());
-  else if (STATE.step === 1) pageRoot.appendChild(buildStepFormat());
-  else if (STATE.step === 2) pageRoot.appendChild(buildStepHyperparams());
-  else if (STATE.step === 3) pageRoot.appendChild(buildStepTarget());
-  else if (STATE.step === 4) pageRoot.appendChild(buildStepRun());
+  if (STATE.step === 0) pageRoot.appendChild(buildStepPrepare());
+  else if (STATE.step === 1) pageRoot.appendChild(buildStepParamsLocal());
+  else if (STATE.step === 2) pageRoot.appendChild(buildStepRunMinimal());
   pageRoot.appendChild(buildFooter());
 }
 
 function buildStepper() {
-  const steps = ["forge.step.source", "forge.step.format", "forge.step.params", "forge.step.target", "forge.step.run"];
   const wrap = el("div", { class: "forge-stepper", role: "tablist" });
-  steps.forEach((key, i) => {
+  STEP_KEYS.forEach((key, i) => {
     wrap.appendChild(
       el("div", {
         class: "forge-step-pill" +
@@ -119,16 +170,23 @@ function buildToastArea() {
   return el("div", { id: "forge-toast-area", class: "forge-toast-area" });
 }
 
-// ─── Step 0: Source ────────────────────────────────────────────────────────
+// ─── Step 0: Prepare (Source + Format collapsed) ───────────────────────────
 
-function buildStepSource() {
+function buildStepPrepare() {
   const card = el("div", { class: "card forge-card" }, [
     el("div", { class: "card-title" }, t("forge.source.title")),
     el("div", { class: "card-sub" }, t("forge.source.sub")),
   ]);
-  const list = el("div", { class: "forge-source-list" });
-  card.appendChild(list);
+  card.appendChild(buildSourceList());
+  if (STATE.preview) card.appendChild(buildSourcePreview());
+  card.appendChild(buildPrepareSection());
+  card.appendChild(buildAdvancedSplitDetails());
+  if (STATE.prepareResult) card.appendChild(buildPrepareResult());
+  return card;
+}
 
+function buildSourceList() {
+  const list = el("div", { class: "forge-source-list" });
   void (async () => {
     try {
       const batches = /** @type {string[]} */ (await window.api.forge.listSourceBatches());
@@ -139,14 +197,7 @@ function buildStepSource() {
       for (const file of batches) {
         const row = el("div", { class: "forge-source-row" }, [
           el("span", { class: "forge-source-name" }, file),
-          el(
-            "button",
-            {
-              class: "btn btn-ghost",
-              type: "button",
-            },
-            t("forge.source.pick")
-          ),
+          el("button", { class: "btn btn-ghost", type: "button" }, t("forge.source.pick")),
         ]);
         const btn = row.querySelector("button");
         if (btn) {
@@ -169,142 +220,145 @@ function buildStepSource() {
       list.appendChild(el("div", { class: "forge-empty forge-error" }, t("forge.source.error", { msg: errMsg(e) })));
     }
   })();
-
-  if (STATE.preview) {
-    card.appendChild(el("div", { class: "forge-preview" }, [
-      el("div", { class: "forge-preview-title" }, t("forge.source.preview", { count: STATE.preview.total, errors: STATE.preview.errors })),
-      el("pre", { class: "forge-preview-json" }, JSON.stringify(STATE.preview.sample, null, 2)),
-    ]));
-  }
-
-  return card;
+  return list;
 }
 
-// ─── Step 1: Format & Split ────────────────────────────────────────────────
-
-function buildStepFormat() {
-  const card = el("div", { class: "card forge-card" }, [
-    el("div", { class: "card-title" }, t("forge.format.title")),
-    el("div", { class: "card-sub" }, t("forge.format.sub")),
+function buildSourcePreview() {
+  return el("div", { class: "forge-preview" }, [
+    el("div", { class: "forge-preview-title" }, t("forge.source.preview", {
+      count: STATE.preview.total, errors: STATE.preview.errors,
+    })),
+    el("pre", { class: "forge-preview-json" }, JSON.stringify(STATE.preview.sample, null, 2)),
   ]);
+}
 
+function buildPrepareSection() {
+  const prepareBtn = el("button", { class: "btn btn-gold", type: "button" }, t("forge.format.prepare"));
+  prepareBtn.addEventListener("click", () => void runPrepare(prepareBtn));
+  return prepareBtn;
+}
+
+async function runPrepare(prepareBtn) {
+  if (!STATE.sourcePath) {
+    showToast(t("forge.toast.prepare_first_unified"), "error");
+    return;
+  }
+  prepareBtn.disabled = true;
+  try {
+    STATE.prepareResult = await window.api.forge.prepare({
+      spec: STATE.spec,
+      sourcePath: STATE.sourcePath,
+      trainRatio: STATE.trainRatio,
+      evalRatio: STATE.evalRatio,
+      seed: 42,
+    });
+    showToast(t("forge.toast.prepare_ok", {
+      train: STATE.prepareResult.counts.train,
+      val: STATE.prepareResult.counts.val,
+    }), "success");
+    render();
+  } catch (e) {
+    showToast(t("forge.toast.prepare_fail", { msg: errMsg(e) }), "error");
+  } finally {
+    prepareBtn.disabled = false;
+  }
+}
+
+function buildAdvancedSplitDetails() {
   const trainSlider = mkRange("trainRatio", 0.7, 0.99, 0.01, STATE.trainRatio);
+  trainSlider.label.textContent = `${Math.round(STATE.trainRatio * 100)}%`;
   trainSlider.input.addEventListener("input", () => {
     STATE.trainRatio = Number(trainSlider.input.value);
     trainSlider.label.textContent = `${Math.round(STATE.trainRatio * 100)}%`;
   });
-  trainSlider.label.textContent = `${Math.round(STATE.trainRatio * 100)}%`;
-  card.appendChild(labeled(t("forge.format.train_ratio"), trainSlider.wrap));
 
   const evalSlider = mkRange("evalRatio", 0, 0.3, 0.01, STATE.evalRatio);
+  evalSlider.label.textContent = `${Math.round(STATE.evalRatio * 100)}%`;
   evalSlider.input.addEventListener("input", () => {
     STATE.evalRatio = Number(evalSlider.input.value);
     evalSlider.label.textContent = `${Math.round(STATE.evalRatio * 100)}%`;
   });
-  evalSlider.label.textContent = `${Math.round(STATE.evalRatio * 100)}%`;
-  card.appendChild(labeled(t("forge.format.eval_ratio"), evalSlider.wrap));
 
-  const prepareBtn = el("button", { class: "btn btn-gold", type: "button" }, t("forge.format.prepare"));
-  prepareBtn.addEventListener("click", async () => {
-    if (!STATE.sourcePath) {
-      showToast(t("forge.toast.no_source"), "error");
-      return;
-    }
-    prepareBtn.disabled = true;
-    try {
-      STATE.prepareResult = await window.api.forge.prepare({
-        spec: STATE.spec,
-        sourcePath: STATE.sourcePath,
-        trainRatio: STATE.trainRatio,
-        evalRatio: STATE.evalRatio,
-        seed: 42,
-      });
-      showToast(t("forge.toast.prepare_ok", {
-        train: STATE.prepareResult.counts.train,
-        val: STATE.prepareResult.counts.val,
-      }), "success");
-      render();
-    } catch (e) {
-      showToast(t("forge.toast.prepare_fail", { msg: errMsg(e) }), "error");
-    } finally {
-      prepareBtn.disabled = false;
-    }
-  });
-  card.appendChild(prepareBtn);
-
-  if (STATE.prepareResult) {
-    card.appendChild(el("div", { class: "forge-preview" }, [
-      el("div", { class: "forge-preview-title" }, t("forge.format.prepared")),
-      el("ul", {}, [
-        el("li", {}, `train: ${STATE.prepareResult.counts.train}`),
-        el("li", {}, `val: ${STATE.prepareResult.counts.val}`),
-        el("li", {}, `eval: ${STATE.prepareResult.counts.eval}`),
-        el("li", {}, t("forge.format.errors", { n: STATE.prepareResult.parseErrors.length })),
-      ]),
-    ]));
-  }
-
-  return card;
+  const body = el("div", { class: "forge-collapsible-body" }, [
+    el("div", { class: "card-sub" }, t("forge.format.sub")),
+    labeled(t("forge.format.train_ratio"), trainSlider.wrap),
+    labeled(t("forge.format.eval_ratio"), evalSlider.wrap),
+  ]);
+  return el("details", { class: "forge-collapsible" }, [
+    el("summary", { class: "forge-collapsible-summary" }, t("forge.prepare.advanced_split")),
+    body,
+  ]);
 }
 
-// ─── Step 2: Hyperparams ───────────────────────────────────────────────────
+function buildPrepareResult() {
+  return el("div", { class: "forge-preview" }, [
+    el("div", { class: "forge-preview-title" }, t("forge.format.prepared")),
+    el("ul", {}, [
+      el("li", {}, `train: ${STATE.prepareResult.counts.train}`),
+      el("li", {}, `val: ${STATE.prepareResult.counts.val}`),
+      el("li", {}, `eval: ${STATE.prepareResult.counts.eval}`),
+      el("li", {}, t("forge.format.errors", { n: STATE.prepareResult.parseErrors.length })),
+    ]),
+  ]);
+}
 
-function buildStepHyperparams() {
+// ─── Step 1: Params (presets + ctx + YaRN + VRAM + Advanced) ───────────────
+
+function buildStepParamsLocal() {
   const card = el("div", { class: "card forge-card" }, [
     el("div", { class: "card-title" }, t("forge.params.title")),
     el("div", { class: "card-sub" }, t("forge.params.sub")),
   ]);
+  card.appendChild(buildPresetsRow());
+  card.appendChild(labeled(t("forge.params.base_model"), mkBaseModelInput()));
+  card.appendChild(labeled(t("forge.params.context"), mkContextEmbedded()));
 
-  // Quality presets (simple mode)
-  const presetsRow = el("div", { class: "forge-quality" });
-  for (const id of ["fast", "balanced", "quality"]) {
+  const yarnSection = buildYarnSection();
+  const vramSection = buildVramSection();
+  card.appendChild(yarnSection.node);
+  card.appendChild(vramSection.node);
+  card.appendChild(buildAdvancedDetails(yarnSection.refresh, vramSection.refresh));
+
+  // Связываем context-slider onChange с YaRN/VRAM live refresh
+  STATE._refreshSecondary = () => {
+    yarnSection.refresh();
+    vramSection.refresh();
+  };
+  return card;
+}
+
+function buildPresetsRow() {
+  const row = el("div", { class: "forge-quality" });
+  for (const id of ["basic", "quality", "yarn"]) {
     const btn = el("button", { class: "forge-quality-card", type: "button", "data-id": id }, [
       el("div", { class: "forge-quality-title" }, t(`forge.params.preset.${id}`)),
       el("div", { class: "forge-quality-meta" }, t(`forge.params.preset.${id}.meta`)),
     ]);
     btn.addEventListener("click", () => {
       Object.assign(STATE.spec, PRESETS_BY_QUALITY[id]);
+      STATE.yarnSuggestShown = false;
       render();
     });
-    presetsRow.appendChild(btn);
+    row.appendChild(btn);
   }
-  card.appendChild(presetsRow);
+  return row;
+}
 
-  // Base model + max_seq_length (always visible)
-  card.appendChild(labeled(t("forge.params.base_model"), mkText("baseModel")));
-  card.appendChild(labeled(t("forge.params.context"), mkContextEmbedded()));
-
-  // Advanced grid
-  const adv = el("div", { class: "forge-advanced", "data-mode-min": "advanced" });
-  adv.appendChild(labeled("LoRA r", mkNumber("loraR", 4, 128, 1)));
-  adv.appendChild(labeled("LoRA α", mkNumber("loraAlpha", 4, 256, 1)));
-  adv.appendChild(labeled("Dropout", mkNumber("loraDropout", 0, 0.5, 0.01)));
-  adv.appendChild(labeled("DoRA", mkCheck("useDora")));
-  adv.appendChild(labeled("LR", mkNumber("learningRate", 0.000001, 0.001, 0.00001)));
-  adv.appendChild(labeled("Epochs", mkNumber("numEpochs", 1, 20, 1)));
-  adv.appendChild(labeled("Batch", mkNumber("perDeviceBatchSize", 1, 64, 1)));
-  adv.appendChild(labeled("Grad accum", mkNumber("gradientAccumulation", 1, 64, 1)));
-  adv.appendChild(labeled("Warmup ratio", mkNumber("warmupRatio", 0, 0.5, 0.01)));
-  adv.appendChild(labeled("Weight decay", mkNumber("weightDecay", 0, 0.5, 0.01)));
-  adv.appendChild(labeled("Method", mkSelect("method", ["qlora", "lora", "dora", "full"])));
-  adv.appendChild(labeled("Quant", mkSelect("quantization", ["int4", "int8", "bf16", "fp16"])));
-  card.appendChild(adv);
-
-  // VRAM calculator
-  const params = guessParamsFromName(STATE.spec.baseModel);
-  card.appendChild(buildVramCalculator({
-    model: { params },
-    mode: STATE.spec.method === "full" ? "full" : STATE.spec.method === "qlora" ? "qlora" : "lora",
-    quant: STATE.spec.quantization === "int4" ? "q4_0" : STATE.spec.quantization === "int8" ? "q8_0" : "fp16",
-    contextTokens: STATE.spec.maxSeqLength,
-    hardware: {},
+function mkBaseModelInput() {
+  const input = /** @type {HTMLInputElement} */ (el("input", {
+    type: "text", class: "forge-input",
+    value: String(STATE.spec.baseModel ?? ""),
   }));
-
-  return card;
+  input.addEventListener("input", () => {
+    STATE.spec.baseModel = input.value;
+  });
+  input.addEventListener("change", () => {
+    void refreshNativeContext().then(() => render());
+  });
+  return input;
 }
 
 function mkContextEmbedded() {
-  // Используем context-slider в embedded режиме без apply
   const wrap = el("div", { class: "forge-ctx-wrap" });
   const slider = buildContextSlider({
     modelKey: STATE.spec.baseModel,
@@ -312,88 +366,196 @@ function mkContextEmbedded() {
     initialTokens: STATE.spec.maxSeqLength,
     onChange: (target) => {
       STATE.spec.maxSeqLength = target;
+      maybeAutoSuggestYarn();
+      if (STATE._refreshSecondary) STATE._refreshSecondary();
     },
   });
   wrap.appendChild(slider);
   return wrap;
 }
 
-// ─── Step 3: Target ────────────────────────────────────────────────────────
+function maybeAutoSuggestYarn() {
+  if (STATE.yarnSuggestShown) return;
+  if (!STATE.nativeContext) return;
+  if (STATE.spec.useYarn) return;
+  if (STATE.spec.maxSeqLength <= STATE.nativeContext) return;
+  STATE.yarnSuggestShown = true;
+  showToast(t("forge.yarn.suggest.toast"), "warn");
+}
 
-function buildStepTarget() {
-  const card = el("div", { class: "card forge-card" }, [
-    el("div", { class: "card-title" }, t("forge.target.title")),
-    el("div", { class: "card-sub" }, t("forge.target.sub")),
-  ]);
+// ── YaRN section (звезда Step 1) ───────────────────────────────────────────
 
-  const grid = el("div", { class: "forge-target-grid" });
-  for (const id of ["colab", "autotrain", "bundle", "local"]) {
-    const card2 = el("button", {
-      class: "forge-target-card" + (STATE.target === id ? " forge-target-active" : ""),
-      type: "button",
-      "data-target": id,
-    }, [
-      el("div", { class: "forge-target-title" }, t(`forge.target.${id}.title`)),
-      el("div", { class: "forge-target-desc" }, t(`forge.target.${id}.desc`)),
-    ]);
-    if (id === "local") {
-      card2.classList.add("forge-target-disabled");
-      card2.title = t("forge.target.local.disabled_hint");
+function buildYarnSection() {
+  const node = el("div", { class: "forge-section" });
+  node.appendChild(el("div", { class: "forge-section-title" }, t("forge.params.yarn_section")));
+
+  const toggleRow = el("label", { class: "forge-yarn-toggle" });
+  const toggle = /** @type {HTMLInputElement} */ (el("input", { type: "checkbox" }));
+  toggle.checked = !!STATE.spec.useYarn;
+  toggle.addEventListener("change", () => {
+    STATE.spec.useYarn = toggle.checked;
+    if (toggle.checked && STATE.spec.yarnFactor <= 1 && STATE.nativeContext) {
+      STATE.spec.yarnFactor = Math.max(1, Math.ceil(STATE.spec.maxSeqLength / STATE.nativeContext));
     }
-    card2.addEventListener("click", () => {
-      if (id === "local") return; // Phase 3.3 enables this
-      STATE.target = /** @type {any} */ (id);
-      render();
-    });
-    grid.appendChild(card2);
+    refresh();
+    if (STATE._refreshSecondary) STATE._refreshSecondary();
+  });
+  toggleRow.appendChild(toggle);
+  toggleRow.appendChild(el("span", {}, t("forge.yarn.toggle.label")));
+  node.appendChild(toggleRow);
+
+  const explain = el("div", { class: "forge-yarn-explain" });
+  node.appendChild(explain);
+
+  const factorRow = el("div", { class: "forge-yarn-factor-row" });
+  const factorInput = /** @type {HTMLInputElement} */ (el("input", {
+    type: "number", min: "1", max: "8", step: "0.5",
+    value: String(STATE.spec.yarnFactor),
+  }));
+  factorInput.addEventListener("input", () => {
+    const v = Number(factorInput.value);
+    if (Number.isFinite(v) && v >= 1) {
+      STATE.spec.yarnFactor = v;
+      refresh();
+    }
+  });
+  factorRow.appendChild(el("span", {}, t("forge.yarn.factor.label")));
+  factorRow.appendChild(factorInput);
+  node.appendChild(factorRow);
+
+  function refresh() {
+    explain.classList.remove("forge-yarn-warn", "forge-yarn-ok");
+    factorInput.value = String(STATE.spec.yarnFactor);
+    factorRow.style.display = STATE.spec.useYarn ? "flex" : "none";
+
+    const native = STATE.nativeContext;
+    const ctx = STATE.spec.maxSeqLength;
+    if (STATE.spec.useYarn) {
+      explain.textContent = t("forge.yarn.on", { factor: STATE.spec.yarnFactor });
+      explain.classList.add("forge-yarn-ok");
+    } else if (native && ctx > native) {
+      explain.textContent = t("forge.yarn.off.long_ctx_warn");
+      explain.classList.add("forge-yarn-warn");
+    } else {
+      explain.textContent = t("forge.yarn.off.short_ctx");
+    }
   }
-  card.appendChild(grid);
+  refresh();
+
+  return { node, refresh };
+}
+
+// ── VRAM section ───────────────────────────────────────────────────────────
+
+function buildVramSection() {
+  const node = el("div", { class: "forge-section" });
+  node.appendChild(el("div", { class: "forge-section-title" }, t("forge.params.vram_section")));
+  const calc = buildVramCalculator(currentVramOpts());
+  node.appendChild(calc);
+  function refresh() {
+    /** @type {any} */ (calc).update(currentVramOpts());
+  }
+  return { node, refresh };
+}
+
+function currentVramOpts() {
+  const params = guessParamsFromName(STATE.spec.baseModel);
+  return {
+    model: { params },
+    mode: STATE.spec.method === "full"
+      ? "full"
+      : STATE.spec.method === "qlora"
+        ? "qlora"
+        : "lora",
+    quant: STATE.spec.quantization === "int4"
+      ? "q4_0"
+      : STATE.spec.quantization === "int8"
+        ? "q8_0"
+        : "fp16",
+    contextTokens: STATE.spec.maxSeqLength,
+    hardware: {},
+  };
+}
+
+// ── Advanced (collapsed) ───────────────────────────────────────────────────
+
+function buildAdvancedDetails(refreshYarn, refreshVram) {
+  const grid = el("div", { class: "forge-advanced" }, [
+    labeled("LoRA r", mkNumber("loraR", 4, 128, 1)),
+    labeled("LoRA α", mkNumber("loraAlpha", 4, 256, 1)),
+    labeled("Dropout", mkNumber("loraDropout", 0, 0.5, 0.01)),
+    labeled("DoRA", mkCheck("useDora")),
+    labeled("LR", mkNumber("learningRate", 0.000001, 0.001, 0.00001)),
+    labeled("Epochs", mkNumber("numEpochs", 1, 20, 1)),
+    labeled("Batch", mkNumber("perDeviceBatchSize", 1, 64, 1)),
+    labeled("Grad accum", mkNumber("gradientAccumulation", 1, 64, 1)),
+    labeled("Warmup ratio", mkNumber("warmupRatio", 0, 0.5, 0.01)),
+    labeled("Weight decay", mkNumber("weightDecay", 0, 0.5, 0.01)),
+    labeled("Method", mkSelect("method", ["qlora", "lora", "dora", "full"], () => {
+      refreshVram();
+    })),
+    labeled("Quant", mkSelect("quantization", ["int4", "int8", "bf16", "fp16"], () => {
+      refreshVram();
+    })),
+  ]);
+  return el("details", { class: "forge-collapsible" }, [
+    el("summary", { class: "forge-collapsible-summary" }, t("forge.params.advanced_section")),
+    el("div", { class: "forge-collapsible-body" }, [grid]),
+  ]);
+}
+
+// ─── Step 2: Workspace (was Run) ───────────────────────────────────────────
+
+function buildStepRunMinimal() {
+  const card = el("div", { class: "card forge-card" }, [
+    el("div", { class: "card-title" }, t("forge.run.workspace.title")),
+    el("div", { class: "card-sub" }, t("forge.run.workspace.sub")),
+  ]);
+  card.appendChild(buildRunSummary());
+  card.appendChild(buildWorkspaceActions());
+  card.appendChild(buildPostTrainingDetails());
   return card;
 }
 
-// ─── Step 4: Run ───────────────────────────────────────────────────────────
-
-function buildStepRun() {
-  const card = el("div", { class: "card forge-card" }, [
-    el("div", { class: "card-title" }, t("forge.run.title")),
-    el("div", { class: "card-sub" }, t("forge.run.sub")),
-  ]);
-
-  const summary = el("ul", { class: "forge-run-summary" }, [
+function buildRunSummary() {
+  const ctxLabel = STATE.spec.useYarn && STATE.spec.yarnFactor > 1
+    ? `${STATE.spec.maxSeqLength} (YaRN ×${STATE.spec.yarnFactor})`
+    : String(STATE.spec.maxSeqLength);
+  return el("ul", { class: "forge-run-summary" }, [
     el("li", {}, `runId: ${STATE.spec.runId}`),
-    el("li", {}, `target: ${STATE.target}`),
     el("li", {}, `model: ${STATE.spec.baseModel}`),
     el("li", {}, `method: ${STATE.spec.method.toUpperCase()} r=${STATE.spec.loraR} α=${STATE.spec.loraAlpha}`),
-    el("li", {}, `context: ${STATE.spec.maxSeqLength}`),
+    el("li", {}, `context: ${ctxLabel}`),
     el("li", {}, `dataset: ${STATE.spec.datasetPath}`),
   ]);
-  card.appendChild(summary);
+}
 
-  if (STATE.target === "colab" || STATE.target === "autotrain") {
-    card.appendChild(buildHfTokenWidget());
-  }
+function buildWorkspaceActions() {
+  const wrap = el("div", { class: "forge-workspace-actions" });
+  const generateBtn = el("button", { class: "btn btn-gold", type: "button" }, t("forge.run.workspace.generate"));
+  const openBtn = el("button", { class: "btn btn-ghost", type: "button" }, t("forge.run.workspace.open"));
+  const pathBox = el("div", { class: "forge-workspace-path" });
 
-  const goBtn = el("button", { class: "btn btn-gold", type: "button" }, t("forge.run.bundle"));
-  goBtn.addEventListener("click", async () => {
-    goBtn.disabled = true;
+  let bundleDir = null;
+
+  generateBtn.addEventListener("click", async () => {
+    generateBtn.disabled = true;
     try {
       const result = /** @type {any} */ (await window.api.forge.generateBundle({
         spec: STATE.spec,
         runId: STATE.spec.runId,
-        target: STATE.target,
+        target: "bundle",
       }));
-      showToast(t("forge.toast.bundle_ok", { dir: result.bundleDir }), "success");
-      if (STATE.target === "colab") await window.api.hf.openColab();
-      else if (STATE.target === "autotrain") await window.api.hf.openAutoTrain();
+      bundleDir = result.bundleDir;
+      showToast(t("forge.toast.workspace_ok", { dir: bundleDir }), "success");
+      renderPath();
     } catch (e) {
-      showToast(t("forge.toast.bundle_fail", { msg: errMsg(e) }), "error");
+      showToast(t("forge.toast.workspace_fail", { msg: errMsg(e) }), "error");
     } finally {
-      goBtn.disabled = false;
+      generateBtn.disabled = false;
     }
   });
-  card.appendChild(goBtn);
 
-  const openBtn = el("button", { class: "btn btn-ghost", type: "button" }, t("forge.run.open_folder"));
   openBtn.addEventListener("click", async () => {
     try {
       await window.api.forge.openBundleFolder(STATE.spec.runId);
@@ -401,23 +563,38 @@ function buildStepRun() {
       showToast(t("forge.toast.open_fail", { msg: errMsg(e) }), "error");
     }
   });
-  card.appendChild(openBtn);
 
-  // Eval panel (только если есть подготовленный eval-set, Pro mode)
-  if (STATE.prepareResult?.evalPath) {
-    const evalSection = el("div", { class: "forge-eval-section", "data-mode-min": "pro" }, [
-      el("div", { class: "card-title" }, t("eval.title")),
-      el("div", { class: "card-sub" }, t("eval.sub")),
-    ]);
-    evalSection.appendChild(
-      buildEvalPanel({
-        evalPath: STATE.prepareResult.evalPath,
-        baseModelDefault: STATE.spec.baseModel,
-        tunedModelDefault: `bibliary-finetuned/${STATE.spec.runId}`,
-      })
-    );
-    card.appendChild(evalSection);
+  function renderPath() {
+    clear(pathBox);
+    if (!bundleDir) return;
+    const copyBtn = el("button", {
+      class: "btn btn-ghost btn-small", type: "button",
+      title: t("forge.run.workspace.copy_path"),
+    }, t("forge.run.workspace.copy_path"));
+    copyBtn.addEventListener("click", () => void copyPath(bundleDir));
+    pathBox.appendChild(el("span", {}, t("forge.run.workspace.path_label")));
+    pathBox.appendChild(el("code", {}, bundleDir));
+    pathBox.appendChild(copyBtn);
   }
+
+  wrap.appendChild(generateBtn);
+  wrap.appendChild(openBtn);
+  wrap.appendChild(pathBox);
+  return wrap;
+}
+
+async function copyPath(dir) {
+  if (!dir) return;
+  try {
+    await navigator.clipboard.writeText(dir);
+    showToast(t("forge.toast.path_copied"), "success");
+  } catch {
+    /* clipboard может быть запрещён — ничего не делаем, пользователь увидит путь в UI */
+  }
+}
+
+function buildPostTrainingDetails() {
+  const body = el("div", { class: "forge-collapsible-body" });
 
   const markRow = el("div", { class: "forge-mark-row" });
   for (const status of ["succeeded", "failed", "cancelled"]) {
@@ -432,81 +609,25 @@ function buildStepRun() {
     });
     markRow.appendChild(b);
   }
-  card.appendChild(markRow);
+  body.appendChild(markRow);
 
-  return card;
-}
-
-/**
- * HuggingFace token widget. Visible only on colab / autotrain target steps.
- * Shows current saved-status, lets user paste + Save, or Clear. Token is
- * stored in OS keytar (or plain file fallback) by hf.ipc.ts -- we never
- * read it back from main, only the boolean "has token" flag.
- */
-function buildHfTokenWidget() {
-  const widget = el("div", { class: "forge-hf-widget", "data-mode-min": "advanced" }, [
-    el("div", { class: "forge-hf-title" }, t("forge.hf.title")),
-    el("div", { class: "forge-hf-hint" }, t("forge.hf.hint")),
-  ]);
-
-  const status = el("span", { class: "forge-hf-status" }, t("forge.hf.checking"));
-  const input = el("input", {
-    type: "password", class: "forge-hf-input",
-    placeholder: "hf_...", autocomplete: "off",
-    spellcheck: "false",
-  });
-  const saveBtn = el("button", { class: "btn btn-gold btn-small", type: "button" }, t("forge.hf.save"));
-  const clearBtn = el("button", { class: "btn btn-ghost btn-small", type: "button" }, t("forge.hf.clear"));
-
-  async function refreshStatus() {
-    try {
-      const has = await window.api.hf.hasToken();
-      status.textContent = has ? t("forge.hf.status.saved") : t("forge.hf.status.none");
-      status.className = `forge-hf-status${has ? " forge-hf-status-ok" : " forge-hf-status-none"}`;
-      clearBtn.disabled = !has;
-    } catch (e) {
-      status.textContent = t("forge.hf.status.error") + ": " + errMsg(e);
-      status.className = "forge-hf-status forge-hf-status-error";
-    }
+  if (STATE.prepareResult?.evalPath) {
+    const evalSection = el("div", { class: "forge-eval-section", "data-mode-min": "pro" }, [
+      el("div", { class: "card-title" }, t("eval.title")),
+      el("div", { class: "card-sub" }, t("eval.sub")),
+    ]);
+    evalSection.appendChild(buildEvalPanel({
+      evalPath: STATE.prepareResult.evalPath,
+      baseModelDefault: STATE.spec.baseModel,
+      tunedModelDefault: `bibliary-finetuned/${STATE.spec.runId}`,
+    }));
+    body.appendChild(evalSection);
   }
 
-  saveBtn.addEventListener("click", async () => {
-    const value = input.value.trim();
-    if (!value) {
-      showToast(t("forge.hf.empty"), "error");
-      return;
-    }
-    saveBtn.disabled = true;
-    try {
-      await window.api.hf.saveToken(value);
-      input.value = "";
-      showToast(t("forge.hf.toast.saved"), "success");
-      await refreshStatus();
-    } catch (e) {
-      showToast(t("forge.hf.toast.saveFailed", { msg: errMsg(e) }), "error");
-    } finally {
-      saveBtn.disabled = false;
-    }
-  });
-
-  clearBtn.addEventListener("click", async () => {
-    if (!confirm(t("forge.hf.confirmClear"))) return;
-    clearBtn.disabled = true;
-    try {
-      await window.api.hf.clearToken();
-      showToast(t("forge.hf.toast.cleared"), "success");
-      await refreshStatus();
-    } catch (e) {
-      showToast(t("forge.hf.toast.clearFailed", { msg: errMsg(e) }), "error");
-    } finally {
-      clearBtn.disabled = false;
-    }
-  });
-
-  widget.appendChild(el("div", { class: "forge-hf-row" }, [status]));
-  widget.appendChild(el("div", { class: "forge-hf-row" }, [input, saveBtn, clearBtn]));
-  refreshStatus();
-  return widget;
+  return el("details", { class: "forge-collapsible" }, [
+    el("summary", { class: "forge-collapsible-summary" }, t("forge.run.post_section")),
+    body,
+  ]);
 }
 
 // ─── Footer ────────────────────────────────────────────────────────────────
@@ -521,15 +642,11 @@ function buildFooter() {
     });
     wrap.appendChild(back);
   }
-  if (STATE.step < 4) {
+  if (STATE.step < LAST_STEP) {
     const next = el("button", { class: "btn btn-gold", type: "button" }, t("forge.next"));
     next.addEventListener("click", () => {
-      if (STATE.step === 0 && !STATE.preview) {
-        showToast(t("forge.toast.pick_source"), "error");
-        return;
-      }
-      if (STATE.step === 1 && !STATE.prepareResult) {
-        showToast(t("forge.toast.prepare_first"), "error");
+      if (STATE.step === 0 && !STATE.prepareResult) {
+        showToast(t("forge.toast.prepare_first_unified"), "error");
         return;
       }
       STATE.step++;
@@ -562,16 +679,6 @@ function labeled(label, control) {
   ]);
 }
 
-function mkText(key) {
-  const input = /** @type {HTMLInputElement} */ (el("input", {
-    type: "text",
-    class: "forge-input",
-    value: String(STATE.spec[key] ?? ""),
-  }));
-  input.addEventListener("input", () => { STATE.spec[key] = input.value; });
-  return input;
-}
-
 function mkNumber(key, min, max, step) {
   const input = /** @type {HTMLInputElement} */ (el("input", {
     type: "number",
@@ -595,14 +702,17 @@ function mkCheck(key) {
   return input;
 }
 
-function mkSelect(key, options) {
+function mkSelect(key, options, onChange) {
   const select = /** @type {HTMLSelectElement} */ (el("select", { class: "forge-input" }));
   for (const opt of options) {
     const o = /** @type {HTMLOptionElement} */ (el("option", { value: opt }, opt));
     if (STATE.spec[key] === opt) o.selected = true;
     select.appendChild(o);
   }
-  select.addEventListener("change", () => { STATE.spec[key] = select.value; });
+  select.addEventListener("change", () => {
+    STATE.spec[key] = select.value;
+    if (typeof onChange === "function") onChange();
+  });
   return select;
 }
 
@@ -618,6 +728,6 @@ function mkRange(key, min, max, step, value) {
 }
 
 function guessParamsFromName(name) {
-  const m = name.match(/(\d+(?:\.\d+)?)[bB]/);
+  const m = String(name || "").match(/(\d+(?:\.\d+)?)[bB]/);
   return m ? Number(m[1]) : 7;
 }

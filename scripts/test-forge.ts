@@ -16,8 +16,6 @@ import {
   ShareGPTLineSchema,
   ChatMLLineSchema,
   generateUnslothPython,
-  generateAutoTrainYaml,
-  generateColabNotebook,
   generateAxolotlYaml,
   ForgeSpecSchema,
   prepareDataset,
@@ -147,26 +145,40 @@ async function main(): Promise<void> {
     assert(py.includes("save_pretrained_gguf"), "GGUF export");
   });
 
-  step("generateAutoTrainYaml корректный YAML формат", () => {
-    const yaml = generateAutoTrainYaml(makeSpec({ pushToHub: true, hubModelId: "user/model" }));
-    assert(yaml.includes("task: llm-sft"), "task");
-    assert(yaml.includes("base_model: unsloth/Qwen3-4B-Instruct-2507"), "base_model");
-    assert(yaml.includes("lora_r: 16"), "lora_r");
-    assert(yaml.includes("push_to_hub: true"), "push to hub");
+  step("generateUnslothPython с YaRN добавляет rope_scaling", () => {
+    const py = generateUnslothPython(makeSpec({
+      useYarn: true,
+      yarnFactor: 4.0,
+      maxSeqLength: 131072,
+      nativeContextLength: 32768,
+    }));
+    assert(py.includes('rope_scaling={"type": "yarn"'), "rope_scaling block");
+    assert(py.includes('"factor": 4'), "factor=4");
+    assert(py.includes('"original_max_position_embeddings": 32768'), "native context written");
   });
 
-  step("generateColabNotebook валидный .ipynb", () => {
-    const nb = generateColabNotebook(makeSpec());
-    assert(nb.nbformat === 4, "nbformat 4");
-    assert(Array.isArray(nb.cells), "cells array");
-    assert(nb.cells.length > 0, "non-empty cells");
-    assert(nb.cells.some((c) => c.cell_type === "code" && c.source.join("").includes("FastLanguageModel")), "training code");
+  step("generateUnslothPython без YaRN не содержит rope_scaling", () => {
+    const py = generateUnslothPython(makeSpec({ useYarn: false, yarnFactor: 1.0 }));
+    assert(!py.includes("rope_scaling"), "rope_scaling MUST NOT appear when useYarn=false");
   });
 
   step("generateAxolotlYaml содержит datasets + lora", () => {
     const yaml = generateAxolotlYaml(makeSpec({ method: "qlora" }));
     assert(yaml.includes("base_model:"), "base_model");
     assert(yaml.includes("load_in_4bit: true"), "qlora flag");
+  });
+
+  step("generateAxolotlYaml с YaRN записывает rope_scaling.yarn", () => {
+    const yaml = generateAxolotlYaml(makeSpec({
+      method: "qlora",
+      useYarn: true,
+      yarnFactor: 4.0,
+      maxSeqLength: 131072,
+      nativeContextLength: 32768,
+    }));
+    assert(yaml.includes("rope_scaling:"), "rope_scaling key");
+    assert(yaml.includes("type: yarn"), "yarn type");
+    assert(yaml.includes("factor: 4"), "factor 4");
   });
 
   step("ForgeSpec rejects malformed", () => {
@@ -186,6 +198,21 @@ async function main(): Promise<void> {
     assert(spec.useDora === true, "DoRA on by default");
     assert(spec.learningRate === 2e-4, "lr=2e-4");
     assert(spec.numEpochs === 2, "epochs=2");
+    assert(spec.useYarn === false, "useYarn off by default");
+    assert(spec.yarnFactor === 1.0, "yarnFactor=1.0 by default");
+  });
+
+  step("ForgeSpec backward-compat: старые поля pushToHub/hubModelId игнорируются", () => {
+    const spec = ForgeSpecSchema.parse({
+      runId: "legacy",
+      baseModel: "x/x",
+      datasetPath: "x.jsonl",
+      pushToHub: true,
+      hubModelId: "user/model",
+    });
+    assert(spec.runId === "legacy", "must accept and parse legacy spec");
+    assert(!("pushToHub" in spec), "pushToHub MUST be stripped from new spec");
+    assert(!("hubModelId" in spec), "hubModelId MUST be stripped from new spec");
   });
 
   // ─── Pipeline ──
@@ -219,13 +246,25 @@ async function main(): Promise<void> {
       assert(await fileExists(result.evalPath), "eval.jsonl exists");
     });
 
-    await step("generateBundle создаёт 5 файлов", async () => {
+    await step("generateBundle создаёт workspace из 3 файлов (self-hosted)", async () => {
       const ws = path.join(dir, "bundle");
       const result = await generateBundle({ spec: makeSpec(), workspaceDir: ws });
-      assert(result.files.length === 5, `expected 5 files, got ${result.files.length}`);
+      assert(result.files.length === 3, `expected 3 files, got ${result.files.length}`);
+      const names = new Set(result.files);
+      assert(names.has("test-run-1.py"), "missing train.py");
+      assert(names.has("test-run-1-axolotl.yaml"), "missing axolotl.yaml");
+      assert(names.has("README.md"), "missing README.md");
       for (const f of result.files) {
         assert(await fileExists(path.join(ws, f)), `${f} missing`);
       }
+    });
+
+    await step("generateBundle НЕ создаёт AutoTrain YAML или Colab notebook", async () => {
+      const ws = path.join(dir, "bundle-no-cloud");
+      const result = await generateBundle({ spec: makeSpec({ runId: "no-cloud" }), workspaceDir: ws });
+      const names = new Set(result.files);
+      assert(!names.has("no-cloud.yaml"), "AutoTrain yaml MUST NOT be generated");
+      assert(!names.has("no-cloud.ipynb"), "Colab notebook MUST NOT be generated");
     });
   } finally {
     try {

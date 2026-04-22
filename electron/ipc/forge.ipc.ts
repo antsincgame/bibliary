@@ -3,9 +3,7 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import {
   ForgeSpecSchema,
-  generateAutoTrainYaml,
   generateAxolotlYaml,
-  generateColabNotebook,
   generateUnslothPython,
   prepareDataset,
   generateBundle,
@@ -128,17 +126,13 @@ export function registerForgeIpc(getMainWindow: () => BrowserWindow | null): voi
 
   ipcMain.handle(
     "forge:gen-config",
-    async (_e, args: { spec: unknown; kind: "unsloth" | "autotrain" | "axolotl" | "colab" }) => {
+    async (_e, args: { spec: unknown; kind: "unsloth" | "axolotl" }) => {
       const spec = ForgeSpecSchema.parse(args.spec);
       switch (args.kind) {
         case "unsloth":
           return { content: generateUnslothPython(spec), ext: "py" };
-        case "autotrain":
-          return { content: generateAutoTrainYaml(spec), ext: "yaml" };
         case "axolotl":
           return { content: generateAxolotlYaml(spec), ext: "yaml" };
-        case "colab":
-          return { content: JSON.stringify(generateColabNotebook(spec), null, 2), ext: "ipynb" };
       }
     }
   );

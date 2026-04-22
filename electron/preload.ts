@@ -218,23 +218,12 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.invoke("forge:prepare", args),
     generateBundle: (args: { spec: unknown; runId: string; target: string }): Promise<unknown> =>
       ipcRenderer.invoke("forge:generate-bundle", args),
-    genConfig: (args: { spec: unknown; kind: "unsloth" | "autotrain" | "axolotl" | "colab" }): Promise<{ content: string; ext: string }> =>
+    genConfig: (args: { spec: unknown; kind: "unsloth" | "axolotl" }): Promise<{ content: string; ext: string }> =>
       ipcRenderer.invoke("forge:gen-config", args),
     openBundleFolder: (runId: string): Promise<string> => ipcRenderer.invoke("forge:open-bundle-folder", runId),
     listRuns: (): Promise<unknown[]> => ipcRenderer.invoke("forge:list-runs"),
     markStatus: (runId: string, status: string): Promise<unknown> =>
       ipcRenderer.invoke("forge:mark-status", { runId, status }),
-  },
-
-  hf: {
-    hasToken: (): Promise<boolean> => ipcRenderer.invoke("hf:has-token"),
-    saveToken: (token: string): Promise<{ ok: true }> => ipcRenderer.invoke("hf:save-token", token),
-    clearToken: (): Promise<{ ok: true }> => ipcRenderer.invoke("hf:clear-token"),
-    searchModels: (query: string, limit?: number): Promise<Array<{ id: string; downloads?: number; likes?: number; tags?: string[] }>> =>
-      ipcRenderer.invoke("hf:search-models", { query, limit }),
-    modelInfo: (repoId: string): Promise<unknown> => ipcRenderer.invoke("hf:model-info", repoId),
-    openColab: (): Promise<{ url: string }> => ipcRenderer.invoke("hf:open-colab"),
-    openAutoTrain: (): Promise<{ url: string }> => ipcRenderer.invoke("hf:open-autotrain"),
   },
 
   wsl: {

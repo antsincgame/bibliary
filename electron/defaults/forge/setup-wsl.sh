@@ -38,7 +38,7 @@ python -m pip install --upgrade pip wheel
 # Для CUDA 12.x — torch 2.4+
 echo ">>> Installing torch + unsloth (это может занять 10-15 мин)"
 pip install torch --index-url https://download.pytorch.org/whl/cu124
-pip install -U "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
+pip install -U "unsloth @ git+https://github.com/unslothai/unsloth.git"
 pip install -U trl peft accelerate bitsandbytes datasets transformers
 
 # 5. quick smoke test

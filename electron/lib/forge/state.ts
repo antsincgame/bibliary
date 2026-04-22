@@ -17,6 +17,13 @@ import { coordinator, type PipelineHandle } from "../resilience/batch-coordinato
 
 export const ForgeRunStateSchema = z.object({
   runId: z.string().min(1),
+  /**
+   * Target: "bundle" — основной (и единственный новый) self-hosted режим;
+   * "local" — зарезервирован под Phase 3.3 встроенного Unsloth runner.
+   * "colab" / "autotrain" сохранены ТОЛЬКО для backward-compat: Zod не должен
+   * отвергать старые checkpoint'ы из v2.3 (до удаления облачной инфраструктуры).
+   * Новый код всегда пишет "bundle".
+   */
   target: z.enum(["colab", "autotrain", "local", "bundle"]),
   spec: z.unknown(),
   /** Подготовленные пути для train/val/eval JSONL. */
@@ -29,7 +36,7 @@ export const ForgeRunStateSchema = z.object({
   startedAt: z.string(),
   finishedAt: z.string().optional(),
   status: z.enum(["preparing", "submitted", "running", "succeeded", "failed", "cancelled"]),
-  /** Любые внешние ID (Colab notebook URL, HF Space job ID). */
+  /** Любые внешние ID (исторически — Colab notebook URL / HF Space job ID). */
   externalRefs: z.record(z.string(), z.string()).optional(),
 });
 

@@ -2719,44 +2719,6 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   border: 1px dashed rgba(255, 215, 0, 0.15);
 }
 
-.forge-target-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
-}
-.forge-target-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 18px;
-  background: rgba(13, 13, 18, 0.6);
-  border: 1px solid var(--border);
-  border-top: 1px solid rgba(255, 215, 0, 0.18);
-  cursor: pointer;
-  text-align: left;
-  font-family: var(--font-mono);
-  transition: all 0.18s ease;
-}
-.forge-target-card:hover:not(.forge-target-disabled) {
-  border-top-color: var(--gold);
-  background: rgba(255, 215, 0, 0.04);
-}
-.forge-target-active {
-  border-top-color: var(--gold);
-  background: rgba(255, 215, 0, 0.06);
-  box-shadow: 0 0 18px rgba(255, 215, 0, 0.15);
-}
-.forge-target-disabled { opacity: 0.5; cursor: not-allowed; }
-.forge-target-title {
-  font-family: var(--font-display);
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-  color: #fff;
-}
-.forge-target-desc { font-size: 11px; color: var(--text-dim); line-height: 1.5; }
-
 .forge-run-summary {
   list-style: none;
   display: flex;
@@ -4942,69 +4904,151 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   border-radius: 2px;
 }
 
-/* ===== Forge: HF token widget ===== */
-.forge-hf-widget {
-  margin: 14px 0;
-  padding: 14px 16px;
-  border: 1px solid rgba(255, 215, 0, 0.2);
-  border-radius: 4px;
-  background: rgba(255, 215, 0, 0.04);
+/* ===== Forge: section / collapsible / YaRN / workspace (Self-Hosted v2.4) ===== */
+.forge-section {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  padding: 14px 16px;
+  margin: 12px 0;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid var(--border);
+  border-top: 1px solid rgba(255, 215, 0, 0.16);
 }
-.forge-hf-title {
+.forge-section-title {
   font-family: var(--font-heading);
-  font-size: 12px;
-  color: var(--gold);
-  letter-spacing: 0.05em;
+  font-size: 11px;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
+  color: var(--gold);
 }
-.forge-hf-hint {
+details.forge-collapsible {
+  margin: 12px 0;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--border);
+}
+details.forge-collapsible > summary.forge-collapsible-summary {
+  padding: 10px 14px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  list-style: none;
+  user-select: none;
+}
+details.forge-collapsible > summary.forge-collapsible-summary::before {
+  content: "▸ ";
+  color: var(--gold);
+  margin-right: 4px;
+}
+details.forge-collapsible[open] > summary.forge-collapsible-summary::before {
+  content: "▾ ";
+}
+details.forge-collapsible[open] > summary.forge-collapsible-summary {
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+details.forge-collapsible > .forge-collapsible-body {
+  padding: 14px 16px;
+}
+
+.forge-yarn-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+}
+.forge-yarn-toggle input[type="checkbox"] {
+  appearance: none;
+  width: 40px;
+  height: 22px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+.forge-yarn-toggle input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+.forge-yarn-toggle input[type="checkbox"]:checked {
+  background: rgba(255, 215, 0, 0.15);
+  border-color: var(--gold);
+}
+.forge-yarn-toggle input[type="checkbox"]:checked::after {
+  transform: translateX(18px);
+  background: var(--gold);
+}
+.forge-yarn-explain {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  padding: 8px 10px;
+  border-left: 2px solid var(--border);
+  background: rgba(0, 0, 0, 0.16);
+}
+.forge-yarn-explain.forge-yarn-warn {
+  color: #ffb86b;
+  border-left-color: #ffb86b;
+  background: rgba(255, 184, 107, 0.06);
+}
+.forge-yarn-explain.forge-yarn-ok {
+  color: var(--neon-emerald);
+  border-left-color: var(--neon-emerald);
+  background: rgba(0, 255, 136, 0.05);
+}
+.forge-yarn-factor-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-dim);
 }
-.forge-hf-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.forge-hf-input {
-  flex: 1;
+.forge-yarn-factor-row input {
+  width: 80px;
+  padding: 4px 8px;
   background: rgba(0, 0, 0, 0.4);
   color: var(--text);
   border: 1px solid var(--border);
-  padding: 6px 10px;
   font-family: var(--font-mono);
   font-size: 12px;
-  border-radius: 2px;
 }
-.forge-hf-input:focus {
-  outline: 1px solid var(--gold);
-  border-color: var(--gold);
-}
-.forge-hf-status {
+
+.forge-workspace-path {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border);
   font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: 0.04em;
-  padding: 3px 8px;
-  border-radius: 2px;
-  border: 1px solid;
+  color: var(--text);
+  word-break: break-all;
 }
-.forge-hf-status-ok {
-  color: var(--neon-emerald);
-  border-color: rgba(0, 255, 136, 0.4);
-  background: rgba(0, 255, 136, 0.06);
-}
-.forge-hf-status-none {
-  color: var(--text-dim);
-  border-color: var(--border);
-}
-.forge-hf-status-error {
-  color: var(--accent-red);
-  border-color: rgba(255, 68, 68, 0.4);
-  background: rgba(255, 68, 68, 0.06);
+.forge-workspace-path code {
+  flex: 1;
+  background: transparent;
+  color: var(--gold);
 }
 
 /* ===== Settings: URL field with Test button ===== */
