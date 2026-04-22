@@ -16,10 +16,10 @@
 
 import { z } from "zod";
 import { promises as fs } from "fs";
-import { aggregateSearch, ALLOWED_LICENSES } from "../bookhunter/index.js";
+import { aggregateSearch } from "../bookhunter/index.js";
 import { probeBooks, isSupportedBook } from "../scanner/parsers/index.js";
 import { ingestBook, ScannerStateStore } from "../scanner/index.js";
-import { fetchQdrantJson, QDRANT_URL, QDRANT_API_KEY, SCROLL_PAGE_SIZE } from "../qdrant/http-client.js";
+import { fetchQdrantJson, QDRANT_URL, QDRANT_API_KEY } from "../qdrant/http-client.js";
 import { searchRelevantChunks, getRagConfig } from "../rag/index.js";
 import { getPromptStore, DatasetRolesSchema } from "../prompts/store.js";
 import type { ToolDefinition, OpenAiToolDefinition } from "./types.js";
