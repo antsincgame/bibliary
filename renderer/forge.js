@@ -51,18 +51,37 @@ function defaultLocalRun() {
 
 const STDOUT_TAIL_MAX = 200;
 
+/** Module-level lock против двойных кликов на «Запустить в WSL» в окне между
+ *  кликом и переходом status → "running". Без этого пользователь успевает
+ *  запустить два параллельных wsl.detect → start. */
+let _startingLocalRun = false;
+
 function cleanupLocalListeners() {
   if (!STATE.localRun) return;
   for (const off of STATE.localRun.unsubs) {
     try { off(); } catch { /* listener detach should never throw, but guard anyway */ }
   }
   STATE.localRun.unsubs = [];
-  STATE.localRun.refresh = null;
+  // ВАЖНО: refresh НЕ обнуляем — это closure на DOM-узел buildLocalRunSection,
+  // который остаётся mounted. Если обнулить — все последующие onMetric/onStdout/
+  // onExit/onError вызовы STATE.localRun.refresh() станут no-op, и UI замрёт
+  // в "idle" пока тренировка идёт в WSL. См. UI-tester audit от 2026-04-22.
+}
+
+/** Сбрасывает рабочие поля localRun in-place, сохраняя refresh-замыкание. */
+function resetLocalRunFields() {
+  cleanupLocalListeners();
+  STATE.localRun.runId = null;
+  STATE.localRun.status = "idle";
+  STATE.localRun.metric = null;
+  STATE.localRun.stdoutTail = [];
+  STATE.localRun.exitCode = null;
+  STATE.localRun.error = null;
+  STATE.localRun.importedGguf = false;
 }
 
 function resetLocalRun() {
-  cleanupLocalListeners();
-  STATE.localRun = defaultLocalRun();
+  resetLocalRunFields();
 }
 
 function defaultSpec() {
@@ -128,7 +147,7 @@ export function mountForge(root) {
 }
 
 export function isForgeBusy() {
-  return STATE.localRun.status === "running";
+  return _startingLocalRun || STATE.localRun.status === "running";
 }
 
 async function initialize() {
@@ -640,7 +659,7 @@ function buildPostTrainingDetails() {
     b.addEventListener("click", async () => {
       try {
         await window.api.forge.markStatus(STATE.spec.runId, status);
-        showToast(t("forge.toast.marked", { status }), "success");
+        showToast(t("forge.toast.marked", { status: t(`forge.run.mark.${status}`) }), "success");
       } catch (e) {
         showToast(t("forge.toast.mark_fail", { msg: errMsg(e) }), "error");
       }
@@ -721,7 +740,10 @@ function buildLocalRunSection() {
 
     const lr = STATE.localRun;
     if (lr.status === "idle") {
-      const startBtn = el("button", { class: "btn btn-gold", type: "button" }, t("forge.local.btn.start"));
+      const startBtn = /** @type {HTMLButtonElement} */ (el("button", {
+        class: "btn btn-gold", type: "button",
+      }, _startingLocalRun ? t("forge.local.btn.starting") : t("forge.local.btn.start")));
+      if (_startingLocalRun) startBtn.disabled = true;
       startBtn.addEventListener("click", () => void startLocalRun());
       node.appendChild(startBtn);
       node.appendChild(el("div", { class: "forge-local-hint" }, t("forge.local.hint.requirements")));
@@ -743,10 +765,10 @@ function buildLocalRunSection() {
       node.appendChild(buildMetricGrid(lr.metric));
       node.appendChild(buildStdoutTail(lr.stdoutTail));
       const actions = el("div", { class: "forge-local-actions" });
-      const importBtn = el("button", {
+      const importBtn = /** @type {HTMLButtonElement} */ (el("button", {
         class: "btn btn-gold", type: "button",
-        ...(lr.importedGguf ? { disabled: "true" } : {}),
-      }, t(lr.importedGguf ? "forge.local.btn.gguf_done" : "forge.local.btn.import_gguf"));
+      }, importBtnLabel(lr.importedGguf, _importingGguf)));
+      if (lr.importedGguf || _importingGguf) importBtn.disabled = true;
       importBtn.addEventListener("click", () => void importGgufClick());
       actions.appendChild(importBtn);
       const resetBtn = el("button", { class: "btn btn-ghost", type: "button" }, t("forge.local.btn.reset"));
@@ -773,6 +795,12 @@ function buildLocalRunSection() {
 
 function buildStatusBadge(kind, label) {
   return el("div", { class: `forge-local-badge forge-local-badge-${kind}` }, label);
+}
+
+function importBtnLabel(done, busy) {
+  if (done) return t("forge.local.btn.gguf_done");
+  if (busy) return t("forge.local.btn.gguf_busy");
+  return t("forge.local.btn.import_gguf");
 }
 
 function buildMetricGrid(metric) {
@@ -802,63 +830,69 @@ function buildStdoutTail(tail) {
 }
 
 async function startLocalRun() {
+  if (_startingLocalRun || STATE.localRun.status === "running") return;
   if (!STATE.bundleDir) {
     showToast(t("forge.local.toast.no_workspace"), "error");
     return;
   }
-  const wsl = /** @type {any} */ (await window.api.wsl.detect().catch(() => null));
-  if (!wsl || !wsl.installed) {
-    showToast(t("forge.local.toast.no_wsl"), "error");
-    return;
-  }
-  if (!wsl.gpuPassthrough) {
-    showToast(t("forge.local.toast.no_gpu"), "warn");
-  }
-
-  cleanupLocalListeners();
-  const runId = STATE.spec.runId;
-  STATE.localRun = defaultLocalRun();
-  STATE.localRun.runId = runId;
-  STATE.localRun.status = "running";
-
-  const onMetric = window.api.forgeLocal.onMetric(({ runId: r, metric }) => {
-    if (r !== STATE.localRun.runId) return;
-    STATE.localRun.metric = /** @type {any} */ (metric);
-    if (STATE.localRun.refresh) STATE.localRun.refresh();
-  });
-  const onStdout = window.api.forgeLocal.onStdout(({ runId: r, line }) => {
-    if (r !== STATE.localRun.runId) return;
-    pushStdoutLine(line);
-  });
-  const onStderr = window.api.forgeLocal.onStderr(({ runId: r, line }) => {
-    if (r !== STATE.localRun.runId) return;
-    pushStdoutLine(`[stderr] ${line}`);
-  });
-  const onExit = window.api.forgeLocal.onExit(({ runId: r, code }) => {
-    if (r !== STATE.localRun.runId) return;
-    STATE.localRun.exitCode = code;
-    STATE.localRun.status = code === 0 ? "succeeded" : "failed";
-    cleanupLocalListenersKeepData();
-    if (STATE.localRun.refresh) STATE.localRun.refresh();
-  });
-  const onError = window.api.forgeLocal.onError(({ runId: r, error }) => {
-    if (r !== STATE.localRun.runId) return;
-    STATE.localRun.error = error;
-    STATE.localRun.status = "failed";
-    if (STATE.localRun.refresh) STATE.localRun.refresh();
-  });
-  STATE.localRun.unsubs = [onMetric, onStdout, onStderr, onExit, onError];
-
-  const scriptWinPath = `${STATE.bundleDir}\\${runId}.py`;
+  _startingLocalRun = true;
   try {
-    await window.api.forgeLocal.start({ runId, scriptWinPath });
+    const wsl = /** @type {any} */ (await window.api.wsl.detect().catch(() => null));
+    if (!wsl || !wsl.installed) {
+      showToast(t("forge.local.toast.no_wsl"), "error");
+      return;
+    }
+    if (!wsl.gpuPassthrough) {
+      showToast(t("forge.local.toast.no_gpu"), "warn");
+    }
+
+    resetLocalRunFields();
+    const runId = STATE.spec.runId;
+    STATE.localRun.runId = runId;
+    STATE.localRun.status = "running";
     if (STATE.localRun.refresh) STATE.localRun.refresh();
-  } catch (e) {
-    cleanupLocalListeners();
-    STATE.localRun.status = "failed";
-    STATE.localRun.error = errMsg(e);
-    showToast(t("forge.local.toast.start_fail", { msg: errMsg(e) }), "error");
-    if (STATE.localRun.refresh) STATE.localRun.refresh();
+
+    const onMetric = window.api.forgeLocal.onMetric(({ runId: r, metric }) => {
+      if (r !== STATE.localRun.runId) return;
+      STATE.localRun.metric = /** @type {any} */ (metric);
+      if (STATE.localRun.refresh) STATE.localRun.refresh();
+    });
+    const onStdout = window.api.forgeLocal.onStdout(({ runId: r, line }) => {
+      if (r !== STATE.localRun.runId) return;
+      pushStdoutLine(line);
+    });
+    const onStderr = window.api.forgeLocal.onStderr(({ runId: r, line }) => {
+      if (r !== STATE.localRun.runId) return;
+      pushStdoutLine(`[stderr] ${line}`);
+    });
+    const onExit = window.api.forgeLocal.onExit(({ runId: r, code }) => {
+      if (r !== STATE.localRun.runId) return;
+      STATE.localRun.exitCode = code;
+      STATE.localRun.status = code === 0 ? "succeeded" : "failed";
+      cleanupLocalListenersKeepData();
+      if (STATE.localRun.refresh) STATE.localRun.refresh();
+    });
+    const onError = window.api.forgeLocal.onError(({ runId: r, error }) => {
+      if (r !== STATE.localRun.runId) return;
+      STATE.localRun.error = error;
+      STATE.localRun.status = "failed";
+      cleanupLocalListenersKeepData();
+      if (STATE.localRun.refresh) STATE.localRun.refresh();
+    });
+    STATE.localRun.unsubs = [onMetric, onStdout, onStderr, onExit, onError];
+
+    const scriptWinPath = `${STATE.bundleDir}\\${runId}.py`;
+    try {
+      await window.api.forgeLocal.start({ runId, scriptWinPath });
+    } catch (e) {
+      cleanupLocalListenersKeepData();
+      STATE.localRun.status = "failed";
+      STATE.localRun.error = errMsg(e);
+      showToast(t("forge.local.toast.start_fail", { msg: errMsg(e) }), "error");
+      if (STATE.localRun.refresh) STATE.localRun.refresh();
+    }
+  } finally {
+    _startingLocalRun = false;
   }
 }
 
@@ -894,8 +928,13 @@ async function cancelLocalRun() {
   }
 }
 
+let _importingGguf = false;
+
 async function importGgufClick() {
+  if (_importingGguf) return;
   if (!STATE.bundleDir) return;
+  _importingGguf = true;
+  if (STATE.localRun.refresh) STATE.localRun.refresh();
   const outputDir = `${STATE.bundleDir}\\${STATE.spec.runId}-output`;
   const modelKey = STATE.spec.runId;
   try {
@@ -906,9 +945,11 @@ async function importGgufClick() {
     }
     STATE.localRun.importedGguf = true;
     showToast(t("forge.local.toast.gguf_imported", { count: result.copied, path: result.destPath }), "success");
-    if (STATE.localRun.refresh) STATE.localRun.refresh();
   } catch (e) {
     showToast(t("forge.local.toast.gguf_fail", { msg: errMsg(e) }), "error");
+  } finally {
+    _importingGguf = false;
+    if (STATE.localRun.refresh) STATE.localRun.refresh();
   }
 }
 

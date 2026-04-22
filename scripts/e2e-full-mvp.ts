@@ -844,12 +844,12 @@ async function main(): Promise<void> {
       void valText;
     });
 
-    // ─── T8: full bundle generation ───────────────────────────────────────
-    header("T8  Forge generateBundle (Unsloth + AutoTrain + Colab + Axolotl)");
+    // ─── T8: full bundle generation (self-hosted v2.4) ────────────────────
+    header("T8  Forge generateBundle (Unsloth + Axolotl + README)");
 
     let bundle: Awaited<ReturnType<typeof generateBundle>> | null = null;
 
-    await step("T8.1 -- generateBundle returns 5 files (4 configs + README)", async () => {
+    await step("T8.1 -- generateBundle returns 3 self-hosted files", async () => {
       bundle = await generateBundle({
         spec: ForgeSpecSchema.parse({
           runId: "e2e-mvp-run",
@@ -859,8 +859,8 @@ async function main(): Promise<void> {
         }) as ForgeSpec,
         workspaceDir: forgeWorkspace,
       });
-      if (bundle.files.length !== 5) {
-        throw new Error(`got ${bundle.files.length} files, expected 5`);
+      if (bundle.files.length !== 3) {
+        throw new Error(`got ${bundle.files.length} files, expected 3 (Unsloth py + Axolotl yaml + README)`);
       }
     });
 
@@ -884,14 +884,20 @@ async function main(): Promise<void> {
       }
     });
 
-    await step("T8.4 -- Colab notebook is valid JSON with cells[]", async () => {
-      const ipynb = bundle!.files.find((f) => f.endsWith(".ipynb"));
-      if (!ipynb) throw new Error("no .ipynb in bundle");
-      const text = await fs.readFile(path.join(bundle!.bundleDir, ipynb), "utf8");
-      const parsed = JSON.parse(text) as { cells?: unknown };
-      if (!Array.isArray(parsed.cells) || parsed.cells.length < 3) {
-        throw new Error(`Colab notebook has ${Array.isArray(parsed.cells) ? parsed.cells.length : 0} cells (need >=3)`);
+    await step("T8.4 -- Axolotl YAML contains datasets + lora blocks", async () => {
+      const yamlFile = bundle!.files.find((f) => f.endsWith(".yaml"));
+      if (!yamlFile) throw new Error("no .yaml in bundle");
+      const yaml = await fs.readFile(path.join(bundle!.bundleDir, yamlFile), "utf8");
+      if (!yaml.includes("datasets:") || !yaml.includes("adapter: lora")) {
+        throw new Error("Axolotl YAML missing datasets / adapter blocks");
       }
+    });
+
+    await step("T8.5 -- bundle does NOT contain AutoTrain or Colab artifacts", async () => {
+      const ipynb = bundle!.files.find((f) => f.endsWith(".ipynb"));
+      if (ipynb) throw new Error(`unexpected Colab notebook in bundle: ${ipynb}`);
+      const autotrainYaml = bundle!.files.find((f) => /autotrain/i.test(f));
+      if (autotrainYaml) throw new Error(`unexpected AutoTrain config: ${autotrainYaml}`);
     });
 
     console.log(`\n  ${COLOR.dim}Bundle ready at: ${forgeWorkspace}${COLOR.reset}`);
