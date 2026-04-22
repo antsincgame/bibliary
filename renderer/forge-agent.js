@@ -3,6 +3,7 @@ import { el, clear } from "./dom.js";
 import { t } from "./i18n.js";
 import { metatronCube, svgDataUrl } from "./components/sacred-geometry.js";
 import { buildModelSelect } from "./components/model-select.js";
+import { AGENT_HISTORY_CAP } from "./components/agent-constants.js";
 
 /**
  * Phase 4.0 — Forge Chat Agent UI.
@@ -49,9 +50,11 @@ const AGENT_TOOL_HINTS = ["qwen3.6", "qwen3-coder", "qwen3.5", "mistral-small", 
  *       получает её как контекст — чем длиннее, тем больше токенов LLM.
  *
  * 50 сообщений ≈ 25 user/assistant пар — покрывает реалистичный диалог,
- * но не даёт расти бесконечно. FIFO-eviction.
+ * но не даёт расти бесконечно. FIFO-eviction. Константа вынесена в
+ * components/agent-constants.js — там же live-ссылка на backend-зеркало
+ * (DEFAULT_HISTORY_CAP в electron/lib/agent/history-sanitize.ts).
  */
-const AGENT_HISTORY_CAP = 50;
+/* AGENT_HISTORY_CAP импортируется из ./components/agent-constants.js */
 
 function trimAgentHistory() {
   if (STATE.chatHistory.length > AGENT_HISTORY_CAP) {

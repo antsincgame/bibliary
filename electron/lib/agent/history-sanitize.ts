@@ -14,7 +14,14 @@
 
 import type { AgentMessage } from "./types.js";
 
-/** Максимальная длина истории, передаваемая бэкенду по умолчанию. */
+/**
+ * Максимальная длина истории, передаваемая бэкенду по умолчанию.
+ *
+ * S1.3 (Sherlok): зеркало этой константы живёт в renderer-side
+ * `renderer/components/agent-constants.js → AGENT_HISTORY_CAP`. Renderer
+ * и Electron работают в разных tsconfig/процессах — единого импорта нет.
+ * Если меняешь это значение — синхронизируй с renderer.
+ */
 export const DEFAULT_HISTORY_CAP = 50;
 
 export interface RawHistoryItem {

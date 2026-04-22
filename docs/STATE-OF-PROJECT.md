@@ -42,8 +42,8 @@
 - `withPolicy` для LLM calls: adaptive timeout + exponential backoff +
   abortGrace для LM Studio bug #1203. Применён в:
   - dataset-generator (исторически)
-  - **chat handler** через `chatWithPolicy` (`<this commit>`)
-  - **agent loop** через `chatWithToolsAndPolicy` (`<this commit>`)
+  - **chat handler** через `chatWithPolicy` (`03bc361`)
+  - **agent loop** через `chatWithToolsAndPolicy` (`03bc361`)
 - File lock retries/stale + watchdog timing -- runtime configurable
   через preferences.
 
@@ -85,7 +85,7 @@
   upsert into Qdrant `dataset-accepted-concepts`
 - Live progress events → renderer alchemy log
 - **Реджистрация в coordinator** -- watchdog теперь паузит extraction
-  при offline LM Studio (`<this commit>`)
+  при offline LM Studio (`ba7e6a3`)
 - **Manual reject button** на каждой принятой карточке (`31144b8`)
 - conceptId/domain в judge.accept events для точечного reject
 

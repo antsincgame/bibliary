@@ -3,6 +3,29 @@
 Vector knowledge base for UX, SEO, copywriting and UI design concepts.
 Stores expert knowledge as embeddings in Qdrant and serves it via RAG-augmented chat through LM Studio.
 
+## What's new in v2.6 (2026-04-22)
+
+**Overmind Agent** — chat-агент стал полноценным помощником по платформе.
+Полный список фич — [CHANGELOG.md](CHANGELOG.md). Кратко:
+
+- **Multiturn-история** (B1) — агент помнит контекст разговора (cap 50 сообщений)
+- **Self-knowledge** (B6) — agent ищет ответы по `docs/*.md` через `tool search_help`
+  на отдельной Qdrant-коллекции `bibliary_help`. Build: `npm run build:help-kb`
+- **Long-term memory** (B7) — успешные user→assistant turn'ы пишутся в Qdrant
+  `bibliary_memory`, агент достаёт их через `tool recall_memory` в новых сессиях
+- **Self-hosted-only Forge** — fine-tune workflow через 3-step wizard, никаких
+  облачных runner'ов (Colab/AutoTrain/HF удалены в v2.4)
+- **Three Strikes UX** — закрыты 12 точечных багов: welcome wizard restore/skip,
+  forge validation, chat compare guard, neon на Chat+Docs
+
+Новые тесты:
+- `npm run test:agent-internals` — unit для history/memory/dedup helpers (22/22)
+- `npm run test:help-kb` — unit для markdown chunker (8/8)
+- `npm run test:agent-memory-live` — E2E на real LM Studio + Qdrant (5/5)
+
+Полный roadmap до v0.1.0-rc1 — [docs/ROADMAP-TO-MVP.md](docs/ROADMAP-TO-MVP.md).
+Состояние проекта — [docs/STATE-OF-PROJECT.md](docs/STATE-OF-PROJECT.md).
+
 ## Architecture
 
 ```

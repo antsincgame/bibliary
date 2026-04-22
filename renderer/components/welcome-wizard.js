@@ -301,16 +301,18 @@ export function openWelcomeWizard(opts) {
 
     /* A3: восстанавливаем сохранённое значение из preferences. Если модель
        всё ещё доступна в LM Studio — селект подсветит её; если её больше
-       нет (удалили из LM Studio) — value останется пустым и пользователь
-       перевыберет. */
+       нет (удалили из LM Studio) — сбрасываем + явно уведомляем (S1.2),
+       чтобы пользователь не подумал что выбор сохранился. */
     if (STATE.chatModel) {
       const stillAvailable = loadedKeys.has(STATE.chatModel) || downloadedOnlyKeys.has(STATE.chatModel);
       if (stillAvailable) {
         select.value = STATE.chatModel;
         STATE.chatModelIsDownloaded = downloadedOnlyKeys.has(STATE.chatModel);
       } else {
+        const lostModel = STATE.chatModel;
         STATE.chatModel = "";
         STATE.chatModelIsDownloaded = false;
+        showWizardToast(t("ww.setup.model_lost", { model: lostModel }), "info");
       }
     }
 
@@ -320,9 +322,9 @@ export function openWelcomeWizard(opts) {
     });
 
     /* A4 helper: если LM Studio пуст — даём кнопку открыть его внешним
-       приложением. Пытаемся через protocol handler (lmstudio://), fallback
-       на сайт через window.open. Внутри webContents.openExternal недоступен
-       без preload-метода, поэтому используем оба пути best-effort. */
+       приложением. S1.1: проверяем результат IPC, fallback на https-сайт,
+       при провале обоих — toast. Без feedback пользователь жал бы кнопку
+       и не понимал почему ничего не происходит. */
     const row = el("div", { class: "ww-setup-model-row" }, [select]);
     if (loaded.length === 0 && downloadedOnly.length === 0) {
       const openBtn = /** @type {HTMLButtonElement} */ (el("button", {
@@ -330,18 +332,39 @@ export function openWelcomeWizard(opts) {
         type: "button",
       }, t("ww.setup.open_lmstudio")));
       openBtn.addEventListener("click", () => {
-        try {
-          const api = /** @type {any} */ (window.api);
-          if (api?.system?.openExternal) {
-            void api.system.openExternal("lmstudio://");
-          } else {
-            window.open("https://lmstudio.ai/", "_blank");
-          }
-        } catch { /* ignore */ }
+        void tryOpenLmStudio();
       });
       row.appendChild(openBtn);
     }
     return row;
+  }
+
+  /**
+   * S1.1: best-effort открытие LM Studio в системном браузере / протокол-хэндлере.
+   * Порядок попыток:
+   *   1. lmstudio:// (если установлен protocol handler)
+   *   2. https://lmstudio.ai/ (страница продукта)
+   *   3. toast-ошибка если оба пути провалились
+   * Внутри webContents `window.open()` без preload-метода не открывает
+   * внешний браузер — поэтому полагаемся на api.system.openExternal.
+   */
+  async function tryOpenLmStudio() {
+    const api = /** @type {any} */ (window.api);
+    if (!api?.system?.openExternal) {
+      /* Не Electron context (devserver / тест) — фоллбэк на window.open */
+      const w = window.open("https://lmstudio.ai/", "_blank");
+      if (!w) showWizardToast(t("ww.setup.open_lmstudio_fail"), "error");
+      return;
+    }
+    try {
+      const proto = await api.system.openExternal("lmstudio://");
+      if (proto?.ok) return;
+      const site = await api.system.openExternal("https://lmstudio.ai/");
+      if (site?.ok) return;
+      showWizardToast(t("ww.setup.open_lmstudio_fail"), "error");
+    } catch {
+      showWizardToast(t("ww.setup.open_lmstudio_fail"), "error");
+    }
   }
 
   /* ─── Step 3: Done ────────────────────────────────────────────────────── */

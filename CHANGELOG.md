@@ -26,8 +26,10 @@ All notable changes to Bibliary are documented in this file. Format follows
   схем `http/https/lmstudio:` для безопасного открытия LM Studio
   из onboarding'а.
 - **Neon UI Phase 5.0 финал** — `Chat` и `Docs` маршруты получили
-  `buildNeonHero`. Все 9/9 маршрутов теперь Neon-стилизованы
-  (P1.3 в ROADMAP закрыт).
+  `buildNeonHero`. Все 9/9 маршрутов имеют neon-эстетику (7/9 через
+  общий `buildNeonHero` — Chat/Docs/Crystal/Forge/Models/Qdrant/Settings;
+  Library и Forge-Agent используют свои hero-компоненты с тем же
+  визуальным языком). P1.3 в ROADMAP закрыт.
 - **CHANGELOG.md** — этот файл, история проекта от v2.3.
 
 ### Fixed
