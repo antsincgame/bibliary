@@ -2,6 +2,7 @@
 import { t } from "./i18n.js";
 import { buildContextSlider } from "./components/context-slider.js";
 import { buildModelSelect } from "./components/model-select.js";
+import { buildNeonHero } from "./components/neon-helpers.js";
 
 let SPIN_DURATION_MS = 600;
 const TEXTAREA_MAX_HEIGHT = 120;
@@ -289,6 +290,19 @@ export function mountChat() {
   initialized = true;
 
   const chatArea = /** @type {HTMLDivElement} */ (getEl("chat-area"));
+  /* B1: Neon hero для пустого состояния чата. Контейнер `.welcome` сохранён
+     в index.html чтобы не ломать removeWelcome() и появление
+     welcome-assistant. Просто наполняем его сакральным hero. */
+  const welcomeRoot = document.getElementById("chat-welcome-root");
+  if (welcomeRoot && welcomeRoot.children.length === 0) {
+    welcomeRoot.appendChild(
+      buildNeonHero({
+        title: t("chat.welcome.title"),
+        subtitle: t("chat.welcome.sub"),
+        pattern: "flower",
+      })
+    );
+  }
   const input = /** @type {HTMLTextAreaElement} */ (getEl("input"));
   const btnSend = /** @type {HTMLButtonElement} */ (getEl("btn-send"));
   const collectionSelect = /** @type {HTMLSelectElement} */ (getEl("collection-select"));

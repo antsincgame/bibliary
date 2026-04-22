@@ -205,13 +205,21 @@ function render() {
 function buildStepper() {
   const wrap = el("div", { class: "forge-stepper", role: "tablist" });
   STEP_KEYS.forEach((key, i) => {
+    /* A7: индикатор прогресса, не tabs. Раньше pill выглядел кликабельным
+       (cursor по умолчанию), но click-handler'ов не было — пользователь
+       тыкал и ничего не происходило. Теперь явно: cursor:default,
+       aria-disabled, понятный tooltip про статус шага. */
+    const status = i === STATE.step ? "active" : i < STATE.step ? "done" : "future";
+    const tooltipText = t(`forge.step.indicator.${status}`);
     wrap.appendChild(
       el("div", {
-        class: "forge-step-pill" +
+        class: "forge-step-pill forge-step-indicator" +
           (i === STATE.step ? " forge-step-active" : "") +
           (i < STATE.step ? " forge-step-done" : ""),
         role: "tab",
         "aria-selected": i === STATE.step ? "true" : "false",
+        "aria-disabled": "true",
+        title: tooltipText,
       }, [
         el("span", { class: "forge-step-num" }, String(i + 1)),
         el("span", { class: "forge-step-label" }, t(key)),

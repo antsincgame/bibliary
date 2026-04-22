@@ -1055,6 +1055,18 @@ select option {
   text-transform: uppercase;
 }
 
+/* B1: Neon hero для пустого состояния чата (P1.3 в ROADMAP).
+   Контейнер `.welcome` сохранён для логики removeWelcome. Aura-pulse
+   старого welcome отключаем — hero-neon сам приносит sacred-geometry. */
+.chat-welcome-neon::before { display: none; }
+.chat-welcome-neon .hero-neon {
+  background: transparent;
+  border: none;
+  padding: 32px 24px;
+  text-align: center;
+  max-width: 720px;
+}
+
 /* Input bar */
 .input-bar {
   display: flex;
@@ -1311,6 +1323,24 @@ textarea:focus {
   margin: 0 auto 24px;
   padding-bottom: 18px;
   border-bottom: 1px solid var(--border);
+}
+
+/* B2: wrapper для нового Neon-hero в Docs (P1.3 в ROADMAP).
+   eyebrow остаётся отдельным элементом сверху, hero-neon ниже без
+   собственного фона — ровный визуал без двойного бордера. */
+.docs-hero-wrap {
+  max-width: 980px;
+  margin: 0 auto 24px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.docs-hero-wrap .docs-eyebrow {
+  margin-bottom: 6px;
+}
+.docs-hero-wrap .hero-neon {
+  background: transparent;
+  border: none;
+  padding: 8px 0 4px;
 }
 .docs-eyebrow {
   font-family: var(--font-mono);
@@ -2542,6 +2572,12 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   letter-spacing: 1px;
   text-transform: uppercase;
   color: var(--text-dim);
+}
+/* A7: явно индикатор статуса, не tabs. Cursor:default + user-select:none
+   чтобы пользователь не пытался кликать. Tooltip объясняет что это. */
+.forge-step-indicator {
+  cursor: default;
+  user-select: none;
 }
 .forge-step-active {
   border-color: var(--gold);

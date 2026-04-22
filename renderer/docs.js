@@ -1,6 +1,7 @@
 // @ts-check
 import { el, clear } from "./dom.js";
 import { t } from "./i18n.js";
+import { buildNeonHero } from "./components/neon-helpers.js";
 
 /**
  * Справка — встроенная документация для разработчиков-вайбкодеров.
@@ -20,11 +21,19 @@ export function mountDocs(root) {
   root.appendChild(buildLayout());
 }
 
+/**
+ * B2: Neon-hero вместо старого .docs-header (P1.3 в ROADMAP). Шаблон
+ * "metatron" даёт сакральную геометрию на фоне; eyebrow вынесен через
+ * соседний div чтобы не загромождать hero-neon API третьим параметром.
+ */
 function buildHeader() {
-  return el("header", { class: "docs-header" }, [
+  return el("div", { class: "docs-hero-wrap" }, [
     el("div", { class: "docs-eyebrow" }, t("docs.hero.eyebrow")),
-    el("h1", { class: "docs-title" }, t("docs.hero.title")),
-    el("p", { class: "docs-sub" }, t("docs.hero.sub")),
+    buildNeonHero({
+      title: t("docs.hero.title"),
+      subtitle: t("docs.hero.sub"),
+      pattern: "metatron",
+    }),
   ]);
 }
 
