@@ -23,22 +23,55 @@ interface CachedExtractor {
 
 const cache = new Map<string, CachedExtractor>();
 
+/* AUDIT 2026-04-21: до этой правки ни pipeline init, ни сам вызов экстрактора
+   не были обёрнуты таймаутом. Один зависший ONNX inference (например, OOM в
+   Wasm runtime, GPU stall) подвешивал весь Bibliary: ingest, RAG-чат, judge.
+   Cold-start легитимно длинный (модель ~150MB качается из HF при первом
+   запуске), поэтому два разных лимита. */
+const COLD_START_TIMEOUT_MS = 120_000;
+const EMBED_CALL_TIMEOUT_MS = 15_000;
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`[embedder] ${label} timed out after ${ms}ms`));
+    }, ms);
+    p.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
+
 /**
  * Lazy-loaded extractor for the given model key. Subsequent callers
  * with the same key get the cached instance; concurrent callers during
  * cold-start await the same in-flight Promise.
+ *
+ * Cold-start обёрнут в COLD_START_TIMEOUT_MS — если pipeline init завис,
+ * сбрасываем кэш чтобы следующий вызов мог попробовать заново вместо
+ * вечного зависания.
  */
 export async function getEmbedder(model: string = DEFAULT_EMBED_MODEL): Promise<FeatureExtractionPipeline> {
   const existing = cache.get(model);
   if (existing) {
     return existing.resolved ?? existing.ready;
   }
-  const ready = (async () => {
-    const m = await pipeline("feature-extraction", model);
-    const slot = cache.get(model);
-    if (slot) slot.resolved = m;
-    return m;
-  })();
+  const ready = withTimeout(
+    (async () => {
+      const m = await pipeline("feature-extraction", model);
+      const slot = cache.get(model);
+      if (slot) slot.resolved = m;
+      return m;
+    })(),
+    COLD_START_TIMEOUT_MS,
+    `cold-start ${model}`,
+  ).catch((e) => {
+    /* Сбрасываем неудачный init, чтобы следующая попытка не наследовала
+       зависший Promise. */
+    cache.delete(model);
+    throw e;
+  });
   cache.set(model, { ready, resolved: null });
   return ready;
 }
@@ -49,7 +82,11 @@ export async function getEmbedder(model: string = DEFAULT_EMBED_MODEL): Promise<
  */
 export async function embedPassage(text: string, model: string = DEFAULT_EMBED_MODEL): Promise<number[]> {
   const extractor = await getEmbedder(model);
-  const out = await extractor(`passage: ${text}`, { pooling: "mean", normalize: true });
+  const out = await withTimeout(
+    extractor(`passage: ${text}`, { pooling: "mean", normalize: true }),
+    EMBED_CALL_TIMEOUT_MS,
+    "embedPassage",
+  );
   return Array.from(out.data as Float32Array);
 }
 
@@ -59,6 +96,10 @@ export async function embedPassage(text: string, model: string = DEFAULT_EMBED_M
  */
 export async function embedQuery(text: string, model: string = DEFAULT_EMBED_MODEL): Promise<number[]> {
   const extractor = await getEmbedder(model);
-  const out = await extractor(`query: ${text}`, { pooling: "mean", normalize: true });
+  const out = await withTimeout(
+    extractor(`query: ${text}`, { pooling: "mean", normalize: true }),
+    EMBED_CALL_TIMEOUT_MS,
+    "embedQuery",
+  );
   return Array.from(out.data as Float32Array);
 }
