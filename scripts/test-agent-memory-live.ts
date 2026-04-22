@@ -25,7 +25,11 @@ import {
   recallMemory,
   MEMORY_COLLECTION,
 } from "../electron/lib/help-kb/memory.js";
-import { searchHelp, HELP_KB_COLLECTION } from "../electron/lib/help-kb/index.js";
+import {
+  searchHelp,
+  HELP_KB_COLLECTION,
+  buildHelpKb,
+} from "../electron/lib/help-kb/index.js";
 import { QDRANT_URL, QDRANT_API_KEY } from "../electron/lib/qdrant/http-client.js";
 
 const COLOR = {
@@ -180,12 +184,29 @@ async function main(): Promise<void> {
     if (res.reason !== "filtered") throw new Error(`reason: ${res.reason}`);
   });
 
-  /* M5 — search_help: запускаем только если bibliary_help уже построен */
-  const helpReady = await helpKbExists();
+  /* M5 — search_help: если bibliary_help пуст — авто-билд (унесёт ~2 сек),
+     это убирает ручной шаг 'npm run build:help-kb' для CI и для разработчика
+     который запускает live test первый раз. SKIP_HELP_KB_AUTO_BUILD=1
+     отключает автобилд если нужно отладить пустое состояние. */
+  let helpReady = await helpKbExists();
+  if (!helpReady && !process.env.SKIP_HELP_KB_AUTO_BUILD) {
+    process.stdout.write(`  ${COLOR.dim}M5 prep: коллекция ${HELP_KB_COLLECTION} пуста, авто-билд help-kb...${COLOR.reset}\n`);
+    try {
+      const result = await buildHelpKb({});
+      console.log(
+        `  ${COLOR.dim}help-kb готов: ${result.embedded}/${result.totalChunks} chunks за ${result.durationMs}ms${COLOR.reset}`,
+      );
+      helpReady = result.upserted > 0;
+    } catch (e) {
+      console.log(
+        `  ${COLOR.yellow}help-kb auto-build failed: ${e instanceof Error ? e.message : String(e)}${COLOR.reset}`,
+      );
+    }
+  }
   if (!helpReady) {
     skip(
       "M5 — searchHelp возвращает релевантные hits",
-      `коллекция ${HELP_KB_COLLECTION} пуста. Запусти 'npm run build:help-kb' заранее.`,
+      `коллекция ${HELP_KB_COLLECTION} пуста. Запусти 'npm run build:help-kb' заранее или убери SKIP_HELP_KB_AUTO_BUILD.`,
     );
   } else {
     await step("M5 — searchHelp возвращает релевантные hits по теме fine-tuning", async () => {

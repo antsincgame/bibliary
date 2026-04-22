@@ -1,11 +1,47 @@
 # Bibliary — техническое ревью для тимлида
 
-> **АРХИВНЫЙ СНИМОК.** Этот документ — статичный snapshot на дату ревью.
-> После v2.4 (2026-04-22) Forge переписан на self-hosted-only 3-step
-> wizard, удалены `electron/lib/hf/`, Colab/AutoTrain генераторы,
-> hf:* IPC. Свежее состояние Forge: `docs/FINE-TUNING.md` и
-> `docs/STATE-OF-PROJECT.md`. Ссылки на удалённый код в этом файле
-> исторически корректны на момент ревью.
+> **АРХИВНЫЙ СНИМОК на 2026-04-21.** К v2.6.0 (2026-04-22) большая
+> часть найденных дефектов закрыта. Конкретно:
+>
+> - **HIGH-1** (Crystallizer extract cancel) — **FIXED** в
+>   `electron/lib/dataset-v2/concept-extractor.ts:221`
+>   через `isAbortError(e)` helper из `resilience/lm-request-policy.js`.
+> - **HIGH-2** (Crystallizer judge cancel) — **FIXED** в
+>   `electron/lib/dataset-v2/judge.ts:235,369,424` (тот же паттерн).
+> - **HIGH-3** (`agent:cancel` чистит approvals у всех агентов) —
+>   **FIXED** в `electron/ipc/agent.ipc.ts:rejectApprovalsForAgent`,
+>   approvals хранятся с `agentId`-сегментацией.
+> - **MED-1** (semantic-chunker `embedQuery` для параграфов) — **FIXED**
+>   в `electron/lib/dataset-v2/semantic-chunker.ts:122` (`embedPassage`).
+> - **MED-2** (`RAG_SCORE_THRESHOLD` константа vs prefs) — **FIXED**
+>   в `electron/lib/rag/index.ts:96-100` (`searchRelevantChunks` принимает
+>   `scoreThreshold` параметром).
+> - **MED-4** (`parseBook` без OCR/signal) — **FIXED** в
+>   `electron/ipc/dataset-v2.ipc.ts:193-197` с явным AUDIT-комментарием.
+> - **MED-5** (`upsertAccepted` без таймаута) — **FIXED** в
+>   `electron/lib/dataset-v2/judge.ts:151-187` через `fetchQdrantJson`
+>   c `timeoutMs: 15_000`.
+> - **MED-6** (PDF parser без AbortSignal) — **FIXED** в
+>   `electron/lib/scanner/parsers/pdf.ts:112` (`opts.signal?.aborted`
+>   check каждые ~10 страниц).
+> - **README MOBI** — ложная находка: README не упоминает MOBI как
+>   поддерживаемый формат. `docs/STATE-OF-PROJECT.md` тоже не упоминает.
+>
+> **Открыты на v2.6.0:**
+>
+> - **MED-3** (`dataset-v2:list-accepted` scroll fetch без таймаута) —
+>   `electron/ipc/dataset-v2.ipc.ts:255-275` (низкий приоритет, очень
+>   узкий путь).
+> - **MED-7** (race upsert+search в judge) — низкая вероятность,
+>   обходится через crossLibDupeThreshold>0.85.
+> - **LOW-1..4** — стилистика (i18n.js 1801 строк, e2e-probe duplication,
+>   lint scope, empty catches).
+>
+> После v2.4 Forge переписан на self-hosted-only 3-step wizard, удалены
+> `electron/lib/hf/`, Colab/AutoTrain генераторы, hf:* IPC. Свежее
+> состояние Forge: `docs/FINE-TUNING.md` и `docs/STATE-OF-PROJECT.md`.
+> Ссылки на удалённый код в этом файле исторически корректны на
+> момент ревью.
 >
 > **Назначение документа.** Дать тимлиду за 30–60 минут полное представление о том, как
 > устроен проект, **почему именно так**, где он силён и где у него реальные дефекты.

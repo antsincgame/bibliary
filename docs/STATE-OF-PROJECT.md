@@ -1,20 +1,31 @@
 # Bibliary -- State of the Project
 
 > Полный отчёт: что есть, что слабое, что осталось до MVP-release.
-> Дата: 2026-04-21. Снапшот после 16 коммитов фазы UX-MVP-цикла.
+> Дата: 2026-04-22 (v2.6.0 stable). Снапшот после серии Overmind Agent
+> + Three Strikes UX финализации.
 
 ## TL;DR
 
 ```
-Готовность к pilot:    ~92%   (можно дать опытным early-adopters)
-Готовность к v0.1.0:    ~78%  (нужны e2e + auto-update + 1 неделя стабилизации)
-Готовность к public:    ~55%  (P1+P2 пункты, ~1 месяц)
+Готовность к pilot:    ~95%   (можно давать раннюю аудиторию, P0 закрыт)
+Готовность к v0.1.0:    ~88%  (E2E DONE, осталось auto-update + bookhunter policy)
+Готовность к public:    ~60%  (Sprint 2 пункты, ~3 недели)
 ```
 
 Ядро (parser + scanner + dataset-v2 + RAG + LM Studio bridge) **работает**
-на реальных данных без моков. Слабые места локализованы и приоритизированы
-ниже. Все critical-уровня известные баги закрыты в цикле sessions
-2026-04-21.
+на реальных данных без моков. Все critical-уровня известные баги закрыты
+(HIGH-1/2/3, MED-1/2/4/5/6 из TECH-LEAD-REVIEW — все имеют комментарии
+`AUDIT MED-X` в коде).
+
+**v2.6.0 (2026-04-22) — Overmind Agent + UX Stabilization:**
+- Multiturn-история агента (B1) + sanitizeAgentHistory с unit-тестами
+- Synthetic KB о приложении (B6) — bibliary_help Qdrant + tool search_help
+- Long-term memory диалогов (B7) — bibliary_memory + tool recall_memory
+- 30 unit-тестов (chunker 8 + agent-internals 22) + live E2E B6+B7 (5/5)
+- UX полировка (Three Strikes): Welcome wizard restore/block/skip,
+  Forge step validation, Chat Compare guard, Forge step pills indicator,
+  i18n cleanup (qdrant.search.error, agent.hero.sub, мёртвые ключи)
+- Полный Neon rollout (P1.3) — Chat и Docs hero (9/9 маршрутов)
 
 ---
 
@@ -151,11 +162,11 @@
 
 ### 🔴 Critical (нужно до v0.1.0)
 
-| Слабость | Где | Почему опасно |
-|---|---|---|
-| Нет E2E test полного pipeline | `scripts/e2e-*.ts` покрывают только Library | Регрессии в Crystal/Forge ловятся только глазами |
-| Нет auto-update channel | `package.json#build.publish` пустой | Пользователь не получит фикс автоматически |
-| `bookhunter/sources/*` без unified policy | gutendex.ts, archive.ts, openlibrary.ts, arxiv.ts | Один транзитный 5xx -- empty results без объяснения |
+| Слабость | Где | Почему опасно | Статус |
+|---|---|---|---|
+| ~~Нет E2E test полного pipeline~~ | `scripts/e2e-full-mvp.ts` (35 шагов) | Покрывает drop→ingest→crystal→forge bundle | ✅ DONE (v2.5) |
+| Нет auto-update channel | `package.json#build.publish` пустой | Пользователь не получит фикс автоматически | DEFERRED v2.7 |
+| `bookhunter/sources/*` без unified policy | gutendex.ts, archive.ts, openlibrary.ts, arxiv.ts | Один транзитный 5xx -- empty results без объяснения | OPEN |
 
 ### 🟠 High (нужно до beta)
 
@@ -217,6 +228,15 @@
 26-04-21 15:34  pol    chat()/chatWithTools() через withPolicy + HF timeout
 26-04-21 15:34  arch   разорван цикл forge/state ↔ resilience
 26-04-21 15:34  cry    Crystallizer pipeline в coordinator
+26-04-22 v2.4   Forge Self-Hosted: 3-step wizard, YaRN, LocalRunner WSL,
+                удалена облачная инфраструктура (Colab/AutoTrain/HF)
+26-04-22 v2.5   UX polish: Settings responsive, Library overflow/filter,
+                Chat collection/model/welcome, Welcome wizard 5→4 шага,
+                Docs rebrand "Книга"→"Справка", Neon Library/Forge/Settings
+26-04-22 v2.6   Overmind Agent (B1+B6+B7): multiturn history, synthetic
+                KB about app (bibliary_help), long-term dialog memory
+                (bibliary_memory). Three Strikes UX: 12 точечных фиксов
+                + полный Neon (Chat+Docs). 30 unit-тестов + live E2E.
 ```
 
 ### Метрики цикла
