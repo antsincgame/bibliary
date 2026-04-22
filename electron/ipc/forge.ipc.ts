@@ -30,6 +30,45 @@ import { chatWithPolicy } from "../lmstudio-client.js";
    IPC forge:cancel-eval даёт пользователю выйти из длительного прогона. */
 let activeEvalController: AbortController | null = null;
 
+/* AUDIT P0 (god): закрытие приложения раньше НЕ гасило WSL-процесс из
+   LocalRunner — он жил дальше, держал GPU/CPU. Активные раннеры теперь
+   на уровне модуля + abortAllForgeLocal(reason) вызывается из main.ts
+   в обеих ветках before-quit рядом с abortAllIngests/Agents/etc. */
+const activeRunners = new Map<string, LocalRunner>();
+
+/**
+ * Жёсткий лимит на размер ChatML для preview (P1: forge:preview-source
+ * раньше делал readFile без stat → multi-GB JSONL съедал всю RAM IPC).
+ */
+const MAX_PREVIEW_BYTES = 32 * 1024 * 1024;
+
+/** Завершить ВСЕ активные local runners (вызывается из main.ts при quit). */
+export function abortAllForgeLocal(reason: string): void {
+  for (const [runId, runner] of activeRunners.entries()) {
+    try {
+      runner.cancel();
+    } catch (e) {
+      console.error(`[forge:abortAll] cancel ${runId} failed:`, e instanceof Error ? e.message : e);
+    }
+    activeRunners.delete(runId);
+  }
+  if (reason) {
+    telemetry.logEvent({ type: "forge.local.abort_all", reason });
+  }
+}
+
+/** Прервать активный eval (вызывается из main.ts при quit). */
+export function abortAllForgeEval(reason: string): void {
+  if (activeEvalController) {
+    try {
+      activeEvalController.abort(reason);
+    } catch {
+      /* abort должен быть идемпотентным; глотаем на shutdown */
+    }
+    activeEvalController = null;
+  }
+}
+
 export function registerForgeIpc(getMainWindow: () => BrowserWindow | null): void {
   ipcMain.handle("forge:list-source-batches", async (): Promise<string[]> => {
     return listBatchFiles();
@@ -39,7 +78,15 @@ export function registerForgeIpc(getMainWindow: () => BrowserWindow | null): voi
 
   ipcMain.handle(
     "forge:preview-source",
-    async (_e, sourcePath: string): Promise<{ format: string; total: number; sample: unknown[]; errors: number }> => {
+    async (_e, sourcePath: string): Promise<{ format: string; total: number; sample: unknown[]; errors: number; truncated?: boolean }> => {
+      const stat = await fs.stat(sourcePath);
+      if (stat.size > MAX_PREVIEW_BYTES) {
+        const sizeMb = (stat.size / 1024 / 1024).toFixed(1);
+        const limitMb = (MAX_PREVIEW_BYTES / 1024 / 1024).toFixed(0);
+        throw new Error(
+          `Source too large for preview (${sizeMb} MB > ${limitMb} MB). Use forge:prepare directly.`
+        );
+      }
       const raw = await fs.readFile(sourcePath, "utf8");
       const { lines, errors } = parseAsChatML(raw);
       const sample = lines.slice(0, 3);
@@ -151,9 +198,6 @@ export function registerForgeIpc(getMainWindow: () => BrowserWindow | null): voi
     });
     return items.map((i) => i.snapshot);
   });
-
-  /** Активные local runners (один на runId). */
-  const activeRunners = new Map<string, LocalRunner>();
 
   ipcMain.handle(
     "forge:start-local",

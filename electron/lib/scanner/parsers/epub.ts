@@ -46,7 +46,27 @@ interface ManifestItem {
   mediaType: string;
 }
 
+/**
+ * Жёсткий потолок RAM для EPUB (P1, симметрично PDF parser).
+ * EPUB = ZIP, JSZip распаковывает ВЕСЬ архив в память. 100 MB EPUB
+ * (отсканированные страницы как XHTML+изображения) даёт >300 MB пиков.
+ */
+const MAX_EPUB_FILE_BYTES = 100 * 1024 * 1024;
+
 async function parseEpub(filePath: string): Promise<ParseResult> {
+  const stat = await fs.stat(filePath);
+  if (stat.size > MAX_EPUB_FILE_BYTES) {
+    const sizeMb = (stat.size / 1024 / 1024).toFixed(1);
+    const limitMb = (MAX_EPUB_FILE_BYTES / 1024 / 1024).toFixed(0);
+    return {
+      metadata: {
+        title: path.basename(filePath, path.extname(filePath)),
+        warnings: [`EPUB too large (${sizeMb} MB > ${limitMb} MB hard limit) — refused to parse`],
+      },
+      sections: [],
+      rawCharCount: 0,
+    };
+  }
   const buf = await fs.readFile(filePath);
   const zip = await JSZip.loadAsync(buf);
   const warnings: string[] = [];

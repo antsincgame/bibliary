@@ -6,6 +6,8 @@ import {
   abortAllDatasetV2,
   abortAllBookhunter,
   abortAllAgents,
+  abortAllForgeLocal,
+  abortAllForgeEval,
 } from "./ipc";
 import { disposeClient } from "./lmstudio-client";
 import {
@@ -158,6 +160,8 @@ if (!gotLock) {
       abortAllDatasetV2("app-quit");
       abortAllBookhunter("app-quit");
       abortAllAgents("app-quit");
+      abortAllForgeLocal("app-quit");
+      abortAllForgeEval("app-quit");
       disposeClient();
       return;
     }
@@ -207,6 +211,16 @@ if (!gotLock) {
         }
         try {
           abortAllAgents("app-quit");
+        } catch {
+          // ignore
+        }
+        try {
+          abortAllForgeLocal("app-quit");
+        } catch {
+          // ignore
+        }
+        try {
+          abortAllForgeEval("app-quit");
         } catch {
           // ignore
         }

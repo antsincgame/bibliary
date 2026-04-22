@@ -483,18 +483,22 @@ export function mountChat() {
 
   async function sendMessage() {
     const text = input.value.trim();
+    /* AUDIT P1 (god): атомарная блокировка ДО мутации DOM/history.
+       Раньше setLoading(true) шёл после addMessage+history.push,
+       и двойной клик/Enter+click в одном тике мог продавить guard,
+       создавая два параллельных запроса с расхождением истории. */
     if (!text || isLoading) return;
     const model = modelSelect.value;
     if (!model) {
       addError(t("chat.no_model"));
       return;
     }
+    setLoading(true);
     input.value = "";
     input.style.height = "auto";
     addMessage("user", text);
     history.push({ role: "user", content: text });
     trimHistory();
-    setLoading(true);
     showTyping();
     try {
       const collection = collectionSelect.value;

@@ -150,8 +150,20 @@ export class LocalRunner extends EventEmitter implements RunnerEvents {
         if (m) this.emit("metric", m);
       }
     }
+    /* AUDIT P1 (god): защита от unbounded growth, если WSL-скрипт пишет
+       прогресс-бары/бинарный мусор в один chunk БЕЗ \n. Без cap процесс
+       Electron накапливал бы строку гигабайтами в RAM. Усекаем до
+       MAX_PARTIAL_LINE_BYTES, эмитим как принудительную строку, чистим. */
+    if (buf.length > LocalRunner.MAX_PARTIAL_LINE_BYTES) {
+      const flushed = buf.slice(0, LocalRunner.MAX_PARTIAL_LINE_BYTES);
+      this.emit(kind, `[truncated ${flushed.length}B no-newline chunk] ${flushed.slice(0, 200)}…`);
+      buf = "";
+    }
     this[which] = buf;
   }
+
+  /** 1 MiB на одну неразорванную линию — после этого принудительный flush. */
+  static readonly MAX_PARTIAL_LINE_BYTES = 1024 * 1024;
 
   cancel(): void {
     this.killHard();
