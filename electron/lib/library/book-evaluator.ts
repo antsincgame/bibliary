@@ -14,7 +14,8 @@
  */
 
 import { z } from "zod";
-import { chatWithPolicy, listLoaded } from "../../lmstudio-client.js";
+import { chatWithPolicy, listLoaded, listDownloaded, loadModel } from "../../lmstudio-client.js";
+import { getModelProfile } from "../dataset-v2/model-profile.js";
 import { parseReasoningResponse } from "./reasoning-parser.js";
 import type { BookEvaluation, EvaluationResult } from "./types.js";
 
@@ -95,20 +96,160 @@ export interface EvaluateBookOptions {
  * Эвристика "thinking": modelKey содержит маркеры reasoning-семейств.
  * НЕ опирается на capabilities API (LM Studio не всегда заполняет его).
  */
-const THINKING_MARKERS = ["thinking", "reasoning", "deepseek-r1", "qwq", "r1-distill", "gpt-oss"];
+/* Маркеры thinking-семейств в modelKey -- fallback когда модель НЕ в curated-models.json.
+   Qwen3.x/3.5+/3.6+ серии все умеют CoT через `<think>` блоки. */
+const THINKING_NAME_MARKERS = ["thinking", "reasoning", "deepseek-r1", "qwq", "r1-distill", "gpt-oss"];
+const THINKING_FAMILIES = ["qwen3.5", "qwen3.6", "qwen3.7", "magistral", "glm-4.7", "glm-4.6"];
 
+function isThinkingByName(key: string): boolean {
+  const lc = key.toLowerCase();
+  if (THINKING_NAME_MARKERS.some((m) => lc.includes(m))) return true;
+  return THINKING_FAMILIES.some((m) => lc.includes(m));
+}
+
+/* Парсит "35B" / "30B-A3B" / "4B" / "0.6B" в число параметров (миллиарды).
+   Для MoE формата `30B-A3B` берёт ПЕРВОЕ число (total params), не active --
+   общая ёмкость знаний важнее для эпистемолога, чем активные параметры. */
+function parseParamsBillion(s: string): number {
+  const m = s.match(/(\d+(?:\.\d+)?)\s*[bB]/);
+  return m ? parseFloat(m[1]) : 0;
+}
+
+function isEmbedder(arch: string | undefined, key: string): boolean {
+  const a = (arch ?? "").toLowerCase();
+  const k = key.toLowerCase();
+  return a.includes("bert") || a.includes("clip") || k.includes("embed") || k.includes("nomic-embed");
+}
+
+interface ScoredModel {
+  modelKey: string;
+  score: number;
+  isLoaded: boolean;
+  sizeBytes: number;
+  reasons: string[];
+}
+
+/**
+ * Скорит модель по тегам curated-models.json + эвристикам имени/размера.
+ *
+ * Шкала (выше = лучше для эпистемолога):
+ *   flagship          → 1000  (Qwen3.6-35b: проверенный топ)
+ *   thinking-heavy    →  500  (нужна CoT для оценки качества)
+ *   thinking-light    →  300
+ *   tool-capable-coder→  150  (отлично для structured JSON, но менее эрудит)
+ *   non-thinking-instruct →  100
+ *   small-fast        → -200  (4b -- слишком слабо для эпистемологии)
+ *   embedder          → -∞    (отсеиваем)
+ *
+ * Бонусы:
+ *   уже в VRAM        →   +30 (instant)
+ *   thinking по имени →   +80 (qwen3.5+ серии без явного тега)
+ *   params (B)        →   +N  (35b → +35, 4b → +4) -- linear bias к большим
+ *
+ * Penalty:
+ *   coder-only        →  -50  (специализация мешает общей эрудиции)
+ */
+async function scoreModel(
+  modelKey: string,
+  loadedKeys: Set<string>,
+  sizeBytes: number,
+): Promise<ScoredModel> {
+  const reasons: string[] = [];
+  let score = 0;
+
+  const profile = await getModelProfile(modelKey);
+  const tags = new Set(profile.tags);
+
+  if (tags.has("flagship"))               { score += 1000; reasons.push("flagship+1000"); }
+  if (tags.has("thinking-heavy"))         { score +=  500; reasons.push("thinking-heavy+500"); }
+  if (tags.has("thinking-light"))         { score +=  300; reasons.push("thinking-light+300"); }
+  if (tags.has("tool-capable-coder"))     { score +=  150; reasons.push("tool-capable-coder+150"); }
+  if (tags.has("non-thinking-instruct") && score === 0) {
+    score += 100; reasons.push("non-thinking-instruct+100");
+  }
+  if (tags.has("small-fast"))             { score -=  200; reasons.push("small-fast-200"); }
+  if (tags.has("code") && !tags.has("flagship") && !tags.has("thinking-heavy")) {
+    score -= 50; reasons.push("coder-only-50");
+  }
+
+  /* Если модель НЕ в curated -- инфер по имени. */
+  if (profile.source === "default-fallback") {
+    if (isThinkingByName(modelKey)) { score += 80; reasons.push("thinking-by-name+80"); }
+    else                            { score += 20; reasons.push("unknown-llm+20"); }
+  }
+
+  /* Linear bias по размеру: 35b → +35, 4b → +4. */
+  const paramsB = parseParamsBillion(modelKey);
+  if (paramsB > 0) { score += paramsB; reasons.push(`+${paramsB}b-params`); }
+
+  /* Уже в VRAM -- маленький бонус, чтобы при равных предпочесть instant. */
+  if (loadedKeys.has(modelKey)) { score += 30; reasons.push("loaded+30"); }
+
+  return { modelKey, score, isLoaded: loadedKeys.has(modelKey), sizeBytes, reasons };
+}
+
+/**
+ * Авто-выбор лучшей модели для эпистемологической эвалюации книг.
+ *
+ * АЛГОРИТМ ПОИСКА (Iter 7+):
+ *   1. Соберём кандидатов: union(loaded, downloaded), отбросим embedders.
+ *   2. Для каждого скорим через `scoreModel()` -- использует curated-models.json
+ *      теги (flagship/thinking-heavy/...) + эвристики имени (qwen3.5+/magistral/glm-4)
+ *      + linear bias по размеру параметров (35b > 27b > 4b).
+ *   3. Выбираем топ-1 по score, тiebreaker -- sizeBytes.
+ *   4. Если топ не загружен -- loadModel() с TTL=900s (15 мин hold).
+ *   5. Возвращаем modelKey (или null если ничего нет / загрузка упала).
+ *
+ * Это даёт жирную thinking-модель типа `qwen/qwen3.6-35b-a3b` (flagship +
+ * thinking-heavy + 35b params = 1535 score), а не первую попавшуюся 4b.
+ */
 export async function pickEvaluatorModel(): Promise<string | null> {
-  const loaded = await listLoaded();
-  if (loaded.length === 0) return null;
-  /* Предпочитаем уже загруженную thinking-модель. */
-  const thinking = loaded.find((m) => {
-    const lc = m.modelKey.toLowerCase();
-    return THINKING_MARKERS.some((mark) => lc.includes(mark));
-  });
-  if (thinking) return thinking.modelKey;
-  /* Иначе берём самую большую (по contextLength как прокси для размера). */
-  const sorted = [...loaded].sort((a, b) => (b.contextLength ?? 0) - (a.contextLength ?? 0));
-  return sorted[0]?.modelKey ?? null;
+  const [loaded, downloaded] = await Promise.all([listLoaded(), listDownloaded()]);
+  const loadedKeys = new Set(loaded.map((m) => m.modelKey));
+
+  /* Union -- модель может быть и loaded, и downloaded; разные источники. */
+  const candidates = new Map<string, { sizeBytes: number; arch?: string }>();
+  for (const m of loaded) candidates.set(m.modelKey, { sizeBytes: 0 });
+  for (const m of downloaded) {
+    const prev = candidates.get(m.modelKey);
+    candidates.set(m.modelKey, { sizeBytes: m.sizeBytes ?? prev?.sizeBytes ?? 0, arch: m.architecture });
+  }
+
+  /* Отсев embedders. */
+  const llmKeys = [...candidates.entries()]
+    .filter(([key, info]) => !isEmbedder(info.arch, key))
+    .map(([key, info]) => ({ key, sizeBytes: info.sizeBytes }));
+
+  if (llmKeys.length === 0) return null;
+
+  /* Скорим параллельно. */
+  const scored = await Promise.all(
+    llmKeys.map((c) => scoreModel(c.key, loadedKeys, c.sizeBytes)),
+  );
+  scored.sort((a, b) => b.score - a.score || b.sizeBytes - a.sizeBytes);
+
+  const top = scored[0];
+  if (!top) return null;
+
+  /* Уже загружено -- мгновенно возвращаем. */
+  if (top.isLoaded) return top.modelKey;
+
+  /* Не загружено -- автозагрузка через WS SDK. TTL 15 мин чтобы выдержать
+     многокниговый batch. gpuOffload=max -- максимум на GPU, остальное в RAM. */
+  try {
+    const handle = await loadModel(top.modelKey, { ttlSec: 900, gpuOffload: "max" });
+    return handle.modelKey;
+  } catch {
+    /* Топ не влез (нехватка VRAM) -- пробуем второй кандидат, потом третий. */
+    for (const alt of scored.slice(1, 4)) {
+      if (alt.isLoaded) return alt.modelKey;
+      try {
+        const handle = await loadModel(alt.modelKey, { ttlSec: 900, gpuOffload: "max" });
+        return handle.modelKey;
+      } catch { /* try next */ }
+    }
+    return null;
+  }
 }
 
 /**
