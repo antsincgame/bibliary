@@ -556,10 +556,30 @@ async function processBook(
 
   // ── Stage 1: PARSE + IMPORT ─────────────────────────────────────────────
   /* convertBookToMarkdown делает parseBook + chapter-split + image-extract +
-     buildFrontmatter + Markdown body. Это CPU-heavy, GPU свободна. */
+     buildFrontmatter + Markdown body. Это CPU-heavy, GPU свободна.
+     Per-book timeout 8 мин: pdfjs на повреждённых PDF может зацикливаться
+     на ретраях XRef parse, не реагируя на opts.signal (внутренний worker).
+     Жертвуем 1-2 битыми книгами ради того чтобы batch не висел часами. */
+  const PARSE_TIMEOUT_MS = 8 * 60 * 1000;
   let converted;
   try {
-    converted = await convertBookToMarkdown(book.absPath, { ocrEnabled: isOcrSupported(), signal: abortSignal });
+    const parseCtl = new AbortController();
+    const timer = setTimeout(() => parseCtl.abort(), PARSE_TIMEOUT_MS);
+    const onUpstreamAbort = (): void => parseCtl.abort();
+    abortSignal?.addEventListener("abort", onUpstreamAbort);
+    try {
+      converted = await Promise.race([
+        convertBookToMarkdown(book.absPath, { ocrEnabled: isOcrSupported(), signal: parseCtl.signal }),
+        new Promise<never>((_, reject) => {
+          parseCtl.signal.addEventListener("abort", () =>
+            reject(new Error(`parse timeout > ${PARSE_TIMEOUT_MS / 1000}s (likely corrupt PDF)`)),
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+      abortSignal?.removeEventListener("abort", onUpstreamAbort);
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     pushErr("parser-failed", msg);
