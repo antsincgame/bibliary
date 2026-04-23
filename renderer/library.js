@@ -909,6 +909,36 @@ const CATALOG = {
   loading: false,
   /** Subscriptions are owned by mountLibrary; we just store the unsub fns here. */
   unsubEvaluator: /** @type {null | (() => void)} */ (null),
+  unsubBatch: /** @type {null | (() => void)} */ (null),
+};
+
+/**
+ * Multi-book crystallization batch state. Tracks live progress so the
+ * Catalog UI (button label, summary, per-row status) reflects the
+ * background extraction without a roundtrip to disk.
+ *
+ * Lifecycle: idle → starting → running (per-book transitions) → done|cancelled|failed → idle.
+ *
+ * `lastJobId` is harvested from per-book child events (`parse.start` etc.
+ * carry the inner runExtraction jobId) -- we use it to call
+ * `datasetV2.cancel(jobId)` since the batch IPC doesn't expose its own
+ * cancel handle (one runExtraction at a time, sequentially).
+ */
+const BATCH = {
+  active: false,
+  batchId: /** @type {string|null} */ (null),
+  total: 0,
+  done: 0,
+  skipped: 0,
+  failed: 0,
+  /** @type {string|null} */
+  currentBookId: null,
+  /** @type {string|null} */
+  currentBookTitle: null,
+  /** @type {string|null} */
+  lastJobId: null,
+  /** @type {string|null} */
+  collection: null,
 };
 
 const QUALITY_PRESETS = [
@@ -1235,19 +1265,39 @@ function buildCatalogBottomBar(root) {
     onclick: () => guardAndCrystallize(root),
   }, t("library.catalog.btn.crystallize"));
 
+  /* Cancel batch -- hidden until a batch is active. Kept as a sibling
+     of crystallizeBtn so it can be toggled via display:none without
+     remounting the bottom-bar. */
+  const cancelBatchBtn = el("button", {
+    type: "button",
+    class: "lib-btn lib-btn-danger lib-btn-cancel-batch",
+    style: "display:none",
+    onclick: () => void cancelBatchExtraction(),
+  }, t("library.catalog.btn.cancelBatch"));
+
+  /* Inline progress text (e.g. "Now: <book> (3/12)"); empty when idle. */
+  const batchSummary = el("span", { class: "lib-catalog-batch-summary" }, "");
+
   return el("div", { class: "lib-catalog-bottombar" }, [
     summary,
-    el("div", { class: "lib-catalog-bottom-actions" }, [selectAllBtn, clearBtn, deleteBtn, crystallizeBtn]),
+    batchSummary,
+    el("div", { class: "lib-catalog-bottom-actions" }, [
+      selectAllBtn, clearBtn, deleteBtn, crystallizeBtn, cancelBatchBtn,
+    ]),
   ]);
 }
 
 /**
- * Guard rules before crystallization (Iter 6 will wire actual start-batch).
+ * Guard rules before crystallization:
  *  - target collection must be picked
  *  - all selected books must be evaluated (not still queued/failed)
  *  - low-quality warning if any has quality < 50
+ *
+ * After guards pass, kicks off real `dataset-v2:start-batch` and lets the
+ * subscription (subscribeBatchEvents) drive UI updates per book.
  */
 function guardAndCrystallize(root) {
+  if (BATCH.active) return; // double-click safety
   if (CATALOG.selected.size === 0) return;
   if (!STATE.targetCollection) {
     window.alert(t("library.catalog.guard.noCollection"));
@@ -1266,8 +1316,165 @@ function guardAndCrystallize(root) {
   if (lowQ.length > 0 && !window.confirm(t("library.catalog.guard.lowQuality", { n: String(lowQ.length) }))) {
     return;
   }
-  /* Iter 6 lands here: window.api.datasetV2.startBatch({ bookIds, targetCollection: STATE.targetCollection }). */
-  window.alert(`[Iter 6 stub] would crystallize ${selectedRows.length} books → ${STATE.targetCollection}`);
+  void startBatchExtraction(root, selectedRows.map((r) => r.id));
+}
+
+/**
+ * Fire-and-forget startBatch. The IPC promise resolves only once the whole
+ * batch is done (or fails) -- we await it here only to flip BATCH.active
+ * back off on terminal states. Live progress comes from `dataset-v2:event`
+ * (see subscribeBatchEvents in mountLibrary).
+ */
+async function startBatchExtraction(root, bookIds) {
+  BATCH.active = true;
+  BATCH.batchId = null;
+  BATCH.total = bookIds.length;
+  BATCH.done = 0;
+  BATCH.skipped = 0;
+  BATCH.failed = 0;
+  BATCH.currentBookId = null;
+  BATCH.currentBookTitle = null;
+  BATCH.lastJobId = null;
+  BATCH.collection = STATE.targetCollection;
+
+  for (const id of bookIds) {
+    const idx = CATALOG.rows.findIndex((r) => r.id === id);
+    if (idx >= 0) CATALOG.rows[idx].status = "crystallizing";
+  }
+  updateBatchUi(root);
+  renderCatalogTable(root);
+
+  try {
+    const res = await window.api.datasetV2.startBatch({
+      bookIds,
+      targetCollection: STATE.targetCollection,
+    });
+    /* Resolve = batch reached natural end (could be all-skipped). The
+       per-book accounting was already updated by events; we only need
+       to publish a summary toast for the user. */
+    window.alert(t("library.catalog.batch.done", {
+      processed: String(res.processed),
+      skipped: String(res.skipped.length),
+      failed: String(BATCH.failed),
+    }));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    /* AbortError / user-cancel surfaces here as "user-cancel"; treat
+       both branches uniformly -- BATCH.active gets reset in finally. */
+    const cancelled = /abort|cancel/i.test(msg);
+    window.alert(cancelled
+      ? t("library.catalog.batch.cancelled")
+      : t("library.catalog.batch.failed", { error: msg }));
+  } finally {
+    BATCH.active = false;
+    BATCH.currentBookId = null;
+    BATCH.currentBookTitle = null;
+    updateBatchUi(root);
+    /* Re-pull catalog so SQLite-side status (`indexed`/`failed`) replaces
+       optimistic in-flight state. */
+    void renderCatalog(root);
+  }
+}
+
+/**
+ * Cancel the currently running per-book extraction. We cancel the
+ * inner `jobId` (last seen from runExtraction events) -- the batch
+ * loop in main process will then catch the abort, mark the book as
+ * failed, and emit `batch.done` since it has no more iterations.
+ */
+async function cancelBatchExtraction() {
+  if (!BATCH.active || !BATCH.lastJobId) return;
+  if (!window.confirm(t("library.catalog.batch.confirmCancel"))) return;
+  try {
+    await window.api.datasetV2.cancel(BATCH.lastJobId);
+  } catch (err) {
+    console.warn("[batch.cancel] failed:", err);
+  }
+}
+
+/**
+ * Single dispatcher for `dataset-v2:event` payloads. Mutates BATCH +
+ * CATALOG.rows in place; callers re-render via updateBatchUi /
+ * renderCatalogTable.
+ */
+function applyBatchEvent(root, ev) {
+  if (typeof ev.jobId === "string") BATCH.lastJobId = ev.jobId;
+  if (typeof ev.batchId === "string") BATCH.batchId = ev.batchId;
+
+  if (ev.stage === "batch") {
+    if (ev.phase === "start") {
+      BATCH.total = typeof ev.total === "number" ? ev.total : BATCH.total;
+    } else if (ev.phase === "filtered") {
+      const eligible = typeof ev.eligible === "number" ? ev.eligible : BATCH.total;
+      const skipped = typeof ev.skipped === "number" ? ev.skipped : 0;
+      BATCH.total = eligible;
+      BATCH.skipped += skipped;
+    } else if (ev.phase === "book-start") {
+      BATCH.currentBookId = typeof ev.bookId === "string" ? ev.bookId : null;
+      BATCH.currentBookTitle = typeof ev.bookTitle === "string" ? ev.bookTitle : null;
+      if (BATCH.currentBookId) {
+        const idx = CATALOG.rows.findIndex((r) => r.id === BATCH.currentBookId);
+        if (idx >= 0) CATALOG.rows[idx].status = "crystallizing";
+      }
+    } else if (ev.phase === "book-done") {
+      BATCH.done += 1;
+      if (typeof ev.bookId === "string") {
+        const idx = CATALOG.rows.findIndex((r) => r.id === ev.bookId);
+        if (idx >= 0) CATALOG.rows[idx].status = "indexed";
+      }
+    } else if (ev.phase === "book-failed") {
+      BATCH.failed += 1;
+      if (typeof ev.bookId === "string") {
+        const idx = CATALOG.rows.findIndex((r) => r.id === ev.bookId);
+        if (idx >= 0) CATALOG.rows[idx].status = "failed";
+      }
+    } else if (ev.phase === "done") {
+      /* No state change here -- BATCH.active is flipped by startBatchExtraction's finally. */
+    }
+    updateBatchUi(root);
+    renderCatalogTable(root);
+  }
+  /* Non-batch stages (parse/extract/judge/...) carry per-book jobId so
+     cancelBatchExtraction can target the right inner job, but otherwise
+     don't move the catalog needle. */
+}
+
+/**
+ * Reflects BATCH.* into the bottom-bar: button label/disabled, summary
+ * text, optional Cancel button visibility.
+ */
+function updateBatchUi(root) {
+  const btn = root.querySelector(".lib-catalog-bottombar .lib-btn-primary");
+  const cancelBtn = root.querySelector(".lib-catalog-bottombar .lib-btn-cancel-batch");
+  const summary = root.querySelector(".lib-catalog-batch-summary");
+
+  if (btn) {
+    if (BATCH.active) {
+      btn.setAttribute("disabled", "true");
+      btn.classList.add("lib-btn-busy");
+      btn.textContent = t("library.catalog.batch.progress", {
+        done: String(BATCH.done),
+        total: String(BATCH.total),
+        skipped: String(BATCH.skipped),
+      });
+    } else {
+      btn.removeAttribute("disabled");
+      btn.classList.remove("lib-btn-busy");
+      btn.textContent = t("library.catalog.btn.crystallize");
+    }
+  }
+  if (cancelBtn) {
+    cancelBtn.style.display = BATCH.active ? "" : "none";
+  }
+  if (summary) {
+    summary.textContent = BATCH.active && BATCH.currentBookTitle
+      ? t("library.catalog.batch.book", {
+          title: BATCH.currentBookTitle,
+          i: String(BATCH.done + 1),
+          total: String(BATCH.total),
+        })
+      : "";
+  }
 }
 
 function buildCatalogPane(root) {
@@ -1673,6 +1880,15 @@ export async function mountLibrary(root) {
         }
       }
     }
+  });
+
+  /* Live updates from multi-book crystallization batch (Iter 6). The
+     dispatcher mutates BATCH/CATALOG in place and re-renders only the
+     pieces that need it -- expensive `library.catalog` IPC is avoided
+     until the batch terminates (then renderCatalog runs once for fresh
+     persisted state). */
+  CATALOG.unsubBatch = window.api.datasetV2.onEvent((ev) => {
+    applyBatchEvent(root, ev);
   });
 
   refreshSummary(root);

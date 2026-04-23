@@ -402,7 +402,7 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
       const targetCollection = args.targetCollection ?? ACCEPTED_COLLECTION;
       assertValidCollectionName(targetCollection);
 
-      const { getBookById } = await import("../lib/library/cache-db.js");
+      const { getBookById, setBookStatus } = await import("../lib/library/cache-db.js");
       const path = await import("path");
       const batchId = randomUUID();
       const minQ = typeof args.minQuality === "number" ? args.minQuality : 70;
@@ -464,6 +464,9 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
 
       for (let i = 0; i < eligible.length; i++) {
         const book = eligible[i];
+        /* Persist status BEFORE emit so renderer.refresh() сразу видит
+           актуальное состояние, даже если книгу открыли в другом окне. */
+        setBookStatus(book.id, "crystallizing");
         emit({ stage: "batch", phase: "book-start", bookIndex: i + 1, bookTotal: eligible.length, bookId: book.id, bookTitle: book.title });
         /* Per-book emitter: оборачиваем broadcast и подмешиваем
            batchId/bookIndex -- renderer видит, к какой книге
@@ -489,9 +492,18 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
             accepted: r.totalConcepts.accepted,
             rejected: r.totalConcepts.rejected,
           });
+          /* Stamp final state with concept counters: UI может показать
+             accepted/extracted в карточке книги без отдельного запроса. */
+          setBookStatus(book.id, "indexed", {
+            conceptsAccepted: r.totalConcepts.accepted,
+            conceptsExtracted: r.totalConcepts.extractedRaw,
+          });
           emit({ stage: "batch", phase: "book-done", bookIndex: i + 1, bookId: book.id, accepted: r.totalConcepts.accepted });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
+          /* "indexed" не подходит для частично обработанной/прерванной
+             книги -- ставим failed, чтобы при ребаче её можно было повторить. */
+          setBookStatus(book.id, "failed");
           skipped.push({ bookId: book.id, reason: `extraction-failed: ${msg}` });
           emit({ stage: "batch", phase: "book-failed", bookIndex: i + 1, bookId: book.id, error: msg });
         }

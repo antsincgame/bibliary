@@ -285,6 +285,37 @@ export function deleteBook(id: string): void {
   txn();
 }
 
+/**
+ * Частичное обновление статуса (без перезаписи тегов/FTS).
+ *
+ * Используется crystallizer'ом во время batch-обработки -- мы не хотим
+ * на каждый book-start/done переписывать FTS-индекс и теги. Это атомарный
+ * UPDATE одной строки + опциональные счётчики concepts.
+ *
+ * Если книги нет -- silently no-op (caller уже мог её удалить из UI пока
+ * batch ещё ехал). Возвращает true если строка была реально обновлена.
+ */
+export function setBookStatus(
+  id: string,
+  status: BookStatus,
+  extras?: { conceptsAccepted?: number; conceptsExtracted?: number },
+): boolean {
+  const db = openCacheDb();
+  const fields: string[] = ["status = @status"];
+  const params: Record<string, unknown> = { id, status };
+  if (typeof extras?.conceptsAccepted === "number") {
+    fields.push("concepts_accepted = @concepts_accepted");
+    params.concepts_accepted = extras.conceptsAccepted;
+  }
+  if (typeof extras?.conceptsExtracted === "number") {
+    fields.push("concepts_extracted = @concepts_extracted");
+    params.concepts_extracted = extras.conceptsExtracted;
+  }
+  const sql = `UPDATE books SET ${fields.join(", ")} WHERE id = @id`;
+  const info = db.prepare(sql).run(params);
+  return info.changes > 0;
+}
+
 // ── Queries ─────────────────────────────────────────────────────────────────
 
 export interface CatalogQuery {
