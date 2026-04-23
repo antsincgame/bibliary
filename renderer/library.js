@@ -10,6 +10,7 @@
  */
 import { el, clear } from "./dom.js";
 import { t } from "./i18n.js";
+import { buildCollectionPicker } from "./components/collection-picker.js";
 
 /** @typedef {{ absPath: string, fileName: string, ext: string, sizeBytes: number, mtimeMs: number }} BookFile */
 /** @typedef {{ ingestId: string, phase: string, bookSourcePath: string, bookTitle: string, totalChunks: number, processedChunks: number, embeddedChunks: number, upsertedChunks: number, message?: string, errorMessage?: string }} ProgressEvent */
@@ -17,8 +18,10 @@ import { t } from "./i18n.js";
 /** @typedef {"none"|"ext"|"status"|"folder"} GroupMode */
 
 const STATE = {
-  /** @type {"browse"|"history"|"search"} */
-  tab: "browse",
+  /** @type {"catalog"|"import"|"browse"|"history"|"search"} */
+  tab: "catalog",
+  /** Selected target Qdrant collection (used both for legacy browse-ingest and Iter 6 batch crystallization). */
+  targetCollection: "",
   /** @type {BookFile[]} */
   books: [],
   /** @type {Map<string, BookFile>} */
@@ -768,11 +771,15 @@ function switchTab(tab, root) {
   root.querySelectorAll(".lib-tab").forEach((b) => {
     b.classList.toggle("lib-tab-active", b.dataset.tab === tab);
   });
+  root.querySelector(".lib-pane-catalog")?.classList.toggle("lib-pane-active", tab === "catalog");
+  root.querySelector(".lib-pane-import")?.classList.toggle("lib-pane-active", tab === "import");
   root.querySelector(".lib-pane-browse")?.classList.toggle("lib-pane-active", tab === "browse");
   root.querySelector(".lib-pane-history")?.classList.toggle("lib-pane-active", tab === "history");
   root.querySelector(".lib-pane-search")?.classList.toggle("lib-pane-active", tab === "search");
   if (tab === "history") loadHistory().then(() => renderHistory(root));
   if (tab === "search") renderSearch(root);
+  if (tab === "catalog") void renderCatalog(root);
+  if (tab === "import") renderImport(root);
 }
 
 /* ───── dropzone ───── */
@@ -855,13 +862,641 @@ function buildGroupControl(root, listEl) {
 
 function buildLibraryTabs(root) {
   return el("div", { class: "lib-tabs" }, [
-    el("button", { class: "lib-tab lib-tab-active", type: "button", "data-tab": "browse",
-      onclick: () => switchTab("browse", root) }, t("library.tab.browse")),
+    el("button", { class: "lib-tab lib-tab-active", type: "button", "data-tab": "catalog",
+      onclick: () => switchTab("catalog", root) }, t("library.tab.catalog")),
+    el("button", { class: "lib-tab", type: "button", "data-tab": "import",
+      onclick: () => switchTab("import", root) }, t("library.tab.import")),
     el("button", { class: "lib-tab", type: "button", "data-tab": "search",
-      onclick: () => switchTab("search", root) }, t("library.tab.search")),
+      onclick: () => switchTab("search", root) }, t("library.tab.hunt")),
+    el("button", { class: "lib-tab", type: "button", "data-tab": "browse",
+      onclick: () => switchTab("browse", root) }, t("library.tab.ingest")),
     el("button", { class: "lib-tab", type: "button", "data-tab": "history",
       onclick: () => switchTab("history", root) }, t("library.tab.history")),
   ]);
+}
+
+/* ═══════════════════ CATALOG (Iter 5b) ═══════════════════ */
+
+/**
+ * @typedef {object} CatalogMeta
+ * @property {string} id
+ * @property {string} title
+ * @property {string} [titleEn]
+ * @property {string} [author]
+ * @property {string} [authorEn]
+ * @property {string} [domain]
+ * @property {number} wordCount
+ * @property {number} [qualityScore]
+ * @property {boolean} [isFictionOrWater]
+ * @property {string} status
+ * @property {string[]} [tags]
+ */
+
+const CATALOG = {
+  /** @type {CatalogMeta[]} */
+  rows: [],
+  total: 0,
+  /** @type {Set<string>} bookId */
+  selected: new Set(),
+  filters: {
+    /** Quality score floor (0..100). 0 = no filter. */
+    quality: 0,
+    /** Hide books flagged is_fiction_or_water. */
+    hideFiction: false,
+    /** Free-text filter against title/author/tags. */
+    search: "",
+  },
+  loading: false,
+  /** Subscriptions are owned by mountLibrary; we just store the unsub fns here. */
+  unsubEvaluator: /** @type {null | (() => void)} */ (null),
+};
+
+const QUALITY_PRESETS = [
+  { key: "all",      value: 0  },
+  { key: "workable", value: 50 },
+  { key: "solid",    value: 70 },
+  { key: "premium",  value: 86 },
+];
+
+/** Pure: applies UI filters to fetched rows. */
+function filterCatalog(rows) {
+  const q = CATALOG.filters.quality;
+  const hide = CATALOG.filters.hideFiction;
+  const needle = CATALOG.filters.search.trim().toLowerCase();
+  return rows.filter((row) => {
+    if (q > 0) {
+      const score = typeof row.qualityScore === "number" ? row.qualityScore : -1;
+      if (score < q) return false;
+    }
+    if (hide && row.isFictionOrWater === true) return false;
+    if (needle) {
+      const haystack = [
+        row.titleEn, row.title, row.authorEn, row.author, row.domain,
+        ...(row.tags ?? []),
+      ].filter(Boolean).join(" ").toLowerCase();
+      if (!haystack.includes(needle)) return false;
+    }
+    return true;
+  });
+}
+
+function statusLabel(status) {
+  const key = `library.catalog.status.${status}`;
+  const trans = t(key);
+  return trans === key ? status : trans;
+}
+
+function fmtWords(n) {
+  if (typeof n !== "number" || !Number.isFinite(n)) return "—";
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 1000) return (n / 1000).toFixed(1) + "k";
+  return String(n);
+}
+
+function fmtQuality(n) {
+  if (typeof n !== "number" || !Number.isFinite(n)) return "—";
+  return String(Math.round(n));
+}
+
+function qualityClass(n) {
+  if (typeof n !== "number") return "lib-q-unset";
+  if (n >= 86) return "lib-q-premium";
+  if (n >= 70) return "lib-q-solid";
+  if (n >= 50) return "lib-q-workable";
+  return "lib-q-low";
+}
+
+function statusClass(status) {
+  return "lib-status-" + status.replace(/[^a-z0-9_-]/gi, "");
+}
+
+async function loadCatalog() {
+  if (CATALOG.loading) return;
+  CATALOG.loading = true;
+  try {
+    const res = await window.api.library.catalog({ limit: 5000 });
+    CATALOG.rows = /** @type {CatalogMeta[]} */ (res.rows || []);
+    CATALOG.total = res.total ?? CATALOG.rows.length;
+  } catch (err) {
+    console.error("[library.catalog] load failed:", err);
+    CATALOG.rows = [];
+    CATALOG.total = 0;
+  } finally {
+    CATALOG.loading = false;
+  }
+}
+
+function renderCatalogTable(root) {
+  const tbody = root.querySelector(".lib-catalog-tbody");
+  if (!tbody) return;
+  clear(tbody);
+
+  const filtered = filterCatalog(CATALOG.rows);
+
+  const shownEl = root.querySelector(".lib-catalog-summary-shown");
+  if (shownEl) shownEl.textContent = t("library.catalog.summary.shown", {
+    shown: String(filtered.length),
+    total: String(CATALOG.total),
+  });
+  const selEl = root.querySelector(".lib-catalog-summary-selected");
+  if (selEl) selEl.textContent = t("library.catalog.summary.selected", { n: String(CATALOG.selected.size) });
+
+  if (CATALOG.rows.length === 0) {
+    const emptyRow = el("tr", { class: "lib-catalog-empty-row" }, [
+      el("td", { colspan: "7", class: "lib-empty-cell" }, [
+        el("div", { class: "lib-empty-title" }, t("library.catalog.empty.title")),
+        el("div", { class: "lib-empty-body" }, t("library.catalog.empty.body")),
+      ]),
+    ]);
+    tbody.appendChild(emptyRow);
+    return;
+  }
+
+  if (filtered.length === 0) {
+    const emptyRow = el("tr", {}, [
+      el("td", { colspan: "7", class: "lib-empty-cell" }, "—"),
+    ]);
+    tbody.appendChild(emptyRow);
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  for (const row of filtered) {
+    const cb = /** @type {HTMLInputElement} */ (el("input", {
+      type: "checkbox",
+      class: "lib-catalog-cb",
+      "data-book-id": row.id,
+    }));
+    cb.checked = CATALOG.selected.has(row.id);
+    cb.addEventListener("change", () => {
+      if (cb.checked) CATALOG.selected.add(row.id);
+      else CATALOG.selected.delete(row.id);
+      const sEl = root.querySelector(".lib-catalog-summary-selected");
+      if (sEl) sEl.textContent = t("library.catalog.summary.selected", { n: String(CATALOG.selected.size) });
+    });
+
+    const titlePrimary = row.titleEn || row.title || "—";
+    const titleSecondary = row.titleEn && row.title && row.titleEn !== row.title ? row.title : "";
+    const authorPrimary = row.authorEn || row.author || "—";
+    const fictionMark = row.isFictionOrWater ? " ◆" : "";
+
+    const tr = el("tr", {
+      class: "lib-catalog-row" + (row.isFictionOrWater ? " lib-catalog-row-fiction" : ""),
+      "data-book-id": row.id,
+    }, [
+      el("td", { class: "lib-catalog-cell-cb" }, [cb]),
+      el("td", { class: "lib-catalog-cell-title" }, [
+        el("div", { class: "lib-catalog-title-en" }, titlePrimary + fictionMark),
+        titleSecondary ? el("div", { class: "lib-catalog-title-orig" }, titleSecondary) : null,
+      ].filter(Boolean)),
+      el("td", { class: "lib-catalog-cell-author" }, authorPrimary),
+      el("td", { class: "lib-catalog-cell-domain" }, row.domain || "—"),
+      el("td", { class: "lib-catalog-cell-words" }, fmtWords(row.wordCount)),
+      el("td", { class: `lib-catalog-cell-quality ${qualityClass(row.qualityScore)}` }, fmtQuality(row.qualityScore)),
+      el("td", { class: `lib-catalog-cell-status ${statusClass(row.status)}` }, statusLabel(row.status)),
+    ]);
+    frag.appendChild(tr);
+  }
+  tbody.appendChild(frag);
+}
+
+async function renderCatalog(root) {
+  const pane = root.querySelector(".lib-pane-catalog .lib-catalog-body");
+  if (!pane) return;
+  await loadCatalog();
+  renderCatalogTable(root);
+}
+
+function buildCatalogToolbar(root) {
+  const search = /** @type {HTMLInputElement} */ (el("input", {
+    type: "search",
+    class: "lib-catalog-search",
+    placeholder: t("library.catalog.filter.search"),
+    "aria-label": t("library.catalog.filter.search"),
+  }));
+  search.addEventListener("input", () => {
+    CATALOG.filters.search = search.value;
+    renderCatalogTable(root);
+  });
+
+  const slider = /** @type {HTMLInputElement} */ (el("input", {
+    type: "range", min: "0", max: "100", step: "1", value: "0",
+    class: "lib-catalog-quality-slider",
+    "aria-label": t("library.catalog.filter.quality", { value: "0" }),
+  }));
+  const sliderLabel = el("span", { class: "lib-catalog-quality-label" },
+    t("library.catalog.filter.quality", { value: "0" }));
+  slider.addEventListener("input", () => {
+    const v = parseInt(slider.value, 10) || 0;
+    CATALOG.filters.quality = v;
+    sliderLabel.textContent = t("library.catalog.filter.quality", { value: String(v) });
+    syncPresetActive(root, v);
+    renderCatalogTable(root);
+  });
+
+  const presets = el("div", { class: "lib-catalog-presets" }, QUALITY_PRESETS.map((p) =>
+    el("button", {
+      type: "button",
+      class: "lib-catalog-preset" + (p.value === 0 ? " lib-catalog-preset-active" : ""),
+      "data-preset": p.key,
+      "data-value": String(p.value),
+      onclick: () => {
+        CATALOG.filters.quality = p.value;
+        slider.value = String(p.value);
+        sliderLabel.textContent = t("library.catalog.filter.quality", { value: String(p.value) });
+        syncPresetActive(root, p.value);
+        renderCatalogTable(root);
+      },
+    }, t(`library.catalog.filter.preset.${p.key}`))
+  ));
+
+  const fictionToggle = /** @type {HTMLInputElement} */ (el("input", {
+    type: "checkbox",
+    class: "lib-catalog-fiction-toggle",
+    id: "lib-catalog-hide-fiction",
+  }));
+  fictionToggle.addEventListener("change", () => {
+    CATALOG.filters.hideFiction = fictionToggle.checked;
+    renderCatalogTable(root);
+  });
+  const fictionWrap = el("label", { class: "lib-catalog-fiction-wrap", for: "lib-catalog-hide-fiction" }, [
+    fictionToggle, el("span", {}, t("library.catalog.filter.hideFiction")),
+  ]);
+
+  const refreshBtn = el("button", {
+    type: "button",
+    class: "lib-btn lib-btn-ghost",
+    onclick: () => { void renderCatalog(root); },
+  }, t("library.catalog.btn.refresh"));
+
+  const rebuildBtn = el("button", {
+    type: "button",
+    class: "lib-btn lib-btn-ghost",
+    title: t("library.catalog.btn.rebuild"),
+    onclick: async () => {
+      rebuildBtn.disabled = true;
+      try {
+        const r = await window.api.library.rebuildCache();
+        await renderCatalog(root);
+        const s = root.querySelector(".lib-catalog-summary-shown");
+        if (s) s.textContent += `  ·  +${r.ingested} / -${r.pruned}`;
+      } catch (e) {
+        window.alert("Rebuild failed: " + (e instanceof Error ? e.message : String(e)));
+      } finally {
+        rebuildBtn.disabled = false;
+      }
+    },
+  }, t("library.catalog.btn.rebuild"));
+
+  return el("div", { class: "lib-catalog-toolbar" }, [
+    el("div", { class: "lib-catalog-filter-row" }, [
+      search,
+      el("div", { class: "lib-catalog-quality-wrap" }, [sliderLabel, slider]),
+      presets, fictionWrap,
+    ]),
+    el("div", { class: "lib-catalog-action-row" }, [refreshBtn, rebuildBtn]),
+  ]);
+}
+
+function syncPresetActive(root, value) {
+  root.querySelectorAll(".lib-catalog-preset").forEach((b) => {
+    const v = parseInt(b.getAttribute("data-value") || "-1", 10);
+    b.classList.toggle("lib-catalog-preset-active", v === value);
+  });
+}
+
+function buildCatalogTable() {
+  const headerCells = [
+    { key: "checkbox", className: "lib-catalog-th lib-catalog-th-cb" },
+    { key: "title",    className: "lib-catalog-th lib-catalog-th-title" },
+    { key: "author",   className: "lib-catalog-th lib-catalog-th-author" },
+    { key: "domain",   className: "lib-catalog-th lib-catalog-th-domain" },
+    { key: "words",    className: "lib-catalog-th lib-catalog-th-words" },
+    { key: "quality",  className: "lib-catalog-th lib-catalog-th-quality" },
+    { key: "status",   className: "lib-catalog-th lib-catalog-th-status" },
+  ];
+  const thead = el("thead", {}, [
+    el("tr", {}, headerCells.map((c) =>
+      el("th", { class: c.className }, t(`library.catalog.col.${c.key}`))
+    )),
+  ]);
+  const tbody = el("tbody", { class: "lib-catalog-tbody" });
+  return el("div", { class: "lib-catalog-table-wrap" }, [
+    el("table", { class: "lib-catalog-table" }, [thead, tbody]),
+  ]);
+}
+
+function buildCatalogBottomBar(root) {
+  const summary = el("div", { class: "lib-catalog-summary" }, [
+    el("span", { class: "lib-catalog-summary-shown" }, t("library.catalog.summary.shown", { shown: "0", total: "0" })),
+    el("span", { class: "lib-catalog-summary-sep" }, "·"),
+    el("span", { class: "lib-catalog-summary-selected" }, t("library.catalog.summary.selected", { n: "0" })),
+  ]);
+
+  const selectAllBtn = el("button", {
+    type: "button",
+    class: "lib-btn lib-btn-ghost",
+    onclick: () => {
+      const filtered = filterCatalog(CATALOG.rows);
+      for (const r of filtered) CATALOG.selected.add(r.id);
+      renderCatalogTable(root);
+    },
+  }, t("library.catalog.btn.selectAll"));
+
+  const clearBtn = el("button", {
+    type: "button",
+    class: "lib-btn lib-btn-ghost",
+    onclick: () => {
+      CATALOG.selected.clear();
+      renderCatalogTable(root);
+    },
+  }, t("library.catalog.btn.clearSel"));
+
+  const deleteBtn = el("button", {
+    type: "button",
+    class: "lib-btn lib-btn-danger",
+    onclick: async () => {
+      if (CATALOG.selected.size === 0) return;
+      if (!window.confirm(t("library.catalog.confirm.delete", {
+        title: `${CATALOG.selected.size} books`,
+      }))) return;
+      for (const bookId of Array.from(CATALOG.selected)) {
+        try { await window.api.library.deleteBook(bookId, true); }
+        catch (e) { console.warn("[library.delete]", bookId, e); }
+      }
+      CATALOG.selected.clear();
+      await renderCatalog(root);
+    },
+  }, t("library.catalog.btn.delete"));
+
+  const crystallizeBtn = el("button", {
+    type: "button",
+    class: "lib-btn lib-btn-primary",
+    onclick: () => guardAndCrystallize(root),
+  }, t("library.catalog.btn.crystallize"));
+
+  return el("div", { class: "lib-catalog-bottombar" }, [
+    summary,
+    el("div", { class: "lib-catalog-bottom-actions" }, [selectAllBtn, clearBtn, deleteBtn, crystallizeBtn]),
+  ]);
+}
+
+/**
+ * Guard rules before crystallization (Iter 6 will wire actual start-batch).
+ *  - target collection must be picked
+ *  - all selected books must be evaluated (not still queued/failed)
+ *  - low-quality warning if any has quality < 50
+ */
+function guardAndCrystallize(root) {
+  if (CATALOG.selected.size === 0) return;
+  if (!STATE.targetCollection) {
+    window.alert(t("library.catalog.guard.noCollection"));
+    return;
+  }
+  const selectedRows = CATALOG.rows.filter((r) => CATALOG.selected.has(r.id));
+  const unevaluated = selectedRows.filter((r) =>
+    r.status === "imported" || r.status === "evaluating" || r.status === "failed" ||
+    typeof r.qualityScore !== "number"
+  );
+  if (unevaluated.length > 0) {
+    window.alert(t("library.catalog.guard.unevaluated", { n: String(unevaluated.length) }));
+    return;
+  }
+  const lowQ = selectedRows.filter((r) => (r.qualityScore ?? 0) < 50);
+  if (lowQ.length > 0 && !window.confirm(t("library.catalog.guard.lowQuality", { n: String(lowQ.length) }))) {
+    return;
+  }
+  /* Iter 6 lands here: window.api.datasetV2.startBatch({ bookIds, targetCollection: STATE.targetCollection }). */
+  window.alert(`[Iter 6 stub] would crystallize ${selectedRows.length} books → ${STATE.targetCollection}`);
+}
+
+function buildCatalogPane(root) {
+  const toolbar = buildCatalogToolbar(root);
+  const table = buildCatalogTable();
+  const bottombar = buildCatalogBottomBar(root);
+  const body = el("div", { class: "lib-catalog-body" }, [toolbar, table, bottombar]);
+  return el("div", { class: "lib-pane lib-pane-catalog lib-pane-active" }, [body]);
+}
+
+/* ═══════════════════ IMPORT (Iter 5c) ═══════════════════ */
+
+const IMPORT_STATE = {
+  busy: false,
+  /** @type {string|null} current importId for cancel. */
+  importId: null,
+  recursive: true,
+  scanArchives: false,
+};
+
+function buildImportPane() {
+  const recursiveCb = /** @type {HTMLInputElement} */ (el("input", {
+    type: "checkbox",
+    id: "lib-import-recursive",
+    class: "lib-import-opt-cb",
+  }));
+  recursiveCb.checked = IMPORT_STATE.recursive;
+  recursiveCb.addEventListener("change", () => {
+    IMPORT_STATE.recursive = recursiveCb.checked;
+  });
+
+  const archivesCb = /** @type {HTMLInputElement} */ (el("input", {
+    type: "checkbox",
+    id: "lib-import-archives",
+    class: "lib-import-opt-cb",
+    title: t("library.import.opt.tooltip.scanArchives"),
+  }));
+  archivesCb.checked = IMPORT_STATE.scanArchives;
+  archivesCb.addEventListener("change", () => {
+    IMPORT_STATE.scanArchives = archivesCb.checked;
+  });
+
+  const opts = el("div", { class: "lib-import-opts" }, [
+    el("label", { for: "lib-import-recursive", class: "lib-import-opt" }, [
+      recursiveCb, el("span", {}, t("library.import.opt.recursive")),
+    ]),
+    el("label", {
+      for: "lib-import-archives",
+      class: "lib-import-opt",
+      title: t("library.import.opt.tooltip.scanArchives"),
+    }, [
+      archivesCb, el("span", {}, t("library.import.opt.scanArchives")),
+    ]),
+  ]);
+
+  const pickFolderBtn = el("button", {
+    type: "button",
+    class: "lib-btn lib-btn-primary",
+    onclick: () => importFromFolder(),
+  }, t("library.import.btn.pickFolder"));
+
+  const pickFilesBtn = el("button", {
+    type: "button",
+    class: "lib-btn lib-btn-ghost",
+    onclick: () => importFromFiles(),
+  }, t("library.import.btn.pickFiles"));
+
+  const cancelBtn = el("button", {
+    type: "button",
+    class: "lib-btn lib-btn-danger lib-import-cancel",
+    style: "display:none",
+    onclick: async () => {
+      if (!IMPORT_STATE.importId) return;
+      try { await window.api.library.cancelImport(IMPORT_STATE.importId); } catch { /* best effort */ }
+    },
+  }, t("library.import.btn.cancel"));
+
+  const dropzone = el("div", {
+    class: "lib-import-dropzone",
+    role: "button",
+    tabindex: "0",
+    "aria-label": t("library.import.dropzone.title"),
+    onclick: () => importFromFiles(),
+    onkeydown: (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); importFromFiles(); }
+    },
+  }, [
+    el("div", { class: "lib-import-dropzone-icon", "aria-hidden": "true" }, "+"),
+    el("div", { class: "lib-import-dropzone-title" }, t("library.import.dropzone.title")),
+    el("div", { class: "lib-import-dropzone-hint" }, t("library.import.dropzone.hint")),
+  ]);
+
+  const status = el("div", { class: "lib-import-status", "aria-live": "polite" }, "");
+
+  const evaluatorPanel = el("div", { class: "lib-evaluator-panel" }, [
+    el("div", { class: "lib-evaluator-title" }, t("library.import.evaluator.title")),
+    el("div", { class: "lib-evaluator-state" }, t("library.import.evaluator.idle")),
+  ]);
+
+  const body = el("div", { class: "lib-import-body" }, [
+    dropzone,
+    el("div", { class: "lib-import-actions" }, [pickFolderBtn, pickFilesBtn, cancelBtn]),
+    opts,
+    status,
+    evaluatorPanel,
+  ]);
+
+  return el("div", { class: "lib-pane lib-pane-import" }, [body]);
+}
+
+function renderImport(root) {
+  void refreshEvaluatorState(root);
+}
+
+async function importFromFolder() {
+  if (IMPORT_STATE.busy) return;
+  /** @type {string|null} */
+  let folderPath = null;
+  try { folderPath = await window.api.library.pickFolder(); } catch { folderPath = null; }
+  if (!folderPath) return;
+  await runImport(async () =>
+    window.api.library.importFolder({
+      folderPath,
+      recursive: IMPORT_STATE.recursive,
+      scanArchives: IMPORT_STATE.scanArchives,
+    }),
+  );
+}
+
+async function importFromFiles() {
+  if (IMPORT_STATE.busy) return;
+  /** @type {string[]} */
+  let paths = [];
+  try {
+    const r = /** @type {any} */ (await window.api.library.pickFiles());
+    paths = Array.isArray(r) ? r : (r?.paths ?? []);
+  } catch { paths = []; }
+  if (paths.length === 0) return;
+  await runImport(async () =>
+    window.api.library.importFiles({
+      paths,
+      scanArchives: IMPORT_STATE.scanArchives,
+    }),
+  );
+}
+
+async function runImport(invoke) {
+  const root = document.getElementById("library-root");
+  if (!root) return;
+  const status = root.querySelector(".lib-import-status");
+  const cancelBtn = /** @type {HTMLElement|null} */ (root.querySelector(".lib-import-cancel"));
+  IMPORT_STATE.busy = true;
+  if (cancelBtn) cancelBtn.style.display = "";
+  if (status) status.textContent = "...";
+  try {
+    const res = await invoke();
+    IMPORT_STATE.importId = res.importId || null;
+    if (status) status.textContent = t("library.import.progress.done", {
+      added: String(res.added ?? 0),
+      skipped: String((res.skipped ?? 0) + (res.duplicate ?? 0) + (res.failed ?? 0)),
+    });
+    void renderCatalog(root);
+  } catch (e) {
+    if (status) status.textContent = t("library.import.progress.failed", {
+      error: e instanceof Error ? e.message : String(e),
+    });
+  } finally {
+    IMPORT_STATE.busy = false;
+    IMPORT_STATE.importId = null;
+    if (cancelBtn) cancelBtn.style.display = "none";
+  }
+}
+
+async function refreshEvaluatorState(root) {
+  const stateEl = root.querySelector(".lib-evaluator-state");
+  if (!stateEl) return;
+  try {
+    const status = await window.api.library.evaluatorStatus();
+    if (status && status.currentTitle) {
+      stateEl.textContent = t("library.import.evaluator.busy", {
+        title: status.currentTitle,
+        n: String(status.queueSize ?? 0),
+      });
+    } else {
+      stateEl.textContent = t("library.import.evaluator.idle");
+    }
+  } catch {
+    /* keep previous text */
+  }
+}
+
+/**
+ * Top-bar: header (title + sub) + collection picker.
+ * Sits above all tabs. Picker drives STATE.targetCollection.
+ */
+function buildLibraryTopBar(root) {
+  const header = el("div", { class: "lib-topbar-header" }, [
+    el("div", { class: "lib-topbar-title" }, t("library.header.title")),
+    el("div", { class: "lib-topbar-sub" }, t("library.header.sub")),
+  ]);
+
+  const picker = buildCollectionPicker({
+    id: "lib-target-collection",
+    labelText: t("library.collection.target"),
+    onChange: (name) => {
+      STATE.targetCollection = name;
+      STATE.collection = name; /* keep legacy code paths in sync */
+      const legacyInput = /** @type {HTMLInputElement|null} */ (root.querySelector(".lib-collection-input"));
+      if (legacyInput && legacyInput.value !== name) legacyInput.value = name;
+    },
+    onCreate: () => {
+      /* refresh list, picker.refresh already called */
+    },
+    loadCollections: async () => {
+      try { return await window.api.getCollections(); } catch { return []; }
+    },
+    createCollection: async (name) => {
+      try {
+        const r = /** @type {any} */ (await window.api.qdrant.create({ name }));
+        if (!r || r.ok === false) return { ok: false, error: r?.error || "unknown" };
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    },
+  });
+  void picker.refresh();
+
+  return el("div", { class: "lib-topbar" }, [header, picker.root]);
 }
 
 function buildCollectionInput() {
@@ -996,6 +1631,7 @@ export async function mountLibrary(root) {
 
   await loadPrefs();
 
+  const topBar = buildLibraryTopBar(root);
   const tabs = buildLibraryTabs(root);
   const coll = buildCollectionInput();
   const listEl = el("div", { class: "lib-list" });
@@ -1010,20 +1646,41 @@ export async function mountLibrary(root) {
   const dropzone = buildDropzone(root, listEl);
   const splitPane = el("div", { class: "lib-split" }, [listEl, previewEl]);
 
-  const browsePane = el("div", { class: "lib-pane lib-pane-browse lib-pane-active" }, [toolbar, dropzone, splitPane]);
+  const catalogPane = buildCatalogPane(root);
+  const importPane = buildImportPane();
+  const browsePane = el("div", { class: "lib-pane lib-pane-browse" }, [toolbar, dropzone, splitPane]);
   const searchPane = el("div", { class: "lib-pane lib-pane-search" }, [el("div", { class: "lib-search" })]);
   const historyPane = el("div", { class: "lib-pane lib-pane-history" }, [el("div", { class: "lib-history" })]);
 
-  root.append(tabs, browsePane, searchPane, historyPane);
+  root.append(topBar, tabs, catalogPane, importPane, browsePane, searchPane, historyPane);
 
   subscribeScannerProgress(root, listEl);
   subscribeDownloadProgress(root);
   installWindowDropGuards(root);
   loadInitialLibraryData(root, coll.datalist, coll.input);
 
+  /* Live updates from evaluator queue: re-render Catalog row + Import status. */
+  CATALOG.unsubEvaluator = window.api.library.onEvaluatorEvent((ev) => {
+    if (STATE.tab === "catalog") void renderCatalog(root);
+    if (STATE.tab === "import") void refreshEvaluatorState(root);
+    /* Always update visible quality/status if the affected book is currently rendered. */
+    if (ev.bookId && STATE.tab !== "catalog" && STATE.tab !== "import") {
+      const idx = CATALOG.rows.findIndex((r) => r.id === ev.bookId);
+      if (idx >= 0 && typeof ev.qualityScore === "number") {
+        CATALOG.rows[idx].qualityScore = ev.qualityScore;
+        if (typeof ev.isFictionOrWater === "boolean") {
+          CATALOG.rows[idx].isFictionOrWater = ev.isFictionOrWater;
+        }
+      }
+    }
+  });
+
   refreshSummary(root);
   renderPreview(root);
   renderBooks(listEl, root);
+
+  /* Catalog is the default tab -- prefetch its data so first render is instant. */
+  void renderCatalog(root);
 }
 
 export function isLibraryBusy() {
