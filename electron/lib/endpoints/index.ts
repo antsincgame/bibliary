@@ -79,11 +79,14 @@ export async function getQdrantUrl(): Promise<string> {
  * `QDRANT_URL` constant); always prefer the async getters in new code.
  */
 export function getLmStudioUrlSync(): string {
-  return cache?.lmStudio ?? trim(ENV_LM_STUDIO_URL) ?? DEFAULT_LM_STUDIO_URL;
+  /* `||` (не `??`) -- trim() возвращает "" для пустого env, а `??` пропускает
+     пустую строку (она не nullish), что приводит к `LMStudioClient({baseUrl:""})`
+     и падению "Invalid baseUrl". */
+  return cache?.lmStudio || trim(ENV_LM_STUDIO_URL) || DEFAULT_LM_STUDIO_URL;
 }
 
 export function getQdrantUrlSync(): string {
-  return cache?.qdrant ?? trim(ENV_QDRANT_URL) ?? DEFAULT_QDRANT_URL;
+  return cache?.qdrant || trim(ENV_QDRANT_URL) || DEFAULT_QDRANT_URL;
 }
 
 export function getEndpointsSource(): UrlCache["loadedFrom"] | "uninitialised" {

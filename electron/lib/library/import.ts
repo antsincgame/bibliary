@@ -17,7 +17,7 @@
 import { promises as fs } from "fs";
 import * as path from "path";
 import { detectExt, type SupportedExt } from "../scanner/parsers/index.js";
-import { convertBookToMarkdown } from "./md-converter.js";
+import { convertBookToMarkdown, replaceFrontmatter } from "./md-converter.js";
 import { getLibraryRoot, getBookDir } from "./paths.js";
 import { upsertBook, getBookById, getKnownSha256s } from "./cache-db.js";
 import { extractArchive, isArchive, cleanupExtractedDir } from "./archive-extractor.js";
@@ -174,9 +174,6 @@ export async function importBookFromFile(
 
 /** Заменяет frontmatter в готовом markdown на финальный (после копирования оригинала). */
 function rebuildMarkdownWithFinalMeta(markdown: string, finalMeta: BookCatalogMeta): string {
-  /* Используем replaceFrontmatter из md-converter -- именно для этого она там. */
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { replaceFrontmatter } = require("./md-converter.js") as typeof import("./md-converter.js");
   return replaceFrontmatter(markdown, finalMeta);
 }
 

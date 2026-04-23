@@ -17,13 +17,15 @@ import * as path from "path";
 
 let cachedRoot: string | null = null;
 
-/** Поднимается от текущего файла до корня проекта (где лежит package.json). */
+/** Поднимается от стартовой точки до корня проекта (где лежит package.json). */
 function projectRoot(): string {
-  /* tsconfig.electron.json компилирует под CommonJS -> __dirname доступен.
-     Структура в dev (tsx): electron/lib/library/paths.ts.
-     Структура в prod:      dist-electron/electron/lib/library/paths.js.
-     Ищем package.json как маркер корня. */
-  let dir = __dirname;
+  /* Стратегия "process.cwd-first":
+     - Electron-prod: cwd обычно = корень установки = там лежит package.json.
+     - npm-скрипты (tsx scripts/...): cwd = корень проекта по контракту npm.
+     - Дев-режим Electron: cwd = корень репо (откуда запущен `npm run dev`).
+     Поэтому стартуем от cwd и поднимаемся вверх. `__dirname` намеренно не
+     используем -- он недоступен в ESM-контексте (`type: module` в package.json). */
+  let dir = process.cwd();
   for (let i = 0; i < 8; i++) {
     if (existsSync(path.join(dir, "package.json"))) return dir;
     const parent = path.dirname(dir);

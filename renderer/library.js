@@ -1377,18 +1377,33 @@ async function startBatchExtraction(root, bookIds) {
 }
 
 /**
- * Cancel the currently running per-book extraction. We cancel the
- * inner `jobId` (last seen from runExtraction events) -- the batch
- * loop in main process will then catch the abort, mark the book as
- * failed, and emit `batch.done` since it has no more iterations.
+ * Iter 7: правильная отмена батча.
+ *
+ * 1. cancelBatch(batchId) -- прерывает batch-loop ПЕРЕД следующей книгой.
+ *    Все оставшиеся книги попадут в `skipped: "batch-cancelled"`.
+ * 2. cancel(jobId) -- прерывает текущую runExtraction (HTTP-запрос к LM Studio
+ *    отменяется). Книга помечается failed, а main-процесс выйдет из цикла,
+ *    т.к. шаг 1 уже взвёл флаг.
+ *
+ * Без шага 1 цикл переходил к следующей книге после отмены текущей --
+ * пользователь видел "продолжается крутится".
  */
 async function cancelBatchExtraction() {
-  if (!BATCH.active || !BATCH.lastJobId) return;
+  if (!BATCH.active) return;
   if (!window.confirm(t("library.catalog.batch.confirmCancel"))) return;
-  try {
-    await window.api.datasetV2.cancel(BATCH.lastJobId);
-  } catch (err) {
-    console.warn("[batch.cancel] failed:", err);
+  if (BATCH.batchId) {
+    try {
+      await window.api.datasetV2.cancelBatch(BATCH.batchId);
+    } catch (err) {
+      console.warn("[batch.cancelBatch] failed:", err);
+    }
+  }
+  if (BATCH.lastJobId) {
+    try {
+      await window.api.datasetV2.cancel(BATCH.lastJobId);
+    } catch (err) {
+      console.warn("[batch.cancel] failed:", err);
+    }
   }
 }
 

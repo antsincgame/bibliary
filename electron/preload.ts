@@ -421,6 +421,8 @@ contextBridge.exposeInMainWorld("api", {
       }>;
     }> => ipcRenderer.invoke("dataset-v2:start-batch", args),
     cancel: (jobId: string): Promise<boolean> => ipcRenderer.invoke("dataset-v2:cancel", jobId),
+    /** Iter 7: прерывает весь батч-цикл (все оставшиеся книги). */
+    cancelBatch: (batchId: string): Promise<boolean> => ipcRenderer.invoke("dataset-v2:cancel-batch", batchId),
     listAccepted: (
       collection?: string,
     ): Promise<{ total: number; byDomain: Record<string, number>; collection: string }> =>

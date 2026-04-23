@@ -11,10 +11,10 @@
  */
 
 import Database from "better-sqlite3";
-import { promises as fs } from "fs";
+import { promises as fs, mkdirSync } from "fs";
 import * as path from "path";
 import { parseFrontmatter } from "./md-converter.js";
-import { getLibraryRoot } from "./paths.js";
+import { getLibraryRoot, resolveLibraryRoot } from "./paths.js";
 import type { BookCatalogMeta, BookStatus } from "./types.js";
 
 let cachedDb: Database.Database | null = null;
@@ -29,7 +29,7 @@ function resolveDbPath(): string {
   const dataDir = process.env.BIBLIARY_DATA_DIR?.trim();
   if (dataDir) return path.resolve(dataDir, "bibliary-cache.db");
   /* Fallback: <projectRoot>/data/bibliary-cache.db. paths.ts уже умеет это. */
-  return path.resolve(path.dirname(require("./paths.js").resolveLibraryRoot()), "bibliary-cache.db");
+  return path.resolve(path.dirname(resolveLibraryRoot()), "bibliary-cache.db");
 }
 
 const SCHEMA_SQL = `
@@ -78,10 +78,47 @@ CREATE INDEX IF NOT EXISTS idx_books_fiction ON books(is_fiction_or_water);
 CREATE INDEX IF NOT EXISTS idx_book_tags_tag ON book_tags(tag);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS books_fts USING fts5(
-  title_en, author_en, tags, verdict_reason, evaluator_reasoning,
-  content=''
+  title_en, author_en, tags, verdict_reason, evaluator_reasoning
 );
 `;
+
+/**
+ * Schema-version миграции (PRAGMA user_version).
+ *
+ *   v0 → v1: первичная схема (выше в SCHEMA_SQL).
+ *   v1 → v2: пересоздать books_fts без `content=''`.
+ *           Contentless FTS5 запрещает обычный DELETE → upsertBook падал.
+ *           Тест поймал это в Iter 7 (`library import failed: cannot DELETE
+ *           from contentless fts5 table: books_fts`).
+ *
+ * Миграции применяются один раз при первом open. Idempotent.
+ */
+function applyMigrations(db: Database.Database): void {
+  const row = db.prepare("PRAGMA user_version").get() as { user_version: number } | undefined;
+  const current = row?.user_version ?? 0;
+
+  if (current < 2) {
+    /* DROP старой contentless FTS5 (если есть) и пересоздание как полноценной. */
+    db.exec(`
+      DROP TABLE IF EXISTS books_fts;
+      CREATE VIRTUAL TABLE books_fts USING fts5(
+        title_en, author_en, tags, verdict_reason, evaluator_reasoning
+      );
+    `);
+    /* Перенаполняем FTS из текущих books (если они уже есть в БД от старой версии). */
+    db.exec(`
+      INSERT INTO books_fts (rowid, title_en, author_en, tags, verdict_reason, evaluator_reasoning)
+      SELECT b.rowid,
+             COALESCE(b.title_en, b.title),
+             COALESCE(b.author_en, b.author, ''),
+             COALESCE((SELECT GROUP_CONCAT(tag, ' ') FROM book_tags WHERE book_id = b.id), ''),
+             COALESCE(b.verdict_reason, ''),
+             COALESCE(b.evaluator_reasoning, '')
+        FROM books b;
+    `);
+    db.pragma("user_version = 2");
+  }
+}
 
 /** Открывает (или создаёт) БД и применяет миграции. Идемпотентно. */
 export function openCacheDb(): Database.Database {
@@ -92,14 +129,14 @@ export function openCacheDb(): Database.Database {
     cachedDb = null;
   }
   const dir = path.dirname(wantedPath);
-  /* mkdirSync через fs/promises невозможен sync -- но better-sqlite3 сам не создаёт
-     parent dir. Используем sync API через node:fs. */
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  (require("fs") as typeof import("fs")).mkdirSync(dir, { recursive: true });
+  /* mkdirSync через fs/promises невозможен sync -- но better-sqlite3 сам не
+     создаёт parent dir. Используем sync API через статический import. */
+  mkdirSync(dir, { recursive: true });
   const db = new Database(wantedPath);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   db.exec(SCHEMA_SQL);
+  applyMigrations(db);
   cachedDb = db;
   cachedDbPath = wantedPath;
   return db;

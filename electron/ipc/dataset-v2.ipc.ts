@@ -68,10 +68,25 @@ interface StartExtractionResult {
 
 const activeJobs = new Map<string, AbortController>();
 
+/**
+ * Iter 7: cancel-batch — Map<batchId, AbortController> поверх activeJobs.
+ *
+ * Без этого `dataset-v2:cancel` останавливал бы только текущую
+ * runExtraction внутри батча, а цикл `for (let i…)` тут же шёл к
+ * следующей книге. Теперь UI вызывает `dataset-v2:cancel-batch(batchId)`
+ * → батч-цикл проверяет signal в начале каждой итерации и выходит
+ * чисто, помечая оставшиеся как `aborted`.
+ */
+const activeBatches = new Map<string, AbortController>();
+
 export function abortAllDatasetV2(reason: string): void {
   for (const [id, ctrl] of activeJobs.entries()) {
     ctrl.abort(reason);
     activeJobs.delete(id);
+  }
+  for (const [bid, ctrl] of activeBatches.entries()) {
+    ctrl.abort(reason);
+    activeBatches.delete(bid);
   }
   /* Also clear coordinator-side tracking so the watchdog/shutdown path
      doesn't try to pause a job whose AbortController is already gone. */
@@ -408,6 +423,11 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
       const minQ = typeof args.minQuality === "number" ? args.minQuality : 70;
       const skipFw = args.skipFictionOrWater !== false;
 
+      /* Iter 7: один AbortController на весь батч. cancel-batch handler
+         его abort()-ит, цикл for(let i…) выходит между книгами. */
+      const batchCtrl = new AbortController();
+      activeBatches.set(batchId, batchCtrl);
+
       /* Lazy main-window resolve через broadcast(): если окно
          пересоздаётся, новые сообщения уйдут в актуальный webContents. */
       const emit = (event: Record<string, unknown>): void => broadcast({ batchId, ...event });
@@ -463,6 +483,15 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
       }> = [];
 
       for (let i = 0; i < eligible.length; i++) {
+        if (batchCtrl.signal.aborted) {
+          /* Все оставшиеся книги -- skipped с причиной "batch-cancelled".
+             Это важнее, чем continue: иначе UI не поймёт почему счётчик
+             "X / total" застрял посередине. */
+          for (let j = i; j < eligible.length; j++) {
+            skipped.push({ bookId: eligible[j].id, reason: "batch-cancelled" });
+          }
+          break;
+        }
         const book = eligible[i];
         /* Persist status BEFORE emit so renderer.refresh() сразу видит
            актуальное состояние, даже если книгу открыли в другом окне. */
@@ -509,11 +538,38 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
         }
       }
 
-      emit({ stage: "batch", phase: "done", processed: results.length, skipped: skipped.length });
+      activeBatches.delete(batchId);
+      const cancelled = batchCtrl.signal.aborted;
+      emit({
+        stage: "batch",
+        phase: "done",
+        processed: results.length,
+        skipped: skipped.length,
+        cancelled,
+      });
 
       return { batchId, total: args.bookIds.length, processed: results.length, skipped, results };
     }
   );
+
+  /**
+   * Iter 7: cancel-batch — прерывает батч-цикл целиком.
+   *
+   * Контракт:
+   *   1. Ставит abort на batchCtrl → цикл for(let i…) выходит ПЕРЕД
+   *      следующей итерацией.
+   *   2. Если в этот момент уже работает runExtraction (текущая книга),
+   *      она доработает до конца (renderer вызывает `dataset-v2:cancel`
+   *      на её jobId сам, если хочет убить и её тоже).
+   *   3. Возвращает `true` если батч был активен, `false` если уже завершён.
+   */
+  ipcMain.handle("dataset-v2:cancel-batch", async (_e, batchId: string): Promise<boolean> => {
+    const ctrl = activeBatches.get(batchId);
+    if (!ctrl) return false;
+    ctrl.abort("user-cancel-batch");
+    activeBatches.delete(batchId);
+    return true;
+  });
 
   /**
    * Сколько концептов в выбранной коллекции (для UI бейджа).

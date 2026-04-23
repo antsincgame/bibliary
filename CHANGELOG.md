@@ -4,6 +4,72 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0-iter7] — 2026-04-23 — File-System First Library + Pre-flight Evaluation
+
+### Added
+- **File-System First Library** — оригиналы книг + `book.md` с YAML
+  frontmatter, теперь хранятся в `data/library/{slug}/`. SQLite
+  (`data/bibliary-cache.db`) выступает как rebuildable index.
+- **Pre-flight Evaluation** — новая стадия pipeline:
+  `electron/lib/library/book-evaluator.ts` строит Structural Surrogate
+  Document (TOC + Intro + Conclusion + nodal slices, ~3-4K слов) и
+  отдаёт reasoning-модели LM Studio с системным промптом
+  "Chief Epistemologist". Парсит `<think>` + JSON через
+  `reasoning-parser.ts`. Quality score 0-100 + domain + tags
+  сохраняется до тяжёлой crystallization.
+- **DataGrid Catalog UI** — `renderer/library.js` теперь рендерит
+  компактную таблицу: Чекбокс | Title (en) | Author (en) | Domain |
+  Words | Quality | Status. Фильтры: Quality > N, Hide fiction/water,
+  пресеты Premium 86+ / Solid 70+ / Workable 50+. Кнопка
+  "Select all filtered" для batch crystallization.
+- **Thematic Qdrant Collections** — collection picker в каталоге.
+  `targetCollection` параметризован сквозь `judge.ts`,
+  `dataset-v2.ipc.ts`, `preload.ts`. Можно создавать тематические
+  LoRA-датасеты (marketing / SEO / UX / etc.) в изолированных
+  коллекциях, не мешая друг другу.
+- **Batch Cancellation** — `dataset-v2:cancel-batch` IPC + батч-уровневый
+  AbortController. Раньше cancel останавливал только текущую книгу,
+  но цикл продолжался — теперь корректно прерывает весь батч и
+  помечает оставшиеся книги как `skipped`.
+- **E2E Library Test Harness** — `scripts/e2e-batch-library.ts`,
+  `npm run test:e2e:library`. Каждая книга = отдельный тест с 4
+  стадиями (PARSE / EVALUATE / CRYSTALLIZE / PERSIST). Прогон 200
+  книг из Downloads: 187 PASS / 13 FAIL (все 13 — сканированные
+  PDF без OCR, не баги кода).
+- **CPU/GPU Pipelining** — конвертация PDF/EPUB/FB2/DOCX/TXT в Markdown
+  идёт на CPU параллельно с LLM evaluation/extraction на GPU.
+
+### Fixed
+- **FTS5 contentless DELETE** (Iter 7) — `books_fts` создавалась
+  с `content=''`, что запрещает обычный DELETE. Каждый `upsertBook`
+  падал с `cannot DELETE from contentless fts5 table`. Миграция v1→v2:
+  DROP + recreate `books_fts` без `content=''`, применяется
+  идемпотентно через `PRAGMA user_version`.
+- **SHA-256 deduplication в e2e скрипте** — три копии одного файла
+  (например `TonForge_Spec.docx` + `(1).docx` + `(2).docx`) падали с
+  `UNIQUE constraint failed: books.sha256`, потому что `meta.id`
+  детерминирован от пути, а sha256 от контента. Теперь e2e проверяет
+  `getKnownSha256s()` перед `upsertBook` и помечает дубли как
+  `status=duplicate` (как уже делает production-импорт).
+- **Module resolution** в `tsx`-окружении (ESM):
+  - `cache-db.ts`, `import.ts`: `require()` → static `import`.
+  - `paths.ts`: `__dirname` → `process.cwd()` + traversal до package.json.
+- **`LMStudioClient` invalid baseUrl** — `getLmStudioUrlSync` /
+  `getQdrantUrlSync` использовали `??` (nullish coalescing). Если
+  ENV пустая строка `""`, оператор не падал на дефолт. Заменено
+  на `||` (logical OR), который корректно treat-ит `""` как falsy.
+
+### Removed
+- Парсеры мёртвых форматов: DjVu, CHM, MOBI. Оставлены PDF, EPUB,
+  FB2, DOCX, TXT + ZIP/RAR/7z/CBR/CBZ архивы.
+- Quality scoring во время crystallization — теперь вынесено в
+  отдельный pre-flight стейдж до тяжёлого chunking'а.
+
+### Internal
+- `data/library/`, `data/bibliary-cache.db*` добавлены в `.gitignore`.
+- `BookStatus` enum расширен: `imported | evaluated | indexed |
+  duplicate` для аккуратного отслеживания прогресса.
+
 ## [2.6.0] — 2026-04-22 — Overmind Agent + Three Strikes UX Stabilization
 
 ### Added
