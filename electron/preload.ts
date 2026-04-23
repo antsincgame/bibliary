@@ -74,6 +74,53 @@ interface QdrantSearchHit {
   payload: Record<string, unknown>;
 }
 
+interface LibraryBookMeta {
+  id: string;
+  title: string;
+  titleEn?: string;
+  author?: string;
+  authorEn?: string;
+  domain?: string;
+  tags?: string[];
+  wordCount: number;
+  status: "imported" | "evaluating" | "evaluated" | "failed";
+  qualityScore?: number;
+  isFictionOrWater?: boolean;
+  conceptualDensity?: number;
+  originality?: number;
+  verdictReason?: string;
+  evaluatorModel?: string;
+  evaluatedAt?: string;
+  importedAt: string;
+  originalFile: string;
+  sourceArchive?: string;
+  sha256: string;
+  warnings?: string[];
+}
+
+interface LibraryCatalogQuery {
+  search?: string;
+  minQuality?: number;
+  maxQuality?: number;
+  hideFictionOrWater?: boolean;
+  statuses?: Array<"imported" | "evaluating" | "evaluated" | "failed">;
+  domain?: string;
+  orderBy?: "quality" | "title" | "words" | "evaluated";
+  orderDir?: "asc" | "desc";
+  limit?: number;
+  offset?: number;
+}
+
+interface LibraryEvaluatorStatus {
+  running: boolean;
+  paused: boolean;
+  currentBookId: string | null;
+  currentTitle: string | null;
+  queueLength: number;
+  totalEvaluated: number;
+  totalFailed: number;
+}
+
 /* Servitor sweep 2026-04-22 (вторая волна, после god+sherlok аудита):
    Удалены 5 dead preload методов и соответствующие IPC handlers:
    - resilience.scanUnfinished + resilience:scan-unfinished
@@ -339,6 +386,8 @@ contextBridge.exposeInMainWorld("api", {
       extractModel?: string;
       judgeModel?: string;
       scoreThreshold?: number;
+      /** Имя Qdrant-коллекции для тематической изоляции принятых концептов. */
+      targetCollection?: string;
     }): Promise<{
       jobId: string;
       bookTitle: string;
@@ -347,15 +396,132 @@ contextBridge.exposeInMainWorld("api", {
       totalConcepts: { extractedRaw: number; afterDedup: number; accepted: number; rejected: number };
       warnings: string[];
     }> => ipcRenderer.invoke("dataset-v2:start-extraction", args),
+    /** Multi-book батч из Library: guard'ит по quality_score и is_fiction_or_water. */
+    startBatch: (args: {
+      bookIds: string[];
+      minQuality?: number;
+      skipFictionOrWater?: boolean;
+      extractModel?: string;
+      judgeModel?: string;
+      scoreThreshold?: number;
+      /** Тематическая Qdrant-коллекция для всех книг батча. */
+      targetCollection?: string;
+    }): Promise<{
+      batchId: string;
+      total: number;
+      processed: number;
+      skipped: Array<{ bookId: string; reason: string }>;
+      results: Array<{
+        bookId: string;
+        bookTitle: string;
+        totalChapters: number;
+        processedChapters: number;
+        accepted: number;
+        rejected: number;
+      }>;
+    }> => ipcRenderer.invoke("dataset-v2:start-batch", args),
     cancel: (jobId: string): Promise<boolean> => ipcRenderer.invoke("dataset-v2:cancel", jobId),
-    listAccepted: (): Promise<{ total: number; byDomain: Record<string, number> }> =>
-      ipcRenderer.invoke("dataset-v2:list-accepted"),
-    rejectAccepted: (conceptId: string): Promise<boolean> =>
-      ipcRenderer.invoke("dataset-v2:reject-accepted", conceptId),
-    onEvent: (cb: (payload: { jobId: string; stage: string; [k: string]: unknown }) => void): (() => void) => {
-      const l = (_e: unknown, p: { jobId: string; stage: string; [k: string]: unknown }) => cb(p);
+    listAccepted: (
+      collection?: string,
+    ): Promise<{ total: number; byDomain: Record<string, number>; collection: string }> =>
+      ipcRenderer.invoke("dataset-v2:list-accepted", collection),
+    rejectAccepted: (conceptId: string, collection?: string): Promise<boolean> =>
+      ipcRenderer.invoke("dataset-v2:reject-accepted", conceptId, collection),
+    onEvent: (cb: (payload: { jobId?: string; batchId?: string; stage: string; [k: string]: unknown }) => void): (() => void) => {
+      const l = (_e: unknown, p: { jobId?: string; batchId?: string; stage: string; [k: string]: unknown }) => cb(p);
       ipcRenderer.on("dataset-v2:event", l);
       return () => ipcRenderer.removeListener("dataset-v2:event", l);
+    },
+  },
+
+  library: {
+    pickFolder: (): Promise<string | null> => ipcRenderer.invoke("library:pick-folder"),
+    pickFiles: (): Promise<string[]> => ipcRenderer.invoke("library:pick-files"),
+    importFolder: (args: {
+      folder: string;
+      scanArchives?: boolean;
+      ocrEnabled?: boolean;
+    }): Promise<{
+      importId: string;
+      total: number;
+      added: number;
+      duplicate: number;
+      skipped: number;
+      failed: number;
+      warnings: string[];
+      durationMs: number;
+    }> => ipcRenderer.invoke("library:import-folder", args),
+    importFiles: (args: {
+      paths: string[];
+      scanArchives?: boolean;
+      ocrEnabled?: boolean;
+    }): Promise<{
+      importId: string;
+      total: number;
+      added: number;
+      duplicate: number;
+      skipped: number;
+      failed: number;
+      warnings: string[];
+    }> => ipcRenderer.invoke("library:import-files", args),
+    cancelImport: (importId: string): Promise<boolean> => ipcRenderer.invoke("library:cancel-import", importId),
+    catalog: (q?: LibraryCatalogQuery): Promise<{ rows: LibraryBookMeta[]; total: number; libraryRoot: string }> =>
+      ipcRenderer.invoke("library:catalog", q ?? {}),
+    getBook: (bookId: string): Promise<(LibraryBookMeta & { mdPath: string }) | null> =>
+      ipcRenderer.invoke("library:get-book", bookId),
+    readBookMd: (bookId: string): Promise<{ markdown: string; mdPath: string } | null> =>
+      ipcRenderer.invoke("library:read-book-md", bookId),
+    deleteBook: (bookId: string, deleteFiles?: boolean): Promise<{ ok: boolean; reason?: string }> =>
+      ipcRenderer.invoke("library:delete-book", { bookId, deleteFiles }),
+    rebuildCache: (): Promise<{ scanned: number; ingested: number; skipped: number; pruned: number; errors: string[] }> =>
+      ipcRenderer.invoke("library:rebuild-cache"),
+    evaluatorStatus: (): Promise<LibraryEvaluatorStatus> => ipcRenderer.invoke("library:evaluator-status"),
+    evaluatorPause: (): Promise<boolean> => ipcRenderer.invoke("library:evaluator-pause"),
+    evaluatorResume: (): Promise<boolean> => ipcRenderer.invoke("library:evaluator-resume"),
+    evaluatorCancelCurrent: (): Promise<boolean> => ipcRenderer.invoke("library:evaluator-cancel-current"),
+    reevaluate: (bookId: string): Promise<{ ok: boolean; reason?: string }> =>
+      ipcRenderer.invoke("library:evaluator-reevaluate", { bookId }),
+    setEvaluatorModel: (modelKey: string | null): Promise<boolean> =>
+      ipcRenderer.invoke("library:evaluator-set-model", modelKey),
+    onImportProgress: (cb: (payload: {
+      importId: string;
+      index: number;
+      total: number;
+      currentFile: string;
+      outcome: "added" | "duplicate" | "skipped" | "failed";
+    }) => void): (() => void) => {
+      const l = (_e: unknown, p: {
+        importId: string;
+        index: number;
+        total: number;
+        currentFile: string;
+        outcome: "added" | "duplicate" | "skipped" | "failed";
+      }) => cb(p);
+      ipcRenderer.on("library:import-progress", l);
+      return () => ipcRenderer.removeListener("library:import-progress", l);
+    },
+    onEvaluatorEvent: (cb: (payload: {
+      type: string;
+      bookId?: string;
+      title?: string;
+      qualityScore?: number;
+      isFictionOrWater?: boolean;
+      warnings?: string[];
+      error?: string;
+      remaining?: number;
+    }) => void): (() => void) => {
+      const l = (_e: unknown, p: {
+        type: string;
+        bookId?: string;
+        title?: string;
+        qualityScore?: number;
+        isFictionOrWater?: boolean;
+        warnings?: string[];
+        error?: string;
+        remaining?: number;
+      }) => cb(p);
+      ipcRenderer.on("library:evaluator-event", l);
+      return () => ipcRenderer.removeListener("library:evaluator-event", l);
     },
   },
 

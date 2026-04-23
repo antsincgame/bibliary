@@ -17,5 +17,10 @@ export type { ExtractChapterArgs, ExtractChapterResult, ExtractEvent, ExtractCal
 export { dedupChapterConcepts } from "./intra-dedup.js";
 export type { IntraDedupArgs, IntraDedupResult, IntraDedupEvent } from "./intra-dedup.js";
 
-export { judgeAndAccept, ACCEPTED_COLLECTION, clearJudgePromptCache } from "./judge.js";
+export {
+  judgeAndAccept,
+  ACCEPTED_COLLECTION,
+  assertValidCollectionName,
+  clearJudgePromptCache,
+} from "./judge.js";
 export type { JudgeBatchArgs, JudgeBatchResult, JudgeCallbacks, JudgeEvent } from "./judge.js";

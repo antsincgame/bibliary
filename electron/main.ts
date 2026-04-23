@@ -8,6 +8,8 @@ import {
   abortAllAgents,
   abortAllForgeLocal,
   abortAllForgeEval,
+  abortAllLibrary,
+  bootstrapLibrarySubsystem,
 } from "./ipc";
 import { disposeClient } from "./lmstudio-client";
 import {
@@ -144,6 +146,10 @@ if (!gotLock) {
     applyCsp();
     startWatchdog(() => mainWindow);
     registerAllIpcHandlers(() => mainWindow);
+    /* Library subsystem: подписывает evaluator-queue на broadcast в renderer
+       и запускает bootstrap (re-queue всех imported книг с прошлого раза).
+       Не блокирует createWindow -- ошибка bootstrap не должна валить старт. */
+    void bootstrapLibrarySubsystem(() => mainWindow);
     createWindow();
   });
 
@@ -162,6 +168,7 @@ if (!gotLock) {
       abortAllAgents("app-quit");
       abortAllForgeLocal("app-quit");
       abortAllForgeEval("app-quit");
+      abortAllLibrary("app-quit");
       disposeClient();
       return;
     }
@@ -221,6 +228,11 @@ if (!gotLock) {
         }
         try {
           abortAllForgeEval("app-quit");
+        } catch {
+          // ignore
+        }
+        try {
+          abortAllLibrary("app-quit");
         } catch {
           // ignore
         }

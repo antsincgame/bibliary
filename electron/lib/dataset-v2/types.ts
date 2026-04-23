@@ -35,7 +35,15 @@ export const ExtractedConceptSchema = z.object({
   noveltyHint: z.string().min(10).max(300),
   sourceQuote: z.string().min(10).max(800),
 });
-export type ExtractedConcept = z.infer<typeof ExtractedConceptSchema>;
+/**
+ * `extractorReasoning` -- содержимое <think> блока от LLM-экстрактора
+ * (если модель reasoning-capable). Не приходит из LLM-JSON: добавляется
+ * post-validation в concept-extractor.ts. Сохраняется в Qdrant payload и
+ * тренировочных датасетах -- "мысли учителя" критичны для distillation.
+ */
+export interface ExtractedConcept extends z.infer<typeof ExtractedConceptSchema> {
+  extractorReasoning?: string;
+}
 
 export const ExtractedConceptArraySchema = z.array(ExtractedConceptSchema).max(8);
 
@@ -62,6 +70,12 @@ export interface AcceptedConcept extends DedupedConcept {
   judgeReasoning: string;
   acceptedAt: string;
   scoreBreakdown: { novelty: number; actionability: number; domain_fit: number };
+  /**
+   * <think> блок судьи (если reasoning-capable model). Отдельно от
+   * `judgeReasoning` (короткое summary из JSON) -- это полная цепочка
+   * рассуждений для distillation датасетов.
+   */
+  judgeReasoningTrace?: string;
 }
 
 export interface JudgeResult {

@@ -19,6 +19,8 @@ import {
   extractChapterConcepts,
   dedupChapterConcepts,
   judgeAndAccept,
+  ACCEPTED_COLLECTION,
+  assertValidCollectionName,
   type ExtractEvent,
   type IntraDedupEvent,
   type JudgeEvent,
@@ -46,6 +48,13 @@ interface StartExtractionArgs {
   extractModel?: string;
   judgeModel?: string;
   scoreThreshold?: number;
+  /**
+   * Имя Qdrant-коллекции, куда уходят принятые концепты + где
+   * выполняется cross-library dedup. Если не указано — `ACCEPTED_COLLECTION`
+   * (back-compat). UI Iter 5/6 будет передавать выбранную тематическую
+   * коллекцию (marketing, ux, seo, ...).
+   */
+  targetCollection?: string;
 }
 
 interface StartExtractionResult {
@@ -146,160 +155,191 @@ function pickPromptKey(profileSource: string): "mechanicus" | "cognitive" {
   return profileSource === "thinking-heavy" ? "cognitive" : "mechanicus";
 }
 
+/**
+ * Core extraction routine. Используется и `dataset-v2:start-extraction`
+ * (single book), и `dataset-v2:start-batch` (multi-book queue из Library).
+ * Получает emit() от caller'а -- это позволяет batch wrapper'у добавлять
+ * свой `batchId`/`bookIndex` к каждому событию.
+ */
+async function runExtraction(
+  args: StartExtractionArgs,
+  emit: (event: Record<string, unknown>) => void,
+): Promise<StartExtractionResult> {
+  if (!args || typeof args.bookSourcePath !== "string") throw new Error("bookSourcePath required");
+
+  /* Резолвим целевую коллекцию ДО запуска парсера/моделей: если имя
+     невалидно (опечатка с фронта), хотим получить понятную ошибку
+     прежде чем потратить минуты на parseBook + extraction. */
+  const targetCollection = args.targetCollection ?? ACCEPTED_COLLECTION;
+  assertValidCollectionName(targetCollection);
+
+  const jobId = randomUUID();
+  const ctrl = new AbortController();
+  activeJobs.set(jobId, ctrl);
+  trackExtractionJob(jobId, ctrl);
+  coordinator.reportBatchStart({
+    pipeline: "extraction",
+    batchId: jobId,
+    startedAt: new Date().toISOString(),
+    config: {
+      bookSourcePath: args.bookSourcePath,
+      extractModel: args.extractModel,
+      judgeModel: args.judgeModel,
+      chapterRange: args.chapterRange,
+      targetCollection,
+    },
+  });
+
+  const emitWithJob = (event: Record<string, unknown>): void => emit({ jobId, ...event });
+
+  const extractModel = args.extractModel ?? PROFILE.BIG.key;
+  const judgeModel = args.judgeModel ?? PROFILE.BIG.key;
+  const llmExtract = makeLlm(extractModel, ctrl.signal, "extractor");
+  const llmJudge = makeLlm(judgeModel, ctrl.signal, "judge");
+
+  /* Routing промпта по тегам модели extractor'а. judge — отдельный single-object
+     промпт, не зависит от mechanicus/cognitive split. */
+  const extractProfile = await getModelProfile(extractModel);
+  const promptKey = pickPromptKey(extractProfile.source);
+  emitWithJob({
+    stage: "config",
+    phase: "info",
+    extractModel,
+    judgeModel,
+    promptKey,
+    profileSource: extractProfile.source,
+    targetCollection,
+  });
+
+  const prefs = await getPreferencesStore().getAll();
+
+  try {
+    emitWithJob({ stage: "parse", phase: "start", bookSourcePath: args.bookSourcePath });
+    /* AUDIT MED-4: parseBook вызывался без opts → отсканированные PDF
+       проваливались в Crystallizer тихим "0 chapters", даже когда
+       prefs.ocrEnabled=true. Также signal не пробрасывался → cancel
+       не прерывал многомегабайтный PDF parse. */
+    const parsed = await parseBook(args.bookSourcePath, {
+      ocrEnabled: prefs.ocrEnabled && isOcrSupported(),
+      ocrLanguages: prefs.ocrLanguages,
+      ocrAccuracy: prefs.ocrAccuracy,
+      ocrPdfDpi: prefs.ocrPdfDpi,
+      signal: ctrl.signal,
+    });
+    const totalChapters = parsed.sections.length;
+    const range = args.chapterRange ?? { from: 0, to: totalChapters };
+    emitWithJob({ stage: "parse", phase: "done", bookTitle: parsed.metadata.title, totalChapters });
+
+    const stats = { extractedRaw: 0, afterDedup: 0, accepted: 0, rejected: 0 };
+    const warnings: string[] = [];
+    let processed = 0;
+
+    for (let ci = range.from; ci < Math.min(range.to, totalChapters); ci++) {
+      if (ctrl.signal.aborted) throw new Error("job aborted");
+      const section = parsed.sections[ci];
+
+      /* Stage 1 — topological chunker (async: thematic drift uses embeddings) */
+      const chunks = await chunkChapter({
+        section,
+        chapterIndex: ci,
+        bookTitle: parsed.metadata.title,
+        bookSourcePath: args.bookSourcePath,
+        signal: ctrl.signal,
+        safeLimit: prefs.chunkSafeLimit,
+        minChunkWords: prefs.chunkMinWords,
+        driftThreshold: prefs.driftThreshold,
+        maxParagraphsForDrift: prefs.maxParagraphsForDrift,
+        overlapParagraphs: prefs.overlapParagraphs,
+      });
+      emitWithJob({ stage: "chunker", chapterIndex: ci, chapterTitle: section.title, chunks: chunks.length });
+      if (chunks.length === 0) continue;
+      if (ctrl.signal.aborted) throw new Error("job aborted");
+
+      /* Stage 2 — extractor */
+      const extractRes = await extractChapterConcepts({
+        chunks,
+        promptsDir: null,
+        promptKey,
+        signal: ctrl.signal,
+        callbacks: {
+          llm: llmExtract,
+          onEvent: (e: ExtractEvent) => emitWithJob({ stage: "extract", chapterIndex: ci, ...e }),
+        },
+      });
+      stats.extractedRaw += extractRes.conceptsTotal.length;
+      warnings.push(...extractRes.warnings);
+      if (ctrl.signal.aborted) throw new Error("job aborted");
+
+      /* Stage 3 — intra-dedup */
+      const dedupRes = await dedupChapterConcepts({
+        concepts: extractRes.conceptsTotal,
+        bookSourcePath: args.bookSourcePath,
+        bookTitle: parsed.metadata.title,
+        chapterIndex: ci,
+        chapterTitle: section.title,
+        threshold: prefs.intraDedupThreshold,
+        onEvent: (e: IntraDedupEvent) => emitWithJob({ stage: "intra-dedup", chapterIndex: ci, ...e }),
+      });
+      stats.afterDedup += dedupRes.concepts.length;
+      if (ctrl.signal.aborted) throw new Error("job aborted");
+
+      /* Stage 4 — judge + cross-library + accept */
+      const judgeRes = await judgeAndAccept({
+        concepts: dedupRes.concepts,
+        promptsDir: null,
+        scoreThreshold: args.scoreThreshold ?? prefs.judgeScoreThreshold,
+        crossLibDupeThreshold: prefs.crossLibDupeThreshold,
+        signal: ctrl.signal,
+        targetCollection,
+        callbacks: {
+          llm: llmJudge,
+          onEvent: (e: JudgeEvent) => emitWithJob({ stage: "judge", chapterIndex: ci, ...e }),
+        },
+      });
+      stats.accepted += judgeRes.accepted.length;
+      stats.rejected += judgeRes.rejected.length;
+      processed++;
+
+      emitWithJob({
+        stage: "chapter",
+        phase: "done",
+        chapterIndex: ci,
+        extracted: extractRes.conceptsTotal.length,
+        deduped: dedupRes.concepts.length,
+        accepted: judgeRes.accepted.length,
+        rejected: judgeRes.rejected.length,
+      });
+    }
+
+    emitWithJob({ stage: "job", phase: "done", stats });
+
+    return {
+      jobId,
+      bookTitle: parsed.metadata.title,
+      totalChapters,
+      processedChapters: processed,
+      totalConcepts: stats,
+      warnings,
+    };
+  } finally {
+    activeJobs.delete(jobId);
+    untrackExtractionJob(jobId);
+    coordinator.reportBatchEnd(jobId);
+  }
+}
+
 export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null): void {
+  const broadcast = (event: Record<string, unknown>): void => {
+    const win = getMainWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send("dataset-v2:event", event);
+    }
+  };
+
   ipcMain.handle(
     "dataset-v2:start-extraction",
     async (_e, args: StartExtractionArgs): Promise<StartExtractionResult> => {
-      if (!args || typeof args.bookSourcePath !== "string") throw new Error("bookSourcePath required");
-
-      const jobId = randomUUID();
-      const ctrl = new AbortController();
-      activeJobs.set(jobId, ctrl);
-      trackExtractionJob(jobId, ctrl);
-      coordinator.reportBatchStart({
-        pipeline: "extraction",
-        batchId: jobId,
-        startedAt: new Date().toISOString(),
-        config: {
-          bookSourcePath: args.bookSourcePath,
-          extractModel: args.extractModel,
-          judgeModel: args.judgeModel,
-          chapterRange: args.chapterRange,
-        },
-      });
-
-      const win = getMainWindow();
-      const emit = (event: Record<string, unknown>): void => {
-        if (win && !win.isDestroyed()) {
-          win.webContents.send("dataset-v2:event", { jobId, ...event });
-        }
-      };
-
-      const extractModel = args.extractModel ?? PROFILE.BIG.key;
-      const judgeModel = args.judgeModel ?? PROFILE.BIG.key;
-      const llmExtract = makeLlm(extractModel, ctrl.signal, "extractor");
-      const llmJudge = makeLlm(judgeModel, ctrl.signal, "judge");
-
-      /* Routing промпта по тегам модели extractor'а. judge — отдельный single-object
-         промпт, не зависит от mechanicus/cognitive split. */
-      const extractProfile = await getModelProfile(extractModel);
-      const promptKey = pickPromptKey(extractProfile.source);
-      emit({ stage: "config", phase: "info", extractModel, judgeModel, promptKey, profileSource: extractProfile.source });
-
-      const prefs = await getPreferencesStore().getAll();
-
-      try {
-        emit({ stage: "parse", phase: "start", bookSourcePath: args.bookSourcePath });
-        /* AUDIT MED-4: parseBook вызывался без opts → отсканированные PDF
-           проваливались в Crystallizer тихим "0 chapters", даже когда
-           prefs.ocrEnabled=true. Также signal не пробрасывался → cancel
-           не прерывал многомегабайтный PDF parse. */
-        const parsed = await parseBook(args.bookSourcePath, {
-          ocrEnabled: prefs.ocrEnabled && isOcrSupported(),
-          ocrLanguages: prefs.ocrLanguages,
-          ocrAccuracy: prefs.ocrAccuracy,
-          ocrPdfDpi: prefs.ocrPdfDpi,
-          signal: ctrl.signal,
-        });
-        const totalChapters = parsed.sections.length;
-        const range = args.chapterRange ?? { from: 0, to: totalChapters };
-        emit({ stage: "parse", phase: "done", bookTitle: parsed.metadata.title, totalChapters });
-
-        const stats = { extractedRaw: 0, afterDedup: 0, accepted: 0, rejected: 0 };
-        const warnings: string[] = [];
-        let processed = 0;
-
-        for (let ci = range.from; ci < Math.min(range.to, totalChapters); ci++) {
-          if (ctrl.signal.aborted) throw new Error("job aborted");
-          const section = parsed.sections[ci];
-
-          /* Stage 1 — topological chunker (async: thematic drift uses embeddings) */
-          const chunks = await chunkChapter({
-            section,
-            chapterIndex: ci,
-            bookTitle: parsed.metadata.title,
-            bookSourcePath: args.bookSourcePath,
-            signal: ctrl.signal,
-            safeLimit: prefs.chunkSafeLimit,
-            minChunkWords: prefs.chunkMinWords,
-            driftThreshold: prefs.driftThreshold,
-            maxParagraphsForDrift: prefs.maxParagraphsForDrift,
-            overlapParagraphs: prefs.overlapParagraphs,
-          });
-          emit({ stage: "chunker", chapterIndex: ci, chapterTitle: section.title, chunks: chunks.length });
-          if (chunks.length === 0) continue;
-          if (ctrl.signal.aborted) throw new Error("job aborted");
-
-          /* Stage 2 — extractor */
-          const extractRes = await extractChapterConcepts({
-            chunks,
-            promptsDir: null,
-            promptKey,
-            signal: ctrl.signal,
-            callbacks: {
-              llm: llmExtract,
-              onEvent: (e: ExtractEvent) => emit({ stage: "extract", chapterIndex: ci, ...e }),
-            },
-          });
-          stats.extractedRaw += extractRes.conceptsTotal.length;
-          warnings.push(...extractRes.warnings);
-          if (ctrl.signal.aborted) throw new Error("job aborted");
-
-          /* Stage 3 — intra-dedup */
-          const dedupRes = await dedupChapterConcepts({
-            concepts: extractRes.conceptsTotal,
-            bookSourcePath: args.bookSourcePath,
-            bookTitle: parsed.metadata.title,
-            chapterIndex: ci,
-            chapterTitle: section.title,
-            threshold: prefs.intraDedupThreshold,
-            onEvent: (e: IntraDedupEvent) => emit({ stage: "intra-dedup", chapterIndex: ci, ...e }),
-          });
-          stats.afterDedup += dedupRes.concepts.length;
-          if (ctrl.signal.aborted) throw new Error("job aborted");
-
-          /* Stage 4 — judge + cross-library + accept */
-          const judgeRes = await judgeAndAccept({
-            concepts: dedupRes.concepts,
-            promptsDir: null,
-            scoreThreshold: args.scoreThreshold ?? prefs.judgeScoreThreshold,
-            crossLibDupeThreshold: prefs.crossLibDupeThreshold,
-            signal: ctrl.signal,
-            callbacks: {
-              llm: llmJudge,
-              onEvent: (e: JudgeEvent) => emit({ stage: "judge", chapterIndex: ci, ...e }),
-            },
-          });
-          stats.accepted += judgeRes.accepted.length;
-          stats.rejected += judgeRes.rejected.length;
-          processed++;
-
-          emit({
-            stage: "chapter",
-            phase: "done",
-            chapterIndex: ci,
-            extracted: extractRes.conceptsTotal.length,
-            deduped: dedupRes.concepts.length,
-            accepted: judgeRes.accepted.length,
-            rejected: judgeRes.rejected.length,
-          });
-        }
-
-        emit({ stage: "job", phase: "done", stats });
-
-        return {
-          jobId,
-          bookTitle: parsed.metadata.title,
-          totalChapters,
-          processedChapters: processed,
-          totalConcepts: stats,
-          warnings,
-        };
-      } finally {
-        activeJobs.delete(jobId);
-        untrackExtractionJob(jobId);
-        coordinator.reportBatchEnd(jobId);
-      }
+      return runExtraction(args, broadcast);
     }
   );
 
@@ -313,77 +353,258 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
     return true;
   });
 
-  /** Сколько концептов лежит в dataset-accepted-concepts (для UI бейджа). */
-  ipcMain.handle("dataset-v2:list-accepted", async (): Promise<{ total: number; byDomain: Record<string, number> }> => {
-    const { fetchQdrantJson, QDRANT_URL } = await import("../lib/qdrant/http-client.js");
-    const { ACCEPTED_COLLECTION } = await import("../lib/dataset-v2/judge.js");
-    try {
-      const data = await fetchQdrantJson<{ result: { points_count?: number } }>(
-        `${QDRANT_URL}/collections/${ACCEPTED_COLLECTION}`
-      );
-      const total = data.result.points_count ?? 0;
-      const byDomain: Record<string, number> = {};
-
-      /* S2.5: при коллекции > 50k концептов scroll-fetch отключён ради OOM,
-         но раньше это происходило молча — UI просто видел пустой byDomain
-         без объяснения. Теперь пишем diag-warning, чтобы dev/power-user
-         видел в DevTools, что breakdown подавлен из-за объёма. */
-      if (total > 50_000) {
-        console.warn(`[dataset-v2:list-accepted] domain breakdown skipped: collection has ${total} points (> 50000 cap)`);
+  /**
+   * Batch crystallization для нескольких книг подряд из Library каталога.
+   *
+   * Guard: каждая книга должна быть `evaluated` И иметь `qualityScore >= minQuality`
+   * И не быть `is_fiction_or_water=true` (если фильтр включён). Иначе книга
+   * скипается с warning -- мы НЕ тратим LLM на мусор.
+   *
+   * Прогресс батча летит как `dataset-v2:event` с `bookIndex`/`bookTotal`/`bookId`,
+   * а внутри каждой книги -- обычные события parse/extract/judge.
+   *
+   * Один batchId на серию книг; внутри -- последовательно создаются jobId
+   * на каждую книгу и трекаются как обычный extraction.
+   */
+  ipcMain.handle(
+    "dataset-v2:start-batch",
+    async (
+      _e,
+      args: {
+        bookIds: string[];
+        minQuality?: number;
+        skipFictionOrWater?: boolean;
+        extractModel?: string;
+        judgeModel?: string;
+        scoreThreshold?: number;
+        /** Тематическая Qdrant-коллекция для всех книг батча. */
+        targetCollection?: string;
       }
-      if (total > 0 && total <= 50_000) {
-        /* AUDIT MED-3: scroll fetch шёл голым `fetch()` без timeout — при
-           зависшем Qdrant IPC-handler висел навсегда, блокируя UI-бейдж.
-           fetchQdrantJson даёт QDRANT_TIMEOUT_MS + унифицированные headers.
-           Большой scroll (10k точек) — поднимаем timeout до 30s. */
-        const scrollData = await fetchQdrantJson<{
-          result: { points: Array<{ payload?: { domain?: string } }> };
-        }>(
-          `${QDRANT_URL}/collections/${ACCEPTED_COLLECTION}/points/scroll`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              limit: Math.min(total, 10_000),
-              with_payload: ["domain"],
-              with_vector: false,
-            }),
-            timeoutMs: 30_000,
-          },
-        );
-        for (const pt of scrollData.result.points) {
-          const d = pt.payload?.domain || "unknown";
-          byDomain[d] = (byDomain[d] || 0) + 1;
+    ): Promise<{
+      batchId: string;
+      total: number;
+      processed: number;
+      skipped: Array<{ bookId: string; reason: string }>;
+      results: Array<{
+        bookId: string;
+        bookTitle: string;
+        totalChapters: number;
+        processedChapters: number;
+        accepted: number;
+        rejected: number;
+      }>;
+    }> => {
+      if (!args || !Array.isArray(args.bookIds) || args.bookIds.length === 0) {
+        throw new Error("bookIds required");
+      }
+      /* Резолвим коллекцию ОДИН раз для всего батча. Все книги пишут
+         в одну тематическую коллекцию -- это и есть смысл батча. */
+      const targetCollection = args.targetCollection ?? ACCEPTED_COLLECTION;
+      assertValidCollectionName(targetCollection);
+
+      const { getBookById } = await import("../lib/library/cache-db.js");
+      const path = await import("path");
+      const batchId = randomUUID();
+      const minQ = typeof args.minQuality === "number" ? args.minQuality : 70;
+      const skipFw = args.skipFictionOrWater !== false;
+
+      /* Lazy main-window resolve через broadcast(): если окно
+         пересоздаётся, новые сообщения уйдут в актуальный webContents. */
+      const emit = (event: Record<string, unknown>): void => broadcast({ batchId, ...event });
+
+      emit({
+        stage: "batch",
+        phase: "start",
+        total: args.bookIds.length,
+        minQuality: minQ,
+        targetCollection,
+      });
+
+      const skipped: Array<{ bookId: string; reason: string }> = [];
+      const eligible: Array<{ id: string; mdPath: string; title: string }> = [];
+      for (const id of args.bookIds) {
+        const meta = getBookById(id);
+        if (!meta) {
+          skipped.push({ bookId: id, reason: "not-found" });
+          continue;
+        }
+        if (meta.status !== "evaluated") {
+          skipped.push({ bookId: id, reason: `status=${meta.status} (must be evaluated)` });
+          continue;
+        }
+        if (typeof meta.qualityScore !== "number") {
+          skipped.push({ bookId: id, reason: "no quality_score" });
+          continue;
+        }
+        if (meta.qualityScore < minQ) {
+          skipped.push({ bookId: id, reason: `qualityScore=${meta.qualityScore} < ${minQ}` });
+          continue;
+        }
+        if (skipFw && meta.isFictionOrWater === true) {
+          skipped.push({ bookId: id, reason: "is_fiction_or_water" });
+          continue;
+        }
+        /* Source path для extraction: bookHandler ждёт реальный файл (PDF/EPUB).
+           Используем originalFile из директории book.md. */
+        const bookDir = path.dirname(meta.mdPath);
+        const sourcePath = path.join(bookDir, meta.originalFile);
+        eligible.push({ id, mdPath: sourcePath, title: meta.title });
+      }
+
+      emit({ stage: "batch", phase: "filtered", eligible: eligible.length, skipped: skipped.length });
+
+      const results: Array<{
+        bookId: string;
+        bookTitle: string;
+        totalChapters: number;
+        processedChapters: number;
+        accepted: number;
+        rejected: number;
+      }> = [];
+
+      for (let i = 0; i < eligible.length; i++) {
+        const book = eligible[i];
+        emit({ stage: "batch", phase: "book-start", bookIndex: i + 1, bookTotal: eligible.length, bookId: book.id, bookTitle: book.title });
+        /* Per-book emitter: оборачиваем broadcast и подмешиваем
+           batchId/bookIndex -- renderer видит, к какой книге
+           батча относится каждое чанк/extract событие. */
+        const perBookEmit = (event: Record<string, unknown>): void =>
+          broadcast({ batchId, bookIndex: i + 1, bookTotal: eligible.length, bookId: book.id, ...event });
+        try {
+          const r = await runExtraction(
+            {
+              bookSourcePath: book.mdPath,
+              extractModel: args.extractModel,
+              judgeModel: args.judgeModel,
+              scoreThreshold: args.scoreThreshold,
+              targetCollection,
+            },
+            perBookEmit,
+          );
+          results.push({
+            bookId: book.id,
+            bookTitle: r.bookTitle,
+            totalChapters: r.totalChapters,
+            processedChapters: r.processedChapters,
+            accepted: r.totalConcepts.accepted,
+            rejected: r.totalConcepts.rejected,
+          });
+          emit({ stage: "batch", phase: "book-done", bookIndex: i + 1, bookId: book.id, accepted: r.totalConcepts.accepted });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          skipped.push({ bookId: book.id, reason: `extraction-failed: ${msg}` });
+          emit({ stage: "batch", phase: "book-failed", bookIndex: i + 1, bookId: book.id, error: msg });
         }
       }
 
-      return { total, byDomain };
-    } catch (e) {
-      /* AUDIT P0 (Inquisitor): раньше любая ошибка Qdrant (сеть, 401,
-         таймаут, отсутствие коллекции) превращалась в "0 концептов" —
-         UI показывал пустой бейдж и пользователь не понимал, что
-         сервер недоступен. Логируем, но contract не меняем чтобы
-         не ломать renderer (badge просто покажет 0 — это видно
-         в resilience-bar по offline-индикатору LM Studio/Qdrant). */
-      const msg = e instanceof Error ? e.message : String(e);
-      console.warn(`[dataset-v2:list-accepted] Qdrant unavailable: ${msg}`);
-      return { total: 0, byDomain: {} };
+      emit({ stage: "batch", phase: "done", processed: results.length, skipped: skipped.length });
+
+      return { batchId, total: args.bookIds.length, processed: results.length, skipped, results };
     }
-  });
+  );
 
-  /** Удалить концепт из принятых (manual rejection пользователем). */
-  ipcMain.handle("dataset-v2:reject-accepted", async (_e, conceptId: string): Promise<boolean> => {
-    if (typeof conceptId !== "string") return false;
-    const { QDRANT_URL, QDRANT_API_KEY } = await import("../lib/qdrant/http-client.js");
-    const { ACCEPTED_COLLECTION } = await import("../lib/dataset-v2/judge.js");
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (QDRANT_API_KEY) headers["api-key"] = QDRANT_API_KEY;
-    const resp = await fetch(`${QDRANT_URL}/collections/${ACCEPTED_COLLECTION}/points/delete?wait=true`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ points: [conceptId] }),
-    });
-    return resp.ok;
-  });
+  /**
+   * Сколько концептов в выбранной коллекции (для UI бейджа).
+   *
+   * Принимает `collection?: string` -- если не указано, читает
+   * `ACCEPTED_COLLECTION` (legacy default). UI Iter 5 будет передавать
+   * выбранную тематическую коллекцию: бейдж покажет счётчик именно
+   * для текущего датасета, а не общий микс по всем темам.
+   */
+  ipcMain.handle(
+    "dataset-v2:list-accepted",
+    async (_e, collection?: string): Promise<{ total: number; byDomain: Record<string, number>; collection: string }> => {
+      const { fetchQdrantJson, QDRANT_URL } = await import("../lib/qdrant/http-client.js");
+      const targetCollection = collection ?? ACCEPTED_COLLECTION;
+      try {
+        assertValidCollectionName(targetCollection);
+      } catch (e) {
+        console.warn(`[dataset-v2:list-accepted] ${e instanceof Error ? e.message : e}`);
+        return { total: 0, byDomain: {}, collection: targetCollection };
+      }
+      try {
+        const data = await fetchQdrantJson<{ result: { points_count?: number } }>(
+          `${QDRANT_URL}/collections/${targetCollection}`
+        );
+        const total = data.result.points_count ?? 0;
+        const byDomain: Record<string, number> = {};
 
+        /* S2.5: при коллекции > 50k концептов scroll-fetch отключён ради OOM,
+           но раньше это происходило молча — UI просто видел пустой byDomain
+           без объяснения. Теперь пишем diag-warning, чтобы dev/power-user
+           видел в DevTools, что breakdown подавлен из-за объёма. */
+        if (total > 50_000) {
+          console.warn(
+            `[dataset-v2:list-accepted] domain breakdown skipped: ${targetCollection} has ${total} points (> 50000 cap)`
+          );
+        }
+        if (total > 0 && total <= 50_000) {
+          /* AUDIT MED-3: scroll fetch шёл голым `fetch()` без timeout — при
+             зависшем Qdrant IPC-handler висел навсегда, блокируя UI-бейдж.
+             fetchQdrantJson даёт QDRANT_TIMEOUT_MS + унифицированные headers.
+             Большой scroll (10k точек) — поднимаем timeout до 30s. */
+          const scrollData = await fetchQdrantJson<{
+            result: { points: Array<{ payload?: { domain?: string } }> };
+          }>(
+            `${QDRANT_URL}/collections/${targetCollection}/points/scroll`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                limit: Math.min(total, 10_000),
+                with_payload: ["domain"],
+                with_vector: false,
+              }),
+              timeoutMs: 30_000,
+            },
+          );
+          for (const pt of scrollData.result.points) {
+            const d = pt.payload?.domain || "unknown";
+            byDomain[d] = (byDomain[d] || 0) + 1;
+          }
+        }
+
+        return { total, byDomain, collection: targetCollection };
+      } catch (e) {
+        /* AUDIT P0 (Inquisitor): раньше любая ошибка Qdrant (сеть, 401,
+           таймаут, отсутствие коллекции) превращалась в "0 концептов" —
+           UI показывал пустой бейдж и пользователь не понимал, что
+           сервер недоступен. Логируем, но contract не меняем чтобы
+           не ломать renderer. */
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn(`[dataset-v2:list-accepted] Qdrant unavailable for ${targetCollection}: ${msg}`);
+        return { total: 0, byDomain: {}, collection: targetCollection };
+      }
+    }
+  );
+
+  /**
+   * Удалить концепт из выбранной коллекции (manual rejection пользователем).
+   *
+   * Принимает `(conceptId, collection?)` -- collection обязан совпадать
+   * с той, куда concept был upsert'нут. UI должен передавать ту же
+   * коллекцию, что использует listAccepted (иначе delete вернёт false).
+   */
+  ipcMain.handle(
+    "dataset-v2:reject-accepted",
+    async (_e, conceptId: string, collection?: string): Promise<boolean> => {
+      if (typeof conceptId !== "string" || conceptId.length === 0) return false;
+      const targetCollection = collection ?? ACCEPTED_COLLECTION;
+      try {
+        assertValidCollectionName(targetCollection);
+      } catch (e) {
+        console.warn(`[dataset-v2:reject-accepted] ${e instanceof Error ? e.message : e}`);
+        return false;
+      }
+      const { QDRANT_URL, QDRANT_API_KEY } = await import("../lib/qdrant/http-client.js");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (QDRANT_API_KEY) headers["api-key"] = QDRANT_API_KEY;
+      const resp = await fetch(`${QDRANT_URL}/collections/${targetCollection}/points/delete?wait=true`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ points: [conceptId] }),
+      });
+      return resp.ok;
+    }
+  );
 }

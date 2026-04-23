@@ -4600,9 +4600,10 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text);
+  -webkit-text-fill-color: currentColor;
 }
 .settings-label-range {
-  color: var(--text-dim);
+  color: var(--text-secondary);
   font-size: 10px;
 }
 .settings-input-wrap {
@@ -4616,6 +4617,8 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   min-width: 0;
   background: rgba(0, 0, 0, 0.4);
   color: var(--text);
+  -webkit-text-fill-color: currentColor;
+  color-scheme: dark;
   border: 1px solid var(--border);
   padding: 6px 10px;
   font-family: var(--font-mono);
@@ -4643,7 +4646,7 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   text-align: center;
   font-family: var(--font-mono);
   font-size: 12px;
-  color: var(--text-dim);
+  color: var(--text-secondary);
 }
 .settings-error { color: var(--accent-red); }
 
@@ -4652,9 +4655,12 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   width: 18px;
   height: 18px;
   accent-color: var(--gold);
+  color-scheme: dark;
   cursor: pointer;
 }
 .settings-input-select {
+  color-scheme: dark;
+  -webkit-text-fill-color: currentColor;
   cursor: pointer;
 }
 

@@ -35,3 +35,10 @@ data/telemetry.jsonl
 data/telemetry-*.jsonl
 data/checkpoints/
 data/prompts/
+
+# Library v2 (Pre-flight Evaluation pipeline)
+# Copyrighted books — never redistribute via git.
+data/library/
+data/bibliary-cache.db
+data/bibliary-cache.db-wal
+data/bibliary-cache.db-shm

@@ -40,11 +40,44 @@ async function parseTxt(filePath: string): Promise<ParseResult> {
   }
 
   const baseName = path.basename(filePath, path.extname(filePath));
+
+  const merged = mergeHeadingOnlySections(sections);
+
   return {
     metadata: { title: baseName, warnings },
-    sections,
+    sections: merged,
     rawCharCount: text.length,
   };
+}
+
+/**
+ * Heading-only секции (пустые `paragraphs`) мержим с ближайшей
+ * следующей секцией, у которой есть текст. Заголовки объединяем
+ * через " / ". Если все секции пустые -- возвращаем как есть.
+ */
+function mergeHeadingOnlySections(sections: BookSection[]): BookSection[] {
+  const out: BookSection[] = [];
+  let pendingTitles: string[] = [];
+
+  for (const sec of sections) {
+    if (sec.paragraphs.length === 0) {
+      pendingTitles.push(sec.title);
+      continue;
+    }
+    if (pendingTitles.length > 0) {
+      sec.title = [...pendingTitles, sec.title].join(" / ");
+      pendingTitles = [];
+    }
+    out.push(sec);
+  }
+  if (pendingTitles.length > 0) {
+    if (out.length > 0) {
+      out[out.length - 1].title += " / " + pendingTitles.join(" / ");
+    } else {
+      out.push({ level: 1, title: pendingTitles.join(" / "), paragraphs: [] });
+    }
+  }
+  return out;
 }
 
 export const txtParser: BookParser = { ext: "txt", parse: parseTxt };

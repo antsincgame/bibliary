@@ -22,6 +22,7 @@ import { registerBookhunterIpc, abortAllBookhunter } from "./bookhunter.ipc.js";
 import { registerAgentIpc, abortAllAgents } from "./agent.ipc.js";
 import { registerPreferencesIpc } from "./preferences.ipc.js";
 import { registerChatHistoryIpc } from "./chat-history.ipc.js";
+import { registerLibraryIpc, abortAllLibrary, bootstrapLibrarySubsystem } from "./library.ipc.js";
 
 export {
   abortAllIngests,
@@ -30,6 +31,8 @@ export {
   abortAllAgents,
   abortAllForgeLocal,
   abortAllForgeEval,
+  abortAllLibrary,
+  bootstrapLibrarySubsystem,
 };
 
 export function registerAllIpcHandlers(getMainWindow: () => BrowserWindow | null): void {
@@ -46,4 +49,5 @@ export function registerAllIpcHandlers(getMainWindow: () => BrowserWindow | null
   registerAgentIpc(getMainWindow);
   registerPreferencesIpc();
   registerChatHistoryIpc();
+  registerLibraryIpc(getMainWindow);
 }

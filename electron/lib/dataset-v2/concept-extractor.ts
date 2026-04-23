@@ -171,7 +171,15 @@ function tryParseConceptsJson(raw: string): unknown {
 }
 
 function normalizeForQuoteCheck(s: string): string {
-  return s.toLowerCase().replace(/\s+/g, " ").trim();
+  return s
+    .toLowerCase()
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB]/g, '"')
+    .replace(/[\u2013\u2014\u2015]/g, "-")
+    .replace(/\u2026/g, "...")
+    .replace(/[\u00A0\u2007\u202F\u200B\uFEFF]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function quoteFoundInChunk(quote: string, chunkText: string): boolean {
@@ -207,7 +215,10 @@ async function tryOneExtractionAttempt(
   cb: ExtractCallbacks,
   attempt: { temperature: number; maxTokens: number },
   chunkPart: number,
-): Promise<{ ok: true; raw: string; parsed: unknown[]; source: "content" | "reasoning" } | { ok: false; raw: string; reason: string }> {
+): Promise<
+  | { ok: true; raw: string; parsed: unknown[]; source: "content" | "reasoning"; reasoning: string | null }
+  | { ok: false; raw: string; reason: string; reasoning: string | null }
+> {
   let lm: { content: string; reasoningContent?: string };
   try {
     lm = normalizeLlmResult(
@@ -219,17 +230,21 @@ async function tryOneExtractionAttempt(
     );
   } catch (e) {
     if (isAbortError(e)) throw e;
-    return { ok: false, raw: "", reason: `llm-error: ${e instanceof Error ? e.message : e}` };
+    return { ok: false, raw: "", reason: `llm-error: ${e instanceof Error ? e.message : e}`, reasoning: null };
   }
 
   const contentTrimmed = lm.content.trim();
+  /* Reasoning -- может прийти отдельным полем (LM Studio reasoning-models)
+     или встроенным <think>...</think> в content. Для нашей цели хватит
+     приоритета: сначала отдельное поле, иначе попытка вытащить из content. */
+  const reasoningTrace = pickReasoningTrace(lm);
 
   /* Источник 1 — content (основной путь). */
   if (contentTrimmed.length > 0) {
     try {
       const parsed = tryParseConceptsJson(lm.content);
       if (Array.isArray(parsed)) {
-        return { ok: true, raw: lm.content, parsed, source: "content" };
+        return { ok: true, raw: lm.content, parsed, source: "content", reasoning: reasoningTrace };
       }
       /* parsed не массив — пробуем reasoning ниже как fallback. */
     } catch {
@@ -244,27 +259,46 @@ async function tryOneExtractionAttempt(
       const parsed = JSON.parse(decoded);
       if (Array.isArray(parsed)) {
         cb.onEvent?.({ type: "extract.reasoning_decoded", chunkPart, chars: decoded.length });
-        return { ok: true, raw: decoded, parsed, source: "reasoning" };
+        return { ok: true, raw: decoded, parsed, source: "reasoning", reasoning: reasoningTrace };
       }
       return {
         ok: false,
         raw: decoded,
         reason: `reasoning-decoded but expected array, got ${typeof parsed}`,
+        reasoning: reasoningTrace,
       };
     } catch (e) {
       return {
         ok: false,
         raw: decoded,
         reason: `reasoning-decoded but json-parse: ${e instanceof Error ? e.message : e}`,
+        reasoning: reasoningTrace,
       };
     }
   }
 
   /* Оба источника пусты или невалидны — возвращаем понятную причину. */
   if (contentTrimmed.length === 0) {
-    return { ok: false, raw: lm.content, reason: "empty-content" };
+    return { ok: false, raw: lm.content, reason: "empty-content", reasoning: reasoningTrace };
   }
-  return { ok: false, raw: lm.content, reason: "json-parse: invalid in both content and reasoning" };
+  return { ok: false, raw: lm.content, reason: "json-parse: invalid in both content and reasoning", reasoning: reasoningTrace };
+}
+
+/**
+ * Извлекает chain-of-thought trace для последующего сохранения в Qdrant.
+ * Приоритет:
+ *   1. Отдельное поле reasoningContent (LM Studio reasoning-capable models).
+ *   2. <think>...</think> внутри content (некоторые open-weights отдают так).
+ * Возвращает null если ничего не нашли (non-thinking model -- это нормально,
+ * payload просто не получит поле).
+ */
+function pickReasoningTrace(lm: { content: string; reasoningContent?: string }): string | null {
+  if (lm.reasoningContent && lm.reasoningContent.trim().length > 0) {
+    return lm.reasoningContent.trim();
+  }
+  const m = lm.content.match(/<think>([\s\S]*?)<\/think>/i);
+  if (m && m[1].trim().length > 0) return m[1].trim();
+  return null;
 }
 
 const DEFAULT_EXTRACT_MAX_TOKENS = 8192;
@@ -293,7 +327,7 @@ async function extractOne(
     maxTokens: DEFAULT_EXTRACT_MAX_TOKENS,
   }, chunk.partN);
 
-  let success: { raw: string; parsed: unknown[] } | null = first.ok ? first : null;
+  let success: { raw: string; parsed: unknown[]; reasoning: string | null } | null = first.ok ? first : null;
 
   if (!first.ok) {
     /* Попытка 2 — retry с пониженной температурой и удвоенным budget'ом.
@@ -340,6 +374,10 @@ async function extractOne(
   const raw = success!.raw;
   const parsed = success!.parsed;
   const rawCount = parsed.length;
+  /* Reasoning trace берём из last successful attempt (вторая попытка имеет
+     приоритет если она и принесла результат). Может быть null для
+     non-thinking моделей -- это нормально. */
+  const extractorReasoning = success!.reasoning;
 
   /* Per-item Zod validation, мягкая (один невалидный не убивает всё) */
   const validated: ExtractedConcept[] = [];
@@ -360,7 +398,10 @@ async function extractOne(
       warnings.push(`item-${i} unknown-domain: ${result.data.domain}`);
       continue;
     }
-    validated.push(result.data);
+    /* Attach reasoning trace -- одинаковый на все концепты из чанка
+       (одна LLM-итерация). Это нормально: трейс описывает "почему я выделил
+       именно эти 3 концепта", и для distillation важна именно эта связь. */
+    validated.push(extractorReasoning ? { ...result.data, extractorReasoning } : result.data);
   }
 
   cb.onEvent?.({

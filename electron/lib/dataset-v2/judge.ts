@@ -95,22 +95,45 @@ export function clearJudgePromptCache(): void {
 
 /* ────────────────── Cross-library check + collection management ────────────────── */
 
-async function ensureAcceptedCollection(): Promise<void> {
+/**
+ * Валидация имени Qdrant-коллекции на стороне judge.
+ *
+ * Why: контракт `targetCollection` — string, но у нас 4 слоя (judge → IPC →
+ * preload → renderer/UI), любой может прислать пустую строку или мусор.
+ * Раньше при пустой строке URL превращался в `/collections//points/search`
+ * и Qdrant отвечал 404 — ошибка была понятна только глядя на сетевой лог.
+ * Теперь падаем явным сообщением в judgeAndAccept(), не дойдя до HTTP.
+ *
+ * Правила Qdrant: 1-255 символов, только латиница/цифры/подчёркивание/дефис.
+ * Совместимо с UI-валидатором в qdrant.ipc.ts:create-collection (если пользователь
+ * сможет создать коллекцию, имя точно пройдёт здесь).
+ */
+const COLLECTION_NAME_RE = /^[A-Za-z0-9_-]{1,255}$/;
+export function assertValidCollectionName(name: string): void {
+  if (typeof name !== "string" || !COLLECTION_NAME_RE.test(name)) {
+    throw new Error(
+      `invalid Qdrant collection name "${name}": expected 1-255 chars [A-Za-z0-9_-]`
+    );
+  }
+}
+
+async function ensureAcceptedCollection(collection: string): Promise<void> {
+  assertValidCollectionName(collection);
   try {
-    await fetchQdrantJson(`${QDRANT_URL}/collections/${ACCEPTED_COLLECTION}`);
+    await fetchQdrantJson(`${QDRANT_URL}/collections/${collection}`);
     return;
   } catch {
     /* probe failed — try create (404 ловится в catch как HTTP, не differentiation) */
   }
   try {
-    await fetchQdrantJson(`${QDRANT_URL}/collections/${ACCEPTED_COLLECTION}`, {
+    await fetchQdrantJson(`${QDRANT_URL}/collections/${collection}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ vectors: { size: EMBEDDING_DIM, distance: "Cosine" } }),
     });
     /* best-effort indexes */
     for (const field of ["domain", "tags", "bookSourcePath"]) {
-      await fetchQdrantJson(`${QDRANT_URL}/collections/${ACCEPTED_COLLECTION}/index`, {
+      await fetchQdrantJson(`${QDRANT_URL}/collections/${collection}/index`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ field_name: field, field_schema: "keyword" }),
@@ -118,7 +141,9 @@ async function ensureAcceptedCollection(): Promise<void> {
     }
   } catch (e) {
     /* Если не смогли создать — это критично, пробрасываем */
-    throw new Error(`failed to ensure accepted collection: ${e instanceof Error ? e.message : e}`);
+    throw new Error(
+      `failed to ensure accepted collection "${collection}": ${e instanceof Error ? e.message : e}`
+    );
   }
 }
 
@@ -127,10 +152,14 @@ interface CrossSearchHit {
   score: number;
 }
 
-async function crossLibrarySearch(domain: string, vector: number[]): Promise<CrossSearchHit | null> {
-  await ensureAcceptedCollection();
+async function crossLibrarySearch(
+  domain: string,
+  vector: number[],
+  collection: string
+): Promise<CrossSearchHit | null> {
+  await ensureAcceptedCollection(collection);
   const data = await fetchQdrantJson<{ result: Array<{ id: string | number; score: number }> }>(
-    `${QDRANT_URL}/collections/${ACCEPTED_COLLECTION}/points/search`,
+    `${QDRANT_URL}/collections/${collection}/points/search`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -153,34 +182,37 @@ async function crossLibrarySearch(domain: string, vector: number[]): Promise<Cro
  * fetchQdrantJson даёт QDRANT_TIMEOUT_MS и единые headers с API-ключом.
  * Upsert с `wait=true` может занимать дольше search'а — даём 15s.
  */
-async function upsertAccepted(concept: AcceptedConcept, vector: number[]): Promise<void> {
-  await ensureAcceptedCollection();
-  await fetchQdrantJson(`${QDRANT_URL}/collections/${ACCEPTED_COLLECTION}/points?wait=true`, {
+async function upsertAccepted(
+  concept: AcceptedConcept,
+  vector: number[],
+  collection: string
+): Promise<void> {
+  await ensureAcceptedCollection(collection);
+  /* Payload собираем по slot'ам, чтобы reasoning-поля не появлялись
+     ключами с undefined value (Qdrant их хранит как null -- мусорит индексы). */
+  const payload: Record<string, unknown> = {
+    principle: concept.principle,
+    explanation: concept.explanation,
+    domain: concept.domain,
+    tags: concept.tags,
+    noveltyHint: concept.noveltyHint,
+    sourceQuote: concept.sourceQuote,
+    bookSourcePath: concept.bookSourcePath,
+    bookTitle: concept.bookTitle,
+    chapterIndex: concept.chapterIndex,
+    chapterTitle: concept.chapterTitle,
+    judgeScore: concept.judgeScore,
+    judgeReasoning: concept.judgeReasoning,
+    scoreBreakdown: concept.scoreBreakdown,
+    acceptedAt: concept.acceptedAt,
+  };
+  if (concept.extractorReasoning) payload.extractorReasoning = concept.extractorReasoning;
+  if (concept.judgeReasoningTrace) payload.judgeReasoningTrace = concept.judgeReasoningTrace;
+  await fetchQdrantJson(`${QDRANT_URL}/collections/${collection}/points?wait=true`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      points: [
-        {
-          id: concept.id,
-          vector,
-          payload: {
-            principle: concept.principle,
-            explanation: concept.explanation,
-            domain: concept.domain,
-            tags: concept.tags,
-            noveltyHint: concept.noveltyHint,
-            sourceQuote: concept.sourceQuote,
-            bookSourcePath: concept.bookSourcePath,
-            bookTitle: concept.bookTitle,
-            chapterIndex: concept.chapterIndex,
-            chapterTitle: concept.chapterTitle,
-            judgeScore: concept.judgeScore,
-            judgeReasoning: concept.judgeReasoning,
-            scoreBreakdown: concept.scoreBreakdown,
-            acceptedAt: concept.acceptedAt,
-          },
-        },
-      ],
+      points: [{ id: concept.id, vector, payload }],
     }),
     timeoutMs: 15_000,
   });
@@ -205,7 +237,7 @@ async function llmJudge(
   concept: DedupedConcept,
   template: string,
   cb: JudgeCallbacks
-): Promise<JudgeResult | null> {
+): Promise<{ result: JudgeResult; reasoningTrace: string | null } | null> {
   const conceptForLlm = {
     principle: concept.principle,
     explanation: concept.explanation,
@@ -271,7 +303,15 @@ async function llmJudge(
     cb.onEvent?.({ type: "judge.reject.error", principle: concept.principle.slice(0, 60), reason: `schema: ${result.error.message.slice(0, 100)}` });
     return null;
   }
-  return result.data;
+  /* Reasoning trace -- приоритет: отдельное поле, иначе <think> в content. */
+  let reasoningTrace: string | null = null;
+  if (lm.reasoningContent && lm.reasoningContent.trim().length > 0) {
+    reasoningTrace = lm.reasoningContent.trim();
+  } else {
+    const m = lm.content.match(/<think>([\s\S]*?)<\/think>/i);
+    if (m && m[1].trim().length > 0) reasoningTrace = m[1].trim();
+  }
+  return { result: result.data, reasoningTrace };
 }
 
 function weightedScore(j: JudgeResult): number {
@@ -300,6 +340,18 @@ export interface JudgeBatchArgs {
   crossLibDupeThreshold?: number;
   /** Если signal aborted — выходим между концептами без следующего LLM/Qdrant call. */
   signal?: AbortSignal;
+  /**
+   * Имя Qdrant-коллекции для cross-library check + upsert принятых концептов.
+   *
+   * По умолчанию — `ACCEPTED_COLLECTION` (back-compat для e2e-скриптов и
+   * существующего UI без collection-picker'а). Передавайте explicit имя
+   * для тематических коллекций (marketing, ux, seo и т.д.) -- так у LoRA
+   * датасета будет thematic isolation: cross-library dedup ищет дубликаты
+   * только внутри той же темы, без шума из других доменов.
+   *
+   * Имя валидируется по `/^[A-Za-z0-9_-]{1,255}$/` (правила Qdrant).
+   */
+  targetCollection?: string;
 }
 
 export interface JudgeBatchResult {
@@ -311,6 +363,11 @@ export async function judgeAndAccept(args: JudgeBatchArgs): Promise<JudgeBatchRe
   const template = await loadPromptTemplate(args.promptsDir ?? null);
   const threshold = args.scoreThreshold ?? DEFAULT_SCORE_THRESHOLD;
   const crossTh = args.crossLibDupeThreshold ?? CROSS_LIB_DUPE_THRESHOLD;
+  /* Единственная точка резолва дефолта коллекции в этом модуле.
+     Все internal helpers требуют explicit collection -- так невозможно
+     случайно записать в дефолт из глубины пайплайна. Валидация имени
+     происходит при первом вызове ensureAcceptedCollection. */
+  const collection = args.targetCollection ?? ACCEPTED_COLLECTION;
 
   const accepted: AcceptedConcept[] = [];
   const rejected: Array<{ concept: DedupedConcept; reason: string }> = [];
@@ -362,7 +419,7 @@ export async function judgeAndAccept(args: JudgeBatchArgs): Promise<JudgeBatchRe
     /* 1b. Cross-library check (Qdrant search, бесплатно без LLM) */
     let crossHit: CrossSearchHit | null = null;
     try {
-      crossHit = await crossLibrarySearch(concept.domain, vector);
+      crossHit = await crossLibrarySearch(concept.domain, vector, collection);
     } catch (e) {
       /* Qdrant timeout/down — пропускаем cross-check, доверяем LLM.
          Но если Qdrant прервался по abort'у — всё равно выходим. */
@@ -380,11 +437,12 @@ export async function judgeAndAccept(args: JudgeBatchArgs): Promise<JudgeBatchRe
     }
 
     /* 2. LLM judge */
-    const judgeResult = await llmJudge(concept, template, args.callbacks);
-    if (!judgeResult) {
+    const judgeOutcome = await llmJudge(concept, template, args.callbacks);
+    if (!judgeOutcome) {
       rejected.push({ concept, reason: "judge-error" });
       continue;
     }
+    const judgeResult = judgeOutcome.result;
     const score = weightedScore(judgeResult);
     args.callbacks.onEvent?.({
       type: "judge.score",
@@ -417,9 +475,10 @@ export async function judgeAndAccept(args: JudgeBatchArgs): Promise<JudgeBatchRe
         actionability: judgeResult.actionability,
         domain_fit: judgeResult.domain_fit,
       },
+      ...(judgeOutcome.reasoningTrace ? { judgeReasoningTrace: judgeOutcome.reasoningTrace } : {}),
     };
     try {
-      await upsertAccepted(acceptedConcept, vector);
+      await upsertAccepted(acceptedConcept, vector, collection);
     } catch (e) {
       if (isAbortError(e)) throw e;
       rejected.push({ concept, reason: `upsert-error: ${e instanceof Error ? e.message : e}` });
