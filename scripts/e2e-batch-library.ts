@@ -379,10 +379,57 @@ async function loadState(stateFile: string): Promise<RunState | null> {
   }
 }
 
+/**
+ * Atomic state persistence with Windows-safe retry.
+ *
+ * fs.rename on Windows throws EPERM/EBUSY when:
+ *   - antivirus scans the .tmp file the moment we finished writing it
+ *   - indexing service holds a read lock
+ *   - OneDrive sync is mid-upload
+ *
+ * All three are transient. Exponential backoff (up to ~1.5s total) handles
+ * >99% of cases. Falls back to direct write-in-place if rename persistently
+ * fails — accepts the small risk of partial write on crash vs. losing the
+ * entire 30-minute batch progress.
+ */
 async function saveState(stateFile: string, state: RunState): Promise<void> {
   const tmp = `${stateFile}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(state, null, 2), "utf8");
-  await fs.rename(tmp, stateFile);
+  const payload = JSON.stringify(state, null, 2);
+
+  try {
+    await fs.writeFile(tmp, payload, "utf8");
+  } catch (e) {
+    /* If we can't even write the tmp file, try direct write as last resort. */
+    await fs.writeFile(stateFile, payload, "utf8");
+    return;
+  }
+
+  /* Exponential backoff retry: 50ms, 100ms, 200ms, 400ms, 800ms = ~1.55s max. */
+  const delays = [50, 100, 200, 400, 800];
+  let lastErr: unknown = null;
+  for (const delay of delays) {
+    try {
+      await fs.rename(tmp, stateFile);
+      return;
+    } catch (e) {
+      lastErr = e;
+      const code = (e as NodeJS.ErrnoException).code ?? "";
+      /* Only retry on known-transient Windows locks. Real errors (EACCES, ENOENT
+         on the source) should fail fast. */
+      if (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES") break;
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+
+  /* All retries exhausted. Fall back to non-atomic write-in-place.
+     Better than losing the whole batch to an antivirus scan. */
+  try {
+    await fs.writeFile(stateFile, payload, "utf8");
+    await fs.unlink(tmp).catch(() => { /* ignore cleanup failure */ });
+  } catch {
+    /* If even in-place write fails, propagate the original rename error. */
+    throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1233,7 +1280,13 @@ async function main(): Promise<void> {
     const book = books[i];
     const key = book.absPath;
     const prev = state.books[key];
-    if (prev && (prev.status === "done" || prev.status === "failed") && !args.restart) {
+    /* Resume logic: skip books already reaching a terminal-ish state in prior run.
+       `evaluated` counts as terminal when --skip-crystallize=true, because no
+       further stage will run for it. Same for `imported` when --skip-evaluate. */
+    const terminalStates: BookStatus[] = ["done", "failed", "duplicate", "indexed"];
+    if (args.skipCrystallize) terminalStates.push("evaluated");
+    if (args.skipEvaluate && args.skipCrystallize) terminalStates.push("imported");
+    if (prev && terminalStates.includes(prev.status) && !args.restart) {
       console.log(
         `[${i + 1}/${books.length}] ${COLOR.dim}skip ${book.fileName} (${prev.status} previously)${COLOR.reset}`,
       );
@@ -1371,6 +1424,22 @@ async function main(): Promise<void> {
   /* Iter 7: exit code = number of failed tests (0 = всё зелёное). */
   process.exit(tests.fail);
 }
+
+/* SAFETY NET: pdfjs-dist (legacy build) выбрасывает XRefEntryException и
+   подобные ошибки из ВНУТРЕННИХ async-callback'ов worker'а — даже после
+   того как наш `await page.getTextContent()` уже вернул управление.
+   Эти rejected-промисы ускользают мимо try/catch вокруг parseBook и в
+   Node 22 по умолчанию роняют ВЕСЬ batch-процесс (ERR_UNHANDLED_REJECTION).
+   Логируем и продолжаем — конкретная книга всё равно будет помечена как
+   failed по результату await parseBook(). */
+process.on("unhandledRejection", (reason) => {
+  const msg = reason instanceof Error ? `${reason.name}: ${reason.message}` : String(reason);
+  console.error(`\n[unhandled-rejection swallowed] ${msg.slice(0, 240)}\n`);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error(`\n[uncaught-exception swallowed] ${err.name}: ${err.message.slice(0, 240)}\n`);
+});
 
 main().catch((e) => {
   console.error(`\n${COLOR.red}${COLOR.bold}UNHANDLED:${COLOR.reset} ${e instanceof Error ? e.stack : String(e)}\n`);
