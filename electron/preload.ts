@@ -429,6 +429,22 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.invoke("dataset-v2:list-accepted", collection),
     rejectAccepted: (conceptId: string, collection?: string): Promise<boolean> =>
       ipcRenderer.invoke("dataset-v2:reject-accepted", conceptId, collection),
+    /**
+     * Iter 9: запускает фон-синтез датасета (Qdrant collection → ChatML JSONL)
+     * через child-process scripts/dataset-synth.ts. Вернёт сразу с pid и logPath
+     * (UI отслеживает прогресс через лог-файл, чтобы не блокировать main thread
+     * на 60+ минутный LLM-marathon).
+     */
+    synthesize: (args: {
+      collection: string;
+      outputPath: string;
+      pairsPerConcept?: number;
+      includeReasoning?: boolean;
+      preset?: string;
+      model?: string;
+      limit?: number;
+    }): Promise<{ ok: boolean; pid?: number; logPath?: string; error?: string }> =>
+      ipcRenderer.invoke("dataset-v2:synthesize", args),
     onEvent: (cb: (payload: { jobId?: string; batchId?: string; stage: string; [k: string]: unknown }) => void): (() => void) => {
       const l = (_e: unknown, p: { jobId?: string; batchId?: string; stage: string; [k: string]: unknown }) => cb(p);
       ipcRenderer.on("dataset-v2:event", l);

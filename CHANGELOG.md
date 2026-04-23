@@ -4,6 +4,49 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0-iter9] — 2026-04-23 — Multi-tenant LoRA Factory + Tests + UI
+
+### Added
+- **Per-domain trainer prompts (10 presets):** `electron/defaults/synth-prompts/`
+  с `index.json` + 10 `.md` файлов. Каждый — реальный, специализированный
+  системный промпт от senior-эксперта в своей области:
+  marketing, ux, seo, programming, security, science, philosophy,
+  business, psychology, default. Подбирается **автоматически** по
+  `concept.domain` через keyword scoring (longest-match wins).
+- **`--preset` CLI флаг** в `dataset-synth.ts`:
+  - `auto` (по умолчанию) — multi-tenant: каждый концепт получает свой trainer
+  - `<name>` — фиксированный (например, `--preset marketing`)
+  - `none` — generic generic prompt (back-compat)
+  - `--list-presets` — discovery без запуска LLM
+- **`--system-prompt-file`** — для power-users со своим custom prompt-ом.
+- **UI-кнопка "Synthesize dataset → JSONL"** в Catalog bottombar (renderer/library.js).
+  Запускает фон-синтез через child-process tsx, не блокируя app shell.
+  Prompt → Q/A pairs count → reasoning toggle → confirm → background.
+  Результат + лог пишутся на диск, UI показывает PID + пути.
+- **IPC `dataset-v2:synthesize`**: spawn `npx tsx scripts/dataset-synth.ts`
+  с детачем stdout/stderr в `<output>.log`. Возвращает `{ok, pid, logPath}`
+  немедленно, а не ждёт 60-минутный синтез.
+- **Unit-тесты (31 PASS, 0 FAIL)** через нативный `node --test`:
+  - `tests/reasoning-parser.test.ts` — 12 кейсов: think+JSON happy path,
+    JSON-only, malformed JSON, unclosed `<think>`, escaped quotes, partial
+    JSON, empty input, unbalanced braces, braces-in-strings, preamble,
+    postscript, non-string input.
+  - `tests/surrogate-builder.test.ts` — 9 кейсов: empty book, tiny book
+    full-text mode, distillation sections, paragraph atomicity, 2-chapter
+    edge case, compression ratio bound, blank paragraph filtering, missing
+    title fallback.
+  - `tests/dataset-synth-presets.test.ts` — 10 кейсов: index.json validity,
+    file existence, exact-match domain routing, compound-domain longest-match,
+    real-production domains, unknown→default fallback, case insensitivity,
+    substring matching, keyword length lower bound, tie-breaking determinism.
+- **npm scripts**: `npm test` и `npm run test:unit`.
+
+### Verified (live)
+- **`--list-presets`** показывает все 10 пресетов с keyword-ами.
+- **31/31 unit tests PASS** в 250ms.
+- **Lint + tsc clean** на всём проекте (0 errors).
+- **Background synth** работает: 45 концептов из 429 за 8.5 мин (~11s/concept на 35b-a3b).
+
 ## [2.7.0-iter8] — 2026-04-23 — Dataset Synthesis (final payoff)
 
 ### Added

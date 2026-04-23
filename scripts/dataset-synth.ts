@@ -52,7 +52,10 @@ interface Args {
   includeReasoning: boolean;
   limit?: number;
   model?: string;
-  systemPrompt?: string;
+  systemPromptFile?: string;
+  preset: string;
+  presetsDir?: string;
+  listPresets: boolean;
   help: boolean;
 }
 
@@ -62,6 +65,8 @@ function parseArgs(argv: string[]): Args {
     out: "release/datasets/synth.jsonl",
     pairsPerConcept: 2,
     includeReasoning: false,
+    preset: "auto",
+    listPresets: false,
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -74,7 +79,10 @@ function parseArgs(argv: string[]): Args {
       case "--include-reasoning":  a.includeReasoning = true; break;
       case "--limit":              a.limit = Math.max(1, Number(v) || 0); i++; break;
       case "--model":              a.model = String(v); i++; break;
-      case "--system-prompt-file": a.systemPrompt = String(v); i++; break;
+      case "--system-prompt-file": a.systemPromptFile = String(v); i++; break;
+      case "--preset":             a.preset = String(v).toLowerCase(); i++; break;
+      case "--presets-dir":        a.presetsDir = String(v); i++; break;
+      case "--list-presets":       a.listPresets = true; break;
       case "--help":
       case "-h":                   a.help = true; break;
     }
@@ -84,7 +92,7 @@ function parseArgs(argv: string[]): Args {
 
 function printHelp() {
   console.log(`
-${C.bold}Iter 8 — Dataset Synthesis (Qdrant → ChatML JSONL)${C.reset}
+${C.bold}Iter 8/9 — Dataset Synthesis (Qdrant → ChatML JSONL)${C.reset}
 
 Usage:
   npm run dataset:synth -- --collection <name> --out <file.jsonl> [options]
@@ -92,23 +100,218 @@ Usage:
 Options:
   --collection <name>          Qdrant collection name (default: dataset-accepted-concepts)
   --out <path>                 Output .jsonl file (default: release/datasets/synth.jsonl)
-  --pairs-per-concept <1..5>   How many Q&A pairs to synthesize per concept (default: 2)
-  --include-reasoning          Wrap assistant answer in <think>...</think> from reasoning_trace
+  --pairs-per-concept <1..5>   How many Q/A pairs per concept (default: 2)
+  --include-reasoning          Wrap assistant in <think>...</think> from reasoning_trace
+                                (R1-style premium distillation data)
   --limit <N>                  Stop after N concepts (default: all)
   --model <modelKey>           LM Studio model override (default: pickEvaluatorModel)
-  --system-prompt-file <path>  Override the trainer system prompt
+  --preset <name>              Trainer system-prompt preset (default: auto).
+                                Available: auto | none | default | <preset-name>.
+                                'auto'    — pick by concept.domain (multi-tenant LoRA factory).
+                                'none'    — minimal generic prompt (back-compat).
+                                'default' — use 'default' preset for all concepts.
+  --presets-dir <path>         Override location of synth-prompts directory.
+  --list-presets               List all available presets and exit.
+  --system-prompt-file <path>  Hardcoded prompt file overriding presets entirely.
   -h, --help                   Show this help
 
-Output format (ChatML JSONL):
-  Each line is a single JSON object:
-  { "messages": [{role,content}, ...], "meta": {concept_id, domain, source_book} }
+Output (ChatML JSONL):
+  { "messages": [{role,content}, ...], "meta": {concept_id, domain, source_book, preset} }
 
-The output is ready for Unsloth / LlamaFactory / axolotl LoRA training.
+Ready for Unsloth / LlamaFactory / axolotl LoRA training.
 `);
 }
 
-// ── Trainer system prompt (hardcoded, English, distillation-focused) ────────
-const DEFAULT_TRAINER_SYSTEM_PROMPT = `You are an expert in {{domain}}. Provide rigorous, actionable answers grounded in established principles. When appropriate, briefly cite the underlying concept (one sentence) before giving the practical implication.`;
+// ── Preset infrastructure (Iter 9: per-domain trainer prompts) ──────────────
+
+interface PresetEntry {
+  file: string;
+  label: string;
+  matchDomains: string[];
+}
+
+interface PresetIndex {
+  presets: Record<string, PresetEntry>;
+}
+
+interface LoadedPreset {
+  name: string;
+  label: string;
+  template: string;
+}
+
+const FALLBACK_DEFAULT_PROMPT =
+  "You are an expert in {{domain}}. Provide rigorous, actionable answers grounded in established principles. " +
+  "When appropriate, briefly cite the underlying concept (one sentence) before giving the practical implication.";
+
+function presetCandidates(override?: string): string[] {
+  const arr: string[] = [];
+  if (override) arr.push(path.resolve(override));
+  if (process.env.BIBLIARY_DEFAULTS_DIR) {
+    arr.push(path.join(process.env.BIBLIARY_DEFAULTS_DIR, "synth-prompts"));
+  }
+  arr.push(path.resolve(process.cwd(), "electron", "defaults", "synth-prompts"));
+  return arr;
+}
+
+async function locatePresetsDir(override?: string): Promise<string | null> {
+  for (const c of presetCandidates(override)) {
+    try {
+      const idx = path.join(c, "index.json");
+      await fs.access(idx);
+      return c;
+    } catch {
+      /* try next */
+    }
+  }
+  return null;
+}
+
+async function loadPresetIndex(dir: string): Promise<PresetIndex> {
+  const raw = await fs.readFile(path.join(dir, "index.json"), "utf8");
+  const parsed = JSON.parse(raw) as PresetIndex;
+  if (!parsed.presets || typeof parsed.presets !== "object") {
+    throw new Error(`presets index.json: missing 'presets' object`);
+  }
+  return parsed;
+}
+
+async function loadPresetTemplate(dir: string, entry: PresetEntry): Promise<string> {
+  const raw = await fs.readFile(path.join(dir, entry.file), "utf8");
+  return raw.trim();
+}
+
+/**
+ * Map a concept's `domain` string to the best-matching preset name.
+ *
+ * Algorithm:
+ *   1. Lowercase + tokenize domain.
+ *   2. For each preset, score = number of overlapping keywords.
+ *   3. Return preset with highest score, ties broken by definition order
+ *      (more specific presets first in index.json).
+ *   4. If no overlap → "default".
+ */
+function pickPresetForDomain(domain: string, index: PresetIndex): string {
+  const dom = domain.toLowerCase();
+  let bestName = "default";
+  let bestScore = 0;
+  for (const [name, entry] of Object.entries(index.presets)) {
+    if (name === "default") continue;
+    let score = 0;
+    for (const kw of entry.matchDomains) {
+      if (dom.includes(kw.toLowerCase())) score += kw.length; /* longer match = more specific */
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestName = name;
+    }
+  }
+  return bestName;
+}
+
+class PresetResolver {
+  private cache = new Map<string, LoadedPreset>();
+  constructor(
+    private dir: string,
+    private index: PresetIndex,
+    private mode: "auto" | "fixed" | "none",
+    private fixedName?: string,
+  ) {}
+
+  static async create(args: Args): Promise<PresetResolver> {
+    /* --system-prompt-file overrides preset infrastructure entirely. */
+    if (args.systemPromptFile) {
+      const tmpl = (await fs.readFile(args.systemPromptFile, "utf8")).trim();
+      const fakeIdx: PresetIndex = {
+        presets: { custom: { file: "(inline)", label: "Custom file", matchDomains: [] } },
+      };
+      const r = new PresetResolver("(inline)", fakeIdx, "fixed", "custom");
+      r.cache.set("custom", { name: "custom", label: "Custom file", template: tmpl });
+      return r;
+    }
+
+    if (args.preset === "none") {
+      const fakeIdx: PresetIndex = {
+        presets: { none: { file: "(builtin)", label: "Generic", matchDomains: [] } },
+      };
+      const r = new PresetResolver("(builtin)", fakeIdx, "fixed", "none");
+      r.cache.set("none", { name: "none", label: "Generic", template: FALLBACK_DEFAULT_PROMPT });
+      return r;
+    }
+
+    const dir = await locatePresetsDir(args.presetsDir);
+    if (!dir) {
+      console.warn(
+        `${C.yellow}[presets]${C.reset} no synth-prompts/ directory found; falling back to generic prompt.`,
+      );
+      const fakeIdx: PresetIndex = {
+        presets: { fallback: { file: "(builtin)", label: "Generic fallback", matchDomains: [] } },
+      };
+      const r = new PresetResolver("(builtin)", fakeIdx, "fixed", "fallback");
+      r.cache.set("fallback", {
+        name: "fallback",
+        label: "Generic fallback",
+        template: FALLBACK_DEFAULT_PROMPT,
+      });
+      return r;
+    }
+
+    const index = await loadPresetIndex(dir);
+
+    if (args.preset === "auto") {
+      return new PresetResolver(dir, index, "auto");
+    }
+
+    /* Explicit named preset (--preset marketing). */
+    const entry = index.presets[args.preset];
+    if (!entry) {
+      const known = Object.keys(index.presets).join(", ");
+      throw new Error(`unknown preset '${args.preset}'. Available: ${known}`);
+    }
+    return new PresetResolver(dir, index, "fixed", args.preset);
+  }
+
+  /** Load preset by name (cached). Returns the loaded preset. */
+  async load(name: string): Promise<LoadedPreset> {
+    if (this.cache.has(name)) return this.cache.get(name)!;
+    const entry = this.index.presets[name];
+    if (!entry) {
+      /* Defensive: preset file disappeared or auto picked unknown. Use default. */
+      const def = this.index.presets["default"];
+      if (!def) throw new Error(`No 'default' preset and requested '${name}' missing.`);
+      const template = await loadPresetTemplate(this.dir, def);
+      const out: LoadedPreset = { name: "default", label: def.label, template };
+      this.cache.set("default", out);
+      return out;
+    }
+    const template = await loadPresetTemplate(this.dir, entry);
+    const out: LoadedPreset = { name, label: entry.label, template };
+    this.cache.set(name, out);
+    return out;
+  }
+
+  /** Resolve preset for a given concept domain. */
+  async resolve(domain: string): Promise<LoadedPreset> {
+    if (this.mode === "fixed" && this.fixedName) return this.load(this.fixedName);
+    const picked = pickPresetForDomain(domain, this.index);
+    return this.load(picked);
+  }
+
+  /** Show an inventory of presets with their match keywords. */
+  describeAvailable(): { name: string; label: string; keywords: string[] }[] {
+    return Object.entries(this.index.presets).map(([name, entry]) => ({
+      name,
+      label: entry.label,
+      keywords: entry.matchDomains,
+    }));
+  }
+
+  get modeLabel(): string {
+    if (this.mode === "auto") return "auto (per-domain)";
+    if (this.mode === "fixed" && this.fixedName) return `fixed: ${this.fixedName}`;
+    return this.mode;
+  }
+}
 
 // ── LLM synthesis prompt (asks the model to produce N Q&A pairs in JSON) ────
 const SYNTH_SYSTEM_PROMPT = `You are a Senior Curriculum Designer building a high-signal LoRA training dataset.
@@ -277,14 +480,23 @@ function buildAssistantContent(answer: string, reasoningTrace?: string, includeR
   return `<think>\n${trimmed}\n</think>\n\n${answer}`;
 }
 
+interface TrainingMeta {
+  concept_id: string;
+  domain: string;
+  source_book?: string;
+  tags: string[];
+  has_reasoning: boolean;
+  preset: string;
+}
+
 function buildExample(
   concept: ConceptPayload,
   qa: { question: string; answer: string },
-  systemPrompt: string,
+  preset: LoadedPreset,
   includeReasoning: boolean,
-): TrainingExample {
+): TrainingExample & { meta: TrainingMeta } {
   const reasoning = concept.extractorReasoning || concept.judgeReasoningTrace;
-  const sys = systemPrompt.replace(/\{\{domain\}\}/g, concept.domain);
+  const sys = preset.template.replace(/\{\{domain\}\}/g, concept.domain);
   const assistantContent = buildAssistantContent(qa.answer, reasoning, includeReasoning);
   return {
     messages: [
@@ -298,6 +510,7 @@ function buildExample(
       source_book: concept.sourceBook,
       tags: concept.tags,
       has_reasoning: includeReasoning && !!reasoning,
+      preset: preset.name,
     },
   };
 }
@@ -346,17 +559,32 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) { printHelp(); return; }
 
-  console.log(`${C.bold}=== Bibliary Dataset Synthesis (Iter 8) ===${C.reset}\n`);
+  console.log(`${C.bold}=== Bibliary Dataset Synthesis (Iter 9 — multi-tenant) ===${C.reset}\n`);
 
-  /* Optional system prompt override -- power users can pass a domain-specific one. */
-  let systemPrompt = DEFAULT_TRAINER_SYSTEM_PROMPT;
-  if (args.systemPrompt) {
-    systemPrompt = (await fs.readFile(args.systemPrompt, "utf8")).trim();
-    console.log(`${C.dim}[prompt] loaded ${args.systemPrompt} (${systemPrompt.length} chars)${C.reset}`);
+  /* --list-presets is a quick discovery command — no LLM, no Qdrant required. */
+  if (args.listPresets) {
+    const dir = await locatePresetsDir(args.presetsDir);
+    if (!dir) {
+      console.error(`${C.red}No synth-prompts directory found.${C.reset}`);
+      process.exit(2);
+    }
+    const idx = await loadPresetIndex(dir);
+    console.log(`${C.dim}from ${dir}${C.reset}\n`);
+    for (const [name, entry] of Object.entries(idx.presets)) {
+      console.log(`  ${C.bold}${pad(name, 14)}${C.reset} ${entry.label}`);
+      if (entry.matchDomains.length > 0) {
+        console.log(`  ${pad("", 14)} ${C.dim}matches: ${entry.matchDomains.slice(0, 6).join(", ")}${entry.matchDomains.length > 6 ? "…" : ""}${C.reset}`);
+      }
+    }
+    console.log(`\nUse with --preset <name> | --preset auto (default) | --preset none`);
+    return;
   }
 
+  const presets = await PresetResolver.create(args);
   const { model, total } = await preflight(args);
   const cap = args.limit ? Math.min(args.limit, total) : total;
+
+  console.log(`${C.cyan}[pre-flight]${C.reset} preset     = ${presets.modeLabel}`);
 
   /* Ensure output directory exists, then open a streaming writer. */
   await fs.mkdir(path.dirname(path.resolve(args.out)), { recursive: true });
@@ -369,6 +597,7 @@ async function main() {
   let schemaFailures = 0;
   let payloadSkips = 0;
   const byDomain = new Map<string, number>();
+  const byPreset = new Map<string, number>();
   const t0 = Date.now();
 
   console.log(`\n${C.bold}=== Synthesizing ${cap} concepts ===${C.reset}\n`);
@@ -382,6 +611,16 @@ async function main() {
       continue;
     }
     processed++;
+
+    /* Resolve trainer prompt PER CONCEPT (Iter 9: multi-tenant). */
+    let preset: LoadedPreset;
+    try {
+      preset = await presets.resolve(concept.domain);
+    } catch (e) {
+      llmFailures++;
+      console.error(`${C.red}[${processed}/${cap}] preset resolve failed: ${e instanceof Error ? e.message : e}${C.reset}`);
+      continue;
+    }
 
     const userMsg = buildSynthUserMessage(concept, args.pairsPerConcept);
     const synthSysFilled = SYNTH_SYSTEM_PROMPT.replace(/\{\{N\}\}/g, String(args.pairsPerConcept));
@@ -415,19 +654,20 @@ async function main() {
     }
 
     const examples = validated.data.pairs.map((qa) =>
-      buildExample(concept, qa, systemPrompt, args.includeReasoning),
+      buildExample(concept, qa, preset, args.includeReasoning),
     );
     for (const ex of examples) {
       writer.write(JSON.stringify(ex) + "\n");
       synthesized++;
     }
     byDomain.set(concept.domain, (byDomain.get(concept.domain) ?? 0) + examples.length);
+    byPreset.set(preset.name, (byPreset.get(preset.name) ?? 0) + examples.length);
 
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
     console.log(
       `${C.green}[${processed}/${cap}]${C.reset} ${C.dim}${elapsed}s${C.reset} ` +
-      `${C.bold}${concept.principle.slice(0, 70)}${concept.principle.length > 70 ? "…" : ""}${C.reset} ` +
-      `${C.dim}→ ${examples.length} pairs · ${concept.domain}${C.reset}`,
+      `${C.bold}${concept.principle.slice(0, 60)}${concept.principle.length > 60 ? "…" : ""}${C.reset} ` +
+      `${C.dim}→ ${examples.length} pairs · ${concept.domain} · ${C.magenta}preset:${preset.name}${C.reset}`,
     );
   }
 
@@ -444,10 +684,18 @@ async function main() {
   console.log(`Elapsed              : ${totalSec}s`);
   console.log(`Output               : ${path.resolve(args.out)}`);
 
+  if (byPreset.size > 0) {
+    console.log(`\n${C.bold}Examples by preset:${C.reset}`);
+    [...byPreset.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .forEach(([p, n]) => console.log(`  ${pad(p, 18)} ${n}`));
+  }
+
   if (byDomain.size > 0) {
-    console.log(`\n${C.bold}Examples by domain:${C.reset}`);
+    console.log(`\n${C.bold}Examples by domain (top 15):${C.reset}`);
     [...byDomain.entries()]
       .sort((a, b) => b[1] - a[1])
+      .slice(0, 15)
       .forEach(([d, n]) => console.log(`  ${pad(d, 40)} ${n}`));
   }
 

@@ -1,0 +1,56 @@
+{
+  "_comment": "Per-domain trainer system prompts for dataset-synth. Each preset is a `.md` file in this directory. `matchDomains` is the keyword list used by --preset auto to fuzzy-match a Qdrant payload's `domain` field. First match wins. `default` is the safety net.",
+  "_schema_version": 1,
+  "presets": {
+    "default": {
+      "file": "default.md",
+      "label": "General Expert",
+      "matchDomains": []
+    },
+    "marketing": {
+      "file": "marketing.md",
+      "label": "Growth Marketing Strategist",
+      "matchDomains": ["marketing", "growth", "advertising", "branding", "copywriting", "ppc", "performance marketing", "content marketing", "demand generation", "go-to-market"]
+    },
+    "ux": {
+      "file": "ux.md",
+      "label": "Senior UX Designer",
+      "matchDomains": ["ux", "ui", "user experience", "user interface", "interaction design", "usability", "design", "product design", "information architecture", "service design"]
+    },
+    "seo": {
+      "file": "seo.md",
+      "label": "Technical SEO Lead",
+      "matchDomains": ["seo", "search engine optimization", "technical seo", "link building", "serp", "keyword research", "search engine"]
+    },
+    "programming": {
+      "file": "programming.md",
+      "label": "Staff Software Engineer",
+      "matchDomains": ["programming", "software", "code", "engineering", "javascript", "typescript", "python", "rust", "go", "java", "kotlin", "swift", "android", "ios", "backend", "frontend", "devops", "architecture", "ui", "ai-assisted software development", "testing"]
+    },
+    "security": {
+      "file": "security.md",
+      "label": "Application Security Engineer",
+      "matchDomains": ["security", "infosec", "cybersecurity", "appsec", "cryptography", "pentest", "vulnerability", "threat modeling", "owasp", "auth"]
+    },
+    "science": {
+      "file": "science.md",
+      "label": "Research Scientist",
+      "matchDomains": ["science", "physics", "chemistry", "biology", "neuroscience", "mathematics", "statistics", "research", "scientific method"]
+    },
+    "philosophy": {
+      "file": "philosophy.md",
+      "label": "Philosophy Tutor",
+      "matchDomains": ["philosophy", "ethics", "epistemology", "metaphysics", "logic", "phenomenology", "existentialism", "stoicism"]
+    },
+    "business": {
+      "file": "business.md",
+      "label": "Strategy Consultant",
+      "matchDomains": ["business", "management", "strategy", "leadership", "operations", "finance", "entrepreneurship", "product management", "negotiation", "administrative accounting", "financial documentation", "financial administration"]
+    },
+    "psychology": {
+      "file": "psychology.md",
+      "label": "Cognitive Psychologist",
+      "matchDomains": ["psychology", "cognitive", "behavioral", "mental health", "behavioral economics", "habits", "motivation", "self-help"]
+    }
+  }
+}

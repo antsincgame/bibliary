@@ -1265,6 +1265,15 @@ function buildCatalogBottomBar(root) {
     onclick: () => guardAndCrystallize(root),
   }, t("library.catalog.btn.crystallize"));
 
+  /* Iter 9: Synthesize JSONL — запускает фон-синтез датасета из выбранной
+     Qdrant-коллекции. Не зависит от выделения книг (работает с тем что
+     УЖЕ принято в коллекцию), но требует чтобы коллекция была выбрана. */
+  const synthesizeBtn = el("button", {
+    type: "button",
+    class: "lib-btn lib-btn-secondary",
+    onclick: () => void launchSynthesis(),
+  }, t("library.catalog.btn.synthesize"));
+
   /* Cancel batch -- hidden until a batch is active. Kept as a sibling
      of crystallizeBtn so it can be toggled via display:none without
      remounting the bottom-bar. */
@@ -1282,9 +1291,76 @@ function buildCatalogBottomBar(root) {
     summary,
     batchSummary,
     el("div", { class: "lib-catalog-bottom-actions" }, [
-      selectAllBtn, clearBtn, deleteBtn, crystallizeBtn, cancelBatchBtn,
+      selectAllBtn, clearBtn, deleteBtn, synthesizeBtn, crystallizeBtn, cancelBatchBtn,
     ]),
   ]);
+}
+
+/**
+ * Iter 9: пускает фон-синтез датасета через `window.api.datasetV2.synthesize`.
+ * Минималистичный UX: prompt → подтверждение → fire-and-forget.
+ *
+ * Не блокирует UI — результат попадает в файл, лог пишется рядом.
+ * Пользователь видит alert с путём output + log сразу.
+ */
+async function launchSynthesis() {
+  if (!STATE.targetCollection) {
+    window.alert(t("library.catalog.guard.noCollection"));
+    return;
+  }
+
+  /* Default output path использует timestamp чтобы не перезаписать
+     прошлый прогон, и кладётся в release/datasets/ рядом с e2e-report. */
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "").replace("T", "_");
+  const safeColl = STATE.targetCollection.replace(/[^a-z0-9-]/gi, "_");
+  const defaultOut = `release/datasets/${safeColl}-${stamp}.jsonl`;
+
+  const outputPath = window.prompt(
+    t("library.catalog.synth.promptOutput", { coll: STATE.targetCollection }),
+    defaultOut,
+  );
+  if (!outputPath) return;
+
+  const pairsRaw = window.prompt(t("library.catalog.synth.promptPairs"), "2");
+  if (!pairsRaw) return;
+  const pairsPerConcept = Math.max(1, Math.min(5, parseInt(pairsRaw, 10) || 2));
+
+  const includeReasoning = window.confirm(t("library.catalog.synth.confirmReasoning"));
+
+  const confirm = window.confirm(
+    t("library.catalog.synth.confirmStart", {
+      coll: STATE.targetCollection,
+      out: outputPath,
+      pairs: String(pairsPerConcept),
+      reasoning: includeReasoning ? "yes" : "no",
+    }),
+  );
+  if (!confirm) return;
+
+  let res;
+  try {
+    res = await window.api.datasetV2.synthesize({
+      collection: STATE.targetCollection,
+      outputPath,
+      pairsPerConcept,
+      includeReasoning,
+      preset: "auto",
+    });
+  } catch (e) {
+    window.alert(t("library.catalog.synth.errSpawn", { err: e instanceof Error ? e.message : String(e) }));
+    return;
+  }
+
+  if (!res.ok) {
+    window.alert(t("library.catalog.synth.errSpawn", { err: res.error || "unknown" }));
+    return;
+  }
+
+  window.alert(t("library.catalog.synth.started", {
+    pid: String(res.pid ?? "?"),
+    out: outputPath,
+    log: res.logPath ?? "(no log)",
+  }));
 }
 
 /**
