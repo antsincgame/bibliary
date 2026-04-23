@@ -4,6 +4,33 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0-iter8] — 2026-04-23 — Dataset Synthesis (final payoff)
+
+### Added
+- **`scripts/dataset-synth.ts`** — финал Pre-flight Evaluation pipeline.
+  Берёт принятые концепты из тематической Qdrant-коллекции и генерирует
+  ChatML JSONL для тренировки LoRA через Unsloth/LlamaFactory/axolotl.
+  Streaming-writer (не упадёт на 50K концептов), pickEvaluatorModel-based
+  выбор LLM (flagship-first, 35b > 4b), Zod-валидация ответа, scroll API
+  по всей коллекции с pagination.
+- **`--include-reasoning` режим**: оборачивает assistant-ответ в
+  `<think>...</think>` блок из сохранённого `extractorReasoning` /
+  `judgeReasoningTrace`. Это R1-style premium distillation data из плана:
+  "Reasoning is the dataset" (концепты + reasoning traces от Reasoning-моделей).
+- **npm scripts**: `dataset:synth` и `dataset:probe-model` для удобного запуска.
+- **Smart evaluator-model picker** (Iter 7b, перенесено сюда для полноты):
+  `pickEvaluatorModel()` теперь скорит модели по тегам curated-models.json
+  (flagship +1000, thinking-heavy +500, ...) + bias по размеру параметров.
+  На пользовательской машине корректно выбирает `qwen/qwen3.6-35b-a3b`
+  (score 1535) вместо `qwen/qwen3-4b-2507` (-96).
+
+### Verified (live)
+- 6/6 ChatML примеров на 3 концептах за 31s (~10s/концепт на 35b-a3b).
+  Output: practical Q&A пары с domain-specific терминологией, без
+  плагиата source_quote.
+- 429 концептов в `dataset-accepted-concepts` готовы к synthesis в
+  полноразмерный датасет (~70 минут).
+
 ## [2.7.0-iter7] — 2026-04-23 — File-System First Library + Pre-flight Evaluation
 
 ### Added

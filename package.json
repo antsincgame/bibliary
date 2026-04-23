@@ -29,6 +29,8 @@
     "test:e2e:mvp": "tsx scripts/e2e-full-mvp.ts",
     "test:e2e:quality": "tsx scripts/e2e-quality.ts",
     "test:e2e:library": "tsx scripts/e2e-batch-library.ts",
+    "dataset:synth": "tsx scripts/dataset-synth.ts",
+    "dataset:probe-model": "tsx scripts/probe-evaluator-pick.ts",
     "build:help-kb": "tsx scripts/build-help-kb.ts",
     "test:help-kb": "tsx scripts/test-help-kb.ts",
     "test:agent-internals": "tsx scripts/test-agent-internals.ts",
