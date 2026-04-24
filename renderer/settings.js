@@ -390,6 +390,15 @@ async function resetAll(root) {
   }
 }
 
+/**
+ * Запомнить состояние свёрнутости секций (открытые/закрытые) между перерисовками.
+ * Ключ — section.id; значение — true == открыта.
+ * По умолчанию открыта только первая видимая секция, чтобы пользователь сразу
+ * увидел реальные контролы и понял что секции — кликабельные аккордеоны.
+ * @type {Record<string, boolean>}
+ */
+const sectionOpen = {};
+
 function render(root) {
   clear(root);
   const currentMode = getMode();
@@ -427,23 +436,70 @@ function render(root) {
   ]);
   root.appendChild(actions);
 
+  /* CRITICAL UX FIX (Phase 7):
+     Раньше секции рендерились как монолитный sacred-card с заголовком
+     и сразу полями ниже. На FullHD-ноутбуке (768px) пользователю казалось,
+     что заголовки — кликабельные аккордеоны (визуально похожи на пилюли),
+     но клик ничего не делал, и многие пользователи решали, что настройки
+     «сломаны».
+     Решение: оборачиваем каждую секцию в нативный <details>/<summary>.
+     Преимущества:
+       - нативный toggle без JS-логики;
+       - полная клавиатурная доступность и ARIA из коробки;
+       - чёткий визуальный affordance (▶/▼ chevron, hover, cursor:pointer);
+       - первая видимая секция открыта по умолчанию — пользователь сразу видит контролы;
+       - состояние свёрнутости запоминается между перерисовками (sectionOpen). */
+
+  let firstVisible = true;
   for (const section of SECTIONS) {
     const sectionRank = modeRank(section.mode);
     if (sectionRank > currentRank) continue;
 
     const fields = el("div", { class: "settings-fields" });
-    for (const f of section.fields) fields.appendChild(buildField(f, root));
+    let renderedFields = 0;
+    for (const f of section.fields) {
+      try {
+        fields.appendChild(buildField(f, root));
+        renderedFields++;
+      } catch (e) {
+        console.error(`[settings] buildField failed for "${f.key}":`, e);
+        fields.appendChild(el("div", { class: "settings-field settings-field-error" },
+          `⚠ ${f.key}: ${e instanceof Error ? e.message : String(e)}`,
+        ));
+      }
+    }
+    if (renderedFields === 0) {
+      fields.appendChild(el("div", { class: "settings-field settings-field-empty" },
+        "(no fields rendered — check console)",
+      ));
+    }
 
     const badge = section.mode !== "simple"
       ? el("span", { class: `settings-mode-badge settings-mode-${section.mode}` }, section.mode.toUpperCase())
       : null;
 
-    const header = el("div", { class: "settings-section-header" }, [
+    const summary = el("summary", {
+      class: "settings-section-summary",
+      title: t("settings.section.toggle.title"),
+    }, [
+      el("span", { class: "settings-section-chevron", "aria-hidden": "true" }, "\u25B6"),
       el("span", { class: "neon-heading settings-section-title" }, t(section.titleKey)),
       badge,
+      el("span", { class: "settings-section-count" }, `${renderedFields}`),
     ]);
 
-    root.appendChild(wrapSacredCard([header, fields], "settings-section"));
+    const isOpen = sectionOpen[section.id] ?? firstVisible;
+    if (firstVisible) firstVisible = false;
+
+    const detailsAttrs = { class: "settings-section settings-section-details" };
+    if (isOpen) /** @type {any} */ (detailsAttrs).open = "open";
+
+    const details = el("details", detailsAttrs, [summary, fields]);
+    details.addEventListener("toggle", () => {
+      sectionOpen[section.id] = /** @type {HTMLDetailsElement} */ (details).open;
+    });
+
+    root.appendChild(wrapSacredCard(details, "settings-section-card"));
   }
 }
 

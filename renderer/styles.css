@@ -4042,6 +4042,36 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   font-size: 11px;
   line-height: 1.6;
 }
+.lib-search-sources {
+  margin: 10px 0 12px;
+  padding: 10px 14px;
+  border: 1px dashed rgba(0, 240, 255, 0.30);
+  border-radius: 3px;
+  background: rgba(0, 240, 255, 0.04);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.lib-search-sources-row { margin-bottom: 4px; }
+.lib-search-sources-title { color: var(--cyan); font-weight: 700; letter-spacing: 0.05em; }
+.lib-search-sources-list { color: var(--text); }
+.lib-search-sources-add { color: var(--text-dim); font-size: 10px; }
+
+/* Phase 7: hint-баннер на вкладке "Прямая индексация" (бывший RAG Ingest) —
+   объясняет чем эта вкладка отличается от "Импорта", чтобы пользователь
+   не путался: Импорт = каталог + SQLite, Прямая индексация = scanner.startIngest → Qdrant. */
+.lib-browse-hint {
+  margin: 12px 0;
+  padding: 10px 14px;
+  border: 1px dashed rgba(255, 215, 0, 0.30);
+  border-radius: 3px;
+  background: rgba(255, 215, 0, 0.04);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text);
+}
 .lib-search-results {
   display: flex;
   flex-direction: column;
@@ -4086,8 +4116,13 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   font-size: 10px;
   color: var(--cyan);
   text-decoration: none;
+  border-color: rgba(0, 240, 255, 0.30);
 }
-.lib-search-link:hover { text-decoration: underline; }
+.lib-search-link:hover {
+  text-decoration: none;
+  background: rgba(0, 240, 255, 0.08);
+  border-color: var(--cyan);
+}
 
 /* ===== Qdrant management - vector base UI ===== */
 .qdrant-screen {
@@ -4569,6 +4604,91 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
 }
 .settings-section-title {
   font-size: 15px;
+}
+
+/* Phase 7: settings sections — нативный <details>/<summary> аккордеон.
+   Решает критический UX-баг: раньше заголовки выглядели как кликабельные,
+   но клик ничего не делал, и поля терялись на тёмном фоне. */
+.settings-section-card {
+  padding: 0;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+.settings-section-card > .settings-section-details {
+  margin-bottom: 0;
+}
+.settings-section-details {
+  background: transparent;
+}
+.settings-section-summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  font-family: var(--font-mono);
+  user-select: none;
+  transition: background var(--motion-fast) ease, color var(--motion-fast) ease;
+}
+.settings-section-summary::-webkit-details-marker { display: none; }
+.settings-section-summary::marker { content: ""; }
+.settings-section-summary:hover {
+  background: rgba(255, 215, 0, 0.06);
+}
+.settings-section-summary:focus-visible {
+  outline: 1px solid var(--gold);
+  outline-offset: -1px;
+}
+.settings-section-chevron {
+  display: inline-block;
+  font-size: 10px;
+  color: var(--cyan);
+  transition: transform var(--motion-fast) ease, color var(--motion-fast) ease;
+  width: 12px;
+  text-align: center;
+}
+.settings-section-details[open] > .settings-section-summary .settings-section-chevron {
+  transform: rotate(90deg);
+  color: var(--gold);
+}
+.settings-section-summary .settings-section-title {
+  flex: 1;
+  margin: 0;
+}
+.settings-section-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  padding: 2px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.05em;
+}
+.settings-section-details[open] .settings-section-count {
+  color: var(--cyan);
+  border-color: rgba(0, 240, 255, 0.4);
+}
+.settings-section-details[open] .settings-fields {
+  padding: 4px 18px 18px;
+}
+.settings-section-details:not([open]) .settings-fields {
+  display: none;
+}
+.settings-field-error {
+  color: var(--accent-red);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 6px 10px;
+  border: 1px dashed rgba(255, 70, 70, 0.4);
+  border-radius: 2px;
+}
+.settings-field-empty {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 6px 10px;
+  font-style: italic;
 }
 .settings-mode-badge {
   font-family: var(--font-mono);
@@ -5414,6 +5534,16 @@ details.forge-collapsible > .forge-collapsible-body {
   background: rgba(255, 215, 0, 0.10);
   box-shadow: var(--glow-gold-soft);
 }
+.coll-picker-btn-dash {
+  font-size: 14px;
+  color: var(--text-dim);
+  border-color: var(--border);
+}
+.coll-picker-btn-dash:hover {
+  color: var(--cyan);
+  border-color: rgba(0, 240, 255, 0.50);
+  background: rgba(0, 240, 255, 0.08);
+}
 
 /* ───── Catalog DataGrid ───── */
 
@@ -5436,6 +5566,47 @@ details.forge-collapsible > .forge-collapsible-body {
   border: 1px solid var(--border);
   border-radius: 2px;
   position: relative;
+}
+
+/* Phase 7: компактный однострочный toolbar для каталога.
+   Search занимает основную ширину, остальные контролы прижаты вправо
+   и переносятся на новую строку только при очень узком окне. */
+.lib-catalog-toolbar-compact {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding: 8px 14px;
+}
+.lib-catalog-toolbar-compact .lib-catalog-search {
+  flex: 1 1 280px;
+  min-width: 220px;
+}
+.lib-catalog-toolbar-compact .lib-catalog-quality-wrap {
+  flex: 0 0 auto;
+}
+.lib-catalog-toolbar-compact .lib-catalog-quality-label {
+  min-width: auto;
+  margin-right: 4px;
+}
+.lib-catalog-toolbar-compact .lib-catalog-quality-slider {
+  width: 110px;
+}
+.lib-catalog-toolbar-compact .lib-catalog-fiction-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+}
+.lib-catalog-toolbar-compact .lib-catalog-fiction-text {
+  white-space: nowrap;
+}
+.lib-catalog-toolbar-compact .lib-catalog-presets {
+  flex: 0 0 auto;
 }
 .lib-catalog-toolbar::before {
   content: "// FILTERS";

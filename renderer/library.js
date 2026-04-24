@@ -48,14 +48,23 @@ function switchTab(tab, root) {
 }
 
 function buildLibraryTabs(root) {
+  /* Порядок вкладок (Phase 7 UX-правки):
+       Импорт → Каталог → Найти онлайн → Прямая индексация → История.
+     Работа начинается с Импорта (см. UX-фидбек пользователя): сперва книги
+     попадают в каталог, а затем уже просматриваются. «Прямая индексация»
+     (бывший «RAG Ingest», data-tab="browse") — низкоуровневый путь
+     scanner.startIngest → Qdrant без копирования в каталог; оставлен для
+     отладки и точечных операций. */
   return el("div", { class: "lib-tabs" }, [
-    el("button", { class: "lib-tab lib-tab-active", type: "button", "data-tab": "catalog",
-      onclick: () => switchTab("catalog", root) }, t("library.tab.catalog")),
-    el("button", { class: "lib-tab", type: "button", "data-tab": "import",
+    el("button", { class: "lib-tab lib-tab-active", type: "button", "data-tab": "import",
       onclick: () => switchTab("import", root) }, t("library.tab.import")),
+    el("button", { class: "lib-tab", type: "button", "data-tab": "catalog",
+      onclick: () => switchTab("catalog", root) }, t("library.tab.catalog")),
     el("button", { class: "lib-tab", type: "button", "data-tab": "search",
+      title: t("library.tab.hunt.tooltip"),
       onclick: () => switchTab("search", root) }, t("library.tab.hunt")),
     el("button", { class: "lib-tab", type: "button", "data-tab": "browse",
+      title: t("library.tab.ingest.tooltip"),
       onclick: () => switchTab("browse", root) }, t("library.tab.ingest")),
     el("button", { class: "lib-tab", type: "button", "data-tab": "history",
       onclick: () => switchTab("history", root) }, t("library.tab.history")),
@@ -147,13 +156,21 @@ export async function mountLibrary(root) {
   const dropzone = buildDropzone(root, listEl);
   const splitPane = el("div", { class: "lib-split" }, [listEl, previewEl]);
 
+  /* Каталог теперь не активен по умолчанию: работа начинается с Импорта.
+     buildCatalogPane исторически ставит lib-pane-active — снимаем его и
+     активируем lib-pane-import вручную ниже. */
   const catalogPane = buildCatalogPane(root, catalogDeps);
+  catalogPane.classList.remove("lib-pane-active");
   const importPane = buildImportPane({ renderCatalog });
-  const browsePane = el("div", { class: "lib-pane lib-pane-browse" }, [toolbar, dropzone, splitPane]);
+  importPane.classList.add("lib-pane-active");
+  STATE.tab = "import";
+
+  const browseHint = el("div", { class: "lib-browse-hint" }, t("library.tab.ingest.hint"));
+  const browsePane = el("div", { class: "lib-pane lib-pane-browse" }, [browseHint, toolbar, dropzone, splitPane]);
   const searchPane = el("div", { class: "lib-pane lib-pane-search" }, [el("div", { class: "lib-search" })]);
   const historyPane = el("div", { class: "lib-pane lib-pane-history" }, [el("div", { class: "lib-history" })]);
 
-  root.append(topBar, tabs, catalogPane, importPane, browsePane, searchPane, historyPane);
+  root.append(topBar, tabs, importPane, catalogPane, browsePane, searchPane, historyPane);
 
   const _unsubScanner = subscribeScannerProgress(root, listEl);
   const _unsubDownload = subscribeDownloadProgress(root);
@@ -182,7 +199,10 @@ export async function mountLibrary(root) {
   renderPreview(root);
   renderBooks(listEl, root);
 
+  /* Каталог всё равно прелоадим: если пользователь сразу переключится — таблица уже готова.
+     Импорт-панель показывается первой через CSS .lib-pane-active. */
   void renderCatalog(root);
+  renderImport(root);
 }
 
 export function isLibraryBusy() {

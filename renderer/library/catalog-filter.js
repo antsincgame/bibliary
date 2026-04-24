@@ -10,12 +10,20 @@
  * renderer/library.js до следующей итерации strangler'а.
  */
 
-/** UI-пресеты порога качества для toolbar Catalog. Любой 0 == "all". */
+/**
+ * UI-пресеты порога качества для toolbar Catalog.
+ *
+ * Контракт (используется в renderer/library/catalog.js):
+ *   - key:        стабильный идентификатор для тестов и data-атрибутов
+ *   - minQuality: порог Quality (0 = «без фильтра»)
+ *   - hideFiction: автоматически скрыть фикшн при выборе пресета
+ *   - labelKey:   i18n-ключ для подписи кнопки (см. renderer/i18n.js)
+ */
 export const QUALITY_PRESETS = Object.freeze([
-  { key: "all",      value: 0  },
-  { key: "workable", value: 50 },
-  { key: "solid",    value: 70 },
-  { key: "premium",  value: 86 },
+  { key: "all",      minQuality: 0,  hideFiction: false, labelKey: "library.catalog.filter.preset.all" },
+  { key: "workable", minQuality: 50, hideFiction: true,  labelKey: "library.catalog.filter.preset.workable" },
+  { key: "solid",    minQuality: 70, hideFiction: true,  labelKey: "library.catalog.filter.preset.solid" },
+  { key: "premium",  minQuality: 86, hideFiction: true,  labelKey: "library.catalog.filter.preset.premium" },
 ]);
 
 /**

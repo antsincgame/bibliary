@@ -84,9 +84,14 @@ export async function renderCatalog(root) {
 
 /** @param {HTMLElement} root */
 export function buildCatalogToolbar(root) {
+  /* Компактный однострочный toolbar: search занимает основную ширину,
+     остальные контролы (Quality, Hide fiction, presets, refresh, rebuild)
+     прижаты вправо. На узком экране переносится через flex-wrap. */
   const searchInput = el("input", {
     type: "text", class: "lib-catalog-search",
-    placeholder: t("library.catalog.search.placeholder"),
+    placeholder: t("library.catalog.filter.search.placeholder"),
+    title: t("library.catalog.filter.search"),
+    value: CATALOG.filters.search || "",
   });
   searchInput.addEventListener("input", () => {
     CATALOG.filters.search = /** @type {HTMLInputElement} */ (searchInput).value;
@@ -96,14 +101,15 @@ export function buildCatalogToolbar(root) {
   const qualitySlider = /** @type {HTMLInputElement} */ (el("input", {
     type: "range", class: "lib-catalog-quality-slider",
     min: "0", max: "100", step: "5", value: String(CATALOG.filters.quality),
+    title: t("library.catalog.filter.quality.label"),
   }));
   const qualityVal = el("span", { class: "lib-catalog-quality-val" },
-    CATALOG.filters.quality > 0 ? `\u2265${CATALOG.filters.quality}` : t("library.catalog.quality.all"),
+    CATALOG.filters.quality > 0 ? `\u2265${CATALOG.filters.quality}` : t("library.catalog.filter.quality.any"),
   );
   qualitySlider.addEventListener("input", () => {
     const v = Number(qualitySlider.value);
     CATALOG.filters.quality = v;
-    qualityVal.textContent = v > 0 ? `\u2265${v}` : t("library.catalog.quality.all");
+    qualityVal.textContent = v > 0 ? `\u2265${v}` : t("library.catalog.filter.quality.any");
     syncPresetActive(presetWrap);
     renderCatalogTable(root);
   });
@@ -119,21 +125,26 @@ export function buildCatalogToolbar(root) {
 
   const presetWrap = el("div", { class: "lib-catalog-presets" });
   for (const p of QUALITY_PRESETS) {
+    const label = t(p.labelKey);
     const btn = el("button", {
       type: "button",
       class: "lib-btn lib-btn-ghost lib-catalog-preset",
       "data-quality": String(p.minQuality),
       "data-fiction": p.hideFiction ? "1" : "0",
+      title: label,
+      "aria-label": label,
       onclick: () => {
         CATALOG.filters.quality = p.minQuality;
         CATALOG.filters.hideFiction = p.hideFiction;
         qualitySlider.value = String(p.minQuality);
-        qualityVal.textContent = p.minQuality > 0 ? `\u2265${p.minQuality}` : t("library.catalog.quality.all");
+        qualityVal.textContent = p.minQuality > 0
+          ? `\u2265${p.minQuality}`
+          : t("library.catalog.filter.quality.any");
         fictionCb.checked = p.hideFiction;
         syncPresetActive(presetWrap);
         renderCatalogTable(root);
       },
-    }, p.label);
+    }, label);
     presetWrap.appendChild(btn);
   }
   syncPresetActive(presetWrap);
@@ -162,14 +173,15 @@ export function buildCatalogToolbar(root) {
     },
   }, t("library.catalog.btn.rebuild"));
 
-  return el("div", { class: "lib-catalog-toolbar" }, [
+  return el("div", { class: "lib-catalog-toolbar lib-catalog-toolbar-compact" }, [
     searchInput,
     el("div", { class: "lib-catalog-quality-wrap" }, [
-      el("label", { class: "lib-catalog-quality-label" }, t("library.catalog.quality.label")),
+      el("label", { class: "lib-catalog-quality-label" }, t("library.catalog.filter.quality.label")),
       qualitySlider, qualityVal,
     ]),
-    el("label", { class: "lib-catalog-fiction-label" }, [
-      fictionCb, t("library.catalog.fiction.hide"),
+    el("label", { class: "lib-catalog-fiction-label", title: t("library.catalog.filter.hideFiction") }, [
+      fictionCb,
+      el("span", { class: "lib-catalog-fiction-text" }, t("library.catalog.filter.hideFiction")),
     ]),
     presetWrap,
     refreshBtn, rebuildBtn,

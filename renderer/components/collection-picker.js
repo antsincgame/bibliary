@@ -80,6 +80,25 @@ export function buildCollectionPicker(opts) {
     root.appendChild(createBtn);
   }
 
+  /* Открыть Qdrant Dashboard в системном браузере. Полезно когда автоматическое
+     создание коллекции упало (Qdrant офлайн / не localhost / нужен ручной выбор
+     vector size / distance). URL берём из preferences (qdrantUrl) с fallback'ом
+     на http://localhost:6333. */
+  const dashBtn = el(
+    "button",
+    {
+      type: "button",
+      class: "coll-picker-btn coll-picker-btn-dash",
+      title: t("library.collection.openDashboard.title"),
+      "aria-label": t("library.collection.openDashboard"),
+    },
+    "\u29C9"
+  );
+  dashBtn.addEventListener("click", () => {
+    void openQdrantDashboard();
+  });
+  root.appendChild(dashBtn);
+
   /** @type {string[]} */
   let cached = [];
 
@@ -134,12 +153,12 @@ export function buildCollectionPicker(opts) {
       try {
         const result = await opts.createCollection(name);
         if (!result.ok) {
-          window.alert(t("library.collection.create.failed") + ": " + (result.error || "unknown"));
+          await offerDashboardFallback(result.error || "unknown");
           return;
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        window.alert(t("library.collection.create.failed") + ": " + msg);
+        await offerDashboardFallback(msg);
         return;
       }
     }
@@ -160,4 +179,42 @@ export function buildCollectionPicker(opts) {
       }
     },
   };
+}
+
+/**
+ * Спросить пользователя про fallback на Qdrant Dashboard и открыть в браузере.
+ * Используется когда автоматическое создание коллекции упало.
+ * @param {string} errorMsg
+ */
+async function offerDashboardFallback(errorMsg) {
+  const msg = t("library.collection.create.openDashboardConfirm", { error: errorMsg });
+  if (!window.confirm(msg)) return;
+  await openQdrantDashboard();
+}
+
+/**
+ * Открыть Qdrant web UI в системном браузере.
+ * URL читаем из preferences.qdrantUrl, иначе localhost:6333.
+ * Идём через preload (system.openExternal), чтобы не зависеть от
+ * webContents.setWindowOpenHandler и CSP.
+ */
+async function openQdrantDashboard() {
+  let baseUrl = "http://localhost:6333";
+  try {
+    const api = /** @type {any} */ (window).api;
+    const prefs = await api?.preferences?.getAll?.();
+    if (prefs?.qdrantUrl && typeof prefs.qdrantUrl === "string" && prefs.qdrantUrl.trim()) {
+      baseUrl = prefs.qdrantUrl.trim().replace(/\/+$/, "");
+    }
+  } catch (_e) { /* tolerate: pref read non-critical */ }
+  const url = `${baseUrl}/dashboard`;
+  try {
+    const api = /** @type {any} */ (window).api;
+    if (typeof api?.system?.openExternal === "function") {
+      await api.system.openExternal(url);
+      return;
+    }
+  } catch (_e) { /* tolerate: fall through to direct open */ }
+  try { window.open(url, "_blank", "noopener,noreferrer"); }
+  catch (_e) { window.alert(`Откройте в браузере: ${url}`); }
 }

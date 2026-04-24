@@ -27,6 +27,17 @@ export function renderSearch(root) {
   ]);
   wrap.appendChild(bar);
 
+  /* Баннер с подсказкой по источникам (где ищем + как добавить новые).
+     Используется и когда результатов ещё нет, и над списком — для напоминания. */
+  const sourcesHint = el("div", { class: "lib-search-sources" }, [
+    el("div", { class: "lib-search-sources-row" }, [
+      el("strong", { class: "lib-search-sources-title" }, t("library.search.sources.title") + ": "),
+      el("span", { class: "lib-search-sources-list" }, t("library.search.sources.list")),
+    ]),
+    el("div", { class: "lib-search-sources-add" }, t("library.search.sources.addNew")),
+  ]);
+  wrap.appendChild(sourcesHint);
+
   const qInput = wrap.querySelector("#lib-search-q");
   if (qInput) {
     qInput.addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(root); });
@@ -129,10 +140,29 @@ function refreshSearchCardActions(card, candidate, root, dlState) {
   }
 
   if (candidate.webPageUrl) {
-    actionsWrap.appendChild(el("a", {
-      class: "lib-search-link", href: candidate.webPageUrl,
-      target: "_blank", rel: "noopener",
-    }, t("library.search.btn.openPage")));
+    /* В Electron <a target="_blank"> по умолчанию открывает пустое окно
+       (BrowserWindow без navigation handler) — пользователь видит белый
+       экран. Гарантированно открываем во внешнем браузере через preload IPC
+       (system.openExternal → shell.openExternal). */
+    const link = el("button", {
+      class: "lib-btn lib-btn-small lib-search-link",
+      type: "button",
+      title: t("library.search.btn.openPage.title"),
+      onclick: async () => {
+        try {
+          const api = /** @type {any} */ (window).api;
+          if (typeof api?.system?.openExternal === "function") {
+            await api.system.openExternal(candidate.webPageUrl);
+          } else {
+            window.open(candidate.webPageUrl, "_blank", "noopener,noreferrer");
+          }
+        } catch (e) {
+          console.warn("[search] openExternal failed:", e);
+          window.alert(`Откройте в браузере: ${candidate.webPageUrl}`);
+        }
+      },
+    }, t("library.search.btn.openPage"));
+    actionsWrap.appendChild(link);
   }
 }
 
