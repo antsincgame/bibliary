@@ -17,6 +17,26 @@ function asArray<T>(v: T | T[] | undefined): T[] {
   return Array.isArray(v) ? v : [v];
 }
 
+function metadataText(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    const text = String(value).trim();
+    return text.length > 0 ? text : undefined;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const text = metadataText(item);
+      if (text) return text;
+    }
+    return undefined;
+  }
+  if (typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    return metadataText(obj["#text"] ?? obj["text"] ?? obj["_"]);
+  }
+  return undefined;
+}
+
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: "@_",
@@ -90,34 +110,25 @@ async function parseEpub(filePath: string): Promise<ParseResult> {
   const md = pkg?.["metadata"] as Record<string, unknown> | undefined;
   const title = (() => {
     const t = md?.["dc:title"] ?? md?.["title"];
-    if (!t) return path.basename(filePath, path.extname(filePath));
-    return typeof t === "string" ? t : (Array.isArray(t) ? String(t[0]) : String((t as Record<string, unknown>)["#text"] ?? path.basename(filePath, path.extname(filePath))));
+    return metadataText(t) ?? path.basename(filePath, path.extname(filePath));
   })();
   const author = (() => {
     const a = md?.["dc:creator"] ?? md?.["creator"];
-    if (!a) return undefined;
-    if (typeof a === "string") return a;
-    if (Array.isArray(a)) return String(a[0]);
-    return String((a as Record<string, unknown>)["#text"] ?? "");
+    return metadataText(a);
   })() || undefined;
   const language = (() => {
     const l = md?.["dc:language"] ?? md?.["language"];
-    if (!l) return undefined;
-    return typeof l === "string" ? l.toLowerCase() : undefined;
+    return metadataText(l)?.toLowerCase();
   })();
 
   const publisher = (() => {
     const p = md?.["dc:publisher"] ?? md?.["publisher"];
-    if (!p) return undefined;
-    if (typeof p === "string") return p.trim() || undefined;
-    if (Array.isArray(p)) return String(p[0]).trim() || undefined;
-    return String((p as Record<string, unknown>)["#text"] ?? "").trim() || undefined;
+    return metadataText(p);
   })();
 
   const year = (() => {
     const d = md?.["dc:date"] ?? md?.["date"];
-    if (!d) return undefined;
-    const raw = typeof d === "string" ? d : (Array.isArray(d) ? String(d[0]) : String((d as Record<string, unknown>)["#text"] ?? ""));
+    const raw = metadataText(d) ?? "";
     const m = raw.match(/(\d{4})/);
     if (m) { const y = Number(m[1]); if (y >= 1800 && y <= 2100) return y; }
     return undefined;
@@ -126,7 +137,7 @@ async function parseEpub(filePath: string): Promise<ParseResult> {
   const identifier = (() => {
     const ids = asArray(md?.["dc:identifier"] ?? md?.["identifier"]);
     for (const raw of ids) {
-      const text = typeof raw === "string" ? raw : String((raw as Record<string, unknown>)["#text"] ?? "");
+      const text = metadataText(raw) ?? "";
       const digits = text.replace(/[-\s]/g, "");
       if (/^(978|979)\d{10}$/.test(digits)) return digits;
       if (/^\d{9}[\dXx]$/.test(digits)) return digits;

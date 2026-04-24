@@ -21,6 +21,12 @@ export function buildImportPane(deps) {
     checked: IMPORT_STATE.scanArchives ? "checked" : undefined,
   }));
   archiveCb.addEventListener("change", () => { IMPORT_STATE.scanArchives = archiveCb.checked; });
+  const recursiveCb = /** @type {HTMLInputElement} */ (el("input", {
+    type: "checkbox",
+    class: "lib-import-cb",
+    checked: IMPORT_STATE.recursive ? "checked" : undefined,
+  }));
+  recursiveCb.addEventListener("change", () => { IMPORT_STATE.recursive = recursiveCb.checked; });
 
   const pickFolderBtn = el("button", {
     type: "button",
@@ -49,6 +55,9 @@ export function buildImportPane(deps) {
   const opts = el("div", { class: "lib-import-opts" }, [
     el("label", { class: "lib-import-opt", title: t("library.import.opt.tooltip.scanArchives") }, [
       archiveCb, t("library.import.opt.scanArchives"),
+    ]),
+    el("label", { class: "lib-import-opt" }, [
+      recursiveCb, t("library.import.opt.recursive"),
     ]),
   ]);
 
@@ -107,6 +116,7 @@ async function importFromFolder(deps) {
     window.api.library.importFolder({
       folder: folderPath,
       scanArchives: IMPORT_STATE.scanArchives,
+      maxDepth: IMPORT_STATE.recursive ? 16 : 0,
     }),
     deps,
   );

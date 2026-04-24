@@ -31,9 +31,10 @@ export async function loadCatalog() {
   CATALOG.loading = true;
   catalogLoadPromise = (async () => {
     try {
-      const res = await window.api.library.catalog({ limit: 5000 });
+      const res = await window.api.library.catalog({ limit: 20000 });
       CATALOG.rows = /** @type {import("./state.js").CatalogMeta[]} */ (res.rows || []);
       CATALOG.total = res.total ?? CATALOG.rows.length;
+      CATALOG.libraryRoot = res.libraryRoot || "";
     } catch (err) {
       console.error("[library.catalog] load failed:", err);
       CATALOG.rows = [];
@@ -60,6 +61,27 @@ export function renderCatalogTable(root) {
   });
   const selEl = root.querySelector(".lib-catalog-summary-selected");
   if (selEl) selEl.textContent = t("library.catalog.summary.selected", { n: String(CATALOG.selected.size) });
+  const rootEl = root.querySelector(".lib-catalog-summary-root");
+  if (rootEl) rootEl.textContent = CATALOG.libraryRoot
+    ? t("library.catalog.summary.root", { path: CATALOG.libraryRoot })
+    : "";
+  const capEl = root.querySelector(".lib-catalog-summary-cap");
+  if (capEl) capEl.textContent = CATALOG.rows.length < CATALOG.total
+    ? t("library.catalog.summary.partial", {
+      loaded: String(CATALOG.rows.length),
+      total: String(CATALOG.total),
+    })
+    : "";
+
+  if (filtered.length === 0) {
+    const msg = CATALOG.rows.length === 0
+      ? `${t("library.catalog.empty.title")} — ${t("library.catalog.empty.body")}`
+      : t("library.catalog.empty.filtered");
+    tbody.appendChild(el("tr", { class: "lib-catalog-empty-row" }, [
+      el("td", { colspan: "7", class: "lib-catalog-empty-cell" }, msg),
+    ]));
+    return;
+  }
 
   for (const row of filtered) {
     const cb = el("input", { type: "checkbox", class: "lib-catalog-cb" });
@@ -253,6 +275,9 @@ export function buildCatalogBottomBar(root, deps) {
     el("span", { class: "lib-catalog-summary-shown" }, t("library.catalog.summary.shown", { shown: "0", total: "0" })),
     el("span", { class: "lib-catalog-summary-sep" }, "\u00b7"),
     el("span", { class: "lib-catalog-summary-selected" }, t("library.catalog.summary.selected", { n: "0" })),
+    el("span", { class: "lib-catalog-summary-sep" }, "\u00b7"),
+    el("span", { class: "lib-catalog-summary-root" }, ""),
+    el("span", { class: "lib-catalog-summary-cap" }, ""),
   ]);
 
   const selectAllBtn = el("button", {

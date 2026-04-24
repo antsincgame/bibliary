@@ -16,6 +16,8 @@
 import { z } from "zod";
 import { chatWithPolicy, listLoaded, listDownloaded, loadModel } from "../../lmstudio-client.js";
 import { getModelProfile } from "../dataset-v2/model-profile.js";
+import type { ModelProfile } from "../dataset-v2/model-profile.js";
+import { extractJsonObjectFromReasoning } from "../dataset-v2/reasoning-decoder.js";
 import { parseReasoningResponse } from "./reasoning-parser.js";
 import type { BookEvaluation, EvaluationResult } from "./types.js";
 
@@ -42,7 +44,7 @@ ANALYSIS ALGORITHM (think step by step inside <think>...</think>):
 
 OUTPUT CONTRACT:
 - All metadata fields MUST be in English. If the surrogate is in another language, translate or transliterate proper nouns.
-- title_en: clean English title (no quotes around it).
+- title_en: clean English title string.
 - author_en: English/transliterated author name (omit field if unknown).
 - domain: ONE narrow scientific or professional area (e.g. "behavioral economics", "Lisp metaprogramming", "mycology of edible fungi"). NOT broad ("science", "self-help").
 - tags: 3-5 specific English keywords. NO generic ("book", "writing").
@@ -52,17 +54,17 @@ OUTPUT CONTRACT:
 
 Output STRICT JSON after </think>. No prose before, no prose after.
 
-JSON SCHEMA:
+Return one JSON object shaped like this example:
 {
-  "title_en": string,
-  "author_en"?: string,
-  "domain": string,
-  "tags": string[],
-  "is_fiction_or_water": boolean,
-  "conceptual_density": number,
-  "originality": number,
-  "quality_score": number,
-  "verdict_reason": string
+  "title_en": "Clean English Title",
+  "author_en": "Author Name",
+  "domain": "narrow professional domain",
+  "tags": ["specific keyword", "another keyword", "third keyword"],
+  "is_fiction_or_water": false,
+  "conceptual_density": 72,
+  "originality": 64,
+  "quality_score": 76,
+  "verdict_reason": "Two or three English sentences explaining the score."
 }`;
 
 /* Zod-схема для валидации JSON ответа эвалюатора. */
@@ -77,6 +79,113 @@ const evaluationSchema = z.object({
   quality_score: z.number().int().min(0).max(100),
   verdict_reason: z.string().min(1),
 });
+
+function buildEvaluatorResponseFormat(): Record<string, unknown> {
+  return {
+    type: "json_schema",
+    json_schema: {
+      name: "book_evaluation",
+      strict: true,
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "title_en",
+          "domain",
+          "tags",
+          "is_fiction_or_water",
+          "conceptual_density",
+          "originality",
+          "quality_score",
+          "verdict_reason",
+        ],
+        properties: {
+          title_en: { type: "string", minLength: 1 },
+          author_en: { type: "string" },
+          domain: { type: "string", minLength: 1 },
+          tags: {
+            type: "array",
+            minItems: 3,
+            maxItems: 10,
+            items: { type: "string", minLength: 1 },
+          },
+          is_fiction_or_water: { type: "boolean" },
+          conceptual_density: { type: "integer", minimum: 0, maximum: 100 },
+          originality: { type: "integer", minimum: 0, maximum: 100 },
+          quality_score: { type: "integer", minimum: 0, maximum: 100 },
+          verdict_reason: { type: "string", minLength: 1 },
+        },
+      },
+    },
+  };
+}
+
+function parseEvaluationResponse(
+  raw: string,
+  reasoningFromApi: string | undefined,
+): { json: unknown | null; reasoning: string | null; warnings: string[] } {
+  const warnings: string[] = [];
+  const parsed = parseReasoningResponse<unknown>(raw);
+  warnings.push(...parsed.warnings);
+
+  let reasoning = parsed.reasoning;
+  if ((!reasoning || reasoning.length === 0) && reasoningFromApi && reasoningFromApi.length > 0) {
+    reasoning = reasoningFromApi.trim();
+  }
+
+  if (parsed.json !== null) {
+    return { json: parsed.json, reasoning, warnings };
+  }
+
+  const recovered = extractJsonObjectFromReasoning(reasoningFromApi);
+  if (recovered) {
+    try {
+      warnings.push("evaluator: recovered JSON object from reasoning_content");
+      return { json: JSON.parse(recovered), reasoning, warnings };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      warnings.push(`evaluator: reasoning_content JSON.parse failed: ${msg}`);
+    }
+  }
+
+  return { json: null, reasoning, warnings };
+}
+
+function isLmStudioBadRequest(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /LM Studio HTTP 400/i.test(msg);
+}
+
+async function callEvaluationModel(
+  model: string,
+  surrogate: string,
+  opts: EvaluateBookOptions,
+  profile: ModelProfile,
+  useStructuredOutput: boolean,
+) {
+  return chatWithPolicy(
+    {
+      model,
+      messages: [
+        { role: "system", content: EVALUATOR_SYSTEM_PROMPT },
+        { role: "user", content: `Here is the Structural Surrogate. Analyze and evaluate.\n\n${surrogate}` },
+      ],
+      sampling: {
+        temperature: opts.temperature ?? 0.3,
+        top_p: useStructuredOutput ? 0.9 : 0.8,
+        top_k: useStructuredOutput ? 40 : 20,
+        min_p: 0,
+        presence_penalty: 0,
+        max_tokens: opts.maxTokens ?? (useStructuredOutput ? Math.max(6000, profile.maxTokens) : 8192),
+      },
+      responseFormat: useStructuredOutput ? buildEvaluatorResponseFormat() : undefined,
+      stop: useStructuredOutput ? profile.stop : undefined,
+      chatTemplateKwargs: useStructuredOutput ? profile.chatTemplateKwargs : { enable_thinking: false },
+      signal: opts.signal,
+    },
+    { externalSignal: opts.signal },
+  );
+}
 
 export interface EvaluateBookOptions {
   /** Идентификатор модели в LM Studio. Если не задан -- pickEvaluatorModel(). */
@@ -277,25 +386,16 @@ export async function evaluateBook(
   let raw = "";
   let reasoningFromApi: string | undefined;
   try {
-    const response = await chatWithPolicy(
-      {
-        model,
-        messages: [
-          { role: "system", content: EVALUATOR_SYSTEM_PROMPT },
-          { role: "user", content: `Here is the Structural Surrogate. Analyze and evaluate.\n\n${surrogate}` },
-        ],
-        sampling: {
-          temperature: opts.temperature ?? 0.3,
-          top_p: 0.9,
-          top_k: 40,
-          min_p: 0,
-          presence_penalty: 0,
-          max_tokens: opts.maxTokens ?? 6000,
-        },
-        signal: opts.signal,
-      },
-      { externalSignal: opts.signal },
-    );
+    const profile = await getModelProfile(model);
+    let response;
+    try {
+      response = await callEvaluationModel(model, surrogate, opts, profile, profile.useResponseFormat);
+    } catch (err) {
+      if (!profile.useResponseFormat || !isLmStudioBadRequest(err)) throw err;
+      const msg = err instanceof Error ? err.message : String(err);
+      warnings.push(`evaluator: structured output rejected by LM Studio, retrying compatibility mode: ${msg}`);
+      response = await callEvaluationModel(model, surrogate, opts, profile, false);
+    }
     raw = response.content ?? "";
     reasoningFromApi = response.reasoningContent;
   } catch (err) {
@@ -306,22 +406,25 @@ export async function evaluateBook(
 
   /* Парсим ответ. Если модель отдала reasoning_content отдельно (LM Studio API),
      используем его как первичный reasoning, а content как payload для JSON. */
-  const parsed = parseReasoningResponse<unknown>(raw);
+  const parsed = parseEvaluationResponse(raw, reasoningFromApi);
   warnings.push(...parsed.warnings);
-
-  /* Если API дала reasoning отдельно -- предпочитаем её (она надёжнее, не зависит
-     от того, написала ли модель `<think>` явно). Парсер уже отработал по content,
-     но reasoning из inline `<think>` может быть пустым -- тогда падаем на API. */
-  let reasoning = parsed.reasoning;
-  if ((!reasoning || reasoning.length === 0) && reasoningFromApi && reasoningFromApi.length > 0) {
-    reasoning = reasoningFromApi.trim();
-  }
+  const reasoning = parsed.reasoning;
 
   if (parsed.json === null) {
-    return { evaluation: null, reasoning, raw, model, warnings };
+    const repaired = await repairEvaluationJson(model, surrogate, raw, reasoning, opts.signal);
+    warnings.push(...repaired.warnings);
+    if (repaired.evaluation) return { ...repaired, warnings };
+    return { evaluation: null, reasoning: repaired.reasoning ?? reasoning, raw: repaired.raw || raw, model, warnings };
   }
 
-  const validation = evaluationSchema.safeParse(parsed.json);
+  let validation = evaluationSchema.safeParse(parsed.json);
+  if (!validation.success) {
+    const repaired = await repairEvaluationJson(model, surrogate, raw, reasoning, opts.signal);
+    warnings.push(`evaluator: JSON schema mismatch before repair: ${validation.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
+    warnings.push(...repaired.warnings);
+    if (repaired.evaluation) return { ...repaired, warnings };
+    validation = evaluationSchema.safeParse(parsed.json);
+  }
   if (!validation.success) {
     warnings.push(`evaluator: JSON schema mismatch: ${validation.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
     return { evaluation: null, reasoning, raw, model, warnings };
@@ -329,4 +432,89 @@ export async function evaluateBook(
 
   const evaluation: BookEvaluation = validation.data;
   return { evaluation, reasoning, raw, model, warnings };
+}
+
+async function repairEvaluationJson(
+  model: string,
+  surrogate: string,
+  badRaw: string,
+  priorReasoning: string | null,
+  signal: AbortSignal | undefined,
+): Promise<EvaluationResult> {
+  const warnings: string[] = ["evaluator: retrying strict JSON repair"];
+  let raw = "";
+  try {
+    const profile = await getModelProfile(model);
+    const callRepair = (useStructuredOutput: boolean) => chatWithPolicy(
+      {
+        model,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You repair book evaluation output. Return ONLY one strict JSON object. " +
+              "No markdown, no schema placeholders, no prose.",
+          },
+          {
+            role: "user",
+            content:
+              "The previous answer was not valid JSON for the required schema. " +
+              "Re-evaluate the same book and return ONLY one strict JSON object. " +
+              "Use concrete values, not schema placeholders like string/number/boolean.\n\n" +
+              `Previous invalid answer:\n${badRaw.slice(0, 4000)}\n\n` +
+              `Structural Surrogate:\n${surrogate}`,
+          },
+        ],
+        sampling: {
+          temperature: 0.1,
+          top_p: 0.8,
+          top_k: 20,
+          min_p: 0,
+          presence_penalty: 0,
+          max_tokens: useStructuredOutput ? Math.max(3000, Math.min(profile.maxTokens, 8192)) : 4096,
+        },
+        responseFormat: useStructuredOutput ? buildEvaluatorResponseFormat() : undefined,
+        stop: useStructuredOutput ? profile.stop : undefined,
+        chatTemplateKwargs: useStructuredOutput ? profile.chatTemplateKwargs : { enable_thinking: false },
+        signal,
+      },
+      { externalSignal: signal },
+    );
+    let response;
+    try {
+      response = await callRepair(profile.useResponseFormat);
+    } catch (err) {
+      if (!profile.useResponseFormat || !isLmStudioBadRequest(err)) throw err;
+      const msg = err instanceof Error ? err.message : String(err);
+      warnings.push(`repair: structured output rejected by LM Studio, retrying compatibility mode: ${msg}`);
+      response = await callRepair(false);
+    }
+    raw = response.content ?? "";
+    const parsed = parseEvaluationResponse(raw, response.reasoningContent);
+    warnings.push(...parsed.warnings.map((w) => `repair: ${w}`));
+    const validation = parsed.json !== null ? evaluationSchema.safeParse(parsed.json) : null;
+    if (!validation || !validation.success) {
+      if (validation && !validation.success) {
+        warnings.push(`repair: JSON schema mismatch: ${validation.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
+      }
+      return {
+        evaluation: null,
+        reasoning: parsed.reasoning ?? priorReasoning,
+        raw,
+        model,
+        warnings,
+      };
+    }
+    return {
+      evaluation: validation.data,
+      reasoning: parsed.reasoning ?? priorReasoning,
+      raw,
+      model,
+      warnings,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    warnings.push(`repair: LM Studio call failed: ${msg}`);
+    return { evaluation: null, reasoning: priorReasoning, raw, model, warnings };
+  }
 }

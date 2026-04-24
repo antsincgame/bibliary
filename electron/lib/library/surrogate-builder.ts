@@ -20,23 +20,38 @@ const TARGET_OUTRO_WORDS = 1000;
 const MIN_NODAL_CHAPTERS = 3;
 const MAX_NODAL_CHAPTERS = 5;
 const NODAL_PARAGRAPHS_PER_CHAPTER = 2;
+const MAX_TOC_CHAPTERS = 240;
+const MAX_NODAL_PARAGRAPH_WORDS = 250;
 
 function wordCount(text: string): number {
   return text.split(/\s+/).filter(Boolean).length;
 }
 
+function takeWordSlice(text: string, maxWords: number, fromEnd = false): string {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length <= maxWords) return text;
+  const slice = fromEnd ? words.slice(-maxWords) : words.slice(0, maxWords);
+  return `${slice.join(" ")} […]`;
+}
+
 /**
- * Берёт первые N слов из массива параграфов, не разрезая параграф пополам.
- * Если первый параграф уже больше N слов, всё равно возвращает его целиком --
- * лучше дать модели полную мысль, чем оборванный кусок.
+ * Берёт первые N слов из массива параграфов. OCR/PDF-парсеры иногда отдают
+ * гигантский "параграф" на десятки тысяч слов, поэтому первый блок тоже
+ * жёстко обрезается, иначе surrogate превышает context window LM Studio.
  */
 function takeFirstWords(paragraphs: string[], targetWords: number): { text: string; words: number } {
   const acc: string[] = [];
   let words = 0;
   for (const p of paragraphs) {
     if (words >= targetWords && acc.length > 0) break;
+    const pWords = wordCount(p);
+    if (pWords > targetWords - words) {
+      acc.push(takeWordSlice(p, Math.max(1, targetWords - words)));
+      words = targetWords;
+      break;
+    }
     acc.push(p);
-    words += wordCount(p);
+    words += pWords;
   }
   return { text: acc.join("\n\n"), words };
 }
@@ -47,8 +62,15 @@ function takeLastWords(paragraphs: string[], targetWords: number): { text: strin
   let words = 0;
   for (let i = paragraphs.length - 1; i >= 0; i--) {
     if (words >= targetWords && acc.length > 0) break;
-    acc.unshift(paragraphs[i]);
-    words += wordCount(paragraphs[i]);
+    const p = paragraphs[i];
+    const pWords = wordCount(p);
+    if (pWords > targetWords - words) {
+      acc.unshift(takeWordSlice(p, Math.max(1, targetWords - words), true));
+      words = targetWords;
+      break;
+    }
+    acc.unshift(p);
+    words += pWords;
   }
   return { text: acc.join("\n\n"), words };
 }
@@ -68,10 +90,21 @@ function flattenParagraphs(chapters: ConvertedChapter[]): string[] {
 /** Строит TOC: одна строка на главу `N. Название`. */
 function buildToc(chapters: ConvertedChapter[]): string {
   if (chapters.length === 0) return "(no chapters detected)";
-  const lines = chapters.map((ch, i) => {
+  const indexed = chapters.map((ch, i) => ({ ch, i }));
+  const visible = indexed.length <= MAX_TOC_CHAPTERS
+    ? indexed
+    : [
+        ...indexed.slice(0, Math.floor(MAX_TOC_CHAPTERS * 0.75)),
+        ...indexed.slice(-(MAX_TOC_CHAPTERS - Math.floor(MAX_TOC_CHAPTERS * 0.75))),
+      ];
+  const lines = visible.map(({ ch, i }) => {
     const title = (ch.title ?? "").trim() || `Chapter ${i + 1}`;
     return `${i + 1}. ${title} (${ch.wordCount.toLocaleString("en-US")} words)`;
   });
+  if (visible.length < indexed.length) {
+    const omitted = indexed.length - visible.length;
+    lines.splice(Math.floor(MAX_TOC_CHAPTERS * 0.75), 0, `... (${omitted.toLocaleString("en-US")} chapters omitted from oversized TOC)`);
+  }
   return lines.join("\n");
 }
 
@@ -90,7 +123,9 @@ function pickNodalChapterIndices(chapters: ConvertedChapter[]): number[] {
 /** Строит "узловой срез" одной главы: первые 2 непустых параграфа. */
 function buildNodalSlice(chapter: ConvertedChapter): { text: string; paragraphs: number; words: number } {
   const live = chapter.paragraphs.map((p) => p.trim()).filter((p) => p.length > 0);
-  const slice = live.slice(0, NODAL_PARAGRAPHS_PER_CHAPTER);
+  const slice = live
+    .slice(0, NODAL_PARAGRAPHS_PER_CHAPTER)
+    .map((p) => takeWordSlice(p, MAX_NODAL_PARAGRAPH_WORDS));
   const text = slice.join("\n\n");
   return { text, paragraphs: slice.length, words: wordCount(text) };
 }

@@ -157,9 +157,16 @@ export async function parsePdfInWorker(
  * caller сделает корректный fallback на main-thread парсинг.
  */
 function resolveWorkerEntry(): string | null {
-  if (typeof __dirname === "undefined") {
-    return null;
+  if (typeof __dirname !== "undefined") {
+    const candidate = path.join(__dirname, "pdf-worker.js");
+    return existsSync(candidate) ? candidate : null;
   }
-  const candidate = path.join(__dirname, "pdf-worker.js");
-  return existsSync(candidate) ? candidate : null;
+
+  const candidates = [
+    path.join(process.cwd(), "dist-electron", "lib", "scanner", "parsers", "pdf-worker.js"),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
 }

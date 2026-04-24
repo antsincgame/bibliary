@@ -103,7 +103,7 @@ interface LibraryCatalogQuery {
   minQuality?: number;
   maxQuality?: number;
   hideFictionOrWater?: boolean;
-  statuses?: Array<"imported" | "evaluating" | "evaluated" | "failed">;
+  statuses?: Array<"imported" | "evaluating" | "evaluated" | "crystallizing" | "indexed" | "failed" | "unsupported">;
   domain?: string;
   orderBy?: "quality" | "title" | "words" | "evaluated";
   orderDir?: "asc" | "desc";
@@ -459,6 +459,7 @@ contextBridge.exposeInMainWorld("api", {
       folder: string;
       scanArchives?: boolean;
       ocrEnabled?: boolean;
+      maxDepth?: number;
     }): Promise<{
       importId: string;
       total: number;

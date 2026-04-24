@@ -227,7 +227,8 @@ export async function chat(request: ChatRequest): Promise<ChatResponse> {
   });
 
   if (!response.ok) {
-    throw new Error(`LM Studio HTTP ${response.status}: ${response.statusText}`);
+    const text = await response.text().catch(() => "");
+    throw new Error(`LM Studio HTTP ${response.status}: ${response.statusText}${text ? ` — ${text.slice(0, 200)}` : ""}`);
   }
 
   const data = (await response.json()) as OpenAiChatResponse;

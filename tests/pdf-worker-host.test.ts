@@ -44,11 +44,12 @@ test("parsePdfInWorker: rejects with 'aborted' if signal pre-aborted (no worker 
   );
 });
 
-test("parsePdfInWorker: rejects with 'worker not available' when entry missing (dev/tsx run)", async () => {
-  /* В dev-режиме (tsx) compiled `pdf-worker.js` отсутствует — host
-     должен честно вернуть 'worker not available' вместо commit suicide. */
+test("parsePdfInWorker: rejects cleanly when worker cannot parse missing file", async () => {
+  /* In tsx mode the host may now reuse dist-electron/pdf-worker.js when it
+     exists. Both acceptable failures are explicit: no worker entry, or worker
+     starts and reports the missing PDF. */
   await assert.rejects(
     () => parsePdfInWorker("/anything.pdf", {}),
-    (err: Error) => /worker not available/i.test(err.message),
+    (err: Error) => /worker not available|ENOENT/i.test(err.message),
   );
 });

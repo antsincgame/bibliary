@@ -76,6 +76,8 @@ export const CATALOG = {
   total: 0,
   /** @type {Set<string>} bookId */
   selected: new Set(),
+  /** @type {string} */
+  libraryRoot: "",
   filters: {
     quality: 0,
     hideFiction: false,
@@ -108,6 +110,7 @@ export const IMPORT_STATE = {
   /** @type {string|null} */
   importId: null,
   scanArchives: false,
+  recursive: true,
 };
 
 /** @type {{ query: string, results: Array<any>, searching: boolean, error: string }} */

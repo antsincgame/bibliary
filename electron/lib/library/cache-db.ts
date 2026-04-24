@@ -424,6 +424,9 @@ export interface RevisionDedupBook {
   isbn?: string;
 }
 
+const DEFAULT_CATALOG_LIMIT = 500;
+const MAX_CATALOG_LIMIT = 20_000;
+
 function buildWhere(q: CatalogQuery): { sql: string; params: unknown[] } {
   const where: string[] = [];
   const params: unknown[] = [];
@@ -471,7 +474,7 @@ export function query(q: CatalogQuery = {}): QueryResult {
   const db = openCacheDb();
   const { sql: whereSql, params: whereParams } = buildWhere(q);
   const orderSql = buildOrderBy(q);
-  const limit = Math.max(0, Math.min(q.limit ?? 200, 1000));
+  const limit = Math.max(0, Math.min(q.limit ?? DEFAULT_CATALOG_LIMIT, MAX_CATALOG_LIMIT));
   const offset = Math.max(0, q.offset ?? 0);
 
   let baseFrom = "FROM books";

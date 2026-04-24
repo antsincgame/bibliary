@@ -57,7 +57,8 @@ const SAMPLE_TXT =
   "This is the first paragraph of a small but valid book used for the dedup contract test. " +
   "We deliberately keep it boring and English-only so the txt parser sails through.\n\n" +
   "Chapter Two\n\n" +
-  "Here is the second chapter. It also has some content so the parser produces non-zero chapters.\n";
+  "Here is the second chapter. It also has some content so the parser produces non-zero chapters.\n" +
+  "word ".repeat(2500);
 
 test("import: bookId is derived from CONTENT SHA, not from file path", async (t) => {
   const sb = await makeSandbox("import-id");

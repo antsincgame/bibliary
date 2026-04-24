@@ -33,6 +33,17 @@ const BG_COLOR = "#050508";
 
 let mainWindow: BrowserWindow | null = null;
 
+function resolveAppDataDir(): string {
+  const fromEnv = process.env.BIBLIARY_DATA_DIR?.trim();
+  if (fromEnv) return path.resolve(fromEnv);
+  const portableDir = process.env.PORTABLE_EXECUTABLE_DIR?.trim();
+  if (portableDir) return path.join(path.resolve(portableDir), "data");
+  const portableFile = process.env.PORTABLE_EXECUTABLE_FILE?.trim();
+  if (portableFile) return path.join(path.dirname(path.resolve(portableFile)), "data");
+  if (app.isPackaged) return path.join(path.dirname(process.execPath), "data");
+  return path.resolve(__dirname, "..", "data");
+}
+
 /**
  * Defense-in-depth Content Security Policy. The renderer is fully
  * trusted (we ship its HTML/JS), but we still pin a strict CSP so
@@ -115,9 +126,8 @@ if (!gotLock) {
        Default остаётся `data/` рядом с приложением -- это не меняет
        поведение для обычного пользователя, но даёт smoke-тесту полную
        изоляцию (свой preferences.json, свой forge state, своя SQLite). */
-    const dataDir = process.env.BIBLIARY_DATA_DIR
-      ? path.resolve(process.env.BIBLIARY_DATA_DIR)
-      : path.resolve("data");
+    const dataDir = resolveAppDataDir();
+    process.env.BIBLIARY_DATA_DIR = dataDir;
     await initResilienceLayer({ dataDir });
     const prefsStore = initPreferencesStore(dataDir);
     await prefsStore.ensureDefaults();

@@ -144,7 +144,7 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
     "library:import-folder",
     async (
       _e,
-      args: { folder: string; scanArchives?: boolean; ocrEnabled?: boolean }
+      args: { folder: string; scanArchives?: boolean; ocrEnabled?: boolean; maxDepth?: number }
     ): Promise<{
       importId: string;
       total: number;
@@ -164,6 +164,7 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
         const opts: ImportFolderOptions = {
           scanArchives: args.scanArchives === true,
           ocrEnabled: args.ocrEnabled === true,
+          maxDepth: typeof args.maxDepth === "number" ? args.maxDepth : undefined,
           onProgress: (evt) => broadcastImportProgress(getMainWindow, importId, evt),
           /* Каждую новую книгу немедленно ставим в очередь оценки --
              не ждём конца импорта, чтобы LLM начала работать сразу. */

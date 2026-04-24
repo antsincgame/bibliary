@@ -22,9 +22,9 @@ import { convertBookToMarkdown, replaceFrontmatter } from "./md-converter.js";
 import { getLibraryRoot } from "./paths.js";
 import { upsertBook, getBookById, getKnownSha256s } from "./cache-db.js";
 import { extractArchive, isArchive, cleanupExtractedDir } from "./archive-extractor.js";
-import { SUPPORTED_BOOK_EXTS, type BookCatalogMeta } from "./types.js";
+import { SUPPORTED_BOOK_EXTS, type BookCatalogMeta, type SupportedBookFormat } from "./types.js";
 import { resolveStoredBookPaths } from "./storage-contract.js";
-import { computeFileSha256 } from "./sha-stream.js";
+import { computeFileSha256, bookIdFromSha } from "./sha-stream.js";
 import { findNearDuplicate, registerForNearDup } from "./near-dup-detector.js";
 import {
   computeRevisionScore,
@@ -61,6 +61,16 @@ export interface ImportFolderOptions {
   scanArchives?: boolean;
   /** OCR-флаг для PDF (медленно). По умолчанию false. */
   ocrEnabled?: boolean;
+  /**
+   * Макс. глубина вложенности относительно `folderPath` (см. file-walker).
+   * По умолчанию 16. Для «только три уровня папок» передай 3.
+   */
+  maxDepth?: number;
+  /**
+   * Опциональный потолок числа обнаруженных книг-задач (для стресс-/smoke-тестов).
+   * После достижения лимита обход останавливается; часть папки может остаться не прочитанной.
+   */
+  maxDiscovered?: number;
   /** Прерывание (например, юзер нажал Stop). */
   signal?: AbortSignal;
   /** Колбэк прогресса: вызывается после каждого файла. */
@@ -205,7 +215,7 @@ export async function importBookFromFile(
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return { outcome: "failed", warnings, error: msg, sourceArchive: opts.sourceArchive };
+    return persistFailedImport(absPath, ext as SupportedBookFormat, sha256, msg, warnings, opts.sourceArchive);
   }
   /* Накопленные warnings — единый список. И в `ImportResult.warnings`
      (transient, для UI), и в `finalMeta.warnings` (persistent, в
@@ -318,6 +328,61 @@ function rebuildMarkdownWithFinalMeta(markdown: string, finalMeta: BookCatalogMe
   return replaceFrontmatter(markdown, finalMeta);
 }
 
+async function persistFailedImport(
+  absPath: string,
+  format: SupportedBookFormat,
+  sha256: string,
+  error: string,
+  warnings: string[],
+  sourceArchive?: string,
+): Promise<ImportResult> {
+  const failureWarning = `parser failed: ${error}`;
+  const metaWarnings = [...warnings, failureWarning];
+  const fnMeta = parseFilename(absPath);
+  const meta: BookCatalogMeta = {
+    id: bookIdFromSha(sha256),
+    sha256,
+    originalFile: `original.${format}`,
+    originalFormat: format,
+    sourceArchive,
+    title: fnMeta?.title ?? path.parse(absPath).name,
+    author: fnMeta?.author,
+    year: fnMeta?.year,
+    wordCount: 0,
+    chapterCount: 0,
+    status: "failed",
+    warnings: metaWarnings,
+  };
+
+  try {
+    const root = await getLibraryRoot();
+    const stored = resolveStoredBookPaths(root, meta.id, format);
+    await fs.mkdir(stored.bookDir, { recursive: true });
+    await fs.copyFile(absPath, stored.originalPath);
+    const bodyTitle = meta.title.replace(/\r?\n/g, " ").trim() || path.parse(absPath).name;
+    const markdown = replaceFrontmatter("---\n---\n\n# Placeholder\n\nImport failed.\n", meta)
+      .replace("# Placeholder", `# ${bodyTitle}\n\nImport failed: ${error}`);
+    await fs.writeFile(stored.mdPath, markdown, "utf-8");
+    upsertBook(meta, stored.mdPath);
+    return {
+      outcome: "failed",
+      bookId: meta.id,
+      meta,
+      warnings: metaWarnings,
+      error,
+      sourceArchive,
+    };
+  } catch (persistErr) {
+    const persistMsg = persistErr instanceof Error ? persistErr.message : String(persistErr);
+    return {
+      outcome: "failed",
+      warnings: metaWarnings,
+      error: `${error}; fallback import failed: ${persistMsg}`,
+      sourceArchive,
+    };
+  }
+}
+
 /**
  * Импорт всей папки рекурсивно. Один вызов = одна транзакция от UI.
  *
@@ -402,10 +467,14 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
 
   /* Stage 1: streaming scanner. Архивы (если scanArchives=true) yield'ятся
      наравне с обычными книгами — раскрытие происходит в Stage 1.5. */
-  const walker = walkSupportedFiles(folderPath, SUPPORTED_BOOK_EXTS, {
+  const walkOpts: Parameters<typeof walkSupportedFiles>[2] = {
     includeArchives: opts.scanArchives === true,
     signal: opts.signal,
-  });
+  };
+  if (typeof opts.maxDepth === "number" && Number.isFinite(opts.maxDepth) && opts.maxDepth >= 0) {
+    walkOpts.maxDepth = Math.floor(opts.maxDepth);
+  }
+  const walker = walkSupportedFiles(folderPath, SUPPORTED_BOOK_EXTS, walkOpts);
 
   /* Tracker управляет lifecycle temp-директорий распакованных архивов:
      cleanup срабатывает после обработки последней книги из архива. */
@@ -415,9 +484,14 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
      книгу как отдельный ImportTask. Counter `discovered` нарастает по
      числу РЕАЛЬНЫХ книг (не файлов на диске) — пользователь видит то,
      что реально пойдёт в pipeline. */
+  const cap = typeof opts.maxDiscovered === "number" && Number.isFinite(opts.maxDiscovered) && opts.maxDiscovered >= 0
+    ? Math.floor(opts.maxDiscovered)
+    : null;
+
   async function* expandTasks(): AsyncGenerator<ImportTask> {
     for await (const filePath of walker) {
       if (opts.signal?.aborted) return;
+      if (cap !== null && counters.discovered >= cap) break;
 
       if (!isArchive(filePath)) {
         counters.discovered += 1;
@@ -462,6 +536,7 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
       let isFirstBook = true;
       for (const book of extractRes.books) {
         if (opts.signal?.aborted) return;
+        if (cap !== null && counters.discovered >= cap) break;
         counters.discovered += 1;
         emit("discovered");
         yield {
@@ -472,6 +547,7 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
         };
         isFirstBook = false;
       }
+      if (cap !== null && counters.discovered >= cap) break;
     }
     emit("scan-complete");
   }
@@ -541,20 +617,37 @@ async function runImportTaskWithTimeout(
 ): Promise<ImportResult[]> {
   const localCtl = new AbortController();
   const cleanup = linkAbortSignal(opts.signal, localCtl);
+  let timeoutMessage: string | null = null;
   const timer = setTimeout(() => {
-    localCtl.abort(new Error(`per-file timeout after ${Math.round(timeoutMs / 1000)}s`));
+    timeoutMessage = `per-file timeout after ${Math.round(timeoutMs / 1000)}s`;
+    localCtl.abort(new Error(timeoutMessage));
   }, timeoutMs);
   try {
-    const result = await importBookFromFile(task.bookPath, {
-      ocrEnabled: opts.ocrEnabled,
-      signal: localCtl.signal,
-      sourceArchive: task.sourceArchive,
-    });
+    const result = await Promise.race([
+      importBookFromFile(task.bookPath, {
+        ocrEnabled: opts.ocrEnabled,
+        signal: localCtl.signal,
+        sourceArchive: task.sourceArchive,
+      }),
+      new Promise<ImportResult>((_, reject) => {
+        localCtl.signal.addEventListener("abort", () => {
+          reject(new Error(timeoutMessage ?? "aborted"));
+        }, { once: true });
+      }),
+    ]);
     /* Подмешиваем extract warnings к первой книге архива для трассировки. */
     if (task.extractWarnings && task.extractWarnings.length > 0) {
       result.warnings = [...task.extractWarnings, ...result.warnings];
     }
     return [result];
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return [{
+      outcome: "failed",
+      warnings: task.extractWarnings ? [...task.extractWarnings] : [],
+      error: msg,
+      sourceArchive: task.sourceArchive,
+    }];
   } finally {
     clearTimeout(timer);
     cleanup();

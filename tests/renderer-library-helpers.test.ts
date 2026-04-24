@@ -83,7 +83,7 @@ test("makeDownloadId returns unique strings", () => {
 
 test("QUALITY_PRESETS is frozen and ordered low->high", () => {
   assert.equal(Object.isFrozen(QUALITY_PRESETS), true);
-  const values = QUALITY_PRESETS.map((p) => p.value);
+  const values = QUALITY_PRESETS.map((p) => p.minQuality);
   for (let i = 1; i < values.length; i++) {
     assert.ok(values[i] >= values[i - 1], "presets must not decrease");
   }

@@ -27,7 +27,7 @@ test("walkSupportedFiles: yields supported files recursively, skips unknown", as
   t.after(() => rm(root, { recursive: true, force: true }));
 
   const found: string[] = [];
-  for await (const file of walkSupportedFiles(root, SUPPORTED)) {
+  for await (const file of walkSupportedFiles(root, SUPPORTED, { minFileBytes: 0 })) {
     found.push(path.relative(root, file).replace(/\\/g, "/"));
   }
   found.sort();
@@ -39,7 +39,7 @@ test("walkSupportedFiles: includeArchives=true yields archive files", async (t) 
   t.after(() => rm(root, { recursive: true, force: true }));
 
   const found: string[] = [];
-  for await (const file of walkSupportedFiles(root, SUPPORTED, { includeArchives: true })) {
+  for await (const file of walkSupportedFiles(root, SUPPORTED, { includeArchives: true, minFileBytes: 0 })) {
     found.push(path.relative(root, file).replace(/\\/g, "/"));
   }
   found.sort();

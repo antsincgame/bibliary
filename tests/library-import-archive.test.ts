@@ -46,7 +46,10 @@ async function makeSandbox(prefix: string): Promise<SandboxState> {
 
 const TXT_BODY = (variant: string): string =>
   `Chapter 1\n\nA tiny book for archive ingestion test (${variant}).\n\n` +
-  "Chapter 2\n\nSecond chapter, more content for the parser.\n";
+  "Chapter 2\n\nSecond chapter, more content for the parser.\n" +
+  "word ".repeat(2500);
+
+const ZIP_PADDING = "x".repeat(12_000);
 
 test("importFolderToLibrary: zip with multiple books — all imported via shared pool, tempDir cleaned up", async (t) => {
   const sb = await makeSandbox("import-archive");
@@ -56,6 +59,7 @@ test("importFolderToLibrary: zip with multiple books — all imported via shared
   zip.file("a.txt", TXT_BODY("a"));
   zip.file("b.txt", TXT_BODY("b"));
   zip.file("c.txt", TXT_BODY("c"));
+  zip.file("padding.bin", ZIP_PADDING);
   const buf = await zip.generateAsync({ type: "nodebuffer" });
   await writeFile(path.join(sb.tempRoot, "books.zip"), buf);
 
@@ -101,6 +105,7 @@ test("importFolderToLibrary: empty zip becomes one 'skipped' task with archive w
   const zip = new JSZip();
   /* Только один не-книжный файл — реально pipeline увидит 0 книг. */
   zip.file("README.md", "no books here");
+  zip.file("padding.bin", ZIP_PADDING);
   const buf = await zip.generateAsync({ type: "nodebuffer" });
   await writeFile(path.join(sb.tempRoot, "empty.zip"), buf);
 
@@ -119,6 +124,7 @@ test("importFolderToLibrary: mixed (loose books + archive) — all books visible
   const zip = new JSZip();
   zip.file("zipped-1.txt", TXT_BODY("zipped-1"));
   zip.file("zipped-2.txt", TXT_BODY("zipped-2"));
+  zip.file("padding.bin", ZIP_PADDING);
   const buf = await zip.generateAsync({ type: "nodebuffer" });
   await writeFile(path.join(sb.tempRoot, "books.zip"), buf);
 
@@ -134,6 +140,7 @@ test("importFolderToLibrary: scanArchives=false ignores zip entirely", async (t)
   await writeFile(path.join(sb.tempRoot, "loose.txt"), TXT_BODY("loose"));
   const zip = new JSZip();
   zip.file("inside.txt", TXT_BODY("inside"));
+  zip.file("padding.bin", ZIP_PADDING);
   const buf = await zip.generateAsync({ type: "nodebuffer" });
   await writeFile(path.join(sb.tempRoot, "ignored.zip"), buf);
 
