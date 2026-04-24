@@ -52,14 +52,18 @@ import {
   bootstrapEvaluatorQueue,
   enqueueBook,
   enqueueMany,
+  enqueuePriority,
   pauseEvaluator,
   resumeEvaluator,
   cancelCurrentEvaluation,
   setEvaluatorModel,
+  setEvaluatorSlots,
+  getEvaluatorSlotCount,
   getEvaluatorStatus,
   subscribeEvaluator,
 } from "../lib/library/evaluator-queue.js";
 import { resolveLibraryRoot } from "../lib/library/paths.js";
+import { unregisterFromNearDup, resetNearDupCache } from "../lib/library/near-dup-detector.js";
 import type { BookCatalogMeta, BookStatus } from "../lib/library/types.js";
 
 const SUPPORTED_FILE_FILTERS = [
@@ -212,10 +216,13 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
               if (r.outcome === "added" && r.bookId) newIds.push(r.bookId);
             }
             broadcastImportProgress(getMainWindow, importId, {
-              index: i + 1,
-              total: args.paths.length,
+              phase: "processed",
+              discovered: args.paths.length,
+              processed: i + 1,
               currentFile: p,
               outcome: itemResults[0]?.outcome ?? "failed",
+              index: i + 1,
+              total: args.paths.length,
             });
           } catch (e) {
             aggregate.total += 1;
@@ -286,6 +293,10 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
       if (!meta) return { ok: false, reason: "not-found" };
       try {
         dbDeleteBook(args.bookId);
+        /* Снимаем книгу с near-dup tracker'а, иначе следующий импорт
+           похожей книги получит ложное предупреждение «near-duplicate of
+           {удалённый-id}». Идемпотентно. */
+        unregisterFromNearDup(meta);
         if (args.deleteFiles !== false) {
           /* book.md лежит в data/library/{slug}/book.md -- удаляем директорию целиком. */
           const path = await import("path");
@@ -304,6 +315,10 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
     async (): Promise<{ scanned: number; ingested: number; skipped: number; pruned: number; errors: string[] }> => {
       const rebuilt = await rebuildFromFs();
       const pruned = await pruneMissing();
+      /* После массовых mutations (rebuild + prune) singleton near-dup кэш
+         гарантированно stale — сбрасываем, перезагрузится лениво при первом
+         запросе из свежей SQLite. */
+      resetNearDupCache();
       return { ...rebuilt, pruned };
     }
   );
@@ -341,4 +356,32 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
       return true;
     }
   );
+  /* Priority enqueue: UI-flow «оценить эти первыми» (selected rows). */
+  ipcMain.handle(
+    "library:evaluator-prioritize",
+    async (_e, args: { bookIds: string[] }): Promise<{ ok: boolean; queued: number }> => {
+      if (!args || !Array.isArray(args.bookIds)) return { ok: false, queued: 0 };
+      let queued = 0;
+      /* Reverse order: при unshift каждой следующей она оттесняет предыдущую,
+         так что итоговый порядок = тот, что передал caller. */
+      for (let i = args.bookIds.length - 1; i >= 0; i--) {
+        const id = args.bookIds[i];
+        if (typeof id === "string" && id.length > 0) {
+          enqueuePriority(id);
+          queued += 1;
+        }
+      }
+      return { ok: true, queued };
+    }
+  );
+  /* Runtime regulation параллелизма evaluator. UI слайдер 1..16. */
+  ipcMain.handle(
+    "library:evaluator-set-slots",
+    async (_e, n: number): Promise<{ ok: boolean; slots: number }> => {
+      if (!Number.isInteger(n) || n < 1) return { ok: false, slots: getEvaluatorSlotCount() };
+      setEvaluatorSlots(n);
+      return { ok: true, slots: getEvaluatorSlotCount() };
+    }
+  );
+  ipcMain.handle("library:evaluator-get-slots", async (): Promise<number> => getEvaluatorSlotCount());
 }

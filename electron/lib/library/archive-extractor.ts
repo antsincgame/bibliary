@@ -21,6 +21,49 @@ import { detectExt, type SupportedExt } from "../scanner/parsers/index.js";
 const SUPPORTED_BOOK_EXTS: ReadonlySet<SupportedExt> = new Set(["pdf", "epub", "fb2", "txt", "docx"]);
 const ARCHIVE_EXTS = new Set([".zip", ".cbz", ".rar", ".cbr", ".7z"]);
 
+/**
+ * Anti-zip-bomb hard limits. Применяются ДО записи на диск, чтобы один
+ * злонамеренный (или просто гигантский) архив не вынес FS пользователя.
+ *
+ * Источник цифр:
+ *   - 5 GB суммарно — запас в 5x от типового научного архива (1-2 GB
+ *     учебники + изображения). Превышение = почти всегда bomb или mistake.
+ *   - 5000 файлов — запас в 10x от плотного литературного архива
+ *     (типичная подборка по теме = 200-500 файлов).
+ *   - Compression ratio 100:1 — классическая bomb-метрика. CBZ
+ *     с PNG-страницами даёт 1.5-3:1, текстовые архивы 5-15:1. Всё что
+ *     выше 100:1 — флаг подозрения на zip-bomb (классическая
+ *     42.zip имеет ratio ~10^9:1).
+ *
+ * Все три лимита override'ятся через ENV для power-users:
+ *   BIBLIARY_ARCHIVE_MAX_BYTES, BIBLIARY_ARCHIVE_MAX_FILES,
+ *   BIBLIARY_ARCHIVE_MAX_RATIO.
+ */
+const DEFAULT_MAX_EXTRACTED_BYTES = 5 * 1024 * 1024 * 1024;
+const DEFAULT_MAX_FILES = 5000;
+const DEFAULT_MAX_COMPRESSION_RATIO = 100;
+
+function readPositiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+interface ArchiveLimits {
+  maxExtractedBytes: number;
+  maxFiles: number;
+  maxCompressionRatio: number;
+}
+
+function resolveLimits(): ArchiveLimits {
+  return {
+    maxExtractedBytes: readPositiveIntEnv("BIBLIARY_ARCHIVE_MAX_BYTES", DEFAULT_MAX_EXTRACTED_BYTES),
+    maxFiles: readPositiveIntEnv("BIBLIARY_ARCHIVE_MAX_FILES", DEFAULT_MAX_FILES),
+    maxCompressionRatio: readPositiveIntEnv("BIBLIARY_ARCHIVE_MAX_RATIO", DEFAULT_MAX_COMPRESSION_RATIO),
+  };
+}
+
 export interface ExtractedBook {
   /** Абсолютный путь к временно извлечённой книге. */
   absPath: string;
@@ -72,13 +115,56 @@ async function extractZipLike(absPath: string, tempDir: string, warnings: string
     return [];
   }
 
-  const out: ExtractedBook[] = [];
+  const limits = resolveLimits();
   const sourceArchive = path.basename(absPath);
-  const seen = new Set<string>();
+  const compressedBytes = buf.byteLength;
 
-  const entries = Object.values(zip.files);
-  for (const entry of entries) {
-    if (entry.dir) continue;
+  /* PRE-CHECK 1: количество файлов. JSZip уже распарсил central directory
+     (это дёшево, без распаковки), поэтому total entries известно мгновенно. */
+  const allEntries = Object.values(zip.files);
+  const fileEntries = allEntries.filter((e) => !e.dir);
+  if (fileEntries.length > limits.maxFiles) {
+    warnings.push(
+      `archive-extractor: ${sourceArchive} has ${fileEntries.length} files (>${limits.maxFiles} limit) — refused as potential zip-bomb`,
+    );
+    return [];
+  }
+
+  /* PRE-CHECK 2: суммарный uncompressed size + compression ratio. Доступно
+     до распаковки через `_data.uncompressedSize` (JSZip internal API),
+     иначе у больших entries fallback на безопасный 0 — далее тригернёт
+     PRE-CHECK 3 при попытке распаковки. */
+  let estimatedTotal = 0;
+  for (const entry of fileEntries) {
+    const internal = (entry as unknown as { _data?: { uncompressedSize?: number } })._data;
+    const sz = internal?.uncompressedSize;
+    if (typeof sz === "number" && sz > 0) estimatedTotal += sz;
+  }
+  if (estimatedTotal > limits.maxExtractedBytes) {
+    const totalGb = (estimatedTotal / 1024 / 1024 / 1024).toFixed(2);
+    const limitGb = (limits.maxExtractedBytes / 1024 / 1024 / 1024).toFixed(2);
+    warnings.push(
+      `archive-extractor: ${sourceArchive} would extract to ~${totalGb} GB (>${limitGb} GB limit) — refused`,
+    );
+    return [];
+  }
+  /* compression ratio имеет смысл только когда compressedBytes > 0 и мы
+     знаем суммарный uncompressed. */
+  if (compressedBytes > 0 && estimatedTotal > 0) {
+    const ratio = estimatedTotal / compressedBytes;
+    if (ratio > limits.maxCompressionRatio) {
+      warnings.push(
+        `archive-extractor: ${sourceArchive} compression ratio ${ratio.toFixed(0)}:1 (>${limits.maxCompressionRatio}:1 limit) — refused as potential zip-bomb`,
+      );
+      return [];
+    }
+  }
+
+  const out: ExtractedBook[] = [];
+  const seen = new Set<string>();
+  let extractedSoFar = 0;
+
+  for (const entry of fileEntries) {
     const ext = detectExt(entry.name);
     if (!ext || !SUPPORTED_BOOK_EXTS.has(ext)) continue;
     let safeName = sanitizeEntryName(entry.name);
@@ -92,6 +178,17 @@ async function extractZipLike(absPath: string, tempDir: string, warnings: string
 
     try {
       const data = await entry.async("nodebuffer");
+      /* RUNTIME-CHECK 3: даже если PRE-CHECK 2 прошёл (estimatedTotal=0
+         для часть entries), здесь мы знаем точный uncompressed размер. */
+      extractedSoFar += data.byteLength;
+      if (extractedSoFar > limits.maxExtractedBytes) {
+        const gb = (extractedSoFar / 1024 / 1024 / 1024).toFixed(2);
+        const limitGb = (limits.maxExtractedBytes / 1024 / 1024 / 1024).toFixed(2);
+        warnings.push(
+          `archive-extractor: aborted ${sourceArchive} after extracting ${gb} GB (>${limitGb} GB limit) — partial result`,
+        );
+        break;
+      }
       const out_path = path.join(tempDir, safeName);
       await fs.writeFile(out_path, data);
       out.push({ absPath: out_path, entryName: entry.name, sourceArchive });

@@ -3,27 +3,41 @@
 Vector knowledge base for UX, SEO, copywriting and UI design concepts.
 Stores expert knowledge as embeddings in Qdrant and serves it via RAG-augmented chat through LM Studio.
 
-## What's new in v2.6 (2026-04-22)
+## What's new in v2.7.0 (2026-04-24) — Library + Dataset Factory
 
-**Overmind Agent** — chat-агент стал полноценным помощником по платформе.
-Полный список фич — [CHANGELOG.md](CHANGELOG.md). Кратко:
+Линия v2.7 закрыта одним релизом. Полный лог — [CHANGELOG.md](CHANGELOG.md).
 
-- **Multiturn-история** (B1) — агент помнит контекст разговора (cap 50 сообщений)
-- **Self-knowledge** (B6) — agent ищет ответы по `docs/*.md` через `tool search_help`
-  на отдельной Qdrant-коллекции `bibliary_help`. Build: `npm run build:help-kb`
-- **Long-term memory** (B7) — успешные user→assistant turn'ы пишутся в Qdrant
-  `bibliary_memory`, агент достаёт их через `tool recall_memory` в новых сессиях
-- **Self-hosted-only Forge** — fine-tune workflow через 3-step wizard, никаких
-  облачных runner'ов (Colab/AutoTrain/HF удалены в v2.4)
-- **Three Strikes UX** — закрыты 12 точечных багов: welcome wizard restore/skip,
-  forge validation, chat compare guard, neon на Chat+Docs
+- **File-System First Library** — `data/library/{id}/{original.{ext},book.md}` как
+  source of truth, SQLite (`bibliary-cache.db`) — rebuildable index.
+- **Pre-flight Evaluation** — Structural Surrogate (~3-4K слов) +
+  "Chief Epistemologist" LLM с CoT-парсером оценивает книгу за 10-30 сек **до**
+  тяжёлой crystallization. Пишет `quality_score`, `domain`, `tags`,
+  `is_fiction_or_water` в YAML frontmatter и SQLite-кэш.
+- **DataGrid Catalog UI** — компактная таблица с фильтрами Quality / Hide fiction;
+  пресеты Premium 86+ / Solid 70+ / Workable 50+; batch select + crystallize.
+- **Thematic Qdrant Collections** — `targetCollection` параметризован сквозь
+  pipeline: marketing / SEO / UX и т.п. изолированы от друг друга.
+- **Dataset Synthesis (Iter 8-9)** — `scripts/dataset-synth.ts` превращает
+  принятые концепты в ChatML JSONL; `--include-reasoning` сохраняет CoT для
+  R1-style premium distillation; **10 per-domain trainer prompts** с
+  longest-match keyword routing; `--list-presets` без LLM-вызова.
+- **Batch cancellation** — `dataset-v2:cancel-batch` корректно прерывает между
+  книгами; глобальные `unhandledRejection`/`uncaughtException` handlers и
+  per-book parse timeout (8 мин) в E2E пайплайне делают batch стабильным
+  даже на корявых PDF.
+- **Real Electron smoke-test** через `@playwright._electron` —
+  `npm run test:smoke` (~3 секунды; проверяет launch + preload + IPC shape).
+- **65 unit/integration тестов** (`npm test`) включая полный coverage
+  evaluator-queue (10 кейсов) и batch-runner (9 кейсов).
 
-Новые тесты:
-- `npm run test:agent-internals` — unit для history/memory/dedup helpers (22/22)
-- `npm run test:help-kb` — unit для markdown chunker (8/8)
-- `npm run test:agent-memory-live` — E2E на real LM Studio + Qdrant (5/5)
+### Migration
 
-Полный roadmap до v0.1.0-rc1 — [docs/ROADMAP-TO-MVP.md](docs/ROADMAP-TO-MVP.md).
+```bash
+npm install            # обновляет playwright + @electron/rebuild deps
+npm run electron:dev   # data/library/ создаётся при первом импорте книг
+```
+
+Полный roadmap — [docs/ROADMAP-TO-MVP.md](docs/ROADMAP-TO-MVP.md).
 Состояние проекта — [docs/STATE-OF-PROJECT.md](docs/STATE-OF-PROJECT.md).
 
 ## Architecture

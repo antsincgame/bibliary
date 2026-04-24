@@ -42,3 +42,12 @@ data/library/
 data/bibliary-cache.db
 data/bibliary-cache.db-wal
 data/bibliary-cache.db-shm
+
+# Servitor quarantine (recoverable docs/code trash)
+.servitor-trash/
+
+# Library reset backups (raw books, never push)
+data/_library-reset-backup-*/
+
+# User-local preferences (model choices, etc.)
+data/preferences.json

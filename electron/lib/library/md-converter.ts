@@ -14,12 +14,11 @@
  * параллельно с GPU-кристаллизацией (LM Studio).
  */
 
-import { promises as fs } from "fs";
-import { createHash } from "crypto";
 import * as path from "path";
 import { parseBook, detectExt, type SupportedExt } from "../scanner/parsers/index.js";
 import { isOcrSupported } from "../scanner/ocr/index.js";
 import { extractBookImages } from "./image-extractors.js";
+import { computeFileSha256, bookIdFromSha } from "./sha-stream.js";
 import type {
   BookCatalogMeta,
   BookStatus,
@@ -31,17 +30,6 @@ import type {
 } from "./types.js";
 
 const SUPPORTED_FORMATS: ReadonlySet<SupportedExt> = new Set(["pdf", "epub", "fb2", "txt", "docx"]);
-
-/** Slug книги -- первые 16 hex SHA-256 от абсолютного пути (стабильный id). */
-function makeBookId(absPath: string): string {
-  return createHash("sha256").update(absPath).digest("hex").slice(0, 16);
-}
-
-/** SHA-256 от содержимого файла -- для дедупликации одинаковых книг. */
-async function hashFileContent(absPath: string): Promise<string> {
-  const buf = await fs.readFile(absPath);
-  return createHash("sha256").update(buf).digest("hex");
-}
 
 function countWords(text: string): number {
   return text.split(/\s+/).filter(Boolean).length;
@@ -342,7 +330,10 @@ export async function convertBookToMarkdown(
   const format = ext as SupportedBookFormat;
 
   const originalFile = path.basename(absFilePath);
-  const sha256 = await hashFileContent(absFilePath);
+  /* SHA-256 — content-hash через streaming (см. sha-stream.ts). Если caller
+     уже посчитал sha (для дедупа до парсинга), переиспользуем — не трогаем
+     диск второй раз. Иначе считаем сами потоково (без OOM на 500MB книге). */
+  const sha256 = opts.precomputedSha256 ?? (await computeFileSha256(absFilePath, opts.signal));
 
   /* Stage 1 -- text + structure через существующий парсер. */
   let parsed = await parseBook(absFilePath, { ocrEnabled: opts.ocrEnabled === true, signal: opts.signal });
@@ -369,7 +360,9 @@ export async function convertBookToMarkdown(
   const status: BookStatus = chapters.length === 0 ? "unsupported" : "imported";
 
   const meta: BookCatalogMeta = {
-    id: makeBookId(absFilePath),
+    /* id — content-based slug (первые 16 hex SHA), а НЕ хэш от пути.
+       Это даёт стабильный кросс-машинный id и идемпотентность импорта. */
+    id: bookIdFromSha(sha256),
     sha256,
     originalFile,
     originalFormat: format,

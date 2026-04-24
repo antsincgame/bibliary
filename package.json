@@ -1,6 +1,6 @@
 {
   "name": "bibliary",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "type": "module",
   "main": "dist-electron/main.js",
   "description": "Vector knowledge store — natural language concepts for site generation",
@@ -33,6 +33,7 @@
     "dataset:probe-model": "tsx scripts/probe-evaluator-pick.ts",
     "test": "node --import tsx --test tests/*.test.ts",
     "test:unit": "node --import tsx --test tests/*.test.ts",
+    "test:smoke": "node scripts/prepare-electron.js && tsc -p tsconfig.electron.json && node --import tsx --test tests/smoke/*.test.ts",
     "build:help-kb": "tsx scripts/build-help-kb.ts",
     "test:help-kb": "tsx scripts/test-help-kb.ts",
     "test:agent-internals": "tsx scripts/test-agent-internals.ts",
@@ -67,6 +68,7 @@
     "electron-builder": "^26.8.1",
     "eslint": "^10.2.1",
     "globals": "^17.5.0",
+    "playwright": "^1.59.1",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }

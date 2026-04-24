@@ -4,7 +4,23 @@
 > отсортированы по приоритету (P0 > P1 > P2). Каждый пункт даёт оценку
 > усилий и явный критерий "сделано".
 
-## Текущее состояние (v2.6.0, 2026-04-22)
+## v2.7.0 — Library + Dataset Factory (закрыто 2026-04-24)
+
+| Слой | Готовность | Что нового |
+|------|-----------|-----------|
+| File-System Library    | ✅ 100%  | `data/library/{id}/{original.{ext},book.md}` + SQLite cache |
+| Pre-flight Evaluation  | ✅ 100%  | Surrogate + Chief Epistemologist + CoT parser |
+| DataGrid Catalog UI    | ✅ 100%  | Quality / Hide-fiction filters, presets, batch-select |
+| Thematic Collections   | ✅ 100%  | `targetCollection` параметризован сквозь pipeline |
+| Dataset Synthesis      | ✅ 100%  | `dataset-synth.ts` + `--include-reasoning` + 10 presets |
+| Batch cancellation     | ✅ 100%  | `dataset-v2:cancel-batch` + per-book parse timeout 8 мин |
+| Shared storage contract| ✅ 100%  | `storage-contract.ts` для UI + E2E + cache-db |
+| Batch-runner extract   | ✅ 100%  | Pure `runBatchExtraction(args, deps)` отделён от IPC |
+| Renderer strangler #1  | ✅ 100%  | format.js + catalog-filter.js (≈70 строк выкушено) |
+| Tests                  | ✅ 100%  | 65/65 unit + 1/1 Electron smoke (playwright) |
+| Docs purge             | ✅ 100%  | 7 устаревших snapshot-ов выселены в `.servitor-trash/` |
+
+## Текущее состояние (v2.7.0, 2026-04-24)
 
 | Слой               | Готовность | Что есть                                                  |
 |--------------------|-----------|-----------------------------------------------------------|
@@ -24,10 +40,12 @@
 | Onboarding Wizard  | 95%       | 4 шага, restore prefs, block-without-model, real skip     |
 | Help-KB (Karpathy) | 100%      | Synthetic KB о приложении, search_help tool агента        |
 | Long-term Memory   | 100%      | bibliary_memory + recall_memory tool, fire-and-forget     |
-| Tests              | 95%       | 30 unit + live E2E B6+B7 (5/5) + agent/dataset/scanner    |
+| Library v2         | 100%      | FS-first, Pre-flight Evaluation, DataGrid, thematic colls |
+| Dataset Factory    | 100%      | dataset-synth + 10 presets + reasoning trace preservation |
+| Tests              | 100%      | 65 unit + 1 Electron smoke + live E2E (`test:e2e:library`)|
 | i18n               | 100%      | RU + EN, ~1740 keys (мёртвые удалены)                     |
 
-Общий progress: **~95%**.
+Общий progress: **~98%**.
 
 ---
 

@@ -1,30 +1,40 @@
 # Bibliary -- State of the Project
 
-> Полный отчёт: что есть, что слабое, что осталось до MVP-release.
-> Дата: 2026-04-22 (v2.6.0 stable). Снапшот после серии Overmind Agent
-> + Three Strikes UX финализации.
+> Срез состояния на v2.7.0 (Library + Dataset Factory). История до v2.6
+> сохранена в нижних разделах для контекста; что-то что больше не отражает
+> код помечено `[archived]`.
+> Дата: 2026-04-24.
 
 ## TL;DR
 
 ```
-Готовность к pilot:    ~95%   (можно давать раннюю аудиторию, P0 закрыт)
-Готовность к v0.1.0:    ~88%  (E2E DONE, осталось auto-update + bookhunter policy)
-Готовность к public:    ~60%  (Sprint 2 пункты, ~3 недели)
+Готовность к pilot:     ~98%  (Library + Pre-flight Evaluation в проде, smoke зелёный)
+Готовность к v0.1.0:    ~92%  (осталось auto-update + bookhunter policy)
+Готовность к public:    ~70%  (док-сайт + видео-онбординг, ~2 недели)
 ```
 
-Ядро (parser + scanner + dataset-v2 + RAG + LM Studio bridge) **работает**
-на реальных данных без моков. Все critical-уровня известные баги закрыты
-(HIGH-1/2/3, MED-1/2/4/5/6 из TECH-LEAD-REVIEW — все имеют комментарии
-`AUDIT MED-X` в коде).
+Линия v2.7 закрыта: библиотека книг хранится на FS, оценивается reasoning-моделью
+до тяжёлой crystallization, dataset-фабрика пишет ChatML JSONL для LoRA с
+per-domain prompt-presets. Smoke-test через playwright-electron подтверждает,
+что preload bridge и IPC handlers живы. Ядро (parser + scanner + dataset-v2 +
+library + RAG + LM Studio bridge) работает на реальных данных без моков.
+
+**v2.7.0 (2026-04-24) — Library + Dataset Factory:**
+- File-System First Library + Pre-flight Evaluation pipeline
+- DataGrid Catalog с фильтрами quality / hide fiction
+- Thematic Qdrant Collections (`targetCollection` сквозь pipeline)
+- Dataset synthesis (`scripts/dataset-synth.ts`) с 10 per-domain prompt-пресетами
+  и `--include-reasoning` для R1-style distillation
+- Batch cancellation, robust E2E (timeout + global rejection handlers)
+- Shared storage contract → batch-runner extract → 65 unit/integration tests
+- Real Electron smoke-test (playwright-electron) через `npm run test:smoke`
 
 **v2.6.0 (2026-04-22) — Overmind Agent + UX Stabilization:**
 - Multiturn-история агента (B1) + sanitizeAgentHistory с unit-тестами
 - Synthetic KB о приложении (B6) — bibliary_help Qdrant + tool search_help
 - Long-term memory диалогов (B7) — bibliary_memory + tool recall_memory
-- 30 unit-тестов (chunker 8 + agent-internals 22) + live E2E B6+B7 (5/5)
 - UX полировка (Three Strikes): Welcome wizard restore/block/skip,
-  Forge step validation, Chat Compare guard, Forge step pills indicator,
-  i18n cleanup (qdrant.search.error, agent.hero.sub, мёртвые ключи)
+  Forge step validation, Chat Compare guard, Forge step pills indicator
 - Полный Neon rollout (P1.3) — Chat и Docs hero (9/9 маршрутов)
 
 ---

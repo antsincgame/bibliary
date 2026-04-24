@@ -501,19 +501,32 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.invoke("library:evaluator-reevaluate", { bookId }),
     setEvaluatorModel: (modelKey: string | null): Promise<boolean> =>
       ipcRenderer.invoke("library:evaluator-set-model", modelKey),
+    /* Phase 4: priority enqueue + runtime slot regulation. */
+    evaluatorPrioritize: (bookIds: string[]): Promise<{ ok: boolean; queued: number }> =>
+      ipcRenderer.invoke("library:evaluator-prioritize", { bookIds }),
+    evaluatorSetSlots: (n: number): Promise<{ ok: boolean; slots: number }> =>
+      ipcRenderer.invoke("library:evaluator-set-slots", n),
+    evaluatorGetSlots: (): Promise<number> => ipcRenderer.invoke("library:evaluator-get-slots"),
     onImportProgress: (cb: (payload: {
       importId: string;
+      phase: "discovered" | "processed" | "scan-complete";
+      discovered: number;
+      processed: number;
+      currentFile?: string;
+      outcome?: "added" | "duplicate" | "skipped" | "failed";
+      /** Backward-compat: для старого UI = processed/discovered. */
       index: number;
       total: number;
-      currentFile: string;
-      outcome: "added" | "duplicate" | "skipped" | "failed";
     }) => void): (() => void) => {
       const l = (_e: unknown, p: {
         importId: string;
+        phase: "discovered" | "processed" | "scan-complete";
+        discovered: number;
+        processed: number;
+        currentFile?: string;
+        outcome?: "added" | "duplicate" | "skipped" | "failed";
         index: number;
         total: number;
-        currentFile: string;
-        outcome: "added" | "duplicate" | "skipped" | "failed";
       }) => cb(p);
       ipcRenderer.on("library:import-progress", l);
       return () => ipcRenderer.removeListener("library:import-progress", l);

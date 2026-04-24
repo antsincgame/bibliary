@@ -4,6 +4,86 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0] — 2026-04-24 — Library + Dataset Factory (release)
+
+> **Закрытие линии.** Iter 7..9 (File-System Library + Pre-flight Evaluation +
+> Dataset Synthesis + per-domain presets) консолидированы в один релиз.
+> Добавлены: shared storage contract, batch-runner extract, evaluator-queue DI,
+> renderer/library strangler step #1, настоящий Electron smoke-test через
+> playwright-electron. Документация очищена от устаревших snapshot-отчётов.
+
+### Added
+- **Shared storage contract** (`electron/lib/library/storage-contract.ts`):
+  единый источник истины для file-system layout (`data/library/{id}/original.{ext}`),
+  source-path резолва для batch-extract и crystallize gate (quality + fiction filter).
+  Ликвидирует расхождения между UI-batch и E2E.
+- **Batch runner extract** (`electron/lib/library/batch-runner.ts`):
+  выделил pure `runBatchExtraction(args, deps)` из `dataset-v2.ipc.ts`. IPC-handler
+  стал тонкой обёрткой; gate/cancel/error-recovery логика тестируется без `ipcMain`.
+- **Evaluator-queue DI hook** (`_setEvaluatorDepsForTests`): подменяет
+  `evaluateBook` / `pickEvaluatorModel` / fs IO в тестах без запуска LM Studio.
+- **Renderer strangler step #1** — extracted из `renderer/library.js`:
+  - `renderer/library/format.js` — pure formatters (fmtMB / fmtDate / fmtWords /
+    fmtQuality / formatBytes / cssEscape / makeDownloadId).
+  - `renderer/library/catalog-filter.js` — `filterCatalog` + `qualityClass` +
+    `statusClass` + `QUALITY_PRESETS` (frozen).
+- **Real Electron smoke-test** (`tests/smoke/electron-smoke.test.ts`):
+  через `playwright._electron.launch()`, проверяет launch + preload bridge +
+  `window.api.library` shape + переход на library route. Изолированный
+  `BIBLIARY_DATA_DIR` с preseed `preferences.json` (welcome wizard skip).
+  Запуск: `npm run test:smoke`.
+- **`BIBLIARY_DATA_DIR` env-override** в `electron/main.ts` — позволяет
+  smoke-тесту и portable-инсталлам использовать свой data-dir без
+  изменений в обычном пользовательском сценарии.
+- **+19 интеграционных тестов** для `evaluator-queue` (10 кейсов:
+  happy path, idempotent enqueue, skip non-imported, no chapters,
+  no LLM, multi-book error recovery, abort, pause/resume, bootstrap,
+  model override) и `batch-runner` (9 кейсов: gate filter,
+  fiction toggle, not-found, status updates, error recovery, cancel,
+  event sequence, runExtraction context, custom minQuality).
+- **+13 unit-тестов** для renderer-helpers (`fmtMB/fmtDate/fmtWords/...`,
+  `filterCatalog`, `qualityClass`, `statusClass`).
+- **Pre-flight pipeline robustness в E2E batch:**
+  - global `unhandledRejection`/`uncaughtException` handlers ловят
+    рассинхронизированные pdfjs worker rejections (битые PDF не убивают весь батч).
+  - per-book parse timeout 8 минут через `Promise.race` + `AbortController` --
+    зацикленный pdfjs worker не подвешивает прогон.
+
+### Changed
+- `electron/ipc/dataset-v2.ipc.ts`: handler `dataset-v2:start-batch`
+  делегирует логику в `runBatchExtraction`. Pre-existing API (`bookIds`,
+  `targetCollection`, `minQuality`, `skipFictionOrWater`,
+  `extractModel`, `judgeModel`, `scoreThreshold`) полностью сохранены.
+- `cache-db.ts`: `originalFile` больше не читается из колонки
+  (которая часто была пуста), а выводится из `original_format` через
+  `getStoredOriginalFileName(format)` -- batch источники всегда корректны.
+- E2E batch report: дефолтный quality threshold 70 (было 50);
+  exit code на user-interrupt 130; resume-логика использует общий
+  `isTerminalE2EBookStatus`.
+
+### Removed (docs purge / .servitor-trash)
+- `docs/PHASE-3-PLAN.md` — Phase 1-2-3 закрыты, ссылается на несуществующий
+  `data/CHANGELOG.md`, противоречит ROADMAP.
+- `docs/REPORT-READINESS-v2.3.md` / `docs/REPORT-AUDIT-2026-04-21.md` /
+  `docs/TECH-LEAD-REVIEW.md` / `docs/AUDIT-2026-04.md` — версия
+  в таблицах 2.3.0 vs реальная 2.7.0; ссылки на удалённый
+  `dataset.ipc.ts` (теперь `dataset-v2.ipc.ts`).
+- `docs/REPORT-USER-SKILLS.md` / `docs/UI-TESTER-REPORT.md` — снапшоты
+  старых прогонов; ссылки на несуществующие `ADR-NNN-*.md`.
+- Все 7 файлов перенесены в `.servitor-trash/2026-04-24_00-08/docs/`
+  с `_manifest.json` для restore при необходимости.
+
+### Test summary
+- `npm test` — **65/65 PASS** (было 32 до этой сессии: +13 helpers + 10 evaluator-queue + 9 batch-runner + 1 dummy adjust).
+- `npm run test:smoke` — **1/1 PASS** (Electron real launch, ~3s).
+- `tsc -p tsconfig.electron.json` + `eslint renderer/**/*.js` — clean.
+
+### Migration notes
+- Native `better-sqlite3` нужно пересобрать под Electron перед запуском
+  smoke с реальной БД: `npx @electron/rebuild --module-dir node_modules/better-sqlite3`.
+  Текущий smoke намеренно избегает SQLite-зависимых вызовов чтобы
+  работать без этого шага.
+
 ## [2.7.0-iter9] — 2026-04-23 — Multi-tenant LoRA Factory + Tests + UI
 
 ### Added

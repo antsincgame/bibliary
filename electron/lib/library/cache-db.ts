@@ -1,3 +1,4 @@
+/* Rehydrate storage metadata from the shared library contract so cache and FS stay aligned. */
 /**
  * Library Cache DB — SQLite UI index over the file-system library.
  *
@@ -16,6 +17,7 @@ import * as path from "path";
 import { parseFrontmatter } from "./md-converter.js";
 import { getLibraryRoot, resolveLibraryRoot } from "./paths.js";
 import type { BookCatalogMeta, BookStatus } from "./types.js";
+import { getStoredOriginalFileName } from "./storage-contract.js";
 
 let cachedDb: Database.Database | null = null;
 let cachedDbPath: string | null = null;
@@ -133,7 +135,12 @@ export function openCacheDb(): Database.Database {
      создаёт parent dir. Используем sync API через статический import. */
   mkdirSync(dir, { recursive: true });
   const db = new Database(wantedPath);
+  /* WAL allows concurrent reads while one writer is active. busy_timeout=5000
+     gates parallel writers from parser pool / evaluator slots: instead of
+     instant SQLITE_BUSY they spin up to 5s before bailing. Both pragmas are
+     mandatory for the parallel ingest pipeline (parser pool + evaluator slots). */
   db.pragma("journal_mode = WAL");
+  db.pragma("busy_timeout = 5000");
   db.pragma("foreign_keys = ON");
   db.exec(SCHEMA_SQL);
   applyMigrations(db);
@@ -185,6 +192,7 @@ interface BookRow {
 }
 
 function rowToMeta(row: BookRow, tags: string[]): BookCatalogMeta & { mdPath: string } {
+  const originalFormat = row.original_format as BookCatalogMeta["originalFormat"];
   return {
     id: row.id,
     sha256: row.sha256,
@@ -194,8 +202,8 @@ function rowToMeta(row: BookRow, tags: string[]): BookCatalogMeta & { mdPath: st
     authorEn: row.author_en ?? undefined,
     wordCount: row.word_count,
     chapterCount: row.chapter_count,
-    originalFile: "", /* не сохраняем -- UI не показывает */
-    originalFormat: row.original_format as BookCatalogMeta["originalFormat"],
+    originalFile: getStoredOriginalFileName(originalFormat),
+    originalFormat,
     sourceArchive: row.source_archive ?? undefined,
     domain: row.domain ?? undefined,
     tags: tags.length > 0 ? tags : undefined,
@@ -489,6 +497,66 @@ export function getBookById(id: string): (BookCatalogMeta & { mdPath: string }) 
 export function queryAllIds(filter?: Pick<CatalogQuery, "minQuality" | "hideFictionOrWater" | "statuses" | "domain" | "search">): string[] {
   const result = query({ ...filter, limit: 1000, offset: 0 });
   return result.rows.map((r) => r.id);
+}
+
+/**
+ * Cursor-based стриминг book IDs по статусу — для bootstrap evaluator queue
+ * на масштабе 50k. Cursor по `id` (стабильный, не меняется при concurrent
+ * status updates), в отличие от offset-пагинации, которая теряет строки при
+ * race с воркерами.
+ *
+ * Контракт:
+ *   - Возвращает ids в строгом порядке `id ASC`.
+ *   - `lastId=null` — первая страница; `lastId=<id>` — все после этого id.
+ *   - `nextCursor=null` означает «больше нет страниц» (вернулось < batchSize).
+ *   - НИКАКОГО хардкода `limit:1000`: caller сам решает batchSize.
+ */
+export function streamBookIdsByStatus(
+  statuses: BookStatus[],
+  batchSize: number,
+  lastId: string | null,
+): { ids: string[]; nextCursor: string | null } {
+  if (statuses.length === 0 || batchSize <= 0) return { ids: [], nextCursor: null };
+  const db = openCacheDb();
+  const placeholders = statuses.map(() => "?").join(",");
+  const params: unknown[] = [...statuses];
+  let where = `status IN (${placeholders})`;
+  if (lastId !== null) {
+    where += " AND id > ?";
+    params.push(lastId);
+  }
+  params.push(batchSize);
+  const rows = db
+    .prepare(`SELECT id FROM books WHERE ${where} ORDER BY id ASC LIMIT ?`)
+    .all(...params) as Array<{ id: string }>;
+  const ids = rows.map((r) => r.id);
+  const nextCursor = ids.length === batchSize ? ids[ids.length - 1] : null;
+  return { ids, nextCursor };
+}
+
+/**
+ * Загружает полный meta для книг по списку id. Сохраняет порядок входного
+ * списка. Используется bootstrap evaluator queue для batch reset
+ * `evaluating` → `imported` без обхода через `query()` (который имеет
+ * жёсткий cap `limit:1000`).
+ */
+export function getBooksByIds(ids: string[]): (BookCatalogMeta & { mdPath: string })[] {
+  if (ids.length === 0) return [];
+  const db = openCacheDb();
+  const placeholders = ids.map(() => "?").join(",");
+  const rows = db
+    .prepare(`SELECT * FROM books WHERE id IN (${placeholders})`)
+    .all(...ids) as BookRow[];
+  const byId = new Map<string, BookRow>(rows.map((r) => [r.id, r]));
+  const out: (BookCatalogMeta & { mdPath: string })[] = [];
+  const tagStmt = db.prepare("SELECT tag FROM book_tags WHERE book_id = ?");
+  for (const id of ids) {
+    const row = byId.get(id);
+    if (!row) continue;
+    const tags = (tagStmt.all(id) as Array<{ tag: string }>).map((t) => t.tag);
+    out.push(rowToMeta(row, tags));
+  }
+  return out;
 }
 
 // ── Rebuild from filesystem ──────────────────────────────────────────────────

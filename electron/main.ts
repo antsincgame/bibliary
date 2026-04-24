@@ -111,7 +111,13 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
-    const dataDir = path.resolve("data");
+    /* Allow tests / portable installs to point at a custom data directory.
+       Default остаётся `data/` рядом с приложением -- это не меняет
+       поведение для обычного пользователя, но даёт smoke-тесту полную
+       изоляцию (свой preferences.json, свой forge state, своя SQLite). */
+    const dataDir = process.env.BIBLIARY_DATA_DIR
+      ? path.resolve(process.env.BIBLIARY_DATA_DIR)
+      : path.resolve("data");
     await initResilienceLayer({ dataDir });
     const prefsStore = initPreferencesStore(dataDir);
     await prefsStore.ensureDefaults();

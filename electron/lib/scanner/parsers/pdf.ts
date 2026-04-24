@@ -2,6 +2,7 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import { cleanParagraph, looksLikeHeading, type BookParser, type ParseOptions, type ParseResult, type BookSection } from "./types.js";
 import { isOcrSupported, rasterisePdfPages, recognizeImageBuffer } from "../ocr/index.js";
+import { parsePdfInWorker, isWorkerPdfEnabled } from "./pdf-worker-host.js";
 
 /**
  * Жёсткие потолки памяти для PDF parser — защита от OOM на огромных книгах.
@@ -33,7 +34,44 @@ const MAX_PDF_TEXT_CHARS = 50_000_000;
  * PDF) — falls back to OS-native OCR via @napi-rs/system-ocr by rasterising
  * pages with @napi-rs/canvas. OCR is opt-in: heavy operation.
  */
+/**
+ * Public PDF parser. Dispatcher между главным потоком и worker_thread'ом.
+ *
+ * Worker используется только если:
+ *   - ENV `BIBLIARY_PARSE_WORKERS=1` (опт-ин, защита R4 из плана)
+ *   - opts.ocrEnabled !== true (OCR требует нативные модули, надёжнее в main)
+ *
+ * В worker'е:
+ *   - true SIGKILL зависшего pdfjs через `worker.terminate()`
+ *   - изоляция OOM: краш worker'а не валит main process
+ *   - state pdfjs не накапливается между книгами (свежий module load)
+ *
+ * Если worker недоступен (тесты через tsx, сборка не сделана) — silently
+ * fallback на main thread без потери функциональности.
+ */
 async function parsePdf(filePath: string, opts: ParseOptions = {}): Promise<ParseResult> {
+  if (isWorkerPdfEnabled() && opts.ocrEnabled !== true) {
+    try {
+      return await parsePdfInWorker(filePath, opts);
+    } catch (err) {
+      /* Worker не загрузился (например, dev-режим через tsx) — graceful
+         fallback. Худшее что может случиться — медленнее на одной книге. */
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/worker not available|cannot find module/i.test(msg)) {
+        return parsePdfMain(filePath, opts);
+      }
+      throw err;
+    }
+  }
+  return parsePdfMain(filePath, opts);
+}
+
+/**
+ * Main-thread implementation. Используется когда worker отключён,
+ * OCR enabled, или worker не загрузился. Также этот же код вызывается
+ * ИЗ worker'а — поэтому он чистый, без AbortSignal-привязки к main.
+ */
+export async function parsePdfMain(filePath: string, opts: ParseOptions = {}): Promise<ParseResult> {
   // OOM-guard #1: отказ до чтения, если файл превышает MAX_PDF_FILE_BYTES.
   // Это дёшево (только stat) и предотвращает 600+ MB пиковой RAM на raster decode.
   const stat = await fs.stat(filePath);

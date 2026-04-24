@@ -1,3 +1,4 @@
+/* Reuse the shared library contract so batch filtering and source paths match E2E/import. */
 /**
  * Phase 3.1 — Dataset v2 IPC.
  *
@@ -28,6 +29,7 @@ import {
 import { chatWithPolicy, PROFILE } from "../lmstudio-client.js";
 import { getPreferencesStore } from "../lib/preferences/store.js";
 import { coordinator } from "../lib/resilience/batch-coordinator.js";
+import { runBatchExtraction } from "../lib/library/batch-runner.js";
 import {
   trackExtractionJob,
   untrackExtractionJob,
@@ -418,137 +420,41 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
       assertValidCollectionName(targetCollection);
 
       const { getBookById, setBookStatus } = await import("../lib/library/cache-db.js");
-      const path = await import("path");
       const batchId = randomUUID();
-      const minQ = typeof args.minQuality === "number" ? args.minQuality : 70;
-      const skipFw = args.skipFictionOrWater !== false;
 
       /* Iter 7: один AbortController на весь батч. cancel-batch handler
-         его abort()-ит, цикл for(let i…) выходит между книгами. */
+         его abort()-ит, batch-runner выходит между книгами. */
       const batchCtrl = new AbortController();
       activeBatches.set(batchId, batchCtrl);
 
-      /* Lazy main-window resolve через broadcast(): если окно
-         пересоздаётся, новые сообщения уйдут в актуальный webContents. */
-      const emit = (event: Record<string, unknown>): void => broadcast({ batchId, ...event });
-
-      emit({
-        stage: "batch",
-        phase: "start",
-        total: args.bookIds.length,
-        minQuality: minQ,
-        targetCollection,
-      });
-
-      const skipped: Array<{ bookId: string; reason: string }> = [];
-      const eligible: Array<{ id: string; mdPath: string; title: string }> = [];
-      for (const id of args.bookIds) {
-        const meta = getBookById(id);
-        if (!meta) {
-          skipped.push({ bookId: id, reason: "not-found" });
-          continue;
-        }
-        if (meta.status !== "evaluated") {
-          skipped.push({ bookId: id, reason: `status=${meta.status} (must be evaluated)` });
-          continue;
-        }
-        if (typeof meta.qualityScore !== "number") {
-          skipped.push({ bookId: id, reason: "no quality_score" });
-          continue;
-        }
-        if (meta.qualityScore < minQ) {
-          skipped.push({ bookId: id, reason: `qualityScore=${meta.qualityScore} < ${minQ}` });
-          continue;
-        }
-        if (skipFw && meta.isFictionOrWater === true) {
-          skipped.push({ bookId: id, reason: "is_fiction_or_water" });
-          continue;
-        }
-        /* Source path для extraction: bookHandler ждёт реальный файл (PDF/EPUB).
-           Используем originalFile из директории book.md. */
-        const bookDir = path.dirname(meta.mdPath);
-        const sourcePath = path.join(bookDir, meta.originalFile);
-        eligible.push({ id, mdPath: sourcePath, title: meta.title });
-      }
-
-      emit({ stage: "batch", phase: "filtered", eligible: eligible.length, skipped: skipped.length });
-
-      const results: Array<{
-        bookId: string;
-        bookTitle: string;
-        totalChapters: number;
-        processedChapters: number;
-        accepted: number;
-        rejected: number;
-      }> = [];
-
-      for (let i = 0; i < eligible.length; i++) {
-        if (batchCtrl.signal.aborted) {
-          /* Все оставшиеся книги -- skipped с причиной "batch-cancelled".
-             Это важнее, чем continue: иначе UI не поймёт почему счётчик
-             "X / total" застрял посередине. */
-          for (let j = i; j < eligible.length; j++) {
-            skipped.push({ bookId: eligible[j].id, reason: "batch-cancelled" });
-          }
-          break;
-        }
-        const book = eligible[i];
-        /* Persist status BEFORE emit so renderer.refresh() сразу видит
-           актуальное состояние, даже если книгу открыли в другом окне. */
-        setBookStatus(book.id, "crystallizing");
-        emit({ stage: "batch", phase: "book-start", bookIndex: i + 1, bookTotal: eligible.length, bookId: book.id, bookTitle: book.title });
-        /* Per-book emitter: оборачиваем broadcast и подмешиваем
-           batchId/bookIndex -- renderer видит, к какой книге
-           батча относится каждое чанк/extract событие. */
-        const perBookEmit = (event: Record<string, unknown>): void =>
-          broadcast({ batchId, bookIndex: i + 1, bookTotal: eligible.length, bookId: book.id, ...event });
-        try {
-          const r = await runExtraction(
-            {
-              bookSourcePath: book.mdPath,
-              extractModel: args.extractModel,
-              judgeModel: args.judgeModel,
-              scoreThreshold: args.scoreThreshold,
-              targetCollection,
+      try {
+        const summary = await runBatchExtraction(
+          { ...args, targetCollection, batchId },
+          {
+            getBookById,
+            setBookStatus,
+            cancelSignal: batchCtrl.signal,
+            emit: (event) => broadcast({ batchId, ...event }),
+            runExtraction: async (extractionArgs, ctx) => {
+              /* Per-book emitter подмешивает bookIndex/bookId через
+                 broadcast: каждое внутреннее extract/chunker/judge
+                 событие летит с правильным bookId, не теряется. */
+              const perBookEmit = (event: Record<string, unknown>): void =>
+                broadcast({
+                  batchId,
+                  bookIndex: ctx.bookIndex,
+                  bookTotal: ctx.bookTotal,
+                  bookId: ctx.bookId,
+                  ...event,
+                });
+              return runExtraction(extractionArgs, perBookEmit);
             },
-            perBookEmit,
-          );
-          results.push({
-            bookId: book.id,
-            bookTitle: r.bookTitle,
-            totalChapters: r.totalChapters,
-            processedChapters: r.processedChapters,
-            accepted: r.totalConcepts.accepted,
-            rejected: r.totalConcepts.rejected,
-          });
-          /* Stamp final state with concept counters: UI может показать
-             accepted/extracted в карточке книги без отдельного запроса. */
-          setBookStatus(book.id, "indexed", {
-            conceptsAccepted: r.totalConcepts.accepted,
-            conceptsExtracted: r.totalConcepts.extractedRaw,
-          });
-          emit({ stage: "batch", phase: "book-done", bookIndex: i + 1, bookId: book.id, accepted: r.totalConcepts.accepted });
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          /* "indexed" не подходит для частично обработанной/прерванной
-             книги -- ставим failed, чтобы при ребаче её можно было повторить. */
-          setBookStatus(book.id, "failed");
-          skipped.push({ bookId: book.id, reason: `extraction-failed: ${msg}` });
-          emit({ stage: "batch", phase: "book-failed", bookIndex: i + 1, bookId: book.id, error: msg });
-        }
+          },
+        );
+        return summary;
+      } finally {
+        activeBatches.delete(batchId);
       }
-
-      activeBatches.delete(batchId);
-      const cancelled = batchCtrl.signal.aborted;
-      emit({
-        stage: "batch",
-        phase: "done",
-        processed: results.length,
-        skipped: skipped.length,
-        cancelled,
-      });
-
-      return { batchId, total: args.bookIds.length, processed: results.length, skipped, results };
     }
   );
 

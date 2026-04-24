@@ -1,3 +1,4 @@
+/* Reuse the shared library contract so E2E storage and gating match production batch logic. */
 /**
  * E2E batch-прогон ВСЕЙ библиотеки книг через полный пайплайн Bibliary.
  *
@@ -22,9 +23,10 @@
  *   --score-threshold X Judge threshold (default 0.6)
  *
  * Exit codes:
- *   0  завершён без фаталов (могут быть per-book errors — см. errors.md)
- *   1  пользователь прервал (Ctrl+C) — state сохранён, можно продолжить
- *   2  fatal pre-flight (LM Studio/Qdrant offline, нет Downloads, нет моделей)
+ *   0    завершён без overall=FAIL книг
+ *   2    fatal pre-flight (LM Studio/Qdrant offline, нет Downloads, нет моделей)
+ *   3+   число книг с overall=FAIL
+ *   130  пользователь прервал (Ctrl+C) — state сохранён, можно продолжить
  */
 
 import * as os from "os";
@@ -45,6 +47,11 @@ import type { BookCatalogMeta } from "../electron/lib/library/types.js";
 import { upsertBook, setBookStatus, getKnownSha256s } from "../electron/lib/library/cache-db.js";
 import { buildSurrogate } from "../electron/lib/library/surrogate-builder.js";
 import { evaluateBook, pickEvaluatorModel, type BookEvaluation } from "../electron/lib/library/book-evaluator.js";
+import {
+  gateE2EBookForCrystallize,
+  isTerminalE2EBookStatus,
+  resolveStoredBookPaths,
+} from "../electron/lib/library/storage-contract.js";
 import {
   chunkChapter,
   extractChapterConcepts,
@@ -115,7 +122,7 @@ PIPELINE OPTIONS:
 EVALUATION:
   --skip-evaluate            Skip pre-flight LLM quality evaluation
   --evaluator-model <id>     Override evaluator model id (default: auto-pick)
-  --quality-threshold <n>    Min quality_score for crystallization (default: 50)
+  --quality-threshold <n>    Min quality_score for crystallization (default: 70)
 
 CRYSTALLIZATION:
   --skip-crystallize         Parse + evaluate only, no Qdrant writes
@@ -124,7 +131,7 @@ CRYSTALLIZATION:
   --prompt <auto|mechanicus|cognitive>  Concept-extraction prompt key
 
 LIBRARY:
-  --library-root <dir>       Where to write data/library/{slug}/ (default: ./data/library)
+  --library-root <dir>       Where to write data/library/{bookId}/ (default: ./data/library)
   --skip-library             Don't write to library/ or SQLite (dry-run)
 
 CONTROL:
@@ -169,7 +176,7 @@ function parseArgs(argv: string[]): CliArgs {
     skipLibrary: argv.includes("--skip-library"),
     includePattern,
     targetCollection: get("--target-collection") ?? ACCEPTED_COLLECTION,
-    qualityThreshold: num("--quality-threshold", 50) ?? 50,
+    qualityThreshold: num("--quality-threshold", 70) ?? 70,
     skipEvaluate: argv.includes("--skip-evaluate"),
     skipCrystallize: argv.includes("--skip-crystallize"),
     evaluatorModel: get("--evaluator-model"),
@@ -602,9 +609,19 @@ async function processBook(
     return result;
   }
 
+  const storedPaths = resolveStoredBookPaths(
+    args.libraryRoot,
+    converted.meta.id,
+    converted.meta.originalFormat,
+  );
+  const libraryMeta: BookCatalogMeta = {
+    ...converted.meta,
+    originalFile: storedPaths.originalFile,
+  };
+
   /* Запись в data/library + SQLite (даже в sukhom прогоне -- skipLibrary=true пропускает).
      SHA-256 дедуп: если книга с таким контентом уже импортирована -- помечаем
-     как duplicate, не перезаписываем (book.md уже на диске под старым slug). */
+     как duplicate, не перезаписываем существующий library/{bookId}/. */
   let mdPath: string | null = null;
   let isDuplicate = false;
   if (!args.skipLibrary) {
@@ -615,15 +632,13 @@ async function processBook(
       result.bookState.duplicateOf = dupId;
       pushEv("library.duplicate", { ofId: dupId, sha256: converted.meta.sha256 });
     } else {
-      const slug = slugify(book.fileName);
-      const bookDir = path.join(args.libraryRoot, slug);
       try {
-        await fs.mkdir(bookDir, { recursive: true });
-        const originalDest = path.join(bookDir, `original${path.extname(book.fileName)}`);
+        await fs.mkdir(storedPaths.bookDir, { recursive: true });
+        const originalDest = storedPaths.originalPath;
         try { await fs.access(originalDest); } catch { await fs.copyFile(book.absPath, originalDest); }
-        mdPath = path.join(bookDir, "book.md");
-        await fs.writeFile(mdPath, converted.markdown, "utf8");
-        upsertBook(converted.meta, mdPath);
+        mdPath = storedPaths.mdPath;
+        await fs.writeFile(mdPath, replaceFrontmatter(converted.markdown, libraryMeta), "utf8");
+        upsertBook(libraryMeta, mdPath);
       } catch (e) {
         pushErr("unknown", `library import failed: ${e instanceof Error ? e.message : String(e)}`);
         /* Не валим тест -- продолжаем, но persist-stage будет FAIL. */
@@ -675,7 +690,7 @@ async function processBook(
         /* Перезаписываем book.md с обогащённым frontmatter + reasoning блок. */
         if (!args.skipLibrary && mdPath) {
           const enrichedMeta: BookCatalogMeta = {
-            ...converted.meta,
+            ...libraryMeta,
             titleEn: evaluation.title_en,
             authorEn: evaluation.author_en,
             domain: evaluation.domain,
@@ -715,21 +730,16 @@ async function processBook(
   // ── Stage 3: GUARD ──────────────────────────────────────────────────────
   /* Без оценки или с низким quality_score crystallize пропускается -- НЕ
      тратим LLM на мусор. Точно ту же логику использует прод-batch handler. */
-  let canCrystallize = !args.skipCrystallize && stages.parse === "PASS";
-  if (canCrystallize && !args.skipEvaluate) {
-    if (!evaluation) {
-      canCrystallize = false;
-      result.bookState.crystallizeSkippedReason = "no-evaluation";
-    } else if (evaluation.quality_score < args.qualityThreshold) {
-      canCrystallize = false;
-      result.bookState.crystallizeSkippedReason = `quality ${evaluation.quality_score} < ${args.qualityThreshold}`;
-    } else if (evaluation.is_fiction_or_water) {
-      canCrystallize = false;
-      result.bookState.crystallizeSkippedReason = "fiction-or-water";
-    }
-  }
-  if (args.skipCrystallize) {
-    result.bookState.crystallizeSkippedReason = "crystallize-disabled";
+  const gate = gateE2EBookForCrystallize({
+    parseVerdict: stages.parse,
+    skipEvaluate: args.skipEvaluate,
+    skipCrystallize: args.skipCrystallize,
+    minQuality: args.qualityThreshold,
+    evaluation,
+  });
+  const canCrystallize = gate.canCrystallize;
+  if (!canCrystallize && gate.reason) {
+    result.bookState.crystallizeSkippedReason = gate.reason;
   }
 
   // ── Stage 4: CRYSTALLIZE ────────────────────────────────────────────────
@@ -857,7 +867,7 @@ async function processBook(
         const tagSet = new Set<string>();
         for (const c of result.accepted) for (const t of c.tags ?? []) tagSet.add(t);
         const finalMeta: BookCatalogMeta = {
-          ...converted.meta,
+          ...libraryMeta,
           titleEn: evaluation?.title_en,
           authorEn: evaluation?.author_en,
           domain: pickPrimaryDomainFromAccepted(result.accepted) ?? evaluation?.domain,
@@ -1167,8 +1177,8 @@ async function main(): Promise<void> {
   // ── Pre-flight ────────────────────────────────────────────────────────────
   console.log(`${COLOR.cyan}[pre-flight]${COLOR.reset} probing services...`);
   const lm = await probeLmStudio();
-  /* Qdrant нужен только если будем кристаллизовать. */
-  if (!args.skipCrystallize) await probeQdrant();
+  /* Qdrant нужен только если реально будем кристаллизовать после evaluate. */
+  if (!args.skipCrystallize && !args.skipEvaluate) await probeQdrant();
   await probeDownloads(args.downloadsDir);
 
   // Pick models (extractor + judge — same caskade as e2e-full-mvp)
@@ -1303,10 +1313,10 @@ async function main(): Promise<void> {
     /* Resume logic: skip books already reaching a terminal-ish state in prior run.
        `evaluated` counts as terminal when --skip-crystallize=true, because no
        further stage will run for it. Same for `imported` when --skip-evaluate. */
-    const terminalStates: BookStatus[] = ["done", "failed", "duplicate", "indexed"];
-    if (args.skipCrystallize) terminalStates.push("evaluated");
-    if (args.skipEvaluate && args.skipCrystallize) terminalStates.push("imported");
-    if (prev && terminalStates.includes(prev.status) && !args.restart) {
+    if (prev && isTerminalE2EBookStatus(prev.status, {
+      skipEvaluate: args.skipEvaluate,
+      skipCrystallize: args.skipCrystallize,
+    }) && !args.restart) {
       console.log(
         `[${i + 1}/${books.length}] ${COLOR.dim}skip ${book.fileName} (${prev.status} previously)${COLOR.reset}`,
       );
@@ -1405,7 +1415,8 @@ async function main(): Promise<void> {
   const tests = {
     pass: allBooks.filter((b) => b.stages?.overall === "PASS").length,
     fail: allBooks.filter((b) => b.stages?.overall === "FAIL").length,
-    skip: allBooks.filter((b) => !b.stages || b.stages.overall === "SKIP").length,
+    skip: allBooks.filter((b) => !b.stages).length,
+    duplicate: allBooks.filter((b) => b.status === "duplicate").length,
   };
   const stageStats = {
     parse: { pass: 0, fail: 0, skip: 0 },
@@ -1425,6 +1436,9 @@ async function main(): Promise<void> {
 
   console.log(`\n${COLOR.bold}=== TEST SUMMARY ===${COLOR.reset}`);
   console.log(`Books: ${allBooks.length}  ${COLOR.green}✓ ${tests.pass} pass${COLOR.reset}  ${COLOR.red}✗ ${tests.fail} fail${COLOR.reset}  ${COLOR.dim}⊘ ${tests.skip} skip${COLOR.reset}`);
+  if (tests.duplicate > 0) {
+    console.log(`Duplicates skipped    : ${COLOR.dim}${tests.duplicate}${COLOR.reset}`);
+  }
   for (const [stage, s] of Object.entries(stageStats)) {
     const total = s.pass + s.fail + s.skip;
     console.log(`  ${stage.padEnd(12)} ${COLOR.green}✓ ${s.pass}${COLOR.reset}  ${COLOR.red}✗ ${s.fail}${COLOR.reset}  ${COLOR.dim}⊘ ${s.skip}${COLOR.reset}  / ${total}`);
@@ -1440,7 +1454,7 @@ async function main(): Promise<void> {
   console.log(`  - concepts/    (accepted concepts JSON)`);
   console.log(`  - raw-events.jsonl (full event stream)\n`);
 
-  if (interrupted) process.exit(1);
+  if (interrupted) process.exit(130);
   /* Iter 7: exit code = number of failed tests (0 = всё зелёное). */
   process.exit(tests.fail);
 }

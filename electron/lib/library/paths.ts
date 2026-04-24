@@ -1,3 +1,4 @@
+/* Keep library root resolution focused on root/dir concerns only. */
 /**
  * Library paths — единое место получения корня библиотеки.
  *
