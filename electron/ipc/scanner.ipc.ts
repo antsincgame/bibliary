@@ -99,8 +99,8 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
       title: "Add books",
       properties: ["openFile", "multiSelections"],
       filters: [
-        { name: "Books & Images", extensions: ["pdf", "epub", "fb2", "docx", "txt", "png", "jpg", "jpeg", "bmp", "tif", "tiff", "webp"] },
-        { name: "Books", extensions: ["pdf", "epub", "fb2", "docx", "txt"] },
+        { name: "Books & Images", extensions: ["pdf", "epub", "fb2", "docx", "txt", "djvu", "png", "jpg", "jpeg", "bmp", "tif", "tiff", "webp"] },
+        { name: "Books", extensions: ["pdf", "epub", "fb2", "docx", "txt", "djvu"] },
         { name: "Images (OCR)", extensions: ["png", "jpg", "jpeg", "bmp", "tif", "tiff", "webp"] },
         { name: "All files", extensions: ["*"] },
       ],

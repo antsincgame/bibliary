@@ -37,6 +37,7 @@ export type SupportedExt =
   | "fb2"
   | "docx"
   | "txt"
+  | "djvu"
   | "png"
   | "jpg"
   | "jpeg"

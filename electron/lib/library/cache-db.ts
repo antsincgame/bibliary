@@ -493,12 +493,6 @@ export function getBookById(id: string): (BookCatalogMeta & { mdPath: string }) 
   return rowToMeta(row, tags);
 }
 
-/** Возвращает список id всех книг -- для batch-операций. */
-export function queryAllIds(filter?: Pick<CatalogQuery, "minQuality" | "hideFictionOrWater" | "statuses" | "domain" | "search">): string[] {
-  const result = query({ ...filter, limit: 1000, offset: 0 });
-  return result.rows.map((r) => r.id);
-}
-
 /**
  * Cursor-based стриминг book IDs по статусу — для bootstrap evaluator queue
  * на масштабе 50k. Cursor по `id` (стабильный, не меняется при concurrent

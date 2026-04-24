@@ -89,7 +89,7 @@ export async function cancelAll(root, deps) {
   STATE.queue.length = 0;
   for (const [, id] of STATE.activeIngests) {
     if (id && id !== "pending") {
-      try { await window.api.scanner.cancelIngest(id); } catch { /* ignore */ }
+      try { await window.api.scanner.cancelIngest(id); } catch (_e) { console.warn("[queue] cancelIngest failed:", _e); }
     }
   }
   STATE.activeIngests.clear();

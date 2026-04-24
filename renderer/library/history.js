@@ -12,7 +12,8 @@ export async function loadHistory() {
     STATE.history = await window.api.scanner.listHistory();
     STATE.knownPaths.clear();
     for (const g of STATE.history) for (const b of g.books) STATE.knownPaths.add(b.bookSourcePath);
-  } catch {
+  } catch (_e) {
+    console.warn("[history] loadHistory failed:", _e);
     STATE.history = [];
   }
 }

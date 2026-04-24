@@ -85,7 +85,7 @@ export async function refreshEvaluatorState(root) {
   /** @type {any} */
   let status = null;
   try { status = await window.api.library.evaluatorStatus(); }
-  catch { return; }
+  catch (_e) { console.warn("[evaluator] status fetch failed:", _e); return; }
   if (!status) return;
 
   const queueLength = Number(status.queueLength ?? 0);
@@ -122,6 +122,6 @@ export async function refreshEvaluatorState(root) {
     try {
       const n = await window.api.library.evaluatorGetSlots();
       if (typeof n === "number" && n >= 1) slotsInput.value = String(n);
-    } catch { /* ignore */ }
+    } catch (_e) { /* tolerate: slots read non-critical */ }
   }
 }

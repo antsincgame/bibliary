@@ -72,23 +72,3 @@ export function neonSpinner() {
   return el("div", { class: "glow-spinner" });
 }
 
-/**
- * Neon-styled primary button.
- * @param {string} text
- * @param {function} onclick
- * @param {object} [opts]
- * @param {"primary"|"secondary"|"accent"} [opts.variant]
- * @param {boolean} [opts.disabled]
- * @returns {HTMLElement}
- */
-export function neonBtn(text, onclick, { variant = "primary", disabled = false } = {}) {
-  const cls = variant === "primary" ? "neon-btn neon-btn-primary"
-    : variant === "accent" ? "neon-btn neon-btn-accent"
-      : "neon-btn";
-  return el("button", {
-    class: cls,
-    type: "button",
-    disabled: disabled ? "true" : undefined,
-    onclick,
-  }, text);
-}

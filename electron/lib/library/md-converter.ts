@@ -19,17 +19,16 @@ import { parseBook, detectExt, type SupportedExt } from "../scanner/parsers/inde
 import { isOcrSupported } from "../scanner/ocr/index.js";
 import { extractBookImages } from "./image-extractors.js";
 import { computeFileSha256, bookIdFromSha } from "./sha-stream.js";
-import type {
-  BookCatalogMeta,
-  BookStatus,
-  ConvertedBook,
-  ConvertedChapter,
-  ConvertOptions,
-  ImageRef,
-  SupportedBookFormat,
+import {
+  SUPPORTED_BOOK_EXTS,
+  type BookCatalogMeta,
+  type BookStatus,
+  type ConvertedBook,
+  type ConvertedChapter,
+  type ConvertOptions,
+  type ImageRef,
+  type SupportedBookFormat,
 } from "./types.js";
-
-const SUPPORTED_FORMATS: ReadonlySet<SupportedExt> = new Set(["pdf", "epub", "fb2", "txt", "docx"]);
 
 function countWords(text: string): number {
   return text.split(/\s+/).filter(Boolean).length;
@@ -324,7 +323,7 @@ export async function convertBookToMarkdown(
   opts: ConvertOptions = {},
 ): Promise<ConvertedBook> {
   const ext = detectExt(absFilePath);
-  if (!ext || !SUPPORTED_FORMATS.has(ext)) {
+  if (!ext || !SUPPORTED_BOOK_EXTS.has(ext as SupportedBookFormat)) {
     throw new Error(`unsupported book format: ${path.extname(absFilePath)}`);
   }
   const format = ext as SupportedBookFormat;
@@ -337,7 +336,7 @@ export async function convertBookToMarkdown(
 
   /* Stage 1 -- text + structure через существующий парсер. */
   let parsed = await parseBook(absFilePath, { ocrEnabled: opts.ocrEnabled === true, signal: opts.signal });
-  if (parsed.sections.length === 0 && opts.ocrEnabled !== false && isOcrSupported() && format === "pdf") {
+  if (parsed.sections.length === 0 && opts.ocrEnabled !== false && isOcrSupported() && (format === "pdf" || format === "djvu")) {
     parsed = await parseBook(absFilePath, { ocrEnabled: true, ocrAccuracy: "accurate", ocrPdfDpi: 200, signal: opts.signal });
   }
 

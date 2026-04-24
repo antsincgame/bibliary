@@ -67,7 +67,7 @@ import { unregisterFromNearDup, resetNearDupCache } from "../lib/library/near-du
 import type { BookCatalogMeta, BookStatus } from "../lib/library/types.js";
 
 const SUPPORTED_FILE_FILTERS = [
-  { name: "Books", extensions: ["pdf", "epub", "fb2", "docx", "txt"] },
+  { name: "Books", extensions: ["pdf", "epub", "fb2", "docx", "txt", "djvu"] },
   { name: "Archives (will be unpacked)", extensions: ["zip", "cbz"] },
   { name: "All files", extensions: ["*"] },
 ];

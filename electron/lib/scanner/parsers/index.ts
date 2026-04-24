@@ -7,6 +7,7 @@ import { fb2Parser } from "./fb2.js";
 import { docxParser } from "./docx.js";
 import { epubParser } from "./epub.js";
 import { imageParser } from "./image.js";
+import { djvuParser } from "./djvu.js";
 
 export type { BookParser, ParseOptions, ParseResult, BookSection, BookMetadata, SupportedExt } from "./types.js";
 
@@ -16,6 +17,7 @@ const PARSERS: Record<SupportedExt, BookParser> = {
   fb2: fb2Parser,
   docx: docxParser,
   txt: txtParser,
+  djvu: djvuParser,
   png: imageParser,
   jpg: imageParser,
   jpeg: imageParser,

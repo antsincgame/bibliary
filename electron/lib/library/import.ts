@@ -22,7 +22,7 @@ import { convertBookToMarkdown, replaceFrontmatter } from "./md-converter.js";
 import { getLibraryRoot } from "./paths.js";
 import { upsertBook, getBookById, getKnownSha256s } from "./cache-db.js";
 import { extractArchive, isArchive, cleanupExtractedDir } from "./archive-extractor.js";
-import type { BookCatalogMeta } from "./types.js";
+import { SUPPORTED_BOOK_EXTS, type BookCatalogMeta } from "./types.js";
 import { resolveStoredBookPaths } from "./storage-contract.js";
 import { computeFileSha256 } from "./sha-stream.js";
 import { findNearDuplicate, registerForNearDup } from "./near-dup-detector.js";
@@ -30,8 +30,6 @@ import { walkSupportedFiles } from "./file-walker.js";
 import { runWithConcurrency } from "./async-pool.js";
 import { ArchiveTracker } from "./archive-tracker.js";
 import * as os from "os";
-
-const SUPPORTED_BOOK_EXTS: ReadonlySet<SupportedExt> = new Set(["pdf", "epub", "fb2", "txt", "docx"]);
 
 export interface ImportResult {
   /** "added" -- новая книга. "duplicate" -- уже была (SHA совпал). "skipped" -- неподдерживаемый формат. "failed" -- ошибка парсинга. */
@@ -147,7 +145,7 @@ export async function importBookFromFile(
 ): Promise<ImportResult> {
   const warnings: string[] = [];
   const ext = detectExt(absPath);
-  if (!ext || !SUPPORTED_BOOK_EXTS.has(ext)) {
+  if (!ext || !(SUPPORTED_BOOK_EXTS as ReadonlySet<string>).has(ext)) {
     return { outcome: "skipped", warnings: [`import: unsupported format ${path.extname(absPath)}`], sourceArchive: opts.sourceArchive };
   }
 

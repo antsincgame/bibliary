@@ -287,6 +287,7 @@ export async function extractPdfCover(
   const maxBytes = opts?.maxImageBytes ?? DEFAULT_MAX_IMAGE_BYTES;
   const targetWidth = opts?.targetWidth ?? 600;
 
+  let doc: Awaited<ReturnType<typeof import("pdfjs-dist/legacy/build/pdf.mjs").getDocument>["promise"]> | null = null;
   try {
     if (opts?.signal?.aborted) return { images: [], warnings: ["pdf-cover: aborted"] };
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -298,7 +299,6 @@ export async function extractPdfCover(
       disableFontFace: true,
       useSystemFonts: false,
     });
-    let doc: Awaited<typeof loadingTask.promise>;
     try {
       doc = await loadingTask.promise;
     } catch (err) {
@@ -307,7 +307,6 @@ export async function extractPdfCover(
     }
 
     if (doc.numPages === 0) {
-      await doc.destroy();
       return { images: [], warnings: ["pdf-cover: 0 pages"] };
     }
 
@@ -327,13 +326,10 @@ export async function extractPdfCover(
     await page.render({
       canvasContext: ctx2d as unknown as CanvasRenderingContext2D,
       viewport,
-      /* legacy build требует canvasFactory; @napi-rs/canvas совместим with
-         default через manual context wiring. */
     } as Parameters<typeof page.render>[0]).promise;
 
     const png = canvas.toBuffer("image/png");
     await page.cleanup();
-    await doc.destroy();
 
     if (png.length > maxBytes) {
       return { images: [], warnings: [`pdf-cover: rendered ${png.length} bytes > ${maxBytes} cap`] };
@@ -344,6 +340,8 @@ export async function extractPdfCover(
     };
   } catch (e) {
     return { images: [], warnings: [`pdf-cover: render failed -- ${e instanceof Error ? e.message : String(e)}`] };
+  } finally {
+    await doc?.destroy().catch(() => undefined);
   }
 }
 
@@ -355,7 +353,7 @@ export async function extractPdfCover(
  */
 export async function extractBookImages(
   filePath: string,
-  format: "pdf" | "epub" | "fb2" | "txt" | "docx",
+  format: "pdf" | "epub" | "fb2" | "txt" | "docx" | "djvu",
   opts?: { maxImageBytes?: number; maxImagesPerBook?: number; signal?: AbortSignal },
 ): Promise<{ images: ImageRef[]; warnings: string[] }> {
   switch (format) {
@@ -367,6 +365,7 @@ export async function extractBookImages(
       return extractFb2Images(filePath, opts);
     case "pdf":
       return extractPdfCover(filePath, { maxImageBytes: opts?.maxImageBytes, signal: opts?.signal });
+    case "djvu":
     case "txt":
       return { images: [], warnings: [] };
     default:

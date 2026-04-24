@@ -152,7 +152,8 @@ async function loadCollections() {
     if (!STATE.collection || !cols.includes(STATE.collection)) {
       STATE.collection = cols[0] || "library";
     }
-  } catch {
+  } catch (_e) {
+    console.warn("[library] loadCollections failed:", _e);
     STATE.collections = [];
   }
 }
@@ -163,13 +164,13 @@ async function loadPrefs() {
     STATE.prefs.queueParallelism = Number(prefs.ingestParallelism) || 3;
     STATE.prefs.ocrEnabled = Boolean(prefs.ocrEnabled);
     STATE.prefs.groupBy = String(prefs.libraryGroupBy || "none");
-  } catch { /* defaults already set */ }
+  } catch (_e) { console.warn("[library] loadPrefs failed:", _e); }
   try {
     const support = await window.api.scanner.ocrSupport();
     STATE.prefs.ocrSupported = Boolean(support?.supported);
     STATE.prefs.ocrPlatform = String(support?.platform || "unknown");
     STATE.prefs.ocrReason = String(support?.reason || "");
-  } catch { /* leave defaults */ }
+  } catch (_e) { console.warn("[library] ocrSupport check failed:", _e); }
 }
 
 async function probeFolder(root, listEl) {
@@ -278,7 +279,7 @@ export function buildGroupControl(root, listEl) {
   select.addEventListener("change", () => {
     STATE.prefs.groupBy = /** @type {import("./state.js").GroupMode} */ (select.value);
     renderBooks(listEl, root);
-    try { window.api.preferences.set("libraryGroupBy", select.value); } catch { /* ignore */ }
+    try { window.api.preferences.set({ libraryGroupBy: select.value }); } catch (_e) { /* tolerate: pref save non-critical */ }
   });
   return el("label", { class: "lib-group-label" }, [t("library.group.label.control") + " ", select]);
 }

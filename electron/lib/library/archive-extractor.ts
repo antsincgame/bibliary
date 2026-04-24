@@ -16,9 +16,8 @@ import * as path from "path";
 import * as os from "os";
 import { randomUUID } from "crypto";
 import JSZip from "jszip";
-import { detectExt, type SupportedExt } from "../scanner/parsers/index.js";
-
-const SUPPORTED_BOOK_EXTS: ReadonlySet<SupportedExt> = new Set(["pdf", "epub", "fb2", "txt", "docx"]);
+import { detectExt } from "../scanner/parsers/index.js";
+import { SUPPORTED_BOOK_EXTS } from "./types.js";
 const ARCHIVE_EXTS = new Set([".zip", ".cbz", ".rar", ".cbr", ".7z"]);
 
 /**
@@ -166,7 +165,7 @@ async function extractZipLike(absPath: string, tempDir: string, warnings: string
 
   for (const entry of fileEntries) {
     const ext = detectExt(entry.name);
-    if (!ext || !SUPPORTED_BOOK_EXTS.has(ext)) continue;
+    if (!ext || !(SUPPORTED_BOOK_EXTS as ReadonlySet<string>).has(ext)) continue;
     let safeName = sanitizeEntryName(entry.name);
     /* Гарантируем уникальность имени в temp-директории. */
     let suffix = 0;

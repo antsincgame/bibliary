@@ -39,7 +39,7 @@ export function buildImportPane(deps) {
     onclick: async () => {
       if (IMPORT_STATE.importId) {
         try { await window.api.library.cancelImport(IMPORT_STATE.importId); }
-        catch { /* ignore */ }
+        catch (_e) { console.warn("[import] cancelImport failed:", _e); }
       }
     },
   }, t("library.import.btn.cancel"));
@@ -90,7 +90,7 @@ async function importFromFolder(deps) {
   if (IMPORT_STATE.busy) return;
   /** @type {string|null} */
   let folderPath = null;
-  try { folderPath = await window.api.library.pickFolder(); } catch { folderPath = null; }
+  try { folderPath = await window.api.library.pickFolder(); } catch (_e) { console.warn("[import] pickFolder failed:", _e); folderPath = null; }
   if (!folderPath) return;
   await runImport(async () =>
     window.api.library.importFolder({
@@ -109,7 +109,7 @@ async function importFromFiles(deps) {
   try {
     const r = /** @type {any} */ (await window.api.library.pickFiles());
     paths = Array.isArray(r) ? r : (r?.paths ?? []);
-  } catch { paths = []; }
+  } catch (_e) { console.warn("[import] probeFiles failed:", _e); paths = []; }
   if (paths.length === 0) return;
   await runImport(async () =>
     window.api.library.importFiles({
@@ -164,7 +164,7 @@ async function runImport(invoke, deps) {
     });
   } finally {
     if (typeof unsubscribeProgress === "function") {
-      try { unsubscribeProgress(); } catch { /* ignore */ }
+      try { unsubscribeProgress(); } catch (_e) { /* tolerate: listener cleanup */ }
     }
     IMPORT_STATE.busy = false;
     IMPORT_STATE.importId = null;

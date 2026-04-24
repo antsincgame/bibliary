@@ -25,7 +25,12 @@ export type BookStatus =
   | "unsupported";  // парсер не смог собрать ни одной главы
 
 /** Поддерживаемые форматы (lean: только основные книжные). */
-export type SupportedBookFormat = "pdf" | "epub" | "fb2" | "txt" | "docx";
+export type SupportedBookFormat = "pdf" | "epub" | "fb2" | "txt" | "docx" | "djvu";
+
+/** Canonical set — single source of truth for book extensions across the pipeline. */
+export const SUPPORTED_BOOK_EXTS: ReadonlySet<SupportedBookFormat> = new Set([
+  "pdf", "epub", "fb2", "txt", "docx", "djvu",
+]);
 
 /** Метаданные книги: попадают и в YAML frontmatter, и в SQLite-кэш. */
 export interface BookCatalogMeta {
