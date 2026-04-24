@@ -78,6 +78,9 @@ export const PreferencesSchema = z.object({
   ocrLanguages: z.array(z.string().min(2).max(10)).max(8).default([]),
   ocrAccuracy: z.enum(["fast", "accurate"]).default("accurate"),
   ocrPdfDpi: z.number().int().min(100).max(400).default(200),
+  djvuOcrProvider: z.enum(["system", "vision-llm", "none"]).default("system"),
+  djvuRenderDpi: z.number().int().min(100).max(600).default(200),
+  openrouterApiKey: z.string().max(512).default(""),
 
   // -- Library UI --
   libraryGroupBy: z.enum(["none", "ext", "status", "folder"]).default("none"),

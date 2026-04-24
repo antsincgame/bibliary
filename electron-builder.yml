@@ -11,6 +11,11 @@ files:
   - renderer/**/*
   - node_modules/**/*
   - package.json
+extraResources:
+  - from: vendor/djvulibre/win32-x64
+    to: vendor/djvulibre/win32-x64
+    filter:
+      - "**/*"
 win:
   target:
     - nsis

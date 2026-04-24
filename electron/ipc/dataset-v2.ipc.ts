@@ -241,6 +241,9 @@ async function runExtraction(
       ocrLanguages: prefs.ocrLanguages,
       ocrAccuracy: prefs.ocrAccuracy,
       ocrPdfDpi: prefs.ocrPdfDpi,
+      djvuOcrProvider: prefs.djvuOcrProvider,
+      djvuRenderDpi: prefs.djvuRenderDpi,
+      openrouterApiKey: prefs.openrouterApiKey,
       signal: ctrl.signal,
     });
     const totalChapters = parsed.sections.length;

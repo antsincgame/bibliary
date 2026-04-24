@@ -124,6 +124,9 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
       ocrLanguages: prefs.ocrLanguages,
       ocrAccuracy: prefs.ocrAccuracy,
       ocrPdfDpi: prefs.ocrPdfDpi,
+      djvuOcrProvider: prefs.djvuOcrProvider,
+      djvuRenderDpi: prefs.djvuRenderDpi,
+      openrouterApiKey: prefs.openrouterApiKey,
     });
     const chunks = chunkBook(parsed, filePath);
     return {
@@ -185,6 +188,9 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
             ocrLanguages: prefs.ocrLanguages,
             ocrAccuracy: prefs.ocrAccuracy,
             ocrPdfDpi: prefs.ocrPdfDpi,
+            djvuOcrProvider: prefs.djvuOcrProvider,
+            djvuRenderDpi: prefs.djvuRenderDpi,
+            openrouterApiKey: prefs.openrouterApiKey,
             signal: ctrl.signal,
           },
           onProgress: (p: IngestProgress) => {

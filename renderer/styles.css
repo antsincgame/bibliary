@@ -4588,106 +4588,141 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
 
 /* ===== Settings page ===== */
 .settings-actions {
+  position: sticky;
+  bottom: 10px;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   display: flex;
   gap: 12px;
-  margin-bottom: 18px;
+  margin-top: 16px;
   flex-wrap: wrap;
-}
-.settings-section {
-  margin-bottom: 14px;
-}
-.settings-section-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-.settings-section-title {
-  font-size: 15px;
-}
-
-/* Phase 7: settings sections — нативный <details>/<summary> аккордеон.
-   Решает критический UX-баг: раньше заголовки выглядели как кликабельные,
-   но клик ничего не делал, и поля терялись на тёмном фоне. */
-.settings-section-card {
-  padding: 0;
-  margin-bottom: 12px;
-  overflow: hidden;
-}
-.settings-section-card > .settings-section-details {
-  margin-bottom: 0;
-}
-.settings-section-details {
-  background: transparent;
-}
-.settings-section-summary {
-  list-style: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 18px;
-  font-family: var(--font-mono);
-  user-select: none;
-  transition: background var(--motion-fast) ease, color var(--motion-fast) ease;
-}
-.settings-section-summary::-webkit-details-marker { display: none; }
-.settings-section-summary::marker { content: ""; }
-.settings-section-summary:hover {
-  background: rgba(255, 215, 0, 0.06);
-}
-.settings-section-summary:focus-visible {
-  outline: 1px solid var(--gold);
-  outline-offset: -1px;
-}
-.settings-section-chevron {
-  display: inline-block;
-  font-size: 10px;
-  color: var(--cyan);
-  transition: transform var(--motion-fast) ease, color var(--motion-fast) ease;
-  width: 12px;
-  text-align: center;
-}
-.settings-section-details[open] > .settings-section-summary .settings-section-chevron {
-  transform: rotate(90deg);
-  color: var(--gold);
-}
-.settings-section-summary .settings-section-title {
-  flex: 1;
-  margin: 0;
-}
-.settings-section-count {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--text-secondary);
+  padding: 10px 12px;
   border: 1px solid var(--border);
-  padding: 2px 8px;
-  border-radius: 999px;
-  letter-spacing: 0.05em;
+  border-radius: 6px;
+  background: rgba(9, 11, 16, 0.92);
+  backdrop-filter: blur(3px);
 }
-.settings-section-details[open] .settings-section-count {
+.settings-search {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  margin: 10px 0 14px;
+  padding: 8px 0;
+  background: linear-gradient(180deg, rgba(8, 9, 14, 0.98), rgba(8, 9, 14, 0.78));
+}
+.settings-search-input {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.45);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+.settings-search-input:focus {
+  outline: 1px solid var(--gold);
+  border-color: var(--gold);
+}
+.settings-shell {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+.settings-rail {
+  position: sticky;
+  top: 68px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.settings-rail-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 10px;
+  background: rgba(13, 15, 20, 0.72);
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  transition: border-color var(--motion-fast) ease, color var(--motion-fast) ease, background var(--motion-fast) ease;
+}
+.settings-rail-item:hover {
+  color: var(--text);
+  border-color: rgba(0, 240, 255, 0.36);
+}
+.settings-rail-item-active {
+  color: var(--text);
+  border-color: var(--gold);
+  background: rgba(255, 215, 0, 0.08);
+}
+.settings-rail-icon {
   color: var(--cyan);
-  border-color: rgba(0, 240, 255, 0.4);
+  font-size: 10px;
+  letter-spacing: 0.08em;
 }
-.settings-section-details[open] .settings-fields {
-  padding: 4px 18px 18px;
+.settings-rail-label {
+  flex: 1;
 }
-.settings-section-details:not([open]) .settings-fields {
-  display: none;
+.settings-rail-count {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  padding: 1px 7px;
+  font-size: 10px;
+}
+.settings-panel {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(8, 10, 15, 0.72);
+  padding: 14px;
+}
+.settings-panel-header {
+  margin-bottom: 12px;
+}
+.settings-panel-title {
+  margin: 0 0 4px;
+  font-family: var(--font-mono);
+  color: var(--text);
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.settings-panel-subtitle {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.settings-group-title {
+  margin: 8px 0;
+  color: var(--gold);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 .settings-field-error {
   color: var(--accent-red);
   font-family: var(--font-mono);
   font-size: 11px;
-  padding: 6px 10px;
+  padding: 10px 12px;
   border: 1px dashed rgba(255, 70, 70, 0.4);
-  border-radius: 2px;
+  border-radius: 4px;
 }
 .settings-field-empty {
   color: var(--text-secondary);
   font-family: var(--font-mono);
   font-size: 11px;
-  padding: 6px 10px;
+  padding: 10px 12px;
   font-style: italic;
 }
 .settings-mode-badge {
@@ -4700,37 +4735,45 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
 }
 .settings-mode-advanced { color: var(--cyan); border-color: rgba(0, 240, 255, 0.4); }
 .settings-mode-pro { color: var(--gold); border-color: rgba(255, 215, 0, 0.4); }
-.settings-fields {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px 20px;
-}
-@media (max-width: 1100px) {
-  .settings-fields { grid-template-columns: 1fr; }
-}
-.settings-field {
+.settings-fields-stack {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 10px;
 }
-.settings-label {
+.settings-field-card {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: rgba(12, 14, 20, 0.82);
+  padding: 12px 14px;
+}
+.settings-field-top {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text);
-  -webkit-text-fill-color: currentColor;
+  gap: 8px;
 }
-.settings-label-range {
+.settings-field-title {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+}
+.settings-field-range {
   color: var(--text-secondary);
   font-size: 10px;
 }
-.settings-input-wrap {
+.settings-field-desc {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.settings-field-control {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
   min-width: 0;
+  margin-top: 6px;
+  flex-wrap: wrap;
 }
 .settings-input {
   flex: 1;
@@ -4746,6 +4789,12 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   border-radius: 2px;
 }
 .settings-input:focus { outline: 1px solid var(--gold); border-color: var(--gold); }
+.settings-unsaved-count {
+  margin-right: auto;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
 .settings-reset-btn {
   background: transparent;
   border: 1px solid var(--border);
@@ -4782,6 +4831,14 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   color-scheme: dark;
   -webkit-text-fill-color: currentColor;
   cursor: pointer;
+}
+@media (max-width: 900px) {
+  .settings-shell {
+    grid-template-columns: 1fr;
+  }
+  .settings-rail {
+    position: static;
+  }
 }
 
 /* ===== Library: Phase 6.0 Dropzone, grouping, OCR controls ===== */
@@ -5349,15 +5406,14 @@ details.forge-collapsible > .forge-collapsible-body {
 /* Settings responsive collapse: на узких окнах (включая electron minWidth=960) делаем
    единую плотную колонку с переносом URL-кнопки и всех action-кнопок. */
 @media (max-width: 1100px) {
-  .settings-input-wrap { flex-wrap: wrap; }
+  .settings-field-control { flex-wrap: wrap; }
   .settings-test-btn { padding: 6px 10px; }
 }
 @media (max-width: 720px) {
-  .settings-section-title { font-size: 13px; }
-  .settings-label { font-size: 10px; gap: 6px; flex-wrap: wrap; }
-  .settings-label-range { font-size: 9px; }
+  .settings-field-title { font-size: 11px; }
+  .settings-field-range { font-size: 9px; }
+  .settings-panel-title { font-size: 13px; }
   .settings-input { font-size: 11px; padding: 5px 8px; }
-  .settings-actions .btn { padding: 6px 10px; font-size: 10px; }
 }
 
 /* ===== Models: yarn backup-availability badge ===== */

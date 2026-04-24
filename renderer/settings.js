@@ -1,16 +1,10 @@
 // @ts-check
-/**
- * Settings page -- user-tunable preferences with mode-gated sections.
- *
- * Simple: RAG top-k, temperature, ingest parallelism, toast TTL.
- * Advanced: chunker params, judge thresholds, dedup, timeouts.
- * Pro: resilience policies, forge watchdog, Qdrant tuning.
- */
 import { el, clear } from "./dom.js";
 import { t } from "./i18n.js";
 import { getMode } from "./ui-mode.js";
-import { buildNeonHero, wrapSacredCard, neonDivider } from "./components/neon-helpers.js";
+import { buildNeonHero, neonDivider } from "./components/neon-helpers.js";
 import { openWelcomeWizard, resetWelcomeWizard } from "./components/welcome-wizard.js";
+import { SECTIONS } from "./settings/sections.js";
 
 /** @returns {any} */
 function api() { return /** @type {any} */ (window).api; }
@@ -22,194 +16,34 @@ const STATE = {
   defaults: {},
   dirty: false,
   saving: false,
+  activeSectionId: "chat",
+  searchQuery: "",
 };
-
-const SECTIONS = [
-  {
-    id: "chat",
-    titleKey: "settings.section.chat",
-    mode: "simple",
-    fields: [
-      { key: "ragTopK", type: "int", min: 1, max: 100, labelKey: "settings.ragTopK" },
-      { key: "ragScoreThreshold", type: "float", min: 0, max: 1, step: 0.05, labelKey: "settings.ragScoreThreshold" },
-      { key: "chatTemperature", type: "float", min: 0, max: 2, step: 0.1, labelKey: "settings.chatTemperature" },
-      { key: "chatTopP", type: "float", min: 0, max: 1, step: 0.05, labelKey: "settings.chatTopP" },
-      { key: "chatMaxTokens", type: "int", min: 256, max: 131072, labelKey: "settings.chatMaxTokens" },
-    ],
-  },
-  {
-    id: "ingest",
-    titleKey: "settings.section.ingest",
-    mode: "simple",
-    fields: [
-      { key: "ingestParallelism", type: "int", min: 1, max: 16, labelKey: "settings.ingestParallelism" },
-      { key: "searchPerSourceLimit", type: "int", min: 1, max: 50, labelKey: "settings.searchPerSourceLimit" },
-      { key: "qdrantSearchLimit", type: "int", min: 1, max: 100, labelKey: "settings.qdrantSearchLimit" },
-    ],
-  },
-  {
-    id: "chunker",
-    titleKey: "settings.section.chunker",
-    mode: "advanced",
-    fields: [
-      { key: "chunkSafeLimit", type: "int", min: 500, max: 20000, labelKey: "settings.chunkSafeLimit" },
-      { key: "chunkMinWords", type: "int", min: 50, max: 2000, labelKey: "settings.chunkMinWords" },
-      { key: "driftThreshold", type: "float", min: 0, max: 1, step: 0.05, labelKey: "settings.driftThreshold" },
-      { key: "maxParagraphsForDrift", type: "int", min: 100, max: 5000, labelKey: "settings.maxParagraphsForDrift" },
-      { key: "overlapParagraphs", type: "int", min: 0, max: 10, labelKey: "settings.overlapParagraphs" },
-    ],
-  },
-  {
-    id: "judge",
-    titleKey: "settings.section.judge",
-    mode: "advanced",
-    fields: [
-      { key: "judgeScoreThreshold", type: "float", min: 0, max: 1, step: 0.05, labelKey: "settings.judgeScoreThreshold" },
-      { key: "crossLibDupeThreshold", type: "float", min: 0, max: 1, step: 0.01, labelKey: "settings.crossLibDupeThreshold" },
-      { key: "intraDedupThreshold", type: "float", min: 0, max: 1, step: 0.01, labelKey: "settings.intraDedupThreshold" },
-    ],
-  },
-  {
-    id: "resilience",
-    titleKey: "settings.section.resilience",
-    mode: "pro",
-    fields: [
-      { key: "policyMaxRetries", type: "int", min: 0, max: 20, labelKey: "settings.policyMaxRetries" },
-      { key: "policyBaseBackoffMs", type: "int", min: 100, max: 30000, labelKey: "settings.policyBaseBackoffMs" },
-      { key: "hardTimeoutCapMs", type: "int", min: 30000, max: 3600000, labelKey: "settings.hardTimeoutCapMs" },
-      { key: "lockRetries", type: "int", min: 0, max: 20, labelKey: "settings.lockRetries" },
-      { key: "lockStaleMs", type: "int", min: 1000, max: 60000, labelKey: "settings.lockStaleMs" },
-      { key: "healthPollIntervalMs", type: "int", min: 1000, max: 60000, labelKey: "settings.healthPollIntervalMs" },
-      { key: "healthFailThreshold", type: "int", min: 1, max: 20, labelKey: "settings.healthFailThreshold" },
-      { key: "watchdogLivenessTimeoutMs", type: "int", min: 500, max: 15000, labelKey: "settings.watchdogLivenessTimeoutMs" },
-    ],
-  },
-  {
-    id: "forge",
-    titleKey: "settings.section.forge",
-    mode: "pro",
-    fields: [
-      { key: "forgeHeartbeatMs", type: "int", min: 60000, max: 7200000, labelKey: "settings.forgeHeartbeatMs" },
-      { key: "forgeMaxWallMs", type: "int", min: 3600000, max: 172800000, labelKey: "settings.forgeMaxWallMs" },
-      { key: "downloadMaxRetries", type: "int", min: 1, max: 10, labelKey: "settings.downloadMaxRetries" },
-      { key: "qdrantTimeoutMs", type: "int", min: 1000, max: 60000, labelKey: "settings.qdrantTimeoutMs" },
-    ],
-  },
-  {
-    id: "ui",
-    titleKey: "settings.section.ui",
-    mode: "simple",
-    fields: [
-      { key: "refreshIntervalMs", type: "int", min: 2000, max: 60000, labelKey: "settings.refreshIntervalMs" },
-      { key: "toastTtlMs", type: "int", min: 1000, max: 30000, labelKey: "settings.toastTtlMs" },
-      { key: "spinDurationMs", type: "int", min: 100, max: 3000, labelKey: "settings.spinDurationMs" },
-      { key: "resilienceBarHideDelayMs", type: "int", min: 1000, max: 30000, labelKey: "settings.resilienceBarHideDelayMs" },
-    ],
-  },
-  {
-    id: "ocr",
-    titleKey: "settings.section.ocr",
-    mode: "simple",
-    fields: [
-      { key: "ocrEnabled", type: "bool", labelKey: "settings.ocrEnabled" },
-      { key: "ocrAccuracy", type: "enum", options: ["fast", "accurate"], labelKey: "settings.ocrAccuracy" },
-      { key: "ocrLanguages", type: "tags", labelKey: "settings.ocrLanguages", placeholder: "en, ru, fr" },
-      { key: "ocrPdfDpi", type: "int", min: 100, max: 400, labelKey: "settings.ocrPdfDpi" },
-    ],
-  },
-  {
-    id: "connectivity",
-    titleKey: "settings.section.connectivity",
-    mode: "simple",
-    fields: [
-      { key: "lmStudioUrl", type: "url", labelKey: "settings.lmStudioUrl", placeholder: "http://localhost:1234", probe: "lmstudio" },
-      { key: "qdrantUrl", type: "url", labelKey: "settings.qdrantUrl", placeholder: "http://localhost:6333", probe: "qdrant" },
-    ],
-  },
-];
 
 function modeRank(mode) {
   return mode === "pro" ? 2 : mode === "advanced" ? 1 : 0;
 }
 
-function buildNumberField(field, root) {
-  const value = STATE.prefs[field.key] ?? STATE.defaults[field.key];
-  const dflt = STATE.defaults[field.key];
-  const isDefault = value === dflt;
-
-  const input = el("input", {
-    type: "number",
-    class: "settings-input",
-    value: String(value),
-    min: String(field.min),
-    max: String(field.max),
-    step: String(field.step || 1),
-  });
-  input.addEventListener("input", () => {
-    const v = field.type === "float" ? parseFloat(input.value) : parseInt(input.value, 10);
-    if (!isNaN(v) && v >= field.min && v <= field.max) {
-      STATE.prefs[field.key] = v;
-      STATE.dirty = true;
-      updateSaveBtn(root);
-    }
-  });
-
-  const resetBtn = buildResetBtn(field.key, dflt, () => { input.value = String(dflt); }, isDefault, root);
-  return wrapField(field, [input, resetBtn], `${field.min} -- ${field.max}`);
+function optionalT(key) {
+  const value = t(key);
+  return value === key ? "" : value;
 }
 
-function buildBoolField(field, root) {
-  const value = Boolean(STATE.prefs[field.key] ?? STATE.defaults[field.key]);
-  const dflt = STATE.defaults[field.key];
-  const cb = el("input", { type: "checkbox", class: "settings-input settings-input-bool" });
-  if (value) cb.checked = true;
-  cb.addEventListener("change", () => {
-    STATE.prefs[field.key] = cb.checked;
-    STATE.dirty = true;
-    updateSaveBtn(root);
-  });
-  const resetBtn = buildResetBtn(field.key, dflt, () => { cb.checked = Boolean(dflt); }, value === dflt, root);
-  return wrapField(field, [cb, resetBtn], "");
+function getVisibleSections() {
+  const currentRank = modeRank(getMode());
+  return SECTIONS.filter((section) => modeRank(section.mode) <= currentRank);
 }
 
-function buildEnumField(field, root) {
-  const value = String(STATE.prefs[field.key] ?? STATE.defaults[field.key]);
-  const dflt = STATE.defaults[field.key];
-  const sel = el("select", { class: "settings-input settings-input-select" });
-  for (const opt of field.options) {
-    const o = el("option", { value: opt }, opt);
-    if (opt === value) o.selected = true;
-    sel.appendChild(o);
-  }
-  sel.addEventListener("change", () => {
-    STATE.prefs[field.key] = sel.value;
-    STATE.dirty = true;
-    updateSaveBtn(root);
-  });
-  const resetBtn = buildResetBtn(field.key, dflt, () => { sel.value = String(dflt); }, value === dflt, root);
-  return wrapField(field, [sel, resetBtn], field.options.join(" / "));
+function filteredFields(section) {
+  const query = STATE.searchQuery.trim().toLowerCase();
+  if (!query) return section.fields;
+  return section.fields.filter((field) => t(field.labelKey).toLowerCase().includes(query));
 }
 
-function buildTagsField(field, root) {
-  const arr = Array.isArray(STATE.prefs[field.key]) ? STATE.prefs[field.key] : (STATE.defaults[field.key] || []);
-  const dflt = STATE.defaults[field.key] || [];
-  const input = el("input", {
-    type: "text",
-    class: "settings-input",
-    value: arr.join(", "),
-    placeholder: field.placeholder || "tag1, tag2",
-  });
-  input.addEventListener("input", () => {
-    const next = String(input.value)
-      .split(/[,\s]+/)
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0 && s.length <= 10);
-    STATE.prefs[field.key] = next;
-    STATE.dirty = true;
-    updateSaveBtn(root);
-  });
-  const resetBtn = buildResetBtn(field.key, dflt, () => { input.value = (dflt || []).join(", "); }, arr.join(",") === (dflt || []).join(","), root);
-  return wrapField(field, [input, resetBtn], t("settings.tags.hint"));
+function getMatchesBySection(visibleSections) {
+  return visibleSections
+    .map((section) => ({ section, fields: filteredFields(section) }))
+    .filter((entry) => entry.fields.length > 0);
 }
 
 function buildResetBtn(key, dflt, applyToInput, isDefault, root) {
@@ -224,34 +58,127 @@ function buildResetBtn(key, dflt, applyToInput, isDefault, root) {
     applyToInput();
     STATE.dirty = true;
     btn.style.opacity = "0.3";
-    updateSaveBtn(root);
+    updateSaveUi(root);
   });
   return btn;
 }
 
-function wrapField(field, inputs, hint) {
-  return el("div", { class: "settings-field" }, [
-    el("label", { class: "settings-label" }, [
-      el("span", { class: "settings-label-text" }, t(field.labelKey)),
-      hint ? el("span", { class: "settings-label-range" }, hint) : null,
+function wrapFieldCard(field, controls, hint) {
+  const description = optionalT(`settings.field.${field.key}.desc`);
+  return el("div", { class: "settings-field-card" }, [
+    el("div", { class: "settings-field-top" }, [
+      el("div", { class: "settings-field-title" }, t(field.labelKey)),
+      hint ? el("div", { class: "settings-field-range" }, hint) : null,
     ].filter(Boolean)),
-    el("div", { class: "settings-input-wrap" }, inputs),
-  ]);
+    description ? el("div", { class: "settings-field-desc" }, description) : null,
+    el("div", { class: "settings-field-control" }, controls),
+  ].filter(Boolean));
 }
 
-function buildField(field, root) {
-  if (field.type === "bool") return buildBoolField(field, root);
-  if (field.type === "enum") return buildEnumField(field, root);
-  if (field.type === "tags") return buildTagsField(field, root);
-  if (field.type === "url") return buildUrlField(field, root);
-  return buildNumberField(field, root);
+function buildNumberField(field, root) {
+  const value = STATE.prefs[field.key] ?? STATE.defaults[field.key];
+  const dflt = STATE.defaults[field.key];
+  const isDefault = value === dflt;
+  const input = el("input", {
+    type: "number",
+    class: "settings-input",
+    value: String(value),
+    min: String(field.min),
+    max: String(field.max),
+    step: String(field.step || 1),
+  });
+  input.addEventListener("input", () => {
+    const next = field.type === "float" ? parseFloat(input.value) : parseInt(input.value, 10);
+    if (!isNaN(next) && next >= field.min && next <= field.max) {
+      STATE.prefs[field.key] = next;
+      STATE.dirty = true;
+      updateSaveUi(root);
+    }
+  });
+  const resetBtn = buildResetBtn(field.key, dflt, () => { input.value = String(dflt); }, isDefault, root);
+  return wrapFieldCard(field, [input, resetBtn], `${field.min} -- ${field.max}`);
 }
 
-/**
- * URL input with Test button. Empty value = "use env var or default".
- * Test button делает прямой fetch на введённый endpoint через probeEndpoint
- * (реализован ниже) — без отдельного IPC, т.к. URL ещё не сохранён в prefs.
- */
+function buildBoolField(field, root) {
+  const value = Boolean(STATE.prefs[field.key] ?? STATE.defaults[field.key]);
+  const dflt = STATE.defaults[field.key];
+  const cb = el("input", { type: "checkbox", class: "settings-input settings-input-bool" });
+  cb.checked = value;
+  cb.addEventListener("change", () => {
+    STATE.prefs[field.key] = cb.checked;
+    STATE.dirty = true;
+    updateSaveUi(root);
+  });
+  const resetBtn = buildResetBtn(field.key, dflt, () => { cb.checked = Boolean(dflt); }, value === dflt, root);
+  return wrapFieldCard(field, [cb, resetBtn], "");
+}
+
+function buildEnumField(field, root) {
+  const value = String(STATE.prefs[field.key] ?? STATE.defaults[field.key]);
+  const dflt = STATE.defaults[field.key];
+  const select = el("select", { class: "settings-input settings-input-select" });
+  for (const option of field.options || []) {
+    const opt = el("option", { value: option }, option);
+    if (option === value) opt.selected = true;
+    select.appendChild(opt);
+  }
+  select.addEventListener("change", () => {
+    STATE.prefs[field.key] = select.value;
+    STATE.dirty = true;
+    updateSaveUi(root);
+  });
+  const resetBtn = buildResetBtn(field.key, dflt, () => { select.value = String(dflt); }, value === dflt, root);
+  return wrapFieldCard(field, [select, resetBtn], (field.options || []).join(" / "));
+}
+
+function buildTagsField(field, root) {
+  const value = Array.isArray(STATE.prefs[field.key]) ? STATE.prefs[field.key] : (STATE.defaults[field.key] || []);
+  const dflt = STATE.defaults[field.key] || [];
+  const input = el("input", {
+    type: "text",
+    class: "settings-input",
+    value: value.join(", "),
+    placeholder: field.placeholder || "en, ru",
+  });
+  input.addEventListener("input", () => {
+    const next = String(input.value)
+      .split(/[,\s]+/)
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0 && part.length <= 10);
+    STATE.prefs[field.key] = next;
+    STATE.dirty = true;
+    updateSaveUi(root);
+  });
+  const resetBtn = buildResetBtn(
+    field.key,
+    dflt,
+    () => { input.value = (dflt || []).join(", "); },
+    value.join(",") === (dflt || []).join(","),
+    root,
+  );
+  return wrapFieldCard(field, [input, resetBtn], t("settings.tags.hint"));
+}
+
+function buildPasswordField(field, root) {
+  const value = String(STATE.prefs[field.key] ?? STATE.defaults[field.key] ?? "");
+  const dflt = String(STATE.defaults[field.key] ?? "");
+  const input = el("input", {
+    type: "password",
+    class: "settings-input",
+    value,
+    placeholder: field.placeholder || "",
+    autocomplete: "off",
+    spellcheck: "false",
+  });
+  input.addEventListener("input", () => {
+    STATE.prefs[field.key] = String(input.value);
+    STATE.dirty = true;
+    updateSaveUi(root);
+  });
+  const resetBtn = buildResetBtn(field.key, dflt, () => { input.value = dflt; }, value === dflt, root);
+  return wrapFieldCard(field, [input, resetBtn], t("settings.password.hint"));
+}
+
 function buildUrlField(field, root) {
   const value = String(STATE.prefs[field.key] ?? STATE.defaults[field.key] ?? "");
   const dflt = STATE.defaults[field.key] ?? "";
@@ -266,15 +193,15 @@ function buildUrlField(field, root) {
   const status = el("span", { class: "settings-url-status" }, "");
   let validateTimer = null;
   function validate() {
-    const v = String(input.value).trim();
-    if (v === "") {
+    const next = String(input.value).trim();
+    if (!next) {
       status.textContent = t("settings.url.empty");
       status.className = "settings-url-status settings-url-status-info";
       return true;
     }
     try {
-      new URL(v);
-      if (v.endsWith("/")) {
+      new URL(next);
+      if (next.endsWith("/")) {
         status.textContent = t("settings.url.noTrailingSlash");
         status.className = "settings-url-status settings-url-status-error";
         return false;
@@ -291,7 +218,7 @@ function buildUrlField(field, root) {
   input.addEventListener("input", () => {
     STATE.prefs[field.key] = String(input.value).trim();
     STATE.dirty = true;
-    updateSaveBtn(root);
+    updateSaveUi(root);
     if (validateTimer) clearTimeout(validateTimer);
     validateTimer = setTimeout(validate, 200);
   });
@@ -307,8 +234,7 @@ function buildUrlField(field, root) {
     status.textContent = t("settings.url.testing");
     status.className = "settings-url-status settings-url-status-info";
     try {
-      const probeUrl = String(input.value).trim();
-      const ok = await probeEndpoint(field.probe, probeUrl);
+      const ok = await probeEndpoint(field.probe, String(input.value).trim());
       if (ok) {
         status.textContent = t("settings.url.ok");
         status.className = "settings-url-status settings-url-status-ok";
@@ -323,29 +249,19 @@ function buildUrlField(field, root) {
       testBtn.disabled = false;
     }
   });
-
   const resetBtn = buildResetBtn(field.key, dflt, () => { input.value = String(dflt); validate(); }, value === dflt, root);
-  return el("div", { class: "settings-field settings-field-url" }, [
-    el("label", { class: "settings-label" }, [
-      el("span", { class: "settings-label-text" }, t(field.labelKey)),
-      el("span", { class: "settings-label-range" }, t("settings.url.hint")),
-    ]),
-    el("div", { class: "settings-input-wrap" }, [input, testBtn, resetBtn]),
-    status,
-  ]);
+  return wrapFieldCard(field, [input, testBtn, resetBtn, status], t("settings.url.hint"));
 }
 
-/**
- * Probe the entered endpoint by hitting a known harmless GET endpoint.
- * - lmstudio: GET /v1/models (returns 200 if running)
- * - qdrant:   GET /collections (returns 200 if running)
- *
- * Note: this fires from the renderer using window.fetch. Most local
- * Bibliary setups have CORS open or are localhost (no preflight).
- * Failures show a generic "unreachable" -- user has to read DevTools
- * for details. That's fine for an MVP probe; server-side probe via IPC
- * is a follow-up if users hit CORS in the wild.
- */
+function buildField(field, root) {
+  if (field.type === "bool") return buildBoolField(field, root);
+  if (field.type === "enum") return buildEnumField(field, root);
+  if (field.type === "tags") return buildTagsField(field, root);
+  if (field.type === "password") return buildPasswordField(field, root);
+  if (field.type === "url") return buildUrlField(field, root);
+  return buildNumberField(field, root);
+}
+
 async function probeEndpoint(kind, baseUrl) {
   const path = kind === "lmstudio" ? "/v1/models" : "/collections";
   const url = baseUrl.replace(/\/+$/, "") + path;
@@ -359,15 +275,20 @@ async function probeEndpoint(kind, baseUrl) {
   }
 }
 
-function updateSaveBtn(root) {
-  const btn = root.querySelector("#settings-save-btn");
-  if (btn) btn.disabled = !STATE.dirty || STATE.saving;
+function updateSaveUi(root) {
+  const saveBtn = root.querySelector("#settings-save-btn");
+  if (saveBtn) saveBtn.disabled = !STATE.dirty || STATE.saving;
+  const dirtyCount = root.querySelector("#settings-unsaved-count");
+  if (dirtyCount) {
+    const changedKeys = Object.keys(STATE.prefs).filter((key) => STATE.prefs[key] !== STATE.defaults[key]).length;
+    dirtyCount.textContent = t("settings.unsaved", { n: changedKeys });
+  }
 }
 
 async function save(root) {
   if (STATE.saving) return;
   STATE.saving = true;
-  updateSaveBtn(root);
+  updateSaveUi(root);
   try {
     STATE.prefs = await api().preferences.set(STATE.prefs);
     STATE.dirty = false;
@@ -375,7 +296,7 @@ async function save(root) {
     alert(t("settings.saveFailed") + ": " + (e instanceof Error ? e.message : String(e)));
   } finally {
     STATE.saving = false;
-    updateSaveBtn(root);
+    updateSaveUi(root);
   }
 }
 
@@ -390,19 +311,59 @@ async function resetAll(root) {
   }
 }
 
-/**
- * Запомнить состояние свёрнутости секций (открытые/закрытые) между перерисовками.
- * Ключ — section.id; значение — true == открыта.
- * По умолчанию открыта только первая видимая секция, чтобы пользователь сразу
- * увидел реальные контролы и понял что секции — кликабельные аккордеоны.
- * @type {Record<string, boolean>}
- */
-const sectionOpen = {};
+function buildFieldsStack(root, section, fields) {
+  const stack = el("div", { class: "settings-fields-stack" });
+  for (const field of fields) {
+    try {
+      stack.appendChild(buildField(field, root));
+    } catch (e) {
+      console.error(`[settings] buildField failed for "${field.key}"`, e);
+      stack.appendChild(el("div", { class: "settings-field-card settings-field-error" },
+        `⚠ ${field.key}: ${e instanceof Error ? e.message : String(e)}`));
+    }
+  }
+  if (!fields.length) {
+    stack.appendChild(el("div", { class: "settings-field-card settings-field-empty" }, t("settings.search.noMatches")));
+  }
+  return stack;
+}
+
+function renderPanelContent(root, visibleSections) {
+  const panel = el("section", { class: "settings-panel" });
+  const query = STATE.searchQuery.trim();
+  if (query) {
+    const groups = getMatchesBySection(visibleSections);
+    panel.appendChild(el("div", { class: "settings-panel-header" }, [
+      el("h2", { class: "settings-panel-title" }, t("settings.search.results")),
+      el("p", { class: "settings-panel-subtitle" }, `"${query}"`),
+    ]));
+    for (const { section, fields } of groups) {
+      panel.appendChild(el("div", { class: "settings-group-title" }, t(section.titleKey)));
+      panel.appendChild(buildFieldsStack(root, section, fields));
+    }
+    if (!groups.length) {
+      panel.appendChild(buildFieldsStack(root, { id: "none" }, []));
+    }
+    return panel;
+  }
+
+  const current = visibleSections.find((section) => section.id === STATE.activeSectionId) || visibleSections[0];
+  if (!current) return panel;
+  STATE.activeSectionId = current.id;
+  panel.appendChild(el("div", { class: "settings-panel-header" }, [
+    el("h2", { class: "settings-panel-title" }, t(current.titleKey)),
+    el("p", { class: "settings-panel-subtitle" }, optionalT(current.descriptionKey)),
+  ]));
+  panel.appendChild(buildFieldsStack(root, current, current.fields));
+  return panel;
+}
 
 function render(root) {
   clear(root);
-  const currentMode = getMode();
-  const currentRank = modeRank(currentMode);
+  const visibleSections = getVisibleSections();
+  if (!visibleSections.some((section) => section.id === STATE.activeSectionId)) {
+    STATE.activeSectionId = visibleSections[0]?.id || "";
+  }
 
   root.appendChild(buildNeonHero({
     title: t("settings.header.title"),
@@ -411,7 +372,48 @@ function render(root) {
   }));
   root.appendChild(neonDivider());
 
+  const search = el("div", { class: "settings-search" }, [
+    el("input", {
+      class: "settings-search-input",
+      type: "search",
+      value: STATE.searchQuery,
+      placeholder: t("settings.search.placeholder"),
+      oninput: (event) => {
+        STATE.searchQuery = /** @type {HTMLInputElement} */ (event.currentTarget).value;
+        render(root);
+      },
+    }),
+  ]);
+  root.appendChild(search);
+
+  const shell = el("div", { class: "settings-shell" });
+  const rail = el("nav", { class: "settings-rail", "aria-label": "Settings sections" });
+  for (const section of visibleSections) {
+    const matches = filteredFields(section).length;
+    const isActive = !STATE.searchQuery && section.id === STATE.activeSectionId;
+    const item = el("button", {
+      class: `settings-rail-item${isActive ? " settings-rail-item-active" : ""}`,
+      type: "button",
+      "aria-current": isActive ? "page" : undefined,
+      onclick: () => {
+        STATE.activeSectionId = section.id;
+        STATE.searchQuery = "";
+        render(root);
+      },
+    }, [
+      el("span", { class: "settings-rail-icon" }, section.icon),
+      el("span", { class: "settings-rail-label" }, t(section.titleKey)),
+      section.mode !== "simple" ? el("span", { class: `settings-mode-badge settings-mode-${section.mode}` }, section.mode.toUpperCase()) : null,
+      STATE.searchQuery ? el("span", { class: "settings-rail-count" }, String(matches)) : null,
+    ].filter(Boolean));
+    rail.appendChild(item);
+  }
+  shell.appendChild(rail);
+  shell.appendChild(renderPanelContent(root, visibleSections));
+  root.appendChild(shell);
+
   const actions = el("div", { class: "settings-actions" }, [
+    el("span", { id: "settings-unsaved-count", class: "settings-unsaved-count" }, ""),
     el("button", {
       class: "neon-btn neon-btn-primary",
       id: "settings-save-btn",
@@ -435,72 +437,7 @@ function render(root) {
     }, t("settings.replayOnboarding")),
   ]);
   root.appendChild(actions);
-
-  /* CRITICAL UX FIX (Phase 7):
-     Раньше секции рендерились как монолитный sacred-card с заголовком
-     и сразу полями ниже. На FullHD-ноутбуке (768px) пользователю казалось,
-     что заголовки — кликабельные аккордеоны (визуально похожи на пилюли),
-     но клик ничего не делал, и многие пользователи решали, что настройки
-     «сломаны».
-     Решение: оборачиваем каждую секцию в нативный <details>/<summary>.
-     Преимущества:
-       - нативный toggle без JS-логики;
-       - полная клавиатурная доступность и ARIA из коробки;
-       - чёткий визуальный affordance (▶/▼ chevron, hover, cursor:pointer);
-       - первая видимая секция открыта по умолчанию — пользователь сразу видит контролы;
-       - состояние свёрнутости запоминается между перерисовками (sectionOpen). */
-
-  let firstVisible = true;
-  for (const section of SECTIONS) {
-    const sectionRank = modeRank(section.mode);
-    if (sectionRank > currentRank) continue;
-
-    const fields = el("div", { class: "settings-fields" });
-    let renderedFields = 0;
-    for (const f of section.fields) {
-      try {
-        fields.appendChild(buildField(f, root));
-        renderedFields++;
-      } catch (e) {
-        console.error(`[settings] buildField failed for "${f.key}":`, e);
-        fields.appendChild(el("div", { class: "settings-field settings-field-error" },
-          `⚠ ${f.key}: ${e instanceof Error ? e.message : String(e)}`,
-        ));
-      }
-    }
-    if (renderedFields === 0) {
-      fields.appendChild(el("div", { class: "settings-field settings-field-empty" },
-        "(no fields rendered — check console)",
-      ));
-    }
-
-    const badge = section.mode !== "simple"
-      ? el("span", { class: `settings-mode-badge settings-mode-${section.mode}` }, section.mode.toUpperCase())
-      : null;
-
-    const summary = el("summary", {
-      class: "settings-section-summary",
-      title: t("settings.section.toggle.title"),
-    }, [
-      el("span", { class: "settings-section-chevron", "aria-hidden": "true" }, "\u25B6"),
-      el("span", { class: "neon-heading settings-section-title" }, t(section.titleKey)),
-      badge,
-      el("span", { class: "settings-section-count" }, `${renderedFields}`),
-    ]);
-
-    const isOpen = sectionOpen[section.id] ?? firstVisible;
-    if (firstVisible) firstVisible = false;
-
-    const detailsAttrs = { class: "settings-section settings-section-details" };
-    if (isOpen) /** @type {any} */ (detailsAttrs).open = "open";
-
-    const details = el("details", detailsAttrs, [summary, fields]);
-    details.addEventListener("toggle", () => {
-      sectionOpen[section.id] = /** @type {HTMLDetailsElement} */ (details).open;
-    });
-
-    root.appendChild(wrapSacredCard(details, "settings-section-card"));
-  }
+  updateSaveUi(root);
 }
 
 export async function mountSettings(root) {
@@ -508,9 +445,7 @@ export async function mountSettings(root) {
   if (root.dataset.mounted === "1") return;
   root.dataset.mounted = "1";
   clear(root);
-
   root.appendChild(el("div", { class: "settings-loading" }, t("settings.loading")));
-
   try {
     const [prefs, defaults] = await Promise.all([
       api().preferences.getAll(),
@@ -524,6 +459,5 @@ export async function mountSettings(root) {
     root.appendChild(el("div", { class: "settings-error" }, t("settings.loadFailed") + ": " + String(e)));
     return;
   }
-
   render(root);
 }

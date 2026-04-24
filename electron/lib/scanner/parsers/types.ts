@@ -57,6 +57,12 @@ export interface ParseOptions {
   ocrAccuracy?: "fast" | "accurate";
   /** DPI used when rasterising PDF pages for OCR. Higher = better quality but slower. */
   ocrPdfDpi?: number;
+  /** DJVU OCR backend selector. */
+  djvuOcrProvider?: "system" | "vision-llm" | "none";
+  /** Render DPI used by ddjvu page rasterisation. */
+  djvuRenderDpi?: number;
+  /** Optional OpenRouter key for vision-llm OCR backend. */
+  openrouterApiKey?: string;
   /** Caller-side abort. Honoured by long-running parsers (PDF OCR). */
   signal?: AbortSignal;
 }
