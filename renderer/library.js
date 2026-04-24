@@ -25,7 +25,7 @@ import {
   buildLibrarySummary, buildOcrBadge, buildLibraryActionButtons,
   renderHistory,
 } from "./library/browse.js";
-import { buildCatalogPane, renderCatalog, renderCatalogTable } from "./library/catalog.js";
+import { buildCatalogPane, renderCatalog, renderCatalogTable, highlightCatalogBookRow } from "./library/catalog.js";
 import { buildImportPane, renderImport } from "./library/import-pane.js";
 import { refreshEvaluatorState } from "./library/evaluator.js";
 import { applyBatchEvent } from "./library/batch-actions.js";
@@ -131,6 +131,13 @@ function loadInitialLibraryData(root, datalist, collectionInput) {
   });
 }
 
+async function focusCatalogBook(root, bookId) {
+  if (!bookId) return;
+  if (STATE.tab !== "catalog") switchTab("catalog", root);
+  await renderCatalog(root);
+  highlightCatalogBookRow(root, bookId);
+}
+
 export async function mountLibrary(root) {
   if (!root) return;
   if (root.dataset.mounted === "1") return;
@@ -161,7 +168,7 @@ export async function mountLibrary(root) {
      активируем lib-pane-import вручную ниже. */
   const catalogPane = buildCatalogPane(root, catalogDeps);
   catalogPane.classList.remove("lib-pane-active");
-  const importPane = buildImportPane({ renderCatalog });
+  const importPane = buildImportPane({ renderCatalog, focusCatalogBook: (bookId) => focusCatalogBook(root, bookId) });
   importPane.classList.add("lib-pane-active");
   STATE.tab = "import";
 

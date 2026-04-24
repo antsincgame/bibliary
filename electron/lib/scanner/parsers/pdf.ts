@@ -132,6 +132,33 @@ export async function parsePdfMain(filePath: string, opts: ParseOptions = {}): P
   const author = typeof info.Author === "string" && info.Author.trim() ? String(info.Author) : undefined;
   const language = typeof info.Language === "string" ? String(info.Language) : undefined;
 
+  const year = (() => {
+    for (const key of ["ModDate", "CreationDate"]) {
+      const raw = info[key];
+      if (typeof raw === "string") {
+        const m = raw.match(/(\d{4})/);
+        if (m) { const y = Number(m[1]); if (y >= 1800 && y <= 2100) return y; }
+      }
+    }
+    return undefined;
+  })();
+
+  const identifier = (() => {
+    for (const key of ["ISBN", "isbn", "Subject", "Keywords"]) {
+      const raw = info[key];
+      if (typeof raw === "string") {
+        const m = raw.match(/((?:978|979)[\d-]{10,})/);
+        if (m) return m[1].replace(/[-\s]/g, "");
+        const m10 = raw.match(/(\d{9}[\dXx])/);
+        if (m10) return m10[1];
+      }
+    }
+    return undefined;
+  })();
+
+  const publisher = typeof info.Publisher === "string" && info.Publisher.trim()
+    ? info.Publisher.trim() : undefined;
+
   let outline: Awaited<ReturnType<typeof doc.getOutline>> | null = null;
   try {
     outline = await doc.getOutline();
@@ -300,7 +327,7 @@ export async function parsePdfMain(filePath: string, opts: ParseOptions = {}): P
   await doc.destroy();
 
   return {
-    metadata: { title, author, language, warnings },
+    metadata: { title, author, language, identifier, year, publisher, warnings },
     sections: sections.filter((s) => s.paragraphs.length > 0),
     rawCharCount: totalChars,
   };

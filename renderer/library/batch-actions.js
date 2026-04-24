@@ -3,6 +3,7 @@
  * Batch crystallization + synthesis actions for the Catalog bottom-bar.
  */
 import { t } from "../i18n.js";
+import { showAlert, showConfirm, showPrompt } from "../components/ui-dialog.js";
 import { STATE, BATCH, CATALOG } from "./state.js";
 
 /**
@@ -11,11 +12,11 @@ import { STATE, BATCH, CATALOG } from "./state.js";
  * @param {(root: HTMLElement) => void} deps.renderCatalogTable
  * @param {(root: HTMLElement) => Promise<void>} deps.renderCatalog
  */
-export function guardAndCrystallize(root, deps) {
+export async function guardAndCrystallize(root, deps) {
   if (BATCH.active) return;
   if (CATALOG.selected.size === 0) return;
   if (!STATE.targetCollection) {
-    window.alert(t("library.catalog.guard.noCollection"));
+    await showAlert(t("library.catalog.guard.noCollection"));
     return;
   }
   const selectedRows = CATALOG.rows.filter((r) => CATALOG.selected.has(r.id));
@@ -24,11 +25,11 @@ export function guardAndCrystallize(root, deps) {
     typeof r.qualityScore !== "number"
   );
   if (unevaluated.length > 0) {
-    window.alert(t("library.catalog.guard.unevaluated", { n: String(unevaluated.length) }));
+    await showAlert(t("library.catalog.guard.unevaluated", { n: String(unevaluated.length) }));
     return;
   }
   const lowQ = selectedRows.filter((r) => (r.qualityScore ?? 0) < 50);
-  if (lowQ.length > 0 && !window.confirm(t("library.catalog.guard.lowQuality", { n: String(lowQ.length) }))) {
+  if (lowQ.length > 0 && !(await showConfirm(t("library.catalog.guard.lowQuality", { n: String(lowQ.length) })))) {
     return;
   }
   void startBatchExtraction(root, selectedRows.map((r) => r.id), deps);
@@ -63,7 +64,7 @@ async function startBatchExtraction(root, bookIds, deps) {
       bookIds,
       targetCollection: STATE.targetCollection,
     });
-    window.alert(t("library.catalog.batch.done", {
+    await showAlert(t("library.catalog.batch.done", {
       processed: String(res.processed),
       skipped: String(res.skipped.length),
       failed: String(BATCH.failed),
@@ -71,7 +72,7 @@ async function startBatchExtraction(root, bookIds, deps) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     const cancelled = /abort|cancel/i.test(msg);
-    window.alert(cancelled
+    await showAlert(cancelled
       ? t("library.catalog.batch.cancelled")
       : t("library.catalog.batch.failed", { error: msg }));
   } finally {
@@ -85,7 +86,7 @@ async function startBatchExtraction(root, bookIds, deps) {
 
 export async function cancelBatchExtraction() {
   if (!BATCH.active) return;
-  if (!window.confirm(t("library.catalog.batch.confirmCancel"))) return;
+  if (!(await showConfirm(t("library.catalog.batch.confirmCancel")))) return;
   if (BATCH.batchId) {
     try { await window.api.datasetV2.cancelBatch(BATCH.batchId); }
     catch (err) { console.warn("[batch.cancelBatch] failed:", err); }
@@ -177,26 +178,26 @@ export function updateBatchUi(root) {
 
 export async function launchSynthesis() {
   if (!STATE.targetCollection) {
-    window.alert(t("library.catalog.guard.noCollection"));
+    await showAlert(t("library.catalog.guard.noCollection"));
     return;
   }
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "").replace("T", "_");
   const safeColl = STATE.targetCollection.replace(/[^a-z0-9-]/gi, "_");
   const defaultOut = `release/datasets/${safeColl}-${stamp}.jsonl`;
 
-  const outputPath = window.prompt(
+  const outputPath = await showPrompt(
     t("library.catalog.synth.promptOutput", { coll: STATE.targetCollection }),
     defaultOut,
   );
   if (!outputPath) return;
 
-  const pairsRaw = window.prompt(t("library.catalog.synth.promptPairs"), "2");
+  const pairsRaw = await showPrompt(t("library.catalog.synth.promptPairs"), "2");
   if (!pairsRaw) return;
   const pairsPerConcept = Math.max(1, Math.min(5, parseInt(pairsRaw, 10) || 2));
 
-  const includeReasoning = window.confirm(t("library.catalog.synth.confirmReasoning"));
+  const includeReasoning = await showConfirm(t("library.catalog.synth.confirmReasoning"));
 
-  const confirm = window.confirm(
+  const startConfirmed = await showConfirm(
     t("library.catalog.synth.confirmStart", {
       coll: STATE.targetCollection,
       out: outputPath,
@@ -204,7 +205,7 @@ export async function launchSynthesis() {
       reasoning: includeReasoning ? "yes" : "no",
     }),
   );
-  if (!confirm) return;
+  if (!startConfirmed) return;
 
   try {
     const res = await window.api.datasetV2.synthesize({
@@ -213,12 +214,12 @@ export async function launchSynthesis() {
       pairsPerConcept,
       includeReasoning,
     });
-    window.alert(t("library.catalog.synth.done", {
+    await showAlert(t("library.catalog.synth.done", {
       pairs: String(res?.totalPairs ?? 0),
       out: outputPath,
     }));
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    window.alert(t("library.catalog.synth.failed", { error: msg }));
+    await showAlert(t("library.catalog.synth.failed", { error: msg }));
   }
 }

@@ -4,6 +4,7 @@ import { t } from "./i18n.js";
 import { metatronCube, svgDataUrl } from "./components/sacred-geometry.js";
 import { buildModelSelect } from "./components/model-select.js";
 import { AGENT_HISTORY_CAP } from "./components/agent-constants.js";
+import { showAlert } from "./components/ui-dialog.js";
 
 /**
  * Phase 4.0 — Forge Chat Agent UI.
@@ -402,7 +403,7 @@ async function sendPrompt(root) {
   if (!text) return;
   const model = agentModelSelect?.getValue() ?? "";
   if (!model) {
-    alert(t("agent.alert.noModel"));
+    await showAlert(t("agent.alert.noModel"));
     return;
   }
   STATE.chatHistory.push({ role: "user", content: text });

@@ -26,9 +26,17 @@ import { SUPPORTED_BOOK_EXTS, type BookCatalogMeta } from "./types.js";
 import { resolveStoredBookPaths } from "./storage-contract.js";
 import { computeFileSha256 } from "./sha-stream.js";
 import { findNearDuplicate, registerForNearDup } from "./near-dup-detector.js";
+import {
+  computeRevisionScore,
+  findLatestRevisionMatch,
+  registerForRevisionDedup,
+  findIsbnMatch,
+  getFormatPriority,
+} from "./revision-dedup.js";
 import { walkSupportedFiles } from "./file-walker.js";
 import { runWithConcurrency } from "./async-pool.js";
 import { ArchiveTracker } from "./archive-tracker.js";
+import { parseFilename } from "./filename-parser.js";
 import * as os from "os";
 
 export interface ImportResult {
@@ -41,6 +49,11 @@ export interface ImportResult {
   error?: string;
   /** Имя архива-источника, если книга пришла из распаковки. */
   sourceArchive?: string;
+  /** Расшифровка причины duplicate для UI. */
+  duplicateReason?: "duplicate_sha" | "duplicate_isbn" | "duplicate_older_revision";
+  /** Существующая книга в каталоге, из-за которой текущая была пропущена. */
+  existingBookId?: string;
+  existingBookTitle?: string;
 }
 
 export interface ImportFolderOptions {
@@ -81,6 +94,9 @@ export interface ProgressEvent {
   /** Только для phase="processed". */
   currentFile?: string;
   outcome?: ImportResult["outcome"];
+  duplicateReason?: ImportResult["duplicateReason"];
+  existingBookId?: string;
+  existingBookTitle?: string;
   /** Backward-compat: старый UI читает index/total. */
   index: number;
   total: number;
@@ -170,6 +186,9 @@ export async function importBookFromFile(
       outcome: "duplicate",
       bookId: dupId,
       meta: existing ?? undefined,
+      duplicateReason: "duplicate_sha",
+      existingBookId: dupId,
+      existingBookTitle: existing?.title,
       warnings: [...warnings, `import: duplicate of ${dupId} (SHA-256 match, parse skipped)`],
       sourceArchive: opts.sourceArchive,
     };
@@ -192,6 +211,57 @@ export async function importBookFromFile(
      (transient, для UI), и в `finalMeta.warnings` (persistent, в
      book.md frontmatter). Никаких mergedWarnings/дубликатов. */
   warnings.push(...(convResult.meta.warnings ?? []));
+
+  /* Fallback enrichment from folder/filename when parser metadata is weak. */
+  const fnMeta = parseFilename(absPath);
+  if (fnMeta) {
+    const m = convResult.meta;
+    if (!m.author && fnMeta.author) m.author = fnMeta.author;
+    if (!m.year && fnMeta.year) m.year = fnMeta.year;
+    if (m.title === path.parse(absPath).name && fnMeta.title) m.title = fnMeta.title;
+  }
+
+  /* Tier 1: ISBN-based dedup. Same ISBN = same book regardless of filename. */
+  const isbnHit = findIsbnMatch(convResult.meta.isbn);
+  if (isbnHit && isbnHit.bookId !== convResult.meta.id) {
+    const existingPri = getFormatPriority(isbnHit.format ?? "");
+    const candidatePri = getFormatPriority(convResult.meta.originalFormat);
+    if (candidatePri <= existingPri) {
+      return {
+        outcome: "duplicate",
+        bookId: isbnHit.bookId,
+        duplicateReason: "duplicate_isbn" as const,
+        existingBookId: isbnHit.bookId,
+        existingBookTitle: isbnHit.title,
+        warnings: [...warnings, `ISBN match: same book as ${isbnHit.bookId} (${isbnHit.title}), format priority ${candidatePri} <= ${existingPri}`],
+        sourceArchive: opts.sourceArchive,
+      };
+    }
+    warnings.push(`ISBN match: better format (${convResult.meta.originalFormat}) supersedes ${isbnHit.bookId} (${isbnHit.title})`);
+  }
+
+  /* Tier 2: Revision-level дедуп одной и той же книги с разными бинарниками. */
+  const latest = findLatestRevisionMatch(convResult.meta, absPath);
+  if (latest && latest.bookId !== convResult.meta.id) {
+    const candidateScore = computeRevisionScore(convResult.meta, absPath);
+    if (candidateScore < latest.score) {
+      const message = `older revision skipped: kept ${latest.bookId} (${latest.title})`;
+      return {
+        outcome: "duplicate",
+        bookId: latest.bookId,
+        duplicateReason: "duplicate_older_revision",
+        existingBookId: latest.bookId,
+        existingBookTitle: latest.title,
+        warnings: [...warnings, message],
+        sourceArchive: opts.sourceArchive,
+      };
+    }
+    if (candidateScore > latest.score) {
+      warnings.push(`newer revision detected: supersedes ${latest.bookId} (${latest.title})`);
+    } else {
+      warnings.push(`same revision score as ${latest.bookId}; keeping both variants`);
+    }
+  }
 
   /* Подготавливаем папку library/{slug}/. Slug = meta.id (16 hex SHA content). */
   const root = await getLibraryRoot();
@@ -238,6 +308,7 @@ export async function importBookFromFile(
 
   upsertBook(finalMeta, mdPath);
   registerForNearDup(finalMeta, finalMeta.id);
+  registerForRevisionDedup(finalMeta);
 
   return { outcome: "added", bookId: finalMeta.id, meta: finalMeta, warnings, sourceArchive: opts.sourceArchive };
 }
@@ -312,7 +383,7 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
   const counters = { discovered: 0, processed: 0 };
   const emit = (
     phase: ProgressEventPhase,
-    extras: Pick<ProgressEvent, "currentFile" | "outcome"> = {},
+    extras: Pick<ProgressEvent, "currentFile" | "outcome" | "duplicateReason" | "existingBookId" | "existingBookTitle"> = {},
   ): void => {
     if (!opts.onProgress) return;
     opts.onProgress({
@@ -321,6 +392,9 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
       processed: counters.processed,
       currentFile: extras.currentFile,
       outcome: extras.outcome,
+      duplicateReason: extras.duplicateReason,
+      existingBookId: extras.existingBookId,
+      existingBookTitle: extras.existingBookTitle,
       index: counters.processed,
       total: counters.discovered,
     });
@@ -420,13 +494,25 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
         : [{ outcome: "failed", warnings: [], error: settled.error.message }];
       counters.processed += 1;
       let firstOutcome: ImportResult["outcome"] = itemResults[0]?.outcome ?? "failed";
+      let firstDuplicateReason: ImportResult["duplicateReason"] | undefined = itemResults[0]?.duplicateReason;
+      let firstExistingBookId: string | undefined = itemResults[0]?.existingBookId;
+      let firstExistingBookTitle: string | undefined = itemResults[0]?.existingBookTitle;
       for (const r of itemResults) {
         result[r.outcome] += 1;
         if (r.warnings.length > 0) result.warnings.push(...r.warnings);
         if (r.outcome === "added" && r.meta && opts.onBookImported) opts.onBookImported(r.meta);
         firstOutcome = r.outcome;
+        firstDuplicateReason = r.duplicateReason;
+        firstExistingBookId = r.existingBookId;
+        firstExistingBookTitle = r.existingBookTitle;
       }
-      emit("processed", { currentFile: settled.input.bookPath, outcome: firstOutcome });
+      emit("processed", {
+        currentFile: settled.input.bookPath,
+        outcome: firstOutcome,
+        duplicateReason: firstDuplicateReason,
+        existingBookId: firstExistingBookId,
+        existingBookTitle: firstExistingBookTitle,
+      });
     }
   } finally {
     /* На случай abort или throw — очищаем все live temp-папки. Tracker

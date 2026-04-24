@@ -65,6 +65,9 @@ function buildFrontmatter(meta: BookCatalogMeta): string {
   if (meta.author) lines.push(`author: ${escapeYaml(meta.author)}`);
   if (meta.titleEn) lines.push(`titleEn: ${escapeYaml(meta.titleEn)}`);
   if (meta.authorEn) lines.push(`authorEn: ${escapeYaml(meta.authorEn)}`);
+  if (meta.year !== undefined) lines.push(`year: ${meta.year}`);
+  if (meta.isbn) lines.push(`isbn: ${escapeYaml(meta.isbn)}`);
+  if (meta.publisher) lines.push(`publisher: ${escapeYaml(meta.publisher)}`);
   // structure
   lines.push(`wordCount: ${meta.wordCount}`);
   lines.push(`chapterCount: ${meta.chapterCount}`);
@@ -359,14 +362,15 @@ export async function convertBookToMarkdown(
   const status: BookStatus = chapters.length === 0 ? "unsupported" : "imported";
 
   const meta: BookCatalogMeta = {
-    /* id — content-based slug (первые 16 hex SHA), а НЕ хэш от пути.
-       Это даёт стабильный кросс-машинный id и идемпотентность импорта. */
     id: bookIdFromSha(sha256),
     sha256,
     originalFile,
     originalFormat: format,
     title: parsed.metadata.title?.trim() || path.parse(originalFile).name,
     author: parsed.metadata.author,
+    year: parsed.metadata.year,
+    isbn: parsed.metadata.identifier,
+    publisher: parsed.metadata.publisher,
     wordCount: totalWords,
     chapterCount: chapters.length,
     status,

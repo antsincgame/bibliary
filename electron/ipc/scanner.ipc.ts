@@ -275,7 +275,7 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
             errorMessage: b.errorMessage,
           })),
           totalBooks: sorted.length,
-          totalChunks: sorted.reduce((s, b) => s + b.processedChunkIds.length, 0),
+          totalChunks: sorted.reduce((s, b) => s + (b.totalChunks ?? 0), 0),
         });
       }
       return result.sort((a, b) => b.totalBooks - a.totalBooks);

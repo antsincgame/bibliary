@@ -6,10 +6,12 @@ import { el } from "../dom.js";
 import { t } from "../i18n.js";
 import { IMPORT_STATE } from "./state.js";
 import { buildEvaluatorPanel, refreshEvaluatorState } from "./evaluator.js";
+import { showLibraryToast } from "./toast.js";
 
 /**
  * @param {object} deps
  * @param {(root: HTMLElement) => Promise<void>} deps.renderCatalog
+ * @param {(bookId: string) => Promise<void> | void} [deps.focusCatalogBook]
  * @returns {HTMLElement}
  */
 export function buildImportPane(deps) {
@@ -69,11 +71,20 @@ export function buildImportPane(deps) {
 
   const evaluatorPanel = buildEvaluatorPanel();
 
+  const scanBtn = el("button", {
+    type: "button",
+    class: "lib-btn lib-import-scan-folder",
+    onclick: () => scanFolderForDuplicates(status, scanReportContainer),
+  }, t("library.import.btn.scanFolder") || "Scan Folder (Dedup Report)");
+
+  const scanReportContainer = el("div", { class: "lib-scan-report" });
+
   const body = el("div", { class: "lib-import-body" }, [
     dropzone,
-    el("div", { class: "lib-import-actions" }, [pickFolderBtn, pickFilesBtn, cancelBtn]),
+    el("div", { class: "lib-import-actions" }, [pickFolderBtn, pickFilesBtn, scanBtn, cancelBtn]),
     opts,
     status,
+    scanReportContainer,
     evaluatorPanel,
   ]);
 
@@ -109,7 +120,7 @@ async function importFromFiles(deps) {
   try {
     const r = /** @type {any} */ (await window.api.library.pickFiles());
     paths = Array.isArray(r) ? r : (r?.paths ?? []);
-  } catch (_e) { console.warn("[import] probeFiles failed:", _e); paths = []; }
+  } catch (_e) { console.warn("[import] pickFiles failed:", _e); paths = []; }
   if (paths.length === 0) return;
   await runImport(async () =>
     window.api.library.importFiles({
@@ -137,6 +148,9 @@ async function runImport(invoke, deps) {
     if (typeof window.api?.library?.onImportProgress === "function") {
       unsubscribeProgress = window.api.library.onImportProgress((evt) => {
         if (!status) return;
+        if (evt?.importId && !IMPORT_STATE.importId) {
+          IMPORT_STATE.importId = evt.importId;
+        }
         const discovered = Number(evt?.discovered ?? 0);
         const processed = Number(evt?.processed ?? 0);
         if (evt?.phase === "processed") {
@@ -144,6 +158,20 @@ async function runImport(invoke, deps) {
             done: String(processed),
             total: String(Math.max(discovered, processed)),
           });
+          if (evt?.outcome === "duplicate" && evt?.existingBookId) {
+            const msgKey = evt?.duplicateReason === "duplicate_older_revision"
+              ? "library.import.toast.duplicateOlder"
+              : "library.import.toast.duplicateSha";
+            showLibraryToast({
+              kind: "info",
+              message: t(msgKey, {
+                title: evt.existingBookTitle || evt.existingBookId,
+              }),
+              actionLabel: t("library.import.toast.openCatalog"),
+              onAction: () => deps.focusCatalogBook?.(evt.existingBookId),
+              dedupeKey: `${evt.duplicateReason || "duplicate"}:${evt.existingBookId}`,
+            });
+          }
         } else {
           status.textContent = t("library.import.progress.scanning", {
             found: String(discovered),
@@ -169,5 +197,120 @@ async function runImport(invoke, deps) {
     IMPORT_STATE.busy = false;
     IMPORT_STATE.importId = null;
     if (cancelBtn) cancelBtn.style.display = "none";
+  }
+}
+
+/**
+ * @param {HTMLElement} statusEl
+ * @param {HTMLElement} reportContainer
+ */
+async function scanFolderForDuplicates(statusEl, reportContainer) {
+  if (IMPORT_STATE.busy) return;
+
+  /** @type {string|null} */
+  let folderPath = null;
+  try {
+    folderPath = await window.api.library.pickFolder();
+  } catch (_e) { console.warn("[scan] pickFolder failed:", _e); }
+  if (!folderPath) return;
+
+  IMPORT_STATE.busy = true;
+  statusEl.textContent = t("library.import.scan.starting") || "Starting scan...";
+  reportContainer.innerHTML = "";
+
+  let scanId = "";
+  /** @type {(() => void)|null} */
+  let unsubProgress = null;
+  /** @type {(() => void)|null} */
+  let unsubReport = null;
+
+  const cleanup = () => {
+    if (typeof unsubProgress === "function") { try { unsubProgress(); } catch (_e) { /* */ } }
+    if (typeof unsubReport === "function") { try { unsubReport(); } catch (_e) { /* */ } }
+    unsubProgress = null;
+    unsubReport = null;
+    IMPORT_STATE.busy = false;
+  };
+
+  unsubProgress = window.api.library.onScanProgress((evt) => {
+    if (scanId && evt.scanId !== scanId) return;
+    if (evt.phase === "walking") {
+      statusEl.textContent = `Scanning files... ${evt.bookFilesFound} books found`;
+    } else if (evt.phase === "metadata") {
+      statusEl.textContent = `Extracting metadata: ${evt.scannedFiles} / ${evt.totalFiles}`;
+    } else if (evt.phase === "dedup") {
+      statusEl.textContent = "Analyzing duplicates...";
+    }
+  });
+
+  unsubReport = window.api.library.onScanReport((payload) => {
+    if (scanId && payload.scanId !== scanId) return;
+    if (payload.error) {
+      statusEl.textContent = `Scan failed: ${payload.error}`;
+    } else {
+      statusEl.textContent = "";
+      renderScanReport(/** @type {any} */ (payload.report), reportContainer);
+    }
+    cleanup();
+  });
+
+  try {
+    const res = await window.api.library.scanFolder(folderPath);
+    scanId = res.scanId;
+  } catch (e) {
+    statusEl.textContent = `Scan error: ${e instanceof Error ? e.message : String(e)}`;
+    cleanup();
+  }
+}
+
+/**
+ * @param {any} report
+ * @param {HTMLElement} container
+ */
+function renderScanReport(report, container) {
+  container.innerHTML = "";
+  if (!report) return;
+
+  const summary = el("div", { class: "lib-scan-summary" }, [
+    el("div", { class: "lib-scan-stat" }, `${report.bookFiles} books found`),
+    el("div", { class: "lib-scan-stat" }, `${report.exactDuplicates} exact duplicates (SHA)`),
+    el("div", { class: "lib-scan-stat" }, `${report.formatDuplicates} format duplicates`),
+    el("div", { class: "lib-scan-stat" }, `${report.fuzzyMatches?.length ?? 0} fuzzy matches`),
+    el("div", { class: "lib-scan-stat lib-scan-stat-highlight" }, `~${report.uniqueBooks} unique works`),
+  ]);
+  container.appendChild(summary);
+
+  if (report.editionGroups && report.editionGroups.length > 0) {
+    const edTitle = el("div", { class: "lib-scan-section-title" },
+      `Edition/Format Groups (${report.editionGroups.length})`);
+    container.appendChild(edTitle);
+
+    for (const group of report.editionGroups.slice(0, 100)) {
+      const groupEl = el("details", { class: "lib-scan-group" }, [
+        el("summary", {}, `${group.title} — ${group.author} (${group.editions.length} versions)`),
+        ...group.editions.map((ed) => {
+          const isRec = ed.path === group.recommended;
+          return el("div", {
+            class: isRec ? "lib-scan-edition lib-scan-recommended" : "lib-scan-edition",
+          }, `${isRec ? "★ " : ""}${ed.format.toUpperCase()} ${ed.year ?? ""} — ${(ed.sizeBytes / 1024 / 1024).toFixed(1)} MB`);
+        }),
+      ]);
+      container.appendChild(groupEl);
+    }
+  }
+
+  if (report.fuzzyMatches && report.fuzzyMatches.length > 0) {
+    const fzTitle = el("div", { class: "lib-scan-section-title" },
+      `Fuzzy Matches — Review Needed (${report.fuzzyMatches.length})`);
+    container.appendChild(fzTitle);
+
+    for (const pair of report.fuzzyMatches.slice(0, 50)) {
+      const pairEl = el("div", { class: "lib-scan-fuzzy-pair" }, [
+        el("div", { class: "lib-scan-fuzzy-conf" }, `${Math.round(pair.confidence * 100)}%`),
+        el("div", {}, `A: ${pair.bookA.title} — ${pair.bookA.author}`),
+        el("div", {}, `B: ${pair.bookB.title} — ${pair.bookB.author}`),
+      ]);
+      container.appendChild(pairEl);
+    }
   }
 }

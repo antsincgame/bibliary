@@ -3,6 +3,7 @@ import { el, clear } from "./dom.js";
 import { t } from "./i18n.js";
 import { buildNeonHero, neonDivider } from "./components/neon-helpers.js";
 import { buildModelSelect } from "./components/model-select.js";
+import { showAlert } from "./components/ui-dialog.js";
 
 /**
  * Phase 3.1 — UI экран «Извлечение знаний» (исторически: Crystallizer).
@@ -493,13 +494,13 @@ function handleEvent(root, payload) {
 async function startJob(root) {
   if (STATE.busy) return;
   if (!STATE.selectedBook) {
-    alert(t("crystal.alert.noBook"));
+    await showAlert(t("crystal.alert.noBook"));
     return;
   }
   const extractModel = extractorSelect?.getValue() ?? "";
   const judgeModel = judgeSelect?.getValue() ?? "";
   if (!extractModel || !judgeModel) {
-    alert(t("crystal.alert.noModel"));
+    await showAlert(t("crystal.alert.noModel"));
     return;
   }
   resetStats();

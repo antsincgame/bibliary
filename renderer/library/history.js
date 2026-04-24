@@ -4,6 +4,7 @@
  */
 import { el, clear } from "../dom.js";
 import { t } from "../i18n.js";
+import { showAlert, showConfirm } from "../components/ui-dialog.js";
 import { STATE } from "./state.js";
 import { fmtDate } from "./format.js";
 
@@ -41,16 +42,16 @@ export function renderHistory(root) {
             type: "button",
             onclick: async () => {
               if (STATE.activeIngests.has(b.bookSourcePath)) {
-                alert(t("library.history.deleteWhileIngest"));
+                await showAlert(t("library.history.deleteWhileIngest"));
                 return;
               }
-              if (!confirm(t("library.history.confirmDelete").replace("{book}", b.fileName).replace("{collection}", group.collection))) return;
+              if (!(await showConfirm(t("library.history.confirmDelete").replace("{book}", b.fileName).replace("{collection}", group.collection)))) return;
               try {
                 await window.api.scanner.deleteFromCollection(b.bookSourcePath, group.collection);
                 await loadHistory();
                 renderHistory(root);
               } catch (e) {
-                alert(t("library.history.deleteFailed") + ": " + (e instanceof Error ? e.message : String(e)));
+                await showAlert(t("library.history.deleteFailed") + ": " + (e instanceof Error ? e.message : String(e)));
               }
             },
           };

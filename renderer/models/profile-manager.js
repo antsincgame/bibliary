@@ -1,6 +1,7 @@
 // @ts-check
 import { el, clear } from "../dom.js";
 import { t } from "../i18n.js";
+import { showAlert, showConfirm } from "../components/ui-dialog.js";
 
 /**
  * Editable profiles panel — встраивается в Models route.
@@ -58,9 +59,9 @@ export function buildProfileManager(opts) {
     actions.querySelector('[data-action="export"]').addEventListener("click", async () => {
       try {
         const r = await window.api.profile.export();
-        if (r) alert(t("pm.export.ok", { path: r.path }));
+        if (r) await showAlert(t("pm.export.ok", { path: r.path }));
       } catch (e) {
-        alert(t("pm.error.export", { msg: e instanceof Error ? e.message : String(e) }));
+        await showAlert(t("pm.error.export", { msg: e instanceof Error ? e.message : String(e) }));
       }
     });
     actions.querySelector('[data-action="import"]').addEventListener("click", async () => {
@@ -70,20 +71,20 @@ export function buildProfileManager(opts) {
           await refresh();
           await opts.onChange();
           const s = /** @type {any} */ (r.summary);
-          alert(t("pm.import.ok", { count: s.profilesUpserted, roles: s.rolesImported ? "✓" : "—" }));
+          await showAlert(t("pm.import.ok", { count: s.profilesUpserted, roles: s.rolesImported ? "✓" : "—" }));
         }
       } catch (e) {
-        alert(t("pm.error.import", { msg: e instanceof Error ? e.message : String(e) }));
+        await showAlert(t("pm.error.import", { msg: e instanceof Error ? e.message : String(e) }));
       }
     });
     actions.querySelector('[data-action="reset"]').addEventListener("click", async () => {
-      if (!confirm(t("pm.reset.confirm"))) return;
+      if (!(await showConfirm(t("pm.reset.confirm")))) return;
       try {
         await window.api.profile.resetToDefaults();
         await refresh();
         await opts.onChange();
       } catch (e) {
-        alert(t("pm.error.reset", { msg: e instanceof Error ? e.message : String(e) }));
+        await showAlert(t("pm.error.reset", { msg: e instanceof Error ? e.message : String(e) }));
       }
     });
     root.appendChild(actions);
@@ -109,13 +110,13 @@ export function buildProfileManager(opts) {
     if (!p.builtin) {
       const delBtn = el("button", { class: "btn btn-ghost pm-btn-delete", type: "button" }, t("pm.delete"));
       delBtn.addEventListener("click", async () => {
-        if (!confirm(t("pm.delete.confirm", { id: p.id }))) return;
+        if (!(await showConfirm(t("pm.delete.confirm", { id: p.id })))) return;
         try {
           await window.api.profile.remove(p.id);
           await refresh();
           await opts.onChange();
         } catch (e) {
-          alert(t("pm.error.delete", { msg: e instanceof Error ? e.message : String(e) }));
+          await showAlert(t("pm.error.delete", { msg: e instanceof Error ? e.message : String(e) }));
         }
       });
       buttons.appendChild(delBtn);

@@ -106,6 +106,34 @@ async function parseEpub(filePath: string): Promise<ParseResult> {
     return typeof l === "string" ? l.toLowerCase() : undefined;
   })();
 
+  const publisher = (() => {
+    const p = md?.["dc:publisher"] ?? md?.["publisher"];
+    if (!p) return undefined;
+    if (typeof p === "string") return p.trim() || undefined;
+    if (Array.isArray(p)) return String(p[0]).trim() || undefined;
+    return String((p as Record<string, unknown>)["#text"] ?? "").trim() || undefined;
+  })();
+
+  const year = (() => {
+    const d = md?.["dc:date"] ?? md?.["date"];
+    if (!d) return undefined;
+    const raw = typeof d === "string" ? d : (Array.isArray(d) ? String(d[0]) : String((d as Record<string, unknown>)["#text"] ?? ""));
+    const m = raw.match(/(\d{4})/);
+    if (m) { const y = Number(m[1]); if (y >= 1800 && y <= 2100) return y; }
+    return undefined;
+  })();
+
+  const identifier = (() => {
+    const ids = asArray(md?.["dc:identifier"] ?? md?.["identifier"]);
+    for (const raw of ids) {
+      const text = typeof raw === "string" ? raw : String((raw as Record<string, unknown>)["#text"] ?? "");
+      const digits = text.replace(/[-\s]/g, "");
+      if (/^(978|979)\d{10}$/.test(digits)) return digits;
+      if (/^\d{9}[\dXx]$/.test(digits)) return digits;
+    }
+    return undefined;
+  })();
+
   const manifestRaw = (pkg?.["manifest"] as Record<string, unknown> | undefined)?.["item"];
   const items: ManifestItem[] = asArray(manifestRaw).map((it) => {
     const o = it as Record<string, unknown>;
@@ -189,7 +217,7 @@ async function parseEpub(filePath: string): Promise<ParseResult> {
   }
 
   return {
-    metadata: { title, author, language, warnings },
+    metadata: { title, author, language, identifier, year, publisher, warnings },
     sections,
     rawCharCount: totalChars,
   };

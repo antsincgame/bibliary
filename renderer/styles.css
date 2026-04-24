@@ -125,13 +125,13 @@ body::after {
 
 /* Sidebar */
 .sidebar {
-  width: 72px;
+  width: 104px;
   background: var(--panel);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  padding: 16px 6px;
+  padding: 16px 8px;
   gap: 6px;
   flex-shrink: 0;
 }
@@ -149,15 +149,32 @@ body::after {
   gap: 6px;
   font-family: var(--font-display);
   font-size: 9px;
-  letter-spacing: 1px;
+  letter-spacing: 0.6px;
   text-transform: uppercase;
+  text-align: center;
+  line-height: 1.2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  hyphens: auto;
   transition: all 0.2s;
+}
+
+.sidebar-icon > span,
+.sidebar-icon > [data-i18n] {
+  display: block;
+  width: 100%;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .sidebar-icon svg {
   width: 22px;
   height: 22px;
   stroke: currentColor;
+  flex-shrink: 0;
 }
 
 .sidebar-icon:hover {
@@ -1966,6 +1983,29 @@ textarea:focus {
 }
 .chat-toast-success { border-left-color: var(--gold); }
 .chat-toast-error { border-left-color: var(--red); color: #ffb3b3; }
+.lib-toast {
+  display: grid;
+  gap: 8px;
+  min-width: 320px;
+  max-width: 520px;
+}
+.lib-toast-message {
+  line-height: 1.45;
+}
+.lib-toast-action {
+  justify-self: start;
+  border: 1px solid rgba(0, 240, 255, 0.45);
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--cyan);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.lib-toast-action:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
 @keyframes chat-toast-in {
   from { transform: translateY(8px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
@@ -4374,6 +4414,15 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   border-radius: 2px;
 }
 .qdrant-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.ui-dialog-overlay { z-index: 11000; }
+.ui-dialog-message {
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.ui-dialog-input { width: 100%; }
 
 /* Reuse minimal button shapes (project doesn't have a global btn-* set) */
 .btn-primary, .btn-secondary, .btn-danger, .btn-danger-soft {
@@ -5790,6 +5839,14 @@ details.forge-collapsible > .forge-collapsible-body {
   background: linear-gradient(90deg, rgba(255, 215, 0, 0.10), rgba(255, 215, 0, 0.02) 60%, transparent);
   box-shadow: inset 2px 0 0 var(--gold);
 }
+.lib-catalog-row-focus {
+  animation: lib-row-pulse 2.4s ease;
+  box-shadow: inset 3px 0 0 var(--cyan), 0 0 0 1px rgba(0, 240, 255, 0.25);
+}
+@keyframes lib-row-pulse {
+  0% { background: rgba(0, 240, 255, 0.24); }
+  100% { background: transparent; }
+}
 .lib-catalog-row-fiction { opacity: 0.55; }
 .lib-catalog-row-fiction:hover { opacity: 0.85; }
 
@@ -6027,6 +6084,52 @@ details.forge-collapsible > .forge-collapsible-body {
   text-align: center;
   min-height: 18px;
   letter-spacing: 0.04em;
+}
+
+/* ── Scan Report ── */
+.lib-scan-report { margin-top: 12px; }
+.lib-scan-summary {
+  display: flex; flex-wrap: wrap; gap: 8px 16px;
+  padding: 10px 14px; background: var(--surface);
+  border: 1px solid rgba(0, 240, 255, 0.15); border-radius: 3px;
+  margin-bottom: 12px;
+}
+.lib-scan-stat {
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-dim); letter-spacing: 0.03em;
+}
+.lib-scan-stat-highlight { color: var(--gold); font-weight: 700; }
+.lib-scan-section-title {
+  font-family: var(--font-display); font-size: 11px;
+  letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--cyan); margin: 12px 0 6px; padding-bottom: 4px;
+  border-bottom: 1px solid rgba(0, 240, 255, 0.12);
+}
+.lib-scan-group { margin-bottom: 6px; }
+.lib-scan-group summary {
+  cursor: pointer; font-size: 12px; color: var(--text);
+  padding: 4px 0; user-select: none;
+}
+.lib-scan-edition {
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-dim); padding: 2px 0 2px 16px;
+}
+.lib-scan-recommended { color: var(--gold); }
+.lib-scan-fuzzy-pair {
+  display: grid; grid-template-columns: 48px 1fr;
+  gap: 2px 8px; padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 11px; color: var(--text-dim);
+}
+.lib-scan-fuzzy-conf {
+  font-family: var(--font-mono); color: var(--gold);
+  font-weight: 700; text-align: right;
+}
+.lib-import-scan-folder {
+  border-color: var(--gold); color: var(--gold);
+}
+.lib-import-scan-folder:hover {
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.3);
 }
 
 .lib-evaluator-panel {

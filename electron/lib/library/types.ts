@@ -10,8 +10,8 @@
  * SQLite-кэш можно удалить -- при следующем старте приложение
  * пересканирует library/ и восстановит каталог из YAML frontmatter'ов.
  *
- * Строгий минимализм: никакого language/year/fileSize/coverImage в схеме.
  * UI оперирует английскими зеркалами titleEn/authorEn (заполняются эвалюатором).
+ * Rich bibliographic fields (year, isbn, publisher) were added for deduplication.
  */
 
 /** Lifecycle статуса книги в библиотеке. */
@@ -58,6 +58,13 @@ export interface BookCatalogMeta {
   titleEn?: string;
   /** Английская транслитерация автора от эвалюатора. UI primary. */
   authorEn?: string;
+  // ── bibliographic (for dedup/enrichment) ──
+  /** Publication year (from parser metadata, filename, or enrichment). */
+  year?: number;
+  /** ISBN-13 (normalized, digits only) or ISBN-10 if 13 not available. */
+  isbn?: string;
+  /** Publisher name from file metadata. */
+  publisher?: string;
   // ── structure ──
   wordCount: number;
   chapterCount: number;

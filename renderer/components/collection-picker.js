@@ -13,6 +13,7 @@
  */
 import { el } from "../dom.js";
 import { t } from "../i18n.js";
+import { showAlert, showConfirm, showPrompt } from "./ui-dialog.js";
 
 /**
  * @typedef {object} CollectionPickerOptions
@@ -132,19 +133,19 @@ export function buildCollectionPicker(opts) {
 
   async function handleCreate() {
     if (!opts.onCreate) return;
-    const raw = window.prompt(t("library.collection.create.prompt"), "");
+    const raw = await showPrompt(t("library.collection.create.prompt"), "");
     if (raw === null) return;
     const name = raw.trim();
     if (!name) {
-      window.alert(t("library.collection.create.empty"));
+      await showAlert(t("library.collection.create.empty"));
       return;
     }
     if (!/^[a-zA-Z0-9_\-:.]{1,128}$/.test(name)) {
-      window.alert(t("library.collection.create.invalid"));
+      await showAlert(t("library.collection.create.invalid"));
       return;
     }
     if (cached.includes(name)) {
-      window.alert(t("library.collection.create.exists"));
+      await showAlert(t("library.collection.create.exists"));
       select.value = name;
       opts.onChange(name);
       return;
@@ -188,7 +189,7 @@ export function buildCollectionPicker(opts) {
  */
 async function offerDashboardFallback(errorMsg) {
   const msg = t("library.collection.create.openDashboardConfirm", { error: errorMsg });
-  if (!window.confirm(msg)) return;
+  if (!(await showConfirm(msg))) return;
   await openQdrantDashboard();
 }
 
@@ -216,5 +217,5 @@ async function openQdrantDashboard() {
     }
   } catch (_e) { /* tolerate: fall through to direct open */ }
   try { window.open(url, "_blank", "noopener,noreferrer"); }
-  catch (_e) { window.alert(`Откройте в браузере: ${url}`); }
+  catch (_e) { await showAlert(`Откройте в браузере: ${url}`); }
 }

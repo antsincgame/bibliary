@@ -98,6 +98,25 @@ async function parseFb2(filePath: string): Promise<ParseResult> {
     if (lang) language = String(lang).toLowerCase();
   }
 
+  const publishInfo = (description?.["publish-info"] ?? description?.["publishInfo"]) as Record<string, unknown> | undefined;
+  let year: number | undefined;
+  let isbn: string | undefined;
+  let publisher: string | undefined;
+  if (publishInfo) {
+    const yRaw = publishInfo["year"];
+    if (yRaw !== undefined) {
+      const yn = typeof yRaw === "number" ? yRaw : Number(String(yRaw).match(/(\d{4})/)?.[1]);
+      if (yn >= 1800 && yn <= 2100) year = yn;
+    }
+    const isbnRaw = publishInfo["isbn"];
+    if (isbnRaw) {
+      const digits = String(isbnRaw).replace(/[-\s]/g, "");
+      if (/^(978|979)\d{10}$/.test(digits) || /^\d{9}[\dXx]$/.test(digits)) isbn = digits;
+    }
+    const pubRaw = publishInfo["publisher"];
+    if (pubRaw) publisher = extractText(pubRaw).trim() || undefined;
+  }
+
   const body = root["body"];
   const bodies = asArray(body) as Fb2Section[];
   let totalChars = 0;
@@ -113,7 +132,7 @@ async function parseFb2(filePath: string): Promise<ParseResult> {
   }
 
   return {
-    metadata: { title, author, language, warnings },
+    metadata: { title, author, language, identifier: isbn, year, publisher, warnings },
     sections: sections.filter((s) => s.paragraphs.length > 0),
     rawCharCount: totalChars,
   };

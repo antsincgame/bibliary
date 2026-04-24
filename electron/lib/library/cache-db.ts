@@ -43,6 +43,9 @@ CREATE TABLE IF NOT EXISTS books (
   author              TEXT,
   title_en            TEXT,
   author_en           TEXT,
+  year                INTEGER,
+  isbn                TEXT,
+  publisher           TEXT,
   -- structure
   word_count          INTEGER NOT NULL,
   chapter_count       INTEGER NOT NULL,
@@ -107,7 +110,6 @@ function applyMigrations(db: Database.Database): void {
         title_en, author_en, tags, verdict_reason, evaluator_reasoning
       );
     `);
-    /* Перенаполняем FTS из текущих books (если они уже есть в БД от старой версии). */
     db.exec(`
       INSERT INTO books_fts (rowid, title_en, author_en, tags, verdict_reason, evaluator_reasoning)
       SELECT b.rowid,
@@ -119,6 +121,17 @@ function applyMigrations(db: Database.Database): void {
         FROM books b;
     `);
     db.pragma("user_version = 2");
+  }
+
+  if (current < 3) {
+    const cols = db.pragma("table_info(books)") as Array<{ name: string }>;
+    const existing = new Set(cols.map((c) => c.name));
+    if (!existing.has("year")) db.exec("ALTER TABLE books ADD COLUMN year INTEGER");
+    if (!existing.has("isbn")) db.exec("ALTER TABLE books ADD COLUMN isbn TEXT");
+    if (!existing.has("publisher")) db.exec("ALTER TABLE books ADD COLUMN publisher TEXT");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_books_isbn ON books(isbn)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_books_year ON books(year)");
+    db.pragma("user_version = 3");
   }
 }
 
@@ -172,6 +185,9 @@ interface BookRow {
   author: string | null;
   title_en: string | null;
   author_en: string | null;
+  year: number | null;
+  isbn: string | null;
+  publisher: string | null;
   word_count: number;
   chapter_count: number;
   original_format: string;
@@ -200,6 +216,9 @@ function rowToMeta(row: BookRow, tags: string[]): BookCatalogMeta & { mdPath: st
     author: row.author ?? undefined,
     titleEn: row.title_en ?? undefined,
     authorEn: row.author_en ?? undefined,
+    year: row.year ?? undefined,
+    isbn: row.isbn ?? undefined,
+    publisher: row.publisher ?? undefined,
     wordCount: row.word_count,
     chapterCount: row.chapter_count,
     originalFile: getStoredOriginalFileName(originalFormat),
@@ -226,17 +245,17 @@ function rowToMeta(row: BookRow, tags: string[]): BookCatalogMeta & { mdPath: st
 
 const UPSERT_SQL = `
 INSERT INTO books (
-  id, sha256, title, author, title_en, author_en, word_count, chapter_count,
-  original_format, source_archive, domain, quality_score, conceptual_density,
-  originality, is_fiction_or_water, verdict_reason, evaluator_reasoning,
-  evaluator_model, evaluated_at, concepts_extracted, concepts_accepted,
-  status, md_path
+  id, sha256, title, author, title_en, author_en, year, isbn, publisher,
+  word_count, chapter_count, original_format, source_archive,
+  domain, quality_score, conceptual_density, originality, is_fiction_or_water,
+  verdict_reason, evaluator_reasoning, evaluator_model, evaluated_at,
+  concepts_extracted, concepts_accepted, status, md_path
 ) VALUES (
-  @id, @sha256, @title, @author, @title_en, @author_en, @word_count, @chapter_count,
-  @original_format, @source_archive, @domain, @quality_score, @conceptual_density,
-  @originality, @is_fiction_or_water, @verdict_reason, @evaluator_reasoning,
-  @evaluator_model, @evaluated_at, @concepts_extracted, @concepts_accepted,
-  @status, @md_path
+  @id, @sha256, @title, @author, @title_en, @author_en, @year, @isbn, @publisher,
+  @word_count, @chapter_count, @original_format, @source_archive,
+  @domain, @quality_score, @conceptual_density, @originality, @is_fiction_or_water,
+  @verdict_reason, @evaluator_reasoning, @evaluator_model, @evaluated_at,
+  @concepts_extracted, @concepts_accepted, @status, @md_path
 )
 ON CONFLICT(id) DO UPDATE SET
   sha256              = excluded.sha256,
@@ -244,6 +263,9 @@ ON CONFLICT(id) DO UPDATE SET
   author              = excluded.author,
   title_en            = excluded.title_en,
   author_en           = excluded.author_en,
+  year                = excluded.year,
+  isbn                = excluded.isbn,
+  publisher           = excluded.publisher,
   word_count          = excluded.word_count,
   chapter_count       = excluded.chapter_count,
   original_format     = excluded.original_format,
@@ -278,6 +300,9 @@ export function upsertBook(meta: BookCatalogMeta, mdPath: string): void {
     author: meta.author ?? null,
     title_en: meta.titleEn ?? null,
     author_en: meta.authorEn ?? null,
+    year: meta.year ?? null,
+    isbn: meta.isbn ?? null,
+    publisher: meta.publisher ?? null,
     word_count: meta.wordCount,
     chapter_count: meta.chapterCount,
     original_format: meta.originalFormat,
@@ -386,6 +411,17 @@ export interface CatalogQuery {
 interface QueryResult {
   rows: (BookCatalogMeta & { mdPath: string })[];
   total: number;
+}
+
+export interface RevisionDedupBook {
+  id: string;
+  title: string;
+  author?: string;
+  titleEn?: string;
+  authorEn?: string;
+  sourceArchive?: string;
+  year?: number;
+  isbn?: string;
 }
 
 function buildWhere(q: CatalogQuery): { sql: string; params: unknown[] } {
@@ -553,6 +589,33 @@ export function getBooksByIds(ids: string[]): (BookCatalogMeta & { mdPath: strin
   return out;
 }
 
+/** Минимальная выборка для revision-level дедупа (без тяжёлых полей). */
+export function listBooksForRevisionDedup(): RevisionDedupBook[] {
+  const db = openCacheDb();
+  const rows = db.prepare(
+    "SELECT id, title, author, title_en, author_en, source_archive, year, isbn FROM books"
+  ).all() as Array<{
+    id: string;
+    title: string;
+    author: string | null;
+    title_en: string | null;
+    author_en: string | null;
+    source_archive: string | null;
+    year: number | null;
+    isbn: string | null;
+  }>;
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    author: r.author ?? undefined,
+    titleEn: r.title_en ?? undefined,
+    authorEn: r.author_en ?? undefined,
+    sourceArchive: r.source_archive ?? undefined,
+    year: r.year ?? undefined,
+    isbn: r.isbn ?? undefined,
+  }));
+}
+
 // ── Rebuild from filesystem ──────────────────────────────────────────────────
 
 /**
@@ -603,6 +666,9 @@ export async function rebuildFromFs(): Promise<{ scanned: number; ingested: numb
         author: meta.author,
         titleEn: meta.titleEn,
         authorEn: meta.authorEn,
+        year: meta.year,
+        isbn: meta.isbn,
+        publisher: meta.publisher,
         originalFile: meta.originalFile ?? "",
         originalFormat: (meta.originalFormat ?? "txt") as BookCatalogMeta["originalFormat"],
         sourceArchive: meta.sourceArchive,

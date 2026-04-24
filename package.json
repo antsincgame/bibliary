@@ -50,6 +50,7 @@
     "better-sqlite3": "^12.9.0",
     "dotenv": "^16.4.7",
     "fast-xml-parser": "^4.5.1",
+    "fastest-levenshtein": "^1.0.16",
     "jszip": "^3.10.1",
     "libarchive.js": "^2.0.2",
     "mammoth": "^1.8.0",

@@ -7,6 +7,7 @@ import { mkdtemp, rm, writeFile, stat } from "node:fs/promises";
 import { closeCacheDb, getBookById } from "../electron/lib/library/cache-db.ts";
 import { _resetLibraryRootCache } from "../electron/lib/library/paths.ts";
 import { resetNearDupCache } from "../electron/lib/library/near-dup-detector.ts";
+import { resetRevisionDedupCache } from "../electron/lib/library/revision-dedup.ts";
 import { importBookFromFile, importFolderToLibrary } from "../electron/lib/library/import.ts";
 import { computeFileSha256, bookIdFromSha } from "../electron/lib/library/sha-stream.ts";
 
@@ -32,6 +33,7 @@ async function makeSandbox(prefix: string): Promise<SandboxState> {
   closeCacheDb();
   _resetLibraryRootCache();
   resetNearDupCache();
+  resetRevisionDedupCache();
   return {
     tempRoot,
     dataDir,
@@ -40,6 +42,7 @@ async function makeSandbox(prefix: string): Promise<SandboxState> {
       closeCacheDb();
       _resetLibraryRootCache();
       resetNearDupCache();
+      resetRevisionDedupCache();
       for (const k of Object.keys(prev) as (keyof typeof prev)[]) {
         if (prev[k] === undefined) delete process.env[k];
         else process.env[k] = prev[k];

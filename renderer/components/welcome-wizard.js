@@ -1,6 +1,7 @@
 // @ts-check
 import { el, clear } from "../dom.js";
 import { t } from "../i18n.js";
+import { showConfirm } from "./ui-dialog.js";
 
 const LEGACY_STORAGE_KEY = "bibliary_setup_done";
 const ONBOARDING_VERSION = 2;
@@ -418,9 +419,9 @@ export function openWelcomeWizard(opts) {
     /* A10: настоящий skip — confirm если пользователь уходит без модели
        со step >= 2 (значит он реально дошёл до setup). На step 0/1 не
        спрашиваем — там ещё нечего терять. */
-    skip.addEventListener("click", () => {
+    skip.addEventListener("click", async () => {
       if (STATE.step >= 2 && !STATE.chatModel) {
-        const confirmed = window.confirm(t("ww.skip.confirm_no_model"));
+        const confirmed = await showConfirm(t("ww.skip.confirm_no_model"));
         if (!confirmed) return;
       }
       void finish();

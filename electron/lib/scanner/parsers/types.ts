@@ -20,6 +20,8 @@ export interface BookMetadata {
   identifier?: string;
   /** Год публикации, если можно достоверно извлечь. */
   year?: number;
+  /** Publisher name from file metadata (OPF dc:publisher, FB2 publish-info, PDF info). */
+  publisher?: string;
   /** Кодировка/декодинг warnings для отладки. */
   warnings: string[];
 }

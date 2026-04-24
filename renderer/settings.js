@@ -4,6 +4,7 @@ import { t } from "./i18n.js";
 import { getMode } from "./ui-mode.js";
 import { buildNeonHero, neonDivider } from "./components/neon-helpers.js";
 import { openWelcomeWizard, resetWelcomeWizard } from "./components/welcome-wizard.js";
+import { showAlert, showConfirm } from "./components/ui-dialog.js";
 import { SECTIONS } from "./settings/sections.js";
 
 /** @returns {any} */
@@ -293,7 +294,7 @@ async function save(root) {
     STATE.prefs = await api().preferences.set(STATE.prefs);
     STATE.dirty = false;
   } catch (e) {
-    alert(t("settings.saveFailed") + ": " + (e instanceof Error ? e.message : String(e)));
+    await showAlert(t("settings.saveFailed") + ": " + (e instanceof Error ? e.message : String(e)));
   } finally {
     STATE.saving = false;
     updateSaveUi(root);
@@ -301,13 +302,13 @@ async function save(root) {
 }
 
 async function resetAll(root) {
-  if (!confirm(t("settings.confirmReset"))) return;
+  if (!(await showConfirm(t("settings.confirmReset")))) return;
   try {
     STATE.prefs = await api().preferences.reset();
     STATE.dirty = false;
     render(root);
   } catch (e) {
-    alert(String(e));
+    await showAlert(String(e));
   }
 }
 

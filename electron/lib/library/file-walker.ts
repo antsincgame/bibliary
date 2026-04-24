@@ -27,9 +27,30 @@ export interface WalkOptions {
   signal?: AbortSignal;
   /** Максимальная глубина (anti-runaway, защита от циклов через симлинки). */
   maxDepth?: number;
+  /** Minimum file size in bytes. Files smaller are skipped (not real books). Default 10240 (10 KB). */
+  minFileBytes?: number;
 }
 
 const DEFAULT_MAX_DEPTH = 16;
+const DEFAULT_MIN_FILE_BYTES = 10_240; // 10 KB — no real book is smaller
+
+const DIR_BLACKLIST: ReadonlySet<string> = new Set([
+  ".git", ".svn", ".hg",
+  "node_modules", "__pycache__", ".tox", ".mypy_cache",
+  ".idea", ".vscode", ".vs",
+  "build", "dist", "target", "out", "bin", "obj",
+  "vendor",
+  "BlackBox.AD",
+]);
+
+const BASENAME_BLACKLIST: ReadonlySet<string> = new Set([
+  "readme", "readme.md", "readme.txt", "readme.rst",
+  "license", "license.txt", "license.md",
+  "changelog", "changelog.md", "changes.md",
+  "makefile", "cmakelists.txt",
+  "dockerfile", ".gitignore", ".editorconfig", ".eslintrc",
+  "package.json", "tsconfig.json", "cargo.toml",
+]);
 
 /**
  * Async generator: yield абсолютные пути к каждому подходящему файлу.
@@ -42,7 +63,8 @@ export async function* walkSupportedFiles(
 ): AsyncGenerator<string> {
   const includeArchives = opts.includeArchives === true;
   const maxDepth = opts.maxDepth ?? DEFAULT_MAX_DEPTH;
-  yield* walkDir(rootDir, supported, includeArchives, opts.signal, 0, maxDepth);
+  const minBytes = opts.minFileBytes ?? DEFAULT_MIN_FILE_BYTES;
+  yield* walkDir(rootDir, supported, includeArchives, opts.signal, 0, maxDepth, minBytes);
 }
 
 async function* walkDir(
@@ -52,6 +74,7 @@ async function* walkDir(
   signal: AbortSignal | undefined,
   depth: number,
   maxDepth: number,
+  minBytes: number,
 ): AsyncGenerator<string> {
   if (signal?.aborted) return;
   if (depth > maxDepth) return;
@@ -68,16 +91,27 @@ async function* walkDir(
     const full = path.join(dir, entry.name);
 
     if (entry.isDirectory()) {
-      yield* walkDir(full, supported, includeArchives, signal, depth + 1, maxDepth);
+      if (DIR_BLACKLIST.has(entry.name.toLowerCase())) continue;
+      yield* walkDir(full, supported, includeArchives, signal, depth + 1, maxDepth, minBytes);
       continue;
     }
     if (!entry.isFile()) continue;
 
+    const lower = entry.name.toLowerCase();
+    if (BASENAME_BLACKLIST.has(lower)) continue;
+
     const ext = detectExt(entry.name);
-    if (ext && supported.has(ext)) {
-      yield full;
-      continue;
+    const isBook = ext && supported.has(ext);
+    const isArch = !isBook && includeArchives && isArchive(full);
+    if (!isBook && !isArch) continue;
+
+    if (minBytes > 0) {
+      try {
+        const st = await fs.stat(full);
+        if (st.size < minBytes) continue;
+      } catch { continue; }
     }
-    if (includeArchives && isArchive(full)) yield full;
+
+    yield full;
   }
 }

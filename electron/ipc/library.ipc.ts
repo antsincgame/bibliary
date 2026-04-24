@@ -51,7 +51,6 @@ import {
 import {
   bootstrapEvaluatorQueue,
   enqueueBook,
-  enqueueMany,
   enqueuePriority,
   pauseEvaluator,
   resumeEvaluator,
@@ -63,7 +62,9 @@ import {
   subscribeEvaluator,
 } from "../lib/library/evaluator-queue.js";
 import { resolveLibraryRoot } from "../lib/library/paths.js";
+import { scanFolder, type ScanReport, type ScanProgressEvent } from "../lib/library/scan-folder.js";
 import { unregisterFromNearDup, resetNearDupCache } from "../lib/library/near-dup-detector.js";
+import { resetRevisionDedupCache } from "../lib/library/revision-dedup.js";
 import type { BookCatalogMeta, BookStatus } from "../lib/library/types.js";
 
 const SUPPORTED_FILE_FILTERS = [
@@ -199,7 +200,6 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
       activeImports.set(importId, ctrl);
       try {
         const aggregate = { total: 0, added: 0, duplicate: 0, skipped: 0, failed: 0, warnings: [] as string[] };
-        const newIds: string[] = [];
         for (let i = 0; i < args.paths.length; i++) {
           if (ctrl.signal.aborted) break;
           const p = args.paths[i];
@@ -213,7 +213,10 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
               aggregate.total += 1;
               aggregate[r.outcome] += 1;
               aggregate.warnings.push(...r.warnings);
-              if (r.outcome === "added" && r.bookId) newIds.push(r.bookId);
+              /* Симметрия с folder-импортом: каждую новую книгу немедленно
+                 ставим в evaluator-queue, чтобы LLM-оценка началась
+                 сразу, а не в конце большого batch. */
+              if (r.outcome === "added" && r.bookId) enqueueBook(r.bookId);
             }
             broadcastImportProgress(getMainWindow, importId, {
               phase: "processed",
@@ -221,6 +224,9 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
               processed: i + 1,
               currentFile: p,
               outcome: itemResults[0]?.outcome ?? "failed",
+              duplicateReason: itemResults[0]?.duplicateReason,
+              existingBookId: itemResults[0]?.existingBookId,
+              existingBookTitle: itemResults[0]?.existingBookTitle,
               index: i + 1,
               total: args.paths.length,
             });
@@ -230,7 +236,6 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
             aggregate.warnings.push(`${p}: ${e instanceof Error ? e.message : String(e)}`);
           }
         }
-        if (newIds.length > 0) enqueueMany(newIds);
         return { importId, ...aggregate };
       } finally {
         activeImports.delete(importId);
@@ -297,6 +302,7 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
            похожей книги получит ложное предупреждение «near-duplicate of
            {удалённый-id}». Идемпотентно. */
         unregisterFromNearDup(meta);
+        resetRevisionDedupCache();
         if (args.deleteFiles !== false) {
           /* book.md лежит в data/library/{slug}/book.md -- удаляем директорию целиком. */
           const path = await import("path");
@@ -319,6 +325,7 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
          гарантированно stale — сбрасываем, перезагрузится лениво при первом
          запросе из свежей SQLite. */
       resetNearDupCache();
+      resetRevisionDedupCache();
       return { ...rebuilt, pruned };
     }
   );
@@ -384,4 +391,57 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
     }
   );
   ipcMain.handle("library:evaluator-get-slots", async (): Promise<number> => getEvaluatorSlotCount());
+
+  // ── Pre-import scan ────────────────────────────────────────────────────────
+
+  const activeScans = new Map<string, AbortController>();
+
+  ipcMain.handle(
+    "library:scan-folder",
+    async (_e, args: { folder: string }): Promise<{ scanId: string }> => {
+      if (!args || typeof args.folder !== "string") throw new Error("folder required");
+      const scanId = randomUUID();
+      const ctrl = new AbortController();
+      activeScans.set(scanId, ctrl);
+
+      scanFolder(args.folder, {
+        scanId,
+        signal: ctrl.signal,
+        onProgress: (evt: ScanProgressEvent) => {
+          const win = getMainWindow();
+          if (win && !win.isDestroyed()) {
+            win.webContents.send("library:scan-progress", evt);
+          }
+        },
+      }).then((report: ScanReport) => {
+        const win = getMainWindow();
+        if (win && !win.isDestroyed()) {
+          win.webContents.send("library:scan-report", { scanId, report });
+        }
+      }).catch((err: unknown) => {
+        const win = getMainWindow();
+        if (win && !win.isDestroyed()) {
+          win.webContents.send("library:scan-report", {
+            scanId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }).finally(() => {
+        activeScans.delete(scanId);
+      });
+
+      return { scanId };
+    }
+  );
+
+  ipcMain.handle(
+    "library:cancel-scan",
+    async (_e, scanId: string): Promise<boolean> => {
+      const ctrl = activeScans.get(scanId);
+      if (!ctrl) return false;
+      ctrl.abort("user-cancel");
+      activeScans.delete(scanId);
+      return true;
+    }
+  );
 }

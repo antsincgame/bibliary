@@ -514,6 +514,9 @@ contextBridge.exposeInMainWorld("api", {
       processed: number;
       currentFile?: string;
       outcome?: "added" | "duplicate" | "skipped" | "failed";
+      duplicateReason?: "duplicate_sha" | "duplicate_isbn" | "duplicate_older_revision";
+      existingBookId?: string;
+      existingBookTitle?: string;
       /** Backward-compat: для старого UI = processed/discovered. */
       index: number;
       total: number;
@@ -525,6 +528,9 @@ contextBridge.exposeInMainWorld("api", {
         processed: number;
         currentFile?: string;
         outcome?: "added" | "duplicate" | "skipped" | "failed";
+        duplicateReason?: "duplicate_sha" | "duplicate_isbn" | "duplicate_older_revision";
+        existingBookId?: string;
+        existingBookTitle?: string;
         index: number;
         total: number;
       }) => cb(p);
@@ -553,6 +559,31 @@ contextBridge.exposeInMainWorld("api", {
       }) => cb(p);
       ipcRenderer.on("library:evaluator-event", l);
       return () => ipcRenderer.removeListener("library:evaluator-event", l);
+    },
+    scanFolder: (folder: string): Promise<{ scanId: string }> =>
+      ipcRenderer.invoke("library:scan-folder", { folder }),
+    cancelScan: (scanId: string): Promise<boolean> =>
+      ipcRenderer.invoke("library:cancel-scan", scanId),
+    onScanProgress: (cb: (payload: {
+      scanId: string;
+      phase: "walking" | "metadata" | "dedup" | "done";
+      scannedFiles: number;
+      totalFiles: number;
+      bookFilesFound: number;
+      currentFile?: string;
+    }) => void): (() => void) => {
+      const l = (_e: unknown, p: Parameters<typeof cb>[0]) => cb(p);
+      ipcRenderer.on("library:scan-progress", l);
+      return () => ipcRenderer.removeListener("library:scan-progress", l);
+    },
+    onScanReport: (cb: (payload: {
+      scanId: string;
+      report?: unknown;
+      error?: string;
+    }) => void): (() => void) => {
+      const l = (_e: unknown, p: Parameters<typeof cb>[0]) => cb(p);
+      ipcRenderer.on("library:scan-report", l);
+      return () => ipcRenderer.removeListener("library:scan-report", l);
     },
   },
 

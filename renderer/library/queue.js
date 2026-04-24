@@ -3,6 +3,7 @@
  * Queue runner: enqueue books for ingestion, pump with parallelism.
  */
 import { t } from "../i18n.js";
+import { showAlert } from "../components/ui-dialog.js";
 import { STATE } from "./state.js";
 import { renderHistory, loadHistory } from "./history.js";
 
@@ -36,7 +37,7 @@ async function pumpQueue(root, deps) {
     const next = STATE.queue.shift();
     if (!next) break;
     if (!STATE.collection) {
-      alert(t("library.alert.collection"));
+      await showAlert(t("library.alert.collection"));
       STATE.queue.unshift(next);
       return;
     }

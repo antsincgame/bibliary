@@ -4,6 +4,7 @@
  */
 import { el, clear } from "../dom.js";
 import { t } from "../i18n.js";
+import { showAlert } from "../components/ui-dialog.js";
 import { STATE, SEARCH_STATE, DOWNLOAD_STATE, DOWNLOAD_BY_ID } from "./state.js";
 import { formatBytes, cssEscape, makeDownloadId } from "./format.js";
 import { loadHistory } from "./history.js";
@@ -158,7 +159,7 @@ function refreshSearchCardActions(card, candidate, root, dlState) {
           }
         } catch (e) {
           console.warn("[search] openExternal failed:", e);
-          window.alert(`Откройте в браузере: ${candidate.webPageUrl}`);
+          await showAlert(`Откройте в браузере: ${candidate.webPageUrl}`);
         }
       },
     }, t("library.search.btn.openPage"));
@@ -167,7 +168,7 @@ function refreshSearchCardActions(card, candidate, root, dlState) {
 }
 
 async function startCardDownload(candidate, root) {
-  if (!STATE.collection) { alert(t("library.alert.collection")); return; }
+  if (!STATE.collection) { await showAlert(t("library.alert.collection")); return; }
   const cur = DOWNLOAD_STATE.get(candidate.id);
   if (cur && (cur.status === "downloading" || cur.status === "ingesting")) return;
   const downloadId = makeDownloadId();

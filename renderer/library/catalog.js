@@ -4,10 +4,14 @@
  */
 import { el, clear } from "../dom.js";
 import { t } from "../i18n.js";
+import { showAlert, showConfirm } from "../components/ui-dialog.js";
 import { CATALOG } from "./state.js";
 import { filterCatalog as filterCatalogPure, qualityClass, statusClass, QUALITY_PRESETS } from "./catalog-filter.js";
 import { fmtWords, fmtQuality } from "./format.js";
 import { guardAndCrystallize, cancelBatchExtraction, launchSynthesis } from "./batch-actions.js";
+
+/** @type {Promise<void> | null} */
+let catalogLoadPromise = null;
 
 function filterCatalog(rows) {
   return filterCatalogPure(rows, CATALOG.filters);
@@ -20,19 +24,26 @@ function statusLabel(status) {
 }
 
 export async function loadCatalog() {
-  if (CATALOG.loading) return;
-  CATALOG.loading = true;
-  try {
-    const res = await window.api.library.catalog({ limit: 5000 });
-    CATALOG.rows = /** @type {import("./state.js").CatalogMeta[]} */ (res.rows || []);
-    CATALOG.total = res.total ?? CATALOG.rows.length;
-  } catch (err) {
-    console.error("[library.catalog] load failed:", err);
-    CATALOG.rows = [];
-    CATALOG.total = 0;
-  } finally {
-    CATALOG.loading = false;
+  if (catalogLoadPromise) {
+    await catalogLoadPromise;
+    return;
   }
+  CATALOG.loading = true;
+  catalogLoadPromise = (async () => {
+    try {
+      const res = await window.api.library.catalog({ limit: 5000 });
+      CATALOG.rows = /** @type {import("./state.js").CatalogMeta[]} */ (res.rows || []);
+      CATALOG.total = res.total ?? CATALOG.rows.length;
+    } catch (err) {
+      console.error("[library.catalog] load failed:", err);
+      CATALOG.rows = [];
+      CATALOG.total = 0;
+    } finally {
+      CATALOG.loading = false;
+      catalogLoadPromise = null;
+    }
+  })();
+  await catalogLoadPromise;
 }
 
 export function renderCatalogTable(root) {
@@ -80,6 +91,23 @@ export function renderCatalogTable(root) {
 export async function renderCatalog(root) {
   await loadCatalog();
   renderCatalogTable(root);
+}
+
+/**
+ * Scroll and highlight a catalog row by bookId.
+ * @param {HTMLElement} root
+ * @param {string} bookId
+ */
+export function highlightCatalogBookRow(root, bookId) {
+  if (!bookId) return;
+  const esc = typeof CSS !== "undefined" && CSS.escape
+    ? CSS.escape(bookId)
+    : bookId.replace(/["\\]/g, "\\$&");
+  const row = /** @type {HTMLElement|null} */ (root.querySelector(`.lib-catalog-row[data-book-id="${esc}"]`));
+  if (!row) return;
+  row.scrollIntoView({ behavior: "smooth", block: "center" });
+  row.classList.add("lib-catalog-row-focus");
+  setTimeout(() => row.classList.remove("lib-catalog-row-focus"), 2600);
 }
 
 /** @param {HTMLElement} root */
@@ -159,13 +187,13 @@ export function buildCatalogToolbar(root) {
     onclick: async () => {
       try {
         const res = await window.api.library.rebuildCache();
-        window.alert(t("library.catalog.rebuild.done", {
+        await showAlert(t("library.catalog.rebuild.done", {
           scanned: String(res.scanned),
           ingested: String(res.ingested),
           pruned: String(res.pruned),
         }));
       } catch (e) {
-        window.alert(t("library.catalog.rebuild.failed", {
+        await showAlert(t("library.catalog.rebuild.failed", {
           error: e instanceof Error ? e.message : String(e),
         }));
       }
@@ -248,9 +276,9 @@ export function buildCatalogBottomBar(root, deps) {
     type: "button", class: "lib-btn lib-btn-danger",
     onclick: async () => {
       if (CATALOG.selected.size === 0) return;
-      if (!window.confirm(t("library.catalog.confirm.delete", {
+      if (!(await showConfirm(t("library.catalog.confirm.delete", {
         title: `${CATALOG.selected.size} books`,
-      }))) return;
+      })))) return;
       for (const bookId of Array.from(CATALOG.selected)) {
         try { await window.api.library.deleteBook(bookId, true); }
         catch (e) { console.warn("[library.delete]", bookId, e); }
@@ -295,7 +323,7 @@ export function buildCatalogBottomBar(root, deps) {
 
   const crystallizeBtn = el("button", {
     type: "button", class: "lib-btn lib-btn-primary",
-    onclick: () => guardAndCrystallize(root, deps),
+    onclick: () => void guardAndCrystallize(root, deps),
   }, t("library.catalog.btn.crystallize"));
 
   const synthesizeBtn = el("button", {
