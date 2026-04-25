@@ -81,11 +81,10 @@ function fakeExtraction(stats: {
     bookTitle: "Fake Book",
     totalChapters: 5,
     processedChapters: 5,
-    totalConcepts: {
-      extractedRaw: stats.extracted,
-      afterDedup: stats.extracted,
+    totalDelta: {
+      chunks: stats.extracted,
       accepted: stats.accepted,
-      rejected: stats.rejected,
+      skipped: stats.rejected,
     },
     warnings: [],
   };
@@ -138,6 +137,7 @@ test("runBatchExtraction filters out books that fail the gate", async (t) => {
   const summary = await runBatchExtraction(
     {
       bookIds: [lowQ.id, fiction.id, notEvaluated.id, ok.id],
+      minQuality: 70,
       targetCollection: "test-coll",
       batchId: "batch-filter",
     },
@@ -351,7 +351,7 @@ test("runBatchExtraction emits events with correct sequence and counts", async (
   const phases = deps._events.map((e) => e.phase);
   assert.deepEqual(phases.slice(0, 2), ["start", "filtered"]);
   assert.equal(deps._events[0].targetCollection, "marketing");
-  assert.equal(deps._events[0].minQuality, 70, "default minQuality is 70");
+  assert.equal(deps._events[0].minQuality, 0, "default minQuality is 0 (UI/confirm gates quality)");
 
   /* book-start, book-done пары для каждой книги, затем done. */
   const bookStarts = deps._events.filter((e) => e.phase === "book-start");
