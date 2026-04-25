@@ -57,6 +57,14 @@ const PATTERNS: PatternDef[] = [
     map: (m) => ({ title: m[1].trim(), year: Number(m[2]) }),
   },
   {
+    // "Title_2nd_Edition_2024" -- common no-author dump naming
+    re: /^(.+?)_(\d+\s*(?:st|nd|rd|th)_Edition|Edition_\d+)_(\d{4})$/iu,
+    map: (m) => ({
+      title: `${m[1].replace(/_/g, " ")} ${m[2].replace(/_/g, " ")}`.trim(),
+      year: Number(m[3]),
+    }),
+  },
+  {
     // "Author_Title_Year" (underscore separator)
     re: /^(.+?)_(.+?)_(\d{4})/u,
     map: (m) => ({ author: m[1].trim(), title: m[2].trim(), year: Number(m[3]) }),
@@ -83,6 +91,13 @@ function parseOneName(name: string): FilenameMeta | null {
   return null;
 }
 
+function fallbackPlainTitle(name: string): FilenameMeta | null {
+  const title = name.replace(/[_\s]+/g, " ").trim();
+  if (!/[a-zA-Z\u0400-\u04ff]/.test(title)) return null;
+  if (title.split(/\s+/).length < 2) return null;
+  return { title };
+}
+
 function fieldCount(m: FilenameMeta): number {
   let n = 0;
   if (m.author) n++;
@@ -101,8 +116,8 @@ export function parseFilename(filePath: string): FilenameMeta | null {
   const basename = path.basename(filePath, ext);
   const parentDir = path.basename(path.dirname(filePath));
 
-  const fromFile = parseOneName(basename);
-  const fromDir = parentDir && parentDir !== "." && parentDir !== ".."
+  const fromFile = parseOneName(basename) ?? fallbackPlainTitle(basename);
+  const fromDir = parentDir && parentDir !== "." && parentDir !== ".." && !/^bibliary[-_]/i.test(parentDir)
     ? parseOneName(parentDir)
     : null;
 
@@ -110,5 +125,5 @@ export function parseFilename(filePath: string): FilenameMeta | null {
   if (!fromFile) return fromDir;
   if (!fromDir) return fromFile;
 
-  return fieldCount(fromDir) >= fieldCount(fromFile) ? fromDir : fromFile;
+  return fieldCount(fromDir) > fieldCount(fromFile) ? fromDir : fromFile;
 }

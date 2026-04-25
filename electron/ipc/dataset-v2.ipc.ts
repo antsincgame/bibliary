@@ -81,6 +81,16 @@ const activeJobs = new Map<string, AbortController>();
  */
 const activeBatches = new Map<string, AbortController>();
 
+/** Track spawned synth child processes so we can kill them on app quit. */
+const activeSynthChildren = new Set<import("child_process").ChildProcess>();
+
+export function killAllSynthChildren(): void {
+  for (const child of activeSynthChildren) {
+    try { child.kill(); } catch { /* already dead */ }
+  }
+  activeSynthChildren.clear();
+}
+
 export function abortAllDatasetV2(reason: string): void {
   for (const [id, ctrl] of activeJobs.entries()) {
     ctrl.abort(reason);
@@ -650,6 +660,8 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
         detached: false,
       });
 
+      activeSynthChildren.add(child);
+
       const logStream = createLog(logPath, { flags: "w", encoding: "utf8" });
       logStream.write(`[synth] cmd: npx tsx ${cliArgs.join(" ")}\n[synth] cwd: ${process.cwd()}\n\n`);
       child.stdout?.pipe(logStream);
@@ -659,6 +671,7 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
         try { logStream.write(`\n[synth] spawn error: ${err.message}\n`); } catch { /* stream may be closed */ }
       });
       child.on("close", (code) => {
+        activeSynthChildren.delete(child);
         try { logStream.write(`\n[synth] exit code: ${code}\n`); logStream.end(); } catch { /* ignore */ }
       });
 

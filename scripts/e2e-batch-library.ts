@@ -432,7 +432,7 @@ async function saveState(stateFile: string, state: RunState): Promise<void> {
      Better than losing the whole batch to an antivirus scan. */
   try {
     await fs.writeFile(stateFile, payload, "utf8");
-    await fs.unlink(tmp).catch(() => { /* ignore cleanup failure */ });
+    await fs.unlink(tmp).catch((err) => console.error("[e2e-batch-library/saveState] unlink Error:", err));
   } catch {
     /* If even in-place write fails, propagate the original rename error. */
     throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));

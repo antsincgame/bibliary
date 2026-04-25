@@ -46,7 +46,7 @@ export async function withFileLock<T>(
   try {
     return await fn();
   } finally {
-    await release().catch(() => undefined);
+    await release().catch((err) => console.error("[file-lock/withLock] release Error:", err));
   }
 }
 

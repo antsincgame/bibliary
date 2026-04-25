@@ -137,7 +137,7 @@ async function ensureAcceptedCollection(collection: string): Promise<void> {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ field_name: field, field_schema: "keyword" }),
-      }).catch(() => undefined);
+      }).catch((err) => console.error("[judge/ensurePayloadIndex] Error:", err));
     }
   } catch (e) {
     /* Если не смогли создать — это критично, пробрасываем */

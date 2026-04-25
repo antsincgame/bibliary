@@ -109,7 +109,7 @@ async function deletePoint(collection: string, ts: string): Promise<void> {
     body: JSON.stringify({
       filter: { must: [{ key: "ts", match: { value: ts } }] },
     }),
-  }).catch(() => { /* best-effort cleanup */ });
+  }).catch((err) => console.error("[test-agent-memory-live/cleanup] Error:", err));
 }
 
 async function main(): Promise<void> {

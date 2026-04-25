@@ -26,3 +26,4 @@ nsis:
   oneClick: true
   perMachine: false
 asar: true
+afterPack: scripts/afterPack.js

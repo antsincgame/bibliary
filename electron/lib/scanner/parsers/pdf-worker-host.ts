@@ -95,13 +95,13 @@ export async function parsePdfInWorker(
     /* Кросс-cleanup: убрать listener'ы AbortSignal, остановить таймер,
        terminate worker (если ещё не помер). Безопасно для повторного вызова. */
     const onAbort = (): void => settle(() => {
-      worker.terminate().catch(() => undefined);
+      worker.terminate().catch((err) => console.error("[pdf-worker-host/onAbort] terminate Error:", err));
       reject(new Error("aborted"));
     });
 
     const timer = setTimeout(() => {
       settle(() => {
-        worker.terminate().catch(() => undefined);
+        worker.terminate().catch((err) => console.error("[pdf-worker-host/timeout] terminate Error:", err));
         reject(new Error(`worker timeout after ${Math.round(timeoutMs / 1000)}s`));
       });
     }, timeoutMs);
@@ -118,12 +118,12 @@ export async function parsePdfInWorker(
     worker.on("message", (msg: WorkerMessage) => {
       if (msg.ok && msg.result) {
         settle(() => {
-          worker.terminate().catch(() => undefined);
+          worker.terminate().catch((err) => console.error("[pdf-worker-host/onMessage] terminate Error:", err));
           resolve(msg.result as ParseResult);
         });
       } else {
         settle(() => {
-          worker.terminate().catch(() => undefined);
+          worker.terminate().catch((err) => console.error("[pdf-worker-host/onError] terminate Error:", err));
           reject(new Error(msg.error ?? "worker returned unknown error"));
         });
       }

@@ -20,7 +20,7 @@ async function makeSandbox(prefix: string): Promise<SandboxState> {
   return {
     dir,
     cleanup: async () => {
-      await rm(dir, { recursive: true, force: true }).catch(() => {});
+      await rm(dir, { recursive: true, force: true }).catch((err) => console.error("[archive-extractor-bomb/cleanup] rm Error:", err));
     },
   };
 }

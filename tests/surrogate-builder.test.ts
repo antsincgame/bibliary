@@ -8,7 +8,7 @@
  *   - 3-5 nodal chapters picked, excluding first/last
  *   - small books bypass distillation (full text mode)
  *   - empty book yields empty surrogate without throw
- *   - paragraph atomicity (we never cut a paragraph mid-sentence)
+ *   - oversized paragraph compaction (we never let OCR mega-paragraphs blow context)
  *
  * Запуск: `npm test`.
  */
@@ -98,16 +98,18 @@ test("[4] full-size book → produces distilled surrogate with all sections", ()
   assert.ok(!nodalTitles.includes("Conclusion"), "outro chapter must not be nodal");
 });
 
-test("[5] paragraph atomicity: intro contains whole paragraphs, never sliced mid-word", () => {
-  /* 1 huge paragraph of 1500 words then small fillers. takeFirstWords MUST keep
-     the whole 1500-word paragraph rather than chop it at the 1000-word mark. */
+test("[5] oversized paragraph compaction: intro is bounded and not sliced mid-word", () => {
+  /* OCR/PDF parsers sometimes emit one huge paragraph. The surrogate must cap it
+     to keep LM Studio inside context while still slicing on word boundaries. */
   const chapters = [
     chapter(0, "Mega Intro", [1500]),
     ...Array.from({ length: 8 }, (_, i) => chapter(i + 1, `Filler ${i + 1}`, [500])),
     chapter(9, "Outro", [1200]),
   ];
   const r = buildSurrogate(chapters);
-  assert.ok(r.composition.introWords >= 1500, `expected paragraph kept whole, got ${r.composition.introWords}`);
+  assert.equal(r.composition.introWords, 1000);
+  assert.ok(r.surrogate.includes("ch0p0999"), "last kept word should be complete");
+  assert.ok(!r.surrogate.includes("ch0p01000"), "oversized paragraph must be capped at target");
 });
 
 test("[6] only 2 chapters → no nodal slices (intro+outro covers everything)", () => {
@@ -117,10 +119,8 @@ test("[6] only 2 chapters → no nodal slices (intro+outro covers everything)", 
 });
 
 test("[7] surrogate compression ratio: massive book → bounded surrogate", () => {
-  /* 50 chapters × (2500 + 1500 + 1000) = 250,000 words. The surrogate is allowed
-     to overshoot intro/outro targets because takeFirstWords keeps paragraphs
-     atomic (a single 2500-word paragraph cannot be split). What matters is the
-     overall compression ratio: surrogate must stay below ~15% of the source. */
+  /* 50 chapters × (2500 + 1500 + 1000) = 250,000 words. OCR mega-paragraphs
+     must be capped, so the surrogate stays comfortably below context limits. */
   const chapters: ConvertedChapter[] = Array.from({ length: 50 }, (_, i) =>
     chapter(i, `Chapter ${i + 1}`, [2500, 1500, 1000]),
   );
@@ -151,7 +151,8 @@ test("[8] empty paragraphs are filtered (no blank-line garbage in nodal slices)"
   const blanksChunk = r.composition.nodalSlices.find((n) => n.chapter === "Chapter With Blanks");
   if (blanksChunk) {
     assert.ok(blanksChunk.paragraphs <= 2, `expected ≤2 paragraphs, got ${blanksChunk.paragraphs}`);
-    assert.ok(blanksChunk.words >= 800, `nodal slice should contain real text, got ${blanksChunk.words} words`);
+    assert.ok(blanksChunk.words >= 500 && blanksChunk.words <= 520,
+      `nodal slice should contain compacted real text, got ${blanksChunk.words} words`);
   }
 });
 

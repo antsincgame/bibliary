@@ -214,7 +214,7 @@ async function main(): Promise<void> {
 
   await step("E2E-10 — cleanup state-file и Qdrant collection", async () => {
     await qdrant.deleteCollection(COLLECTION);
-    await fs.unlink(stateFile).catch(() => {});
+    await fs.unlink(stateFile).catch((err) => console.error("[e2e-book-ingest/cleanup] unlink Error:", err));
   });
 
   console.log(`\n${COLOR.bold}--- Ingest stats ---${COLOR.reset}`);

@@ -169,12 +169,12 @@ export async function revertRopeScaling(modelKey: string): Promise<RevertResult>
       }
       let configRemoved = false;
       if (backup.__bibliary_no_original__) {
-        await fs.unlink(configPath).catch(() => undefined);
+        await fs.unlink(configPath).catch((err) => console.error("[lmstudio-patcher/revert] unlink config Error:", err));
         configRemoved = true;
       } else {
         await writeJsonAtomic(configPath, backup);
       }
-      await fs.unlink(backupPath).catch(() => undefined);
+      await fs.unlink(backupPath).catch((err) => console.error("[lmstudio-patcher/revert] unlink backup Error:", err));
       return { configPath, restored: true, configRemoved };
     },
     LOCK_OPTS

@@ -78,6 +78,8 @@ export const CATALOG = {
   selected: new Set(),
   /** @type {string} */
   libraryRoot: "",
+  /** @type {string} */
+  dbPath: "",
   filters: {
     quality: 0,
     hideFiction: false,

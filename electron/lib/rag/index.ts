@@ -18,15 +18,15 @@ async function loadPrefs() {
   }
 }
 
-export const RAG_TOP_K = 15;
+const RAG_TOP_K = 15;
 
-export const RAG_SCORE_THRESHOLD = (() => {
+const RAG_SCORE_THRESHOLD = (() => {
   const raw = process.env.BIBLIARY_RAG_SCORE_THRESHOLD;
   const parsed = raw ? Number(raw) : NaN;
   return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : 0.55;
 })();
 
-export const CHAT_SAMPLING = {
+const CHAT_SAMPLING = {
   temperature: 0.7,
   top_p: 0.8,
   top_k: 20,

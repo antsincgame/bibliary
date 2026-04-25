@@ -89,6 +89,3 @@ export function getQdrantUrlSync(): string {
   return cache?.qdrant || trim(ENV_QDRANT_URL) || DEFAULT_QDRANT_URL;
 }
 
-export function getEndpointsSource(): UrlCache["loadedFrom"] | "uninitialised" {
-  return cache?.loadedFrom ?? "uninitialised";
-}

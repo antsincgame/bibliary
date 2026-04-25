@@ -94,7 +94,7 @@ async function makeTempDir(): Promise<string> {
 /** Удаляет temp-директорию рекурсивно. Безопасно для повторного вызова. */
 export async function cleanupExtractedDir(tempDir: string): Promise<void> {
   if (!tempDir.includes("bibliary-archive-")) return; /* защита от случайного rm -rf */
-  await fs.rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+  await fs.rm(tempDir, { recursive: true, force: true }).catch((err) => console.error("[archive-extractor/cleanup] rm Error:", err));
 }
 
 /** Безопасное имя файла для temp -- никаких path traversal из архива. */

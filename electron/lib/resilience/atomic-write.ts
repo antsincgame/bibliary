@@ -26,7 +26,7 @@ export async function writeTextAtomic(filePath: string, content: string): Promis
     await fs.rename(tmpPath, filePath);
   } catch (err) {
     if (written) {
-      await fs.unlink(tmpPath).catch(() => undefined);
+      await fs.unlink(tmpPath).catch((err) => console.error("[atomic-write] unlink tmp Error:", err));
     }
     throw err;
   }

@@ -10,6 +10,9 @@ release/
 .claude/
 .git-commit-msg.tmp
 
+# Debug diagnostic artifacts
+_*.json
+
 # Source texts (copyrighted books — not for redistribution)
 data/*.pdf
 data/*.txt
@@ -51,3 +54,6 @@ data/_library-reset-backup-*/
 
 # User-local preferences (model choices, etc.)
 data/preferences.json
+
+# Rebuild / native-module stash
+.electron-rebuild-stash/

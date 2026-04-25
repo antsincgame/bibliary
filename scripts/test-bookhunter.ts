@@ -160,7 +160,7 @@ async function main(): Promise<void> {
       const stat = await fs.stat(tmpFile);
       if (stat.size !== result.bytesWritten) throw new Error("file size mismatch");
     } finally {
-      await fs.unlink(tmpFile).catch(() => {});
+      await fs.unlink(tmpFile).catch((err) => console.error("[test-bookhunter/cleanup] unlink Error:", err));
     }
   });
 

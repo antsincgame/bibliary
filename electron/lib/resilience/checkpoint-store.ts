@@ -91,7 +91,7 @@ export function createCheckpointStore<T>(opts: CheckpointStoreOptions<T>): Check
 
     async remove(id) {
       const file = fileFor(id);
-      await fs.unlink(file).catch(() => undefined);
+      await fs.unlink(file).catch((err) => console.error("[checkpoint-store/remove] unlink Error:", err));
     },
 
     async scan() {

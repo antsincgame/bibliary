@@ -477,18 +477,6 @@ export async function chatWithToolsAndPolicy(
   );
 }
 
-export async function listOpenAiModels(): Promise<string[]> {
-  try {
-    const baseUrl = await getLmStudioUrl();
-    const response = await fetch(`${baseUrl}/v1/models`);
-    if (!response.ok) return [];
-    const data = (await response.json()) as OpenAiModelsResponse;
-    return data.data.map((m) => m.id);
-  } catch {
-    return [];
-  }
-}
-
 export async function listDownloaded(): Promise<DownloadedModelInfo[]> {
   return withSdk(
     async (client) => {
@@ -611,7 +599,7 @@ export async function getServerStatus(): Promise<{ online: boolean; version?: st
 
 export function disposeClient(): void {
   if (cachedClient) {
-    cachedClient[Symbol.asyncDispose]?.().catch(() => undefined);
+    cachedClient[Symbol.asyncDispose]?.().catch((err) => console.error("[lmstudio-client/disposeClient] Error:", err));
     dropClient();
   }
 }

@@ -913,7 +913,7 @@ async function main(): Promise<void> {
   }
 
   await step("T9.state -- remove temp scanner-state file", async () => {
-    await fs.unlink(stateFile).catch(() => undefined);
+    await fs.unlink(stateFile).catch((err) => console.error("[e2e-full-mvp/T9] unlink Error:", err));
   });
 
   if (!skipForge) {

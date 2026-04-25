@@ -56,6 +56,6 @@ async function assertWritable(dir: string): Promise<void> {
   try {
     await fs.writeFile(probe, "ok", "utf8");
   } finally {
-    await fs.unlink(probe).catch(() => undefined);
+    await fs.unlink(probe).catch((err) => console.error("[bootstrap/ensureWritable] unlink Error:", err));
   }
 }

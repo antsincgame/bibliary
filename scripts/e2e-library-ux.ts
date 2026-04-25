@@ -71,7 +71,7 @@ async function main(): Promise<void> {
   });
 
   const qdrant = new QdrantClient({ url: QDRANT_URL });
-  await qdrant.deleteCollection(COLLECTION).catch(() => {});
+  await qdrant.deleteCollection(COLLECTION).catch((err) => console.error("[e2e-library-ux/setup] deleteCollection Error:", err));
 
   const stateFile = path.join(tmpdir(), `bibliary-libux-${Date.now()}.json`);
   const store = new ScannerStateStore(stateFile);
@@ -158,7 +158,7 @@ async function main(): Promise<void> {
     const ctrl = new AbortController();
     ctrl.abort(new DOMException("test", "AbortError"));
     const abortedCol = COLLECTION + "-aborted";
-    await qdrant.deleteCollection(abortedCol).catch(() => {});
+    await qdrant.deleteCollection(abortedCol).catch((err) => console.error("[e2e-library-ux/E2E-8] deleteCollection Error:", err));
     let didThrow = false;
     try {
       await ingestBook(sample[1].absPath, {
@@ -180,13 +180,13 @@ async function main(): Promise<void> {
       pointsCount = 0;
     }
     if (pointsCount > 0) throw new Error(`expected 0 points after abort, got ${pointsCount}`);
-    await qdrant.deleteCollection(abortedCol).catch(() => {});
+    await qdrant.deleteCollection(abortedCol).catch((err) => console.error("[e2e-library-ux/E2E-8] deleteCollection cleanup Error:", err));
   });
 
   /* === Cleanup === */
   await step("E2E-9 — cleanup: удалить тестовую коллекцию + state file", async () => {
     await qdrant.deleteCollection(COLLECTION);
-    await fs.unlink(stateFile).catch(() => {});
+    await fs.unlink(stateFile).catch((err) => console.error("[e2e-library-ux/cleanup] unlink Error:", err));
   });
 
   console.log(`\n${COLOR.bold}--- Summary ---${COLOR.reset}`);

@@ -37,7 +37,7 @@ function setupTempDb(t: { after: (fn: () => unknown) => void }): void {
     else process.env.BIBLIARY_LIBRARY_DB = prevLibraryDb;
     if (prevLibraryRoot === undefined) delete process.env.BIBLIARY_LIBRARY_ROOT;
     else process.env.BIBLIARY_LIBRARY_ROOT = prevLibraryRoot;
-    await rm(tempRoot, { recursive: true, force: true }).catch(() => {});
+    await rm(tempRoot, { recursive: true, force: true }).catch((err) => console.error("[near-dup-detector/cleanup] rm Error:", err));
   });
 }
 

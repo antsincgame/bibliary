@@ -90,7 +90,7 @@ function saveThresholdToPrefs(value) {
   if (_thresholdSaveTimer) clearTimeout(_thresholdSaveTimer);
   _thresholdSaveTimer = setTimeout(() => {
     _thresholdSaveTimer = null;
-    void window.api.preferences.set({ judgeScoreThreshold: value }).catch(() => { /* ignore */ });
+    void window.api.preferences.set({ judgeScoreThreshold: value }).catch((err) => console.error("[dataset-v2/saveThreshold] Error:", err));
   }, 500);
 }
 

@@ -228,7 +228,9 @@ export async function importBookFromFile(
     const m = convResult.meta;
     if (!m.author && fnMeta.author) m.author = fnMeta.author;
     if (!m.year && fnMeta.year) m.year = fnMeta.year;
-    if (m.title === path.parse(absPath).name && fnMeta.title) m.title = fnMeta.title;
+    if (fnMeta.title && (m.title === path.parse(absPath).name || m.originalFormat === "txt")) {
+      m.title = fnMeta.title;
+    }
   }
 
   /* Tier 1: ISBN-based dedup. Same ISBN = same book regardless of filename. */

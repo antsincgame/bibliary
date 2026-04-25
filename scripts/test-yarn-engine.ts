@@ -58,7 +58,7 @@ async function makeTempLMStudio(): Promise<{ root: string; cleanup: () => Promis
         await fs.rm(root, { recursive: true, force: true });
       } catch {
         await new Promise((r) => setTimeout(r, 100));
-        await fs.rm(root, { recursive: true, force: true }).catch(() => undefined);
+        await fs.rm(root, { recursive: true, force: true }).catch((err) => console.error("[test-yarn-engine/cleanup] rm Error:", err));
       }
     },
   };

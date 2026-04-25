@@ -341,7 +341,7 @@ export async function extractPdfCover(
   } catch (e) {
     return { images: [], warnings: [`pdf-cover: render failed -- ${e instanceof Error ? e.message : String(e)}`] };
   } finally {
-    await doc?.destroy().catch(() => undefined);
+    await doc?.destroy().catch((err) => console.error("[image-extractors/pdfCover] destroy Error:", err));
   }
 }
 

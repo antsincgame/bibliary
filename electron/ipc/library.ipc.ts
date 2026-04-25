@@ -40,6 +40,7 @@ import {
   rebuildFromFs,
   pruneMissing,
   upsertBook,
+  getCacheDbPath,
   type CatalogQuery,
 } from "../lib/library/cache-db.js";
 import {
@@ -257,12 +258,13 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
     async (
       _e,
       args: CatalogQuery = {}
-    ): Promise<{ rows: BookCatalogMeta[]; total: number; libraryRoot: string }> => {
+    ): Promise<{ rows: BookCatalogMeta[]; total: number; libraryRoot: string; dbPath: string }> => {
       const result = queryCache(args);
       return {
         rows: result.rows,
         total: result.total,
         libraryRoot: resolveLibraryRoot(),
+        dbPath: getCacheDbPath(),
       };
     }
   );

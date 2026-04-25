@@ -88,7 +88,7 @@ async function ensureHelpCollection(signal?: AbortSignal): Promise<void> {
       headers,
       body: JSON.stringify({ field_name: field, field_schema: "keyword" }),
       signal,
-    }).catch(() => { /* idempotent */ });
+    }).catch((err) => console.error("[help-kb/ensurePayloadIndex] Error:", err));
   }
 }
 

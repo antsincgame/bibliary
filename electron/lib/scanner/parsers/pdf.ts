@@ -175,7 +175,7 @@ export async function parsePdfMain(filePath: string, opts: ParseOptions = {}): P
      Проверяем перед каждой страницей: дешёво, но мгновенно отвечает. */
   for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
     if (opts.signal?.aborted) {
-      await doc.destroy().catch(() => undefined);
+      await doc.destroy().catch((err) => console.error("[pdf/parsePdfText] destroy Error:", err));
       throw new Error(`pdf parse aborted at page ${pageNum}/${doc.numPages}`);
     }
     /* OOM-guard #2: накопленный текст превысил MAX_PDF_TEXT_CHARS.

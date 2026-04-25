@@ -1,0 +1,94 @@
+import type { BookCatalogMeta, BookStatus } from "./types.js";
+import { getStoredOriginalFileName } from "./storage-contract.js";
+
+export interface BookRow {
+  id: string;
+  sha256: string;
+  title: string;
+  author: string | null;
+  title_en: string | null;
+  author_en: string | null;
+  year: number | null;
+  isbn: string | null;
+  publisher: string | null;
+  word_count: number;
+  chapter_count: number;
+  original_format: string;
+  source_archive: string | null;
+  domain: string | null;
+  quality_score: number | null;
+  conceptual_density: number | null;
+  originality: number | null;
+  is_fiction_or_water: number | null;
+  verdict_reason: string | null;
+  evaluator_reasoning: string | null;
+  evaluator_model: string | null;
+  evaluated_at: string | null;
+  concepts_extracted: number | null;
+  concepts_accepted: number | null;
+  status: string;
+  md_path: string;
+}
+
+export function rowToMeta(row: BookRow, tags: string[]): BookCatalogMeta & { mdPath: string } {
+  const originalFormat = row.original_format as BookCatalogMeta["originalFormat"];
+  return {
+    id: row.id,
+    sha256: row.sha256,
+    title: row.title,
+    author: row.author ?? undefined,
+    titleEn: row.title_en ?? undefined,
+    authorEn: row.author_en ?? undefined,
+    year: row.year ?? undefined,
+    isbn: row.isbn ?? undefined,
+    publisher: row.publisher ?? undefined,
+    wordCount: row.word_count,
+    chapterCount: row.chapter_count,
+    originalFile: getStoredOriginalFileName(originalFormat),
+    originalFormat,
+    sourceArchive: row.source_archive ?? undefined,
+    domain: row.domain ?? undefined,
+    tags: tags.length > 0 ? tags : undefined,
+    qualityScore: row.quality_score ?? undefined,
+    conceptualDensity: row.conceptual_density ?? undefined,
+    originality: row.originality ?? undefined,
+    isFictionOrWater: row.is_fiction_or_water === null ? undefined : row.is_fiction_or_water === 1,
+    verdictReason: row.verdict_reason ?? undefined,
+    evaluatorReasoning: row.evaluator_reasoning ?? undefined,
+    evaluatorModel: row.evaluator_model ?? undefined,
+    evaluatedAt: row.evaluated_at ?? undefined,
+    conceptsExtracted: row.concepts_extracted ?? undefined,
+    conceptsAccepted: row.concepts_accepted ?? undefined,
+    status: row.status as BookStatus,
+    mdPath: row.md_path,
+  };
+}
+
+export interface CatalogQuery {
+  search?: string;
+  minQuality?: number;
+  maxQuality?: number;
+  hideFictionOrWater?: boolean;
+  statuses?: BookStatus[];
+  domain?: string;
+  orderBy?: "quality" | "title" | "words" | "evaluated";
+  orderDir?: "asc" | "desc";
+  limit?: number;
+  offset?: number;
+}
+
+export interface QueryResult {
+  rows: (BookCatalogMeta & { mdPath: string })[];
+  total: number;
+}
+
+export interface RevisionDedupBook {
+  id: string;
+  title: string;
+  author?: string;
+  titleEn?: string;
+  authorEn?: string;
+  sourceArchive?: string;
+  year?: number;
+  isbn?: string;
+}

@@ -87,7 +87,7 @@ export async function runDdjvu(filePath: string, pageIndex: number, dpi: number,
     await runBinary(tool.binary, ["-format=tiff", `-page=${page}`, `-dpi=${Math.max(72, dpi)}`, filePath, out], signal);
     return await fs.readFile(out);
   } finally {
-    await fs.unlink(out).catch(() => undefined);
+    await fs.unlink(out).catch((err) => console.error("[djvu-cli/renderPage] unlink Error:", err));
   }
 }
 

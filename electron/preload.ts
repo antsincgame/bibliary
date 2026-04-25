@@ -484,7 +484,7 @@ contextBridge.exposeInMainWorld("api", {
       warnings: string[];
     }> => ipcRenderer.invoke("library:import-files", args),
     cancelImport: (importId: string): Promise<boolean> => ipcRenderer.invoke("library:cancel-import", importId),
-    catalog: (q?: LibraryCatalogQuery): Promise<{ rows: LibraryBookMeta[]; total: number; libraryRoot: string }> =>
+    catalog: (q?: LibraryCatalogQuery): Promise<{ rows: LibraryBookMeta[]; total: number; libraryRoot: string; dbPath: string }> =>
       ipcRenderer.invoke("library:catalog", q ?? {}),
     getBook: (bookId: string): Promise<(LibraryBookMeta & { mdPath: string }) | null> =>
       ipcRenderer.invoke("library:get-book", bookId),

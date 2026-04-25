@@ -34,3 +34,13 @@ if (!fs.existsSync(src)) {
 fs.mkdirSync(destDir, { recursive: true });
 fs.copyFileSync(src, dest);
 console.log(`Portable скопирован: ${path.relative(root, dest)}`);
+
+/* Remove the bare exe from buildOutDir so users don't accidentally launch
+   the wrong copy (which has no data/ folder next to it). */
+try {
+  fs.unlinkSync(src);
+  console.log(`Удалён голый exe: ${path.relative(root, src)}`);
+} catch {
+  /* EBUSY / permission — не критично, просто предупреждаем. */
+  console.warn(`Не удалось удалить ${path.relative(root, src)} (возможно заблокирован).`);
+}

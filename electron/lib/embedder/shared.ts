@@ -13,8 +13,13 @@
  * Embedding text is wrapped here so encoding conventions
  * ("query: " vs "passage: " for E5 family) live in one place.
  */
-import { pipeline, type FeatureExtractionPipeline } from "@xenova/transformers";
+import type { FeatureExtractionPipeline } from "@xenova/transformers";
 import { DEFAULT_EMBED_MODEL } from "../scanner/embedding.js";
+
+async function loadPipeline(): Promise<typeof import("@xenova/transformers")["pipeline"]> {
+  const mod = await import("@xenova/transformers");
+  return mod.pipeline;
+}
 
 interface CachedExtractor {
   ready: Promise<FeatureExtractionPipeline>;
@@ -59,7 +64,8 @@ export async function getEmbedder(model: string = DEFAULT_EMBED_MODEL): Promise<
   }
   const ready = withTimeout(
     (async () => {
-      const m = await pipeline("feature-extraction", model);
+      const pipelineFn = await loadPipeline();
+      const m = await pipelineFn("feature-extraction", model);
       const slot = cache.get(model);
       if (slot) slot.resolved = m;
       return m;

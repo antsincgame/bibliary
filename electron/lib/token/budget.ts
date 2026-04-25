@@ -10,7 +10,7 @@
  *  2. Если всё ещё не помещается — split user-chunk пополам с overlap.
  *  3. Если даже минимальный chunk + system не помещается — ChunkTooLargeError.
  */
-import { AutoTokenizer, type PreTrainedTokenizer } from "@xenova/transformers";
+import type { PreTrainedTokenizer } from "@xenova/transformers";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -43,6 +43,7 @@ let tokenizerCache: Promise<PreTrainedTokenizer> | null = null;
 
 async function getTokenizer(): Promise<PreTrainedTokenizer> {
   if (!tokenizerCache) {
+    const { AutoTokenizer } = await import("@xenova/transformers");
     tokenizerCache = AutoTokenizer.from_pretrained(TOKENIZER_MODEL);
   }
   return tokenizerCache;

@@ -1,5 +1,6 @@
 import { listBooksForRevisionDedup, type RevisionDedupBook } from "./cache-db.js";
 import type { BookCatalogMeta, SupportedBookFormat } from "./types.js";
+import * as path from "node:path";
 
 export interface RevisionDedupMatch {
   bookId: string;
@@ -65,8 +66,8 @@ function buildSemanticCorpus(metaLike: {
   titleEn?: string;
   sourceArchive?: string;
 }, sourcePath?: string): string {
-  void sourcePath;
-  const parts = [metaLike.title, metaLike.titleEn, metaLike.sourceArchive];
+  const sourceName = sourcePath ? path.basename(sourcePath, path.extname(sourcePath)) : undefined;
+  const parts = [metaLike.title, metaLike.titleEn, metaLike.sourceArchive, sourceName];
   return parts.filter(Boolean).join(" ");
 }
 
@@ -80,7 +81,10 @@ export function buildWorkKey(metaLike: {
   const authorRaw = metaLike.authorEn || metaLike.author || "";
   const title = normalizeText(stripRevisionMarkers(titleRaw));
   const author = normalizeText(authorRaw);
-  if (title.length < 4 || author.length < 2) return null;
+  if (title.length < 4) return null;
+  if (author.length < 2) {
+    return title.length >= 10 ? `${title}|` : null;
+  }
   return `${title}|${author}`;
 }
 

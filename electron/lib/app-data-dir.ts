@@ -1,0 +1,62 @@
+import { execFileSync } from "node:child_process";
+import * as path from "node:path";
+
+export interface AppDataDirContext {
+  env: NodeJS.ProcessEnv;
+  isPackaged: boolean;
+  execPath: string;
+  appName: string;
+  devBaseDir: string;
+  platform?: NodeJS.Platform;
+  parentExecutablePath?: string | null;
+}
+
+function normalizeName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9а-яё]+/gi, "");
+}
+
+function isLikelySameAppExecutable(exePath: string, appName: string): boolean {
+  const base = normalizeName(path.basename(exePath, path.extname(exePath)));
+  const app = normalizeName(appName);
+  if (app.length > 0 && base.includes(app)) return true;
+  return base.includes("bibliary");
+}
+
+export function getWindowsParentExecutablePath(parentPid = process.ppid): string | null {
+  if (!Number.isInteger(parentPid) || parentPid <= 0) return null;
+  try {
+    const script = `(Get-CimInstance Win32_Process -Filter "ProcessId=${parentPid}").ExecutablePath`;
+    const out = execFileSync(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+      { encoding: "utf8", timeout: 2500, windowsHide: true },
+    );
+    const exePath = out.trim();
+    return exePath.length > 0 ? exePath : null;
+  } catch {
+    return null;
+  }
+}
+
+export function resolveAppDataDir(ctx: AppDataDirContext): string {
+  const fromEnv = ctx.env.BIBLIARY_DATA_DIR?.trim();
+  if (fromEnv) return path.resolve(fromEnv);
+
+  const portableDir = ctx.env.PORTABLE_EXECUTABLE_DIR?.trim();
+  if (portableDir) return path.join(path.resolve(portableDir), "data");
+
+  const portableFile = ctx.env.PORTABLE_EXECUTABLE_FILE?.trim();
+  if (portableFile) return path.join(path.dirname(path.resolve(portableFile)), "data");
+
+  const platform = ctx.platform ?? process.platform;
+  if (ctx.isPackaged && platform === "win32") {
+    const parentExe = ctx.parentExecutablePath?.trim();
+    if (parentExe && path.resolve(parentExe) !== path.resolve(ctx.execPath) && isLikelySameAppExecutable(parentExe, ctx.appName)) {
+      return path.join(path.dirname(path.resolve(parentExe)), "data");
+    }
+  }
+
+  if (ctx.isPackaged) return path.join(path.dirname(ctx.execPath), "data");
+  return path.resolve(ctx.devBaseDir, "..", "data");
+}
+

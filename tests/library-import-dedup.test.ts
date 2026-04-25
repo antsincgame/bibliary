@@ -47,7 +47,7 @@ async function makeSandbox(prefix: string): Promise<SandboxState> {
         if (prev[k] === undefined) delete process.env[k];
         else process.env[k] = prev[k];
       }
-      await rm(tempRoot, { recursive: true, force: true }).catch(() => {});
+      await rm(tempRoot, { recursive: true, force: true }).catch((err) => console.error("[library-import-dedup/cleanup] rm Error:", err));
     },
   };
 }

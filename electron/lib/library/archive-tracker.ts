@@ -27,7 +27,7 @@ export class ArchiveTracker {
     if (this.slots.has(tempDir)) return;
     if (fileCount <= 0) {
       /* Пустой архив — cleanup сразу (без ожидания finishOne). */
-      void cleanup().catch(() => undefined);
+      void cleanup().catch((err) => console.error("[archive-tracker/register] cleanup Error:", err));
       return;
     }
     this.slots.set(tempDir, { remaining: fileCount, cleanup });

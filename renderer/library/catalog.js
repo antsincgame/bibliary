@@ -9,6 +9,7 @@ import { CATALOG } from "./state.js";
 import { filterCatalog as filterCatalogPure, qualityClass, statusClass, QUALITY_PRESETS } from "./catalog-filter.js";
 import { fmtWords, fmtQuality } from "./format.js";
 import { guardAndCrystallize, cancelBatchExtraction, launchSynthesis } from "./batch-actions.js";
+import { openBook } from "./reader.js";
 
 /** @type {Promise<void> | null} */
 let catalogLoadPromise = null;
@@ -35,6 +36,7 @@ export async function loadCatalog() {
       CATALOG.rows = /** @type {import("./state.js").CatalogMeta[]} */ (res.rows || []);
       CATALOG.total = res.total ?? CATALOG.rows.length;
       CATALOG.libraryRoot = res.libraryRoot || "";
+      CATALOG.dbPath = res.dbPath || "";
     } catch (err) {
       console.error("[library.catalog] load failed:", err);
       CATALOG.rows = [];
@@ -62,8 +64,11 @@ export function renderCatalogTable(root) {
   const selEl = root.querySelector(".lib-catalog-summary-selected");
   if (selEl) selEl.textContent = t("library.catalog.summary.selected", { n: String(CATALOG.selected.size) });
   const rootEl = root.querySelector(".lib-catalog-summary-root");
-  if (rootEl) rootEl.textContent = CATALOG.libraryRoot
-    ? t("library.catalog.summary.root", { path: CATALOG.libraryRoot })
+  if (rootEl) rootEl.textContent = CATALOG.libraryRoot || CATALOG.dbPath
+    ? [
+        CATALOG.libraryRoot ? t("library.catalog.summary.root", { path: CATALOG.libraryRoot }) : "",
+        CATALOG.dbPath ? t("library.catalog.summary.db", { path: CATALOG.dbPath }) : "",
+      ].filter(Boolean).join(" | ")
     : "";
   const capEl = root.querySelector(".lib-catalog-summary-cap");
   if (capEl) capEl.textContent = CATALOG.rows.length < CATALOG.total
@@ -93,12 +98,20 @@ export function renderCatalogTable(root) {
       if (sEl) sEl.textContent = t("library.catalog.summary.selected", { n: String(CATALOG.selected.size) });
     });
     const q = typeof row.qualityScore === "number" ? row.qualityScore : null;
+    const titleCell = el("td", {
+      class: "lib-catalog-cell-title lib-catalog-cell-clickable",
+      title: row.titleEn || row.title || row.id,
+      onclick: () => {
+        const pane = root.closest(".lib-pane-catalog") || root;
+        openBook(row.id, pane);
+      },
+    }, row.title || row.id);
     const tr = el("tr", {
       class: `lib-catalog-row ${statusClass(row.status)} ${q !== null ? qualityClass(q) : ""}`,
       "data-book-id": row.id,
     }, [
       el("td", { class: "lib-catalog-cell-cb" }, [cb]),
-      el("td", { class: "lib-catalog-cell-title", title: row.id }, row.title || row.id),
+      titleCell,
       el("td", { class: "lib-catalog-cell-author" }, row.author || ""),
       el("td", { class: "lib-catalog-cell-domain" }, row.domain || ""),
       el("td", { class: "lib-catalog-cell-words" }, fmtWords(row.wordCount)),

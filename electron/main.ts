@@ -24,6 +24,16 @@ import { initForgeStore } from "./lib/forge/state";
 import { registerExtractionPipeline } from "./lib/dataset-v2/coordinator-pipeline";
 import { startWatchdog, stopWatchdog, configureWatchdog } from "./lib/resilience/lmstudio-watchdog";
 import { SHUTDOWN_FLUSH_TIMEOUT_MS } from "./lib/resilience/constants";
+import { getWindowsParentExecutablePath, resolveAppDataDir } from "./lib/app-data-dir.js";
+import { closeCacheDb } from "./lib/library/cache-db.js";
+import { killAllSynthChildren } from "./ipc/dataset-v2.ipc.js";
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[main] unhandledRejection:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[main] uncaughtException:", err);
+});
 
 const WINDOW_WIDTH = 1280;
 const WINDOW_HEIGHT = 820;
@@ -32,17 +42,6 @@ const MIN_HEIGHT = 640;
 const BG_COLOR = "#050508";
 
 let mainWindow: BrowserWindow | null = null;
-
-function resolveAppDataDir(): string {
-  const fromEnv = process.env.BIBLIARY_DATA_DIR?.trim();
-  if (fromEnv) return path.resolve(fromEnv);
-  const portableDir = process.env.PORTABLE_EXECUTABLE_DIR?.trim();
-  if (portableDir) return path.join(path.resolve(portableDir), "data");
-  const portableFile = process.env.PORTABLE_EXECUTABLE_FILE?.trim();
-  if (portableFile) return path.join(path.dirname(path.resolve(portableFile)), "data");
-  if (app.isPackaged) return path.join(path.dirname(process.execPath), "data");
-  return path.resolve(__dirname, "..", "data");
-}
 
 /**
  * Defense-in-depth Content Security Policy. The renderer is fully
@@ -126,8 +125,17 @@ if (!gotLock) {
        Default остаётся `data/` рядом с приложением -- это не меняет
        поведение для обычного пользователя, но даёт smoke-тесту полную
        изоляцию (свой preferences.json, свой forge state, своя SQLite). */
-    const dataDir = resolveAppDataDir();
+    const dataDir = resolveAppDataDir({
+      env: process.env,
+      isPackaged: app.isPackaged,
+      execPath: process.execPath,
+      appName: app.getName(),
+      devBaseDir: __dirname,
+      platform: process.platform,
+      parentExecutablePath: process.platform === "win32" ? getWindowsParentExecutablePath() : null,
+    });
     process.env.BIBLIARY_DATA_DIR = dataDir;
+
     await initResilienceLayer({ dataDir });
     const prefsStore = initPreferencesStore(dataDir);
     await prefsStore.ensureDefaults();
@@ -173,19 +181,44 @@ if (!gotLock) {
     app.quit();
   });
 
+  const FORCE_EXIT_MS = 6_000;
+
+  function teardownSubsystems(): void {
+    const subsystems: [string, () => void][] = [
+      ["stopWatchdog", stopWatchdog],
+      ["abortAllIngests", () => abortAllIngests("app-quit")],
+      ["abortAllDatasetV2", () => abortAllDatasetV2("app-quit")],
+      ["killAllSynthChildren", killAllSynthChildren],
+      ["abortAllBookhunter", () => abortAllBookhunter("app-quit")],
+      ["abortAllAgents", () => abortAllAgents("app-quit")],
+      ["abortAllForgeLocal", () => abortAllForgeLocal("app-quit")],
+      ["abortAllForgeEval", () => abortAllForgeEval("app-quit")],
+      ["abortAllLibrary", () => abortAllLibrary("app-quit")],
+      ["disposeClient", disposeClient],
+      ["closeCacheDb", closeCacheDb],
+    ];
+    for (const [label, fn] of subsystems) {
+      try { fn(); } catch (e) {
+        console.error(`[main/shutdown] ${label} Error:`, e);
+      }
+    }
+  }
+
   let isQuitting = false;
   app.on("before-quit", (event) => {
     if (isQuitting) return;
+
+    const forceTimer = setTimeout(() => {
+      console.error("[main/shutdown] force-exit after timeout");
+      process.exit(1);
+    }, FORCE_EXIT_MS);
+    forceTimer.unref();
+
     if (!coordinator.isAnyActive()) {
-      stopWatchdog();
-      abortAllIngests("app-quit");
-      abortAllDatasetV2("app-quit");
-      abortAllBookhunter("app-quit");
-      abortAllAgents("app-quit");
-      abortAllForgeLocal("app-quit");
-      abortAllForgeEval("app-quit");
-      abortAllLibrary("app-quit");
-      disposeClient();
+      teardownSubsystems();
+      telemetry.flush()
+        .catch((err) => console.error("[main/shutdown] telemetry.flush Error:", err))
+        .finally(() => { clearTimeout(forceTimer); });
       return;
     }
 
@@ -212,52 +245,9 @@ if (!gotLock) {
         });
         exitCode = 3;
       } finally {
-        try {
-          stopWatchdog();
-        } catch {
-          // ignore
-        }
-        try {
-          abortAllIngests("app-quit");
-        } catch {
-          // ignore
-        }
-        try {
-          abortAllDatasetV2("app-quit");
-        } catch {
-          // ignore
-        }
-        try {
-          abortAllBookhunter("app-quit");
-        } catch {
-          // ignore
-        }
-        try {
-          abortAllAgents("app-quit");
-        } catch {
-          // ignore
-        }
-        try {
-          abortAllForgeLocal("app-quit");
-        } catch {
-          // ignore
-        }
-        try {
-          abortAllForgeEval("app-quit");
-        } catch {
-          // ignore
-        }
-        try {
-          abortAllLibrary("app-quit");
-        } catch {
-          // ignore
-        }
-        try {
-          disposeClient();
-        } catch {
-          // ignore
-        }
-        await telemetry.flush().catch(() => undefined);
+        teardownSubsystems();
+        await telemetry.flush().catch((err) => console.error("[main/shutdown] telemetry.flush Error:", err));
+        clearTimeout(forceTimer);
         app.exit(exitCode);
       }
     })();

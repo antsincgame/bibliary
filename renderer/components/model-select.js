@@ -90,7 +90,7 @@ function persistChoice(role, modelKey) {
       const prefKey = role + "Model";
       void window.api.preferences
         .set({ [prefKey]: modelKey })
-        .catch(() => { /* swallow — UI уже обновился */ });
+        .catch((err) => console.error("[model-select/persist] Error:", err));
     }, 300)
   );
 }
