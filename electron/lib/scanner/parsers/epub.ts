@@ -68,10 +68,12 @@ interface ManifestItem {
 
 /**
  * Жёсткий потолок RAM для EPUB (P1, симметрично PDF parser).
- * EPUB = ZIP, JSZip распаковывает ВЕСЬ архив в память. 100 MB EPUB
- * (отсканированные страницы как XHTML+изображения) даёт >300 MB пиков.
+ * EPUB = ZIP, JSZip распаковывает ВЕСЬ архив в память. 250 MB EPUB
+ * даёт ~750 MB пиковой RAM — приемлемо для 8+ GB машин. Увеличено
+ * со 100 MB, так как ряд реальных книг (Kali Linux, Copilot Studio)
+ * содержат встроенные изображения и превышают старый лимит.
  */
-const MAX_EPUB_FILE_BYTES = 100 * 1024 * 1024;
+const MAX_EPUB_FILE_BYTES = 250 * 1024 * 1024;
 
 async function parseEpub(filePath: string): Promise<ParseResult> {
   const stat = await fs.stat(filePath);
@@ -162,9 +164,19 @@ async function parseEpub(filePath: string): Promise<ParseResult> {
   };
 
   const spineNode = pkg?.["spine"] as Record<string, unknown> | undefined;
-  const itemRefs = asArray(spineNode?.["itemref"]).map((ir) => String((ir as Record<string, unknown>)["@_idref"] ?? ""));
+  let itemRefs = asArray(spineNode?.["itemref"]).map((ir) => String((ir as Record<string, unknown>)["@_idref"] ?? ""));
   if (itemRefs.length === 0) {
-    warnings.push("epub: empty spine");
+    /* Spine пустой — нестандартный EPUB. Fallback: собираем все xhtml/html
+       items из manifest в порядке их объявления. */
+    const fallbackIds = items
+      .filter((i) => i.mediaType.includes("xhtml") || i.mediaType === "text/html")
+      .map((i) => i.id);
+    if (fallbackIds.length > 0) {
+      itemRefs = fallbackIds;
+      warnings.push("epub: spine was empty — falling back to manifest content items");
+    } else {
+      warnings.push("epub: empty spine and no xhtml items in manifest");
+    }
   }
 
   const headingByHref = new Map<string, string>();
@@ -202,7 +214,7 @@ async function parseEpub(filePath: string): Promise<ParseResult> {
 
   for (const idref of itemRefs) {
     const item = itemById.get(idref);
-    if (!item || !item.mediaType.includes("xhtml")) continue;
+    if (!item || (!item.mediaType.includes("xhtml") && item.mediaType !== "text/html")) continue;
     const file = zip.file(resolve(item.href));
     if (!file) {
       warnings.push(`epub: missing spine item ${item.href}`);

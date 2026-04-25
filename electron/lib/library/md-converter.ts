@@ -339,24 +339,14 @@ export async function convertBookToMarkdown(
 
   /* Stage 1 -- text + structure через существующий парсер. */
   let parsed = await parseBook(absFilePath, { ocrEnabled: opts.ocrEnabled === true, signal: opts.signal });
-  if (parsed.sections.length === 0 && opts.ocrEnabled !== false && isOcrSupported() && (format === "pdf" || format === "djvu")) {
+  /* OCR auto-fallback: если парсер вернул 0 секций, пробуем OCR независимо от
+     пользовательской настройки — нет смысла помечать книгу как unsupported, если
+     ОС умеет OCR. Применяется только к форматам, которые могут быть сканами. */
+  if (parsed.sections.length === 0 && isOcrSupported() && (format === "pdf" || format === "djvu")) {
     parsed = await parseBook(absFilePath, { ocrEnabled: true, ocrAccuracy: "accurate", ocrPdfDpi: 200, signal: opts.signal });
   }
 
-  /* Fallback: if parser returned sections but all have 0 paragraphs,
-     collect all raw text and create a single virtual chapter when there's
-     enough content (>100 words). Prevents books from being marked unsupported
-     just because heading detection failed. */
-  let effectiveSections = parsed.sections;
-  if (effectiveSections.every((s) => s.paragraphs.length === 0) && parsed.rawCharCount > 500) {
-    const allText = effectiveSections
-      .map((s) => [s.title, ...s.paragraphs].join("\n"))
-      .join("\n")
-      .trim();
-    if (allText && countWords(allText) > 100) {
-      effectiveSections = [{ level: 1, title: parsed.metadata.title || "Text", paragraphs: [allText] }];
-    }
-  }
+  const effectiveSections = parsed.sections;
 
   const chapters: ConvertedChapter[] = effectiveSections.map((sec, i) => {
     const wordsInChapter = sec.paragraphs.reduce((s, p) => s + countWords(p), 0);

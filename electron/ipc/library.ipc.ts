@@ -44,6 +44,7 @@ import {
   queryTagStats,
   type CatalogQuery,
 } from "../lib/library/cache-db.js";
+import { convertBookToMarkdown } from "../lib/library/md-converter.js";
 import {
   importFolderToLibrary,
   importFile as importFiles,
@@ -399,6 +400,74 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
     }
   );
   ipcMain.handle("library:evaluator-get-slots", async (): Promise<number> => getEvaluatorSlotCount());
+
+  /**
+   * Перепарсить книгу заново по сохранённому оригинальному файлу.
+   * Полезно для книг со статусом "unsupported" после улучшения парсеров
+   * или включения OCR. После успешного перепарсинга статус сбрасывается
+   * в "imported" и книга ставится в очередь на эвалюацию.
+   */
+  ipcMain.handle(
+    "library:reparse-book",
+    async (_e, bookId: string): Promise<{ ok: boolean; chapters?: number; reason?: string }> => {
+      if (typeof bookId !== "string") return { ok: false, reason: "bookId required" };
+      const meta = getBookById(bookId);
+      if (!meta) return { ok: false, reason: "not-found" };
+
+      const pathMod = await import("path");
+      const { promises: fsMod } = await import("fs");
+      const dir = pathMod.dirname(meta.mdPath);
+      const originalPath = pathMod.join(dir, meta.originalFile);
+
+      try {
+        await fsMod.access(originalPath);
+      } catch {
+        return { ok: false, reason: `original file not found: ${meta.originalFile}` };
+      }
+
+      let result: Awaited<ReturnType<typeof convertBookToMarkdown>>;
+      try {
+        result = await convertBookToMarkdown(originalPath, {
+          precomputedSha256: meta.sha256,
+          ocrEnabled: true,
+        });
+      } catch (e) {
+        return { ok: false, reason: e instanceof Error ? e.message : String(e) };
+      }
+
+      if (result.chapters.length === 0) {
+        const warn = result.meta.warnings?.slice(0, 3).join("; ") ?? "no chapters extracted";
+        return { ok: false, reason: warn };
+      }
+
+      await fsMod.writeFile(meta.mdPath, result.markdown, "utf-8");
+
+      /* Сохраняем evaluator-поля из старых метаданных — не теряем оценку. */
+      const updatedMeta: BookCatalogMeta = {
+        ...result.meta,
+        id: meta.id,
+        sha256: meta.sha256,
+        originalFile: meta.originalFile,
+        titleEn: meta.titleEn,
+        authorEn: meta.authorEn,
+        domain: meta.domain,
+        tags: meta.tags,
+        qualityScore: meta.qualityScore,
+        conceptualDensity: meta.conceptualDensity,
+        originality: meta.originality,
+        isFictionOrWater: meta.isFictionOrWater,
+        verdictReason: meta.verdictReason,
+        evaluatorModel: meta.evaluatorModel,
+        evaluatedAt: meta.evaluatedAt,
+        status: "imported",
+        lastError: undefined,
+      };
+      upsertBook(updatedMeta, meta.mdPath);
+      enqueueBook(meta.id);
+
+      return { ok: true, chapters: result.chapters.length };
+    }
+  );
 
   // ── Pre-import scan ────────────────────────────────────────────────────────
 

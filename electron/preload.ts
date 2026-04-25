@@ -512,6 +512,8 @@ contextBridge.exposeInMainWorld("api", {
     evaluatorSetSlots: (n: number): Promise<{ ok: boolean; slots: number }> =>
       ipcRenderer.invoke("library:evaluator-set-slots", n),
     evaluatorGetSlots: (): Promise<number> => ipcRenderer.invoke("library:evaluator-get-slots"),
+    reparseBook: (bookId: string): Promise<{ ok: boolean; chapters?: number; reason?: string }> =>
+      ipcRenderer.invoke("library:reparse-book", bookId),
     onImportProgress: (cb: (payload: {
       importId: string;
       phase: "discovered" | "processed" | "scan-complete";

@@ -381,6 +381,51 @@ export function buildCatalogBottomBar(root, deps) {
 
   deleteBtn.dataset.modeMin = "pro";
 
+  const reparseBtn = el("button", {
+    type: "button", class: "lib-btn lib-btn-ghost",
+    "data-mode-min": "advanced",
+    title: t("library.catalog.tooltip.reparse"),
+    onclick: async () => {
+      /* Если ничего не выбрано — переparsим ВСЕ unsupported. */
+      const targets = CATALOG.selected.size > 0
+        ? CATALOG.rows.filter((r) => CATALOG.selected.has(r.id) && r.status === "unsupported")
+        : CATALOG.rows.filter((r) => r.status === "unsupported");
+
+      if (targets.length === 0) {
+        await showAlert(t("library.catalog.reparse.nothingToDo"));
+        return;
+      }
+
+      let ok = 0;
+      let fail = 0;
+      const errors = /** @type {string[]} */ ([]);
+      setCatalogStatus(root, t("library.catalog.reparse.running", { n: String(targets.length) }));
+
+      for (const row of targets) {
+        try {
+          const res = await window.api.library.reparseBook(row.id);
+          if (res?.ok) {
+            ok++;
+            const idx = CATALOG.rows.findIndex((r) => r.id === row.id);
+            if (idx >= 0) CATALOG.rows[idx].status = "imported";
+          } else {
+            fail++;
+            if (res?.reason) errors.push(`${row.title?.slice(0, 40)}: ${res.reason}`);
+          }
+        } catch (e) {
+          fail++;
+          errors.push(`${row.title?.slice(0, 40)}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+        deps.renderCatalogTable(root);
+      }
+
+      const summary = t("library.catalog.reparse.done", { ok: String(ok), fail: String(fail) });
+      const detail = errors.slice(0, 3).join("\n");
+      await showAlert(detail ? `${summary}\n\n${detail}` : summary);
+      await deps.renderCatalog(root);
+    },
+  }, t("library.catalog.btn.reparse"));
+
   const chunksBtn = el("button", {
     type: "button", class: "lib-btn lib-btn-primary",
     onclick: () => void guardAndCrystallize(root, deps),
@@ -397,7 +442,7 @@ export function buildCatalogBottomBar(root, deps) {
   return el("div", { class: "lib-catalog-bottombar" }, [
     summary,
     el("div", { class: "lib-catalog-actions" }, [
-      selectAllBtn, clearBtn, reevaluateBtn, deleteBtn, chunksBtn, cancelBatchBtn,
+      selectAllBtn, clearBtn, reevaluateBtn, reparseBtn, deleteBtn, chunksBtn, cancelBatchBtn,
     ]),
     batchSummary,
   ]);

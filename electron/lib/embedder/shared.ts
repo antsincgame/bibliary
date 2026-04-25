@@ -58,9 +58,25 @@ function ensureSharpDllPath(): void {
   console.warn("[embedder] sharp vendor DLL path not found, embedding may fail");
 }
 
+/**
+ * Перенаправляет кеш @xenova/transformers (ONNX-модели) из ~/.cache/huggingface
+ * в BIBLIARY_DATA_DIR/models — чтобы данные portable-версии жили рядом с .exe,
+ * а не разбросано по профилю пользователя Windows.
+ */
+function configureTransformersCache(): void {
+  const dataDir = process.env.BIBLIARY_DATA_DIR?.trim();
+  if (!dataDir) return;
+  const modelsDir = path.join(dataDir, "models");
+  process.env.TRANSFORMERS_CACHE = modelsDir;
+  process.env.HF_HOME = modelsDir;
+}
+
 async function loadPipeline(): Promise<typeof import("@xenova/transformers")["pipeline"]> {
   ensureSharpDllPath();
+  configureTransformersCache();
   const mod = await import("@xenova/transformers");
+  /* Дополнительно задаём через env API трансформеров (v2.x). */
+  mod.env.cacheDir = process.env.TRANSFORMERS_CACHE ?? mod.env.cacheDir;
   return mod.pipeline;
 }
 
