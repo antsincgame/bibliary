@@ -24,7 +24,7 @@ export async function guardAndCrystallize(root, deps) {
   }
   const selectedRows = CATALOG.rows.filter((r) => CATALOG.selected.has(r.id));
   const unevaluated = selectedRows.filter((r) =>
-    r.status === "imported" || r.status === "evaluating" || r.status === "failed" ||
+    r.status === "imported" || r.status === "evaluating" ||
     typeof r.qualityScore !== "number"
   );
   if (unevaluated.length > 0) {
@@ -67,11 +67,18 @@ async function startBatchExtraction(root, bookIds, deps) {
       bookIds,
       targetCollection: STATE.targetCollection,
     });
+    const errorReasons = res.skipped
+      .filter((/** @type {{ reason: string }} */ s) => s.reason.startsWith("extraction-failed"))
+      .slice(0, 3)
+      .map((/** @type {{ reason: string }} */ s) => s.reason);
+    const errDetail = errorReasons.length > 0
+      ? "\n\n" + errorReasons.join("\n")
+      : "";
     await showAlert(t("library.catalog.batch.done", {
       processed: String(res.processed),
       skipped: String(res.skipped.length),
       failed: String(BATCH.failed),
-    }));
+    }) + errDetail);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     const cancelled = /abort|cancel/i.test(msg);
@@ -124,19 +131,28 @@ export function applyBatchEvent(root, ev, deps) {
       BATCH.currentBookTitle = typeof ev.bookTitle === "string" ? ev.bookTitle : null;
       if (BATCH.currentBookId) {
         const idx = CATALOG.rows.findIndex((r) => r.id === BATCH.currentBookId);
-        if (idx >= 0) CATALOG.rows[idx].status = "crystallizing";
+        if (idx >= 0) {
+          CATALOG.rows[idx].status = "crystallizing";
+          CATALOG.rows[idx].lastError = undefined;
+        }
       }
     } else if (ev.phase === "book-done") {
       BATCH.done += 1;
       if (typeof ev.bookId === "string") {
         const idx = CATALOG.rows.findIndex((r) => r.id === ev.bookId);
-        if (idx >= 0) CATALOG.rows[idx].status = "indexed";
+        if (idx >= 0) {
+          CATALOG.rows[idx].status = "indexed";
+          CATALOG.rows[idx].lastError = undefined;
+        }
       }
     } else if (ev.phase === "book-failed") {
       BATCH.failed += 1;
       if (typeof ev.bookId === "string") {
         const idx = CATALOG.rows.findIndex((r) => r.id === ev.bookId);
-        if (idx >= 0) CATALOG.rows[idx].status = "failed";
+        if (idx >= 0) {
+          CATALOG.rows[idx].status = "failed";
+          CATALOG.rows[idx].lastError = typeof ev.error === "string" ? ev.error : undefined;
+        }
       }
     }
     updateBatchUi(root);

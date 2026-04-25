@@ -26,6 +26,9 @@ nsis:
   oneClick: true
   perMachine: false
 asar: true
+asarUnpack:
+  - "node_modules/sharp/**/*"
+  - "node_modules/better-sqlite3/**/*.node"
 extraMetadata:
   type: commonjs
 afterPack: scripts/afterPack.js

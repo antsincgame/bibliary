@@ -25,6 +25,12 @@ function statusLabel(status) {
   return trans === key ? status : trans;
 }
 
+/** @param {string | undefined} value */
+function compactError(value) {
+  if (!value) return "";
+  return value.replace(/\s+/g, " ").trim().slice(0, 96);
+}
+
 export async function loadCatalog() {
   if (catalogLoadPromise) {
     await catalogLoadPromise;
@@ -107,6 +113,13 @@ export function renderCatalogTable(root) {
         openBook(row.id, pane);
       },
     }, row.title || row.id);
+    const statusText = statusLabel(row.status);
+    const errorText = compactError(row.lastError);
+    const statusCell = el("td", {
+      class: "lib-catalog-cell-status",
+      title: errorText || statusText,
+    }, errorText && row.status === "failed" ? `${statusText}: ${errorText}` : statusText);
+
     const tr = el("tr", {
       class: `lib-catalog-row ${statusClass(row.status)} ${q !== null ? qualityClass(q) : ""}`,
       "data-book-id": row.id,
@@ -117,7 +130,7 @@ export function renderCatalogTable(root) {
       el("td", { class: "lib-catalog-cell-domain" }, row.domain || ""),
       el("td", { class: "lib-catalog-cell-words" }, fmtWords(row.wordCount)),
       el("td", { class: "lib-catalog-cell-quality" }, q !== null ? fmtQuality(q) : ""),
-      el("td", { class: "lib-catalog-cell-status" }, statusLabel(row.status)),
+      statusCell,
     ]);
     tbody.appendChild(tr);
   }

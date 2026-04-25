@@ -83,7 +83,8 @@ interface LibraryBookMeta {
   domain?: string;
   tags?: string[];
   wordCount: number;
-  status: "imported" | "evaluating" | "evaluated" | "failed";
+  status: "imported" | "evaluating" | "evaluated" | "crystallizing" | "indexed" | "failed" | "unsupported";
+  year?: number;
   qualityScore?: number;
   isFictionOrWater?: boolean;
   conceptualDensity?: number;
@@ -96,6 +97,7 @@ interface LibraryBookMeta {
   sourceArchive?: string;
   sha256: string;
   warnings?: string[];
+  lastError?: string;
 }
 
 interface LibraryCatalogQuery {

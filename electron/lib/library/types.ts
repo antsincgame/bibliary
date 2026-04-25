@@ -97,6 +97,8 @@ export interface BookCatalogMeta {
   conceptsAccepted?: number;
   // ── lifecycle ──
   status: BookStatus;
+  /** Last runtime failure, shown in Catalog to explain `failed` status. */
+  lastError?: string;
   /** Список warnings от парсера/эвалюатора. */
   warnings?: string[];
 }

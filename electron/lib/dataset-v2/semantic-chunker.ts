@@ -101,6 +101,43 @@ function splitByHeadings(paragraphs: string[], sectionTitle: string): Structural
   return blocks.length > 0 ? blocks : [{ heading: sectionTitle, paragraphs: [...paragraphs].filter((p) => p.trim()) }];
 }
 
+function mergeSmallBlocks(
+  blocks: Array<{ heading: string; paragraphs: string[] }>,
+  minWords: number,
+  safeLimit: number,
+): Array<{ heading: string; paragraphs: string[] }> {
+  const merged: Array<{ heading: string; paragraphs: string[] }> = [];
+  let current: { heading: string; paragraphs: string[] } | null = null;
+
+  const flush = (): void => {
+    if (current && current.paragraphs.length > 0) merged.push(current);
+    current = null;
+  };
+
+  for (const block of blocks) {
+    const blockWords = wordsOf(block.paragraphs);
+    if (!current) {
+      current = { heading: block.heading, paragraphs: [...block.paragraphs] };
+      if (blockWords >= minWords) flush();
+      continue;
+    }
+
+    const currentWords = wordsOf(current.paragraphs);
+    const canMerge = currentWords < minWords || currentWords + blockWords <= safeLimit;
+    if (canMerge) {
+      current.paragraphs.push(...block.paragraphs);
+      if (wordsOf(current.paragraphs) >= minWords) flush();
+    } else {
+      flush();
+      current = { heading: block.heading, paragraphs: [...block.paragraphs] };
+      if (blockWords >= minWords) flush();
+    }
+  }
+  flush();
+
+  return merged;
+}
+
 /* ───────────────── Step 2: Thematic drift detection ───────────────── */
 
 /**
@@ -118,12 +155,20 @@ async function findThematicBoundaries(
   maxPara: number = MAX_PARAGRAPHS_FOR_DRIFT,
 ): Promise<number[]> {
   if (paragraphs.length < 3) return [];
+  if (maxPara <= 0) return [];
   if (paragraphs.length > maxPara) return [];
 
-  const vectors: number[][] = [];
-  for (let i = 0; i < paragraphs.length; i++) {
-    if (signal?.aborted) throw new Error("chunker aborted");
-    vectors.push(await embedPassage(paragraphs[i].slice(0, 500)));
+  let vectors: number[][];
+  try {
+    vectors = [];
+    for (let i = 0; i < paragraphs.length; i++) {
+      if (signal?.aborted) throw new Error("chunker aborted");
+      vectors.push(await embedPassage(paragraphs[i].slice(0, 500)));
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message === "chunker aborted") throw e;
+    console.warn(`[chunker] embedPassage failed, falling back to hard-split: ${e instanceof Error ? e.message : e}`);
+    return [];
   }
 
   const boundaries: number[] = [];
@@ -222,9 +267,15 @@ export async function chunkChapter(args: ChunkChapterArgs): Promise<SemanticChun
   const maxParaDrift = args.maxParagraphsForDrift ?? MAX_PARAGRAPHS_FOR_DRIFT;
   const overlap = args.overlapParagraphs ?? OVERLAP_PARAGRAPHS;
 
-  if (section.paragraphs.length === 0) return [];
+  if (section.paragraphs.length === 0) {
+    console.log(`[chunker] ch${chapterIndex} "${section.title}" — 0 paragraphs, skipping`);
+    return [];
+  }
+
+  console.log(`[chunker] ch${chapterIndex} "${section.title}" — ${section.paragraphs.length} paras, ${wordsOf(section.paragraphs)} words (safe=${safeLimit} min=${minWords})`);
 
   const structuralBlocks = splitByHeadings(section.paragraphs, section.title);
+  console.log(`[chunker]   structural blocks: ${structuralBlocks.length}`);
   const rawChunks: Array<{ heading: string; paragraphs: string[] }> = [];
 
   for (const block of structuralBlocks) {
@@ -235,15 +286,24 @@ export async function chunkChapter(args: ChunkChapterArgs): Promise<SemanticChun
       continue;
     }
 
+    console.log(`[chunker]   block "${block.heading}" too big (${bw} words), splitting by drift...`);
     const subChunks = await splitByThematicDrift(block.paragraphs, args.signal, safeLimit, driftTh, maxParaDrift);
+    console.log(`[chunker]   → ${subChunks.length} sub-chunks`);
     for (const sub of subChunks) {
       rawChunks.push({ heading: block.heading, paragraphs: sub });
     }
   }
 
-  const filtered = rawChunks.filter((c) => wordsOf(c.paragraphs) >= minWords);
+  const mergedChunks = mergeSmallBlocks(rawChunks, minWords, safeLimit);
+  if (mergedChunks.length !== rawChunks.length) {
+    console.log(`[chunker]   merged small chunks: ${rawChunks.length} → ${mergedChunks.length}`);
+  }
+
+  const filtered = mergedChunks.filter((c) => wordsOf(c.paragraphs) >= minWords);
   if (filtered.length === 0 && rawChunks.length > 0) {
-    filtered.push(...rawChunks);
+    const largest = [...mergedChunks].sort((a, b) => wordsOf(b.paragraphs) - wordsOf(a.paragraphs))[0];
+    console.log(`[chunker]   no chunks reached minWords (${minWords}), keeping largest fallback`);
+    if (largest) filtered.push(largest);
   }
 
   const partTotal = filtered.length;
@@ -267,6 +327,7 @@ export async function chunkChapter(args: ChunkChapterArgs): Promise<SemanticChun
     };
   });
 
+  console.log(`[chunker] ch${chapterIndex} result: ${chunks.length} chunks [${chunks.map(c => c.wordCount + "w").join(", ")}]`);
   return applyContextOverlap(chunks, overlap);
 }
 

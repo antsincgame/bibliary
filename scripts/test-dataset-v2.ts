@@ -11,6 +11,7 @@
 import { chunkChapter } from "../electron/lib/dataset-v2/semantic-chunker.js";
 import { extractDeltaKnowledge, clearPromptCache } from "../electron/lib/dataset-v2/delta-extractor.js";
 import { extractJsonFromReasoning, extractJsonObjectFromReasoning } from "../electron/lib/dataset-v2/reasoning-decoder.js";
+import { isNonContentSection } from "../electron/lib/dataset-v2/section-filter.js";
 import type { BookSection } from "../electron/lib/scanner/parsers/index.js";
 
 const COLOR = {
@@ -119,6 +120,50 @@ async function main(): Promise<void> {
     if (!bc.includes("Шардирование")) throw new Error("no chapter title");
   });
 
+  await step("S1-6 — служебные разделы Contents/About Authors отбрасываются", () => {
+    if (!isNonContentSection(makeSection([paragraph(100)], "Table of Contents"))) {
+      throw new Error("Table of Contents was not detected");
+    }
+    if (!isNonContentSection(makeSection([paragraph(100)], "Об авторах"))) {
+      throw new Error("Об авторах was not detected");
+    }
+    if (!isNonContentSection(makeSection([paragraph(100)], "About the Technical Reviewer"))) {
+      throw new Error("About the Technical Reviewer was not detected");
+    }
+    if (!isNonContentSection(makeSection([paragraph(100)], "Краткое содержание"))) {
+      throw new Error("Краткое содержание was not detected");
+    }
+    if (!isNonContentSection(makeSection([paragraph(100)], "Conventions Used in This Book"))) {
+      throw new Error("Conventions Used in This Book was not detected");
+    }
+    if (!isNonContentSection(makeSection([paragraph(100)], "ISBN 978-5-9775-2062-1"))) {
+      throw new Error("ISBN metadata section was not detected");
+    }
+    if (isNonContentSection(makeSection([paragraph(100)], "Cache Invalidation Strategies"))) {
+      throw new Error("real chapter falsely detected as non-content");
+    }
+  });
+
+  await step("S1-7 — мелкие structural blocks склеиваются до рабочих чанков", async () => {
+    const paragraphs = [
+      "## Topic A",
+      paragraph(120),
+      "## Topic B",
+      paragraph(120),
+      "## Topic C",
+      paragraph(120),
+    ];
+    const chunks = await chunkChapter({
+      section: makeSection(paragraphs, "Small Blocks"),
+      chapterIndex: 0,
+      bookTitle: "B",
+      bookSourcePath: "/x",
+      maxParagraphsForDrift: 0,
+    });
+    if (chunks.length !== 1) throw new Error(`expected merged 1 chunk, got ${chunks.length}`);
+    if (chunks[0].wordCount < 300) throw new Error(`merged chunk too small: ${chunks[0].wordCount}`);
+  });
+
   /* === Stage 2 — Delta Extractor (mock LLM) === */
 
   const thesis = "The chapter argues for pragmatic cache invalidation strategies.";
@@ -174,6 +219,25 @@ async function main(): Promise<void> {
     if (!result.warnings.some((w) => w.includes("attempt-1") || w.includes("attempt-2"))) {
       throw new Error("missing parse attempt warnings");
     }
+  });
+
+  await step("S2-3b — маркетинговый/библиографический шум не принимается", async () => {
+    const section = makeSection([paragraph(120)]);
+    const chunks = await chunkChapter({ section, chapterIndex: 0, bookTitle: "B", bookSourcePath: "/x" });
+    const mockLlm = async () => JSON.stringify(mockDeltaPayload({
+      domain: "other",
+      chapterContext: "This section contains book endorsements and bibliographic metadata only.",
+      essence: "The provided text is a bibliographic description and marketing endorsement rather than a technical mechanism.",
+      proof: "It lists praise, publication context, and promotional claims without a causal technical model.",
+      tags: ["endorsement", "marketing"],
+    }));
+    const result = await extractDeltaKnowledge({
+      chunks,
+      chapterThesis: thesis,
+      callbacks: { llm: mockLlm },
+    });
+    if (result.accepted.length !== 0) throw new Error(`expected 0 accepted, got ${result.accepted.length}`);
+    if (!result.warnings.some((w) => w.includes("meta-noise"))) throw new Error("expected meta-noise warning");
   });
 
   await step("S2-4 — chapter memory растёт между чанками (overlap выключен)", async () => {

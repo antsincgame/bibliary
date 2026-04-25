@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS books (
   concepts_accepted   INTEGER,
   -- lifecycle
   status              TEXT NOT NULL,
+  last_error          TEXT,
   md_path             TEXT NOT NULL
 );
 
@@ -59,6 +60,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS books_fts USING fts5(
  *   v0 → v1: первичная схема (выше в SCHEMA_SQL).
  *   v1 → v2: пересоздать books_fts без `content=''`.
  *   v2 → v3: year, isbn, publisher columns + indexes.
+ *   v3 → v4: last_error column for diagnosable failed extraction/evaluation.
  */
 export function applyMigrations(db: Database.Database): void {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number } | undefined;
@@ -93,5 +95,12 @@ export function applyMigrations(db: Database.Database): void {
     db.exec("CREATE INDEX IF NOT EXISTS idx_books_isbn ON books(isbn)");
     db.exec("CREATE INDEX IF NOT EXISTS idx_books_year ON books(year)");
     db.pragma("user_version = 3");
+  }
+
+  if (current < 4) {
+    const cols = db.pragma("table_info(books)") as Array<{ name: string }>;
+    const existing = new Set(cols.map((c) => c.name));
+    if (!existing.has("last_error")) db.exec("ALTER TABLE books ADD COLUMN last_error TEXT");
+    db.pragma("user_version = 4");
   }
 }

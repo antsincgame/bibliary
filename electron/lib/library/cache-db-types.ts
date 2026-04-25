@@ -27,6 +27,7 @@ export interface BookRow {
   concepts_extracted: number | null;
   concepts_accepted: number | null;
   status: string;
+  last_error: string | null;
   md_path: string;
 }
 
@@ -60,6 +61,7 @@ export function rowToMeta(row: BookRow, tags: string[]): BookCatalogMeta & { mdP
     conceptsExtracted: row.concepts_extracted ?? undefined,
     conceptsAccepted: row.concepts_accepted ?? undefined,
     status: row.status as BookStatus,
+    lastError: row.last_error ?? undefined,
     mdPath: row.md_path,
   };
 }

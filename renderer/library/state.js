@@ -23,6 +23,8 @@
  * @property {number} wordCount
  * @property {number} [qualityScore]
  * @property {boolean} [isFictionOrWater]
+ * @property {number} [year]
+ * @property {string} [lastError]
  * @property {string} status
  * @property {string[]} [tags]
  */

@@ -233,8 +233,9 @@ test("runBatchExtraction sets crystallizing → indexed on success", async (t) =
   const calls = deps._statusCalls.filter((c) => c.id === book.id);
   assert.equal(calls.length, 2, "two status updates: crystallizing then indexed");
   assert.equal(calls[0].status, "crystallizing");
+  assert.deepEqual(calls[0].extras, { lastError: null });
   assert.equal(calls[1].status, "indexed");
-  assert.deepEqual(calls[1].extras, { conceptsAccepted: 7, conceptsExtracted: 12 });
+  assert.deepEqual(calls[1].extras, { conceptsAccepted: 7, conceptsExtracted: 12, lastError: null });
 
   const cached = getBookById(book.id);
   assert.equal(cached?.status, "indexed");
@@ -277,11 +278,45 @@ test("runBatchExtraction marks book 'failed' on extraction error and continues",
   const cachedA = getBookById(a.id);
   const cachedB = getBookById(b.id);
   assert.equal(cachedA?.status, "failed", "first book marked failed in cache");
+  assert.equal(cachedA?.lastError, "simulated parse failure");
   assert.equal(cachedB?.status, "indexed");
 
   const failedEvent = deps._events.find((e) => e.phase === "book-failed");
   assert.ok(failedEvent);
   assert.equal(failedEvent?.bookId, a.id);
+});
+
+test("runBatchExtraction marks zero-accepted extraction as failed with diagnostic", async (t) => {
+  const env = await setupTestEnv();
+  t.after(env.cleanup);
+
+  const book = makeMeta("1212121212121212");
+  const stored = resolveStoredBookPaths(env.libraryRoot, book.id, book.originalFormat);
+  upsertBook(book, stored.mdPath);
+
+  const deps = makeDeps({
+    runExtraction: async () => ({
+      ...fakeExtraction({ accepted: 0, rejected: 3, extracted: 3 }),
+      warnings: ["chunk-1: aura-filter-null"],
+    }),
+  });
+
+  const summary = await runBatchExtraction(
+    {
+      bookIds: [book.id],
+      targetCollection: "test-coll",
+      batchId: "batch-zero",
+    },
+    deps,
+  );
+
+  assert.equal(summary.processed, 0);
+  assert.equal(summary.skipped.length, 1);
+  assert.match(summary.skipped[0].reason, /no accepted deltas/);
+
+  const cached = getBookById(book.id);
+  assert.equal(cached?.status, "failed");
+  assert.match(cached?.lastError ?? "", /aura-filter-null/);
 });
 
 test("runBatchExtraction: cancellation marks remaining books as batch-cancelled", async (t) => {

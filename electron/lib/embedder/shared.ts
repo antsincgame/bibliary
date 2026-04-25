@@ -13,10 +13,53 @@
  * Embedding text is wrapped here so encoding conventions
  * ("query: " vs "passage: " for E5 family) live in one place.
  */
+import * as path from "path";
+import { existsSync } from "fs";
+import { createRequire } from "module";
 import type { FeatureExtractionPipeline } from "@xenova/transformers";
 import { DEFAULT_EMBED_MODEL } from "../scanner/embedding.js";
 
+/**
+ * sharp@0.32 stores libvips DLLs in vendor/<ver>/win32-x64/lib/.
+ * Windows LoadLibrary won't find them unless the directory is on PATH.
+ * In portable builds, the DLLs live inside app.asar.unpacked/ thanks
+ * to the asarUnpack config.
+ */
+function ensureSharpDllPath(): void {
+  if (process.platform !== "win32") return;
+
+  const candidates: string[] = [];
+
+  try {
+    const req = createRequire(__filename);
+    const sharpEntry = req.resolve("sharp");
+    const sharpDir = path.dirname(sharpEntry);
+    candidates.push(path.join(sharpDir, "vendor"));
+  } catch { /* sharp not resolvable — will error later anyway */ }
+
+  if (typeof process.resourcesPath === "string") {
+    candidates.push(
+      path.join(process.resourcesPath, "app.asar.unpacked", "node_modules", "sharp", "vendor"),
+    );
+  }
+
+  candidates.push(path.join(process.cwd(), "node_modules", "sharp", "vendor"));
+
+  for (const vendorBase of candidates) {
+    const libDir = path.join(vendorBase, "8.14.5", "win32-x64", "lib");
+    if (existsSync(libDir)) {
+      if (!process.env.PATH?.includes(libDir)) {
+        console.log(`[embedder] Adding sharp vendor DLL path: ${libDir}`);
+        process.env.PATH = libDir + path.delimiter + (process.env.PATH ?? "");
+      }
+      return;
+    }
+  }
+  console.warn("[embedder] sharp vendor DLL path not found, embedding may fail");
+}
+
 async function loadPipeline(): Promise<typeof import("@xenova/transformers")["pipeline"]> {
+  ensureSharpDllPath();
   const mod = await import("@xenova/transformers");
   return mod.pipeline;
 }

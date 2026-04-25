@@ -19,6 +19,7 @@ import {
   chunkChapter,
   extractDeltaKnowledge,
   assertValidCollectionName,
+  isNonContentSection,
   type DeltaExtractEvent,
   type DeltaKnowledge,
 } from "../lib/dataset-v2/index.js";
@@ -179,6 +180,8 @@ async function runExtraction(
 
   try {
     emitWithJob({ stage: "parse", phase: "start", bookSourcePath: args.bookSourcePath });
+    console.log(`\n[extraction] ═══ START ═══ collection="${targetCollection}" model="${extractModel}"`);
+    console.log(`[extraction] parsing: ${args.bookSourcePath}`);
     const parsed = await parseBook(args.bookSourcePath, {
       ocrEnabled: prefs.ocrEnabled && isOcrSupported(),
       ocrLanguages: prefs.ocrLanguages,
@@ -191,26 +194,34 @@ async function runExtraction(
     });
     const totalChapters = parsed.sections.length;
     const range = args.chapterRange ?? { from: 0, to: totalChapters };
+    console.log(`[extraction] parsed "${parsed.metadata.title}" — ${totalChapters} chapters, range ${range.from}..${range.to}`);
     emitWithJob({ stage: "parse", phase: "done", bookTitle: parsed.metadata.title, totalChapters });
 
     const stats = { chunks: 0, accepted: 0, skipped: 0 };
     const warnings: string[] = [];
     let processed = 0;
 
-    /* Qdrant collection: ensure exists before first upsert */
     const { fetchQdrantJson, QDRANT_URL } = await import("../lib/qdrant/http-client.js");
     const { EMBEDDING_DIM } = await import("../lib/scanner/embedding.js");
+    console.log(`[extraction] Qdrant: ${QDRANT_URL} → collection "${targetCollection}" (dim=${EMBEDDING_DIM})`);
     await fetchQdrantJson(`${QDRANT_URL}/collections/${targetCollection}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         vectors: { size: EMBEDDING_DIM, distance: "Cosine" },
       }),
-    }).catch(() => { /* collection may already exist */ });
+    }).catch((e) => {
+      console.log(`[extraction] collection PUT skipped (may exist): ${e instanceof Error ? e.message : e}`);
+    });
 
     for (let ci = range.from; ci < Math.min(range.to, totalChapters); ci++) {
       if (ctrl.signal.aborted) throw new Error("job aborted");
       const section = parsed.sections[ci];
+      if (isNonContentSection(section)) {
+        console.log(`[extraction] ch${ci} "${section.title}" skipped as non-content section`);
+        emitWithJob({ stage: "chapter", phase: "skip", chapterIndex: ci, chapterTitle: section.title, reason: "non-content-section" });
+        continue;
+      }
 
       /* Step 1 — semantic chunking */
       const chunks = await chunkChapter({
@@ -225,6 +236,7 @@ async function runExtraction(
         maxParagraphsForDrift: prefs.maxParagraphsForDrift,
         overlapParagraphs: prefs.overlapParagraphs,
       });
+      console.log(`[extraction] ch${ci} "${section.title}" → ${chunks.length} chunks (${section.paragraphs.length} paras)`);
       emitWithJob({ stage: "chunker", chapterIndex: ci, chapterTitle: section.title, chunks: chunks.length });
       if (chunks.length === 0) continue;
       stats.chunks += chunks.length;
@@ -233,6 +245,7 @@ async function runExtraction(
       /* Step 2 — chapter thesis (macro-context, 1 LLM call) */
       const chapterText = section.paragraphs.join("\n\n");
       const thesis = await extractChapterThesis(section.title, chapterText, { llm }, null);
+      console.log(`[extraction] ch${ci} thesis: "${thesis.slice(0, 80)}…"`);
       emitWithJob({ stage: "thesis", chapterIndex: ci, thesis });
       if (ctrl.signal.aborted) throw new Error("job aborted");
 
@@ -252,7 +265,17 @@ async function runExtraction(
       /* Step 4 — upsert accepted deltas to Qdrant */
       for (const delta of deltaRes.accepted) {
         if (ctrl.signal.aborted) throw new Error("job aborted");
-        const vector = await embedPassage(delta.essence);
+        let vector: number[];
+        try {
+          vector = await embedPassage(delta.essence);
+        } catch (embErr) {
+          const msg = embErr instanceof Error ? embErr.message : String(embErr);
+          console.error(`[extraction] embedPassage FAILED for delta ${delta.id}: ${msg}`);
+          warnings.push(`embed-failed: ${msg.slice(0, 120)}`);
+          stats.skipped++;
+          continue;
+        }
+        console.log(`[extraction] ✓ upsert → "${targetCollection}" id=${delta.id} domain=${delta.domain} tags=[${delta.tags.join(",")}]`);
         await fetchQdrantJson(`${QDRANT_URL}/collections/${targetCollection}/points?wait=true`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -280,6 +303,7 @@ async function runExtraction(
       }
       stats.skipped += chunks.length - deltaRes.accepted.length;
       processed++;
+      console.log(`[extraction] ch${ci} done: +${deltaRes.accepted.length} accepted, ${chunks.length - deltaRes.accepted.length} skipped`);
 
       emitWithJob({
         stage: "chapter", phase: "done", chapterIndex: ci,
@@ -288,6 +312,7 @@ async function runExtraction(
       });
     }
 
+    console.log(`[extraction] ═══ DONE ═══ "${parsed.metadata.title}" chunks=${stats.chunks} accepted=${stats.accepted} skipped=${stats.skipped} warnings=${warnings.length}`);
     emitWithJob({ stage: "job", phase: "done", stats });
     return { jobId, bookTitle: parsed.metadata.title, totalChapters, processedChapters: processed, totalDelta: stats, warnings };
   } finally {

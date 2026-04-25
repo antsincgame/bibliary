@@ -51,8 +51,8 @@ export function gateCatalogBookForCrystallize(
   meta: Pick<BookCatalogMeta, "status" | "qualityScore" | "isFictionOrWater">,
   opts: { minQuality: number; skipFictionOrWater: boolean },
 ): CrystallizeGateResult {
-  if (meta.status !== "evaluated") {
-    return { canCrystallize: false, reason: `status=${meta.status} (must be evaluated)` };
+  if (!["evaluated", "failed", "indexed"].includes(meta.status)) {
+    return { canCrystallize: false, reason: `status=${meta.status} (must be evaluated/retryable)` };
   }
   if (typeof meta.qualityScore !== "number") {
     return { canCrystallize: false, reason: "no quality_score" };

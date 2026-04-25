@@ -54,20 +54,34 @@ function bundledCandidates(file: string): string[] {
 async function loadPrompt(promptsDir: string | null, file: string): Promise<string> {
   const key = `${promptsDir ?? "<bundled>"}:${file}`;
   const cached = PROMPT_CACHE.get(key);
-  if (cached) return cached;
+  if (cached) {
+    console.log(`[delta] prompt "${file}" from cache (${cached.length} chars)`);
+    return cached;
+  }
 
   if (promptsDir) {
     try {
-      const text = await fs.readFile(path.join(promptsDir, file), "utf8");
-      if (text.trim().length > 50) { PROMPT_CACHE.set(key, text); return text; }
+      const full = path.join(promptsDir, file);
+      const text = await fs.readFile(full, "utf8");
+      if (text.trim().length > 50) {
+        console.log(`[delta] prompt "${file}" loaded from custom dir: ${full} (${text.length} chars)`);
+        PROMPT_CACHE.set(key, text);
+        return text;
+      }
     } catch { /* fallback */ }
   }
   for (const c of bundledCandidates(file)) {
     try {
       const text = await fs.readFile(c, "utf8");
-      if (text.trim().length > 50) { PROMPT_CACHE.set(key, text); return text; }
+      if (text.trim().length > 50) {
+        console.log(`[delta] prompt "${file}" loaded from: ${c} (${text.length} chars)`);
+        PROMPT_CACHE.set(key, text);
+        return text;
+      }
     } catch { /* next */ }
   }
+  const candidates = promptsDir ? [path.join(promptsDir, file), ...bundledCandidates(file)] : bundledCandidates(file);
+  console.error(`[delta] prompt "${file}" NOT FOUND! Tried:\n${candidates.map(c => `  - ${c}`).join("\n")}`);
   throw new Error(`${file} not found in any prompt location`);
 }
 
@@ -81,13 +95,13 @@ export async function extractChapterThesis(
   cb: DeltaExtractCallbacks,
   promptsDir?: string | null,
 ): Promise<string> {
-  const template = await loadPrompt(promptsDir ?? null, "chapter-thesis.md");
-  const truncated = chapterText.split(/\s+/).slice(0, 2000).join(" ");
-  const prompt = template
-    .replace("{{CHAPTER_TITLE}}", chapterTitle)
-    .replace("{{CHAPTER_TEXT}}", truncated);
-
   try {
+    const template = await loadPrompt(promptsDir ?? null, "chapter-thesis.md");
+    const truncated = chapterText.split(/\s+/).slice(0, 2000).join(" ");
+    const prompt = template
+      .replace("{{CHAPTER_TITLE}}", chapterTitle)
+      .replace("{{CHAPTER_TEXT}}", truncated);
+
     const r = normalizeLlm(await cb.llm({
       messages: [{ role: "user", content: prompt }],
       temperature: 0.2,
@@ -98,6 +112,7 @@ export async function extractChapterThesis(
     return thesis;
   } catch (e) {
     if (isAbortError(e)) throw e;
+    console.warn(`[delta-extractor] thesis extraction failed for "${chapterTitle}": ${e instanceof Error ? e.message : e}`);
     return "General introduction";
   }
 }
@@ -123,6 +138,18 @@ function makeId(essence: string, bookSourcePath: string, chapterIndex: number): 
     .update(`${bookSourcePath}|${chapterIndex}|${essence}`)
     .digest("hex");
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+}
+
+function isMetaNoiseDelta(data: {
+  domain: string;
+  chapterContext: string;
+  essence: string;
+  proof: string;
+  tags: string[];
+}): boolean {
+  const text = `${data.domain} ${data.chapterContext} ${data.essence} ${data.proof} ${data.tags.join(" ")}`.toLowerCase();
+  return /\b(table of contents|bibliographic|book endorsement|endorsements|marketing material|promotional|publisher blurb|credits|copyright|about the author|about the reviewer|structural metadata)\b/.test(text) ||
+    /\b(оглавление|содержание|краткое содержание|библиограф|рекламн|аннотац|об авторах|об авторе)\b/i.test(text);
 }
 
 function buildPrompt(
@@ -224,15 +251,18 @@ async function extractOneChunk(
 
   const warnings: string[] = [];
 
+  console.log(`[delta] chunk ${chunk.partN}/${chunk.partTotal} "${chunk.chapterTitle}" (${chunk.text.split(/\s+/).length} words)`);
   const first = await tryOneAttempt(prompt, cb, { temperature: 0.3, maxTokens: MAX_TOKENS }, chunk.partN);
   let success = first.ok ? first : null;
 
   if (!first.ok) {
+    console.log(`[delta] chunk ${chunk.partN} attempt-1 FAILED: ${first.reason}`);
     cb.onEvent?.({ type: "delta.retry", chunkPart: chunk.partN, attempt: 2, reason: first.reason });
     warnings.push(`attempt-1: ${first.reason}`);
     const second = await tryOneAttempt(prompt, cb, { temperature: RETRY_TEMPERATURE, maxTokens: MAX_TOKENS * 2 }, chunk.partN);
     if (second.ok) success = second;
     else {
+      console.log(`[delta] chunk ${chunk.partN} attempt-2 FAILED: ${second.reason}`);
       warnings.push(`attempt-2: ${second.reason}`);
       cb.onEvent?.({ type: "delta.chunk.error", chunkPart: chunk.partN, error: second.reason });
       cb.onEvent?.({ type: "delta.chunk.done", chunkPart: chunk.partN, chunkTotal: chunk.partTotal, accepted: false, durationMs: Date.now() - t0 });
@@ -251,6 +281,7 @@ async function extractOneChunk(
   const validated = DeltaKnowledgeSchema.safeParse(parsed);
   if (!validated.success) {
     const issues = validated.error.issues.map((i) => `${i.path.join(".")}:${i.message}`).join("; ");
+    console.log(`[delta] chunk ${chunk.partN} ZOD FAIL: ${issues}`);
     warnings.push(`zod: ${issues}`);
     cb.onEvent?.({ type: "delta.chunk.skip", chunkPart: chunk.partN, reason: `zod-fail: ${issues}` });
     cb.onEvent?.({ type: "delta.chunk.done", chunkPart: chunk.partN, chunkTotal: chunk.partTotal, accepted: false, durationMs: Date.now() - t0 });
@@ -258,8 +289,17 @@ async function extractOneChunk(
   }
 
   if (!ALLOWED_DOMAINS.has(validated.data.domain)) {
+    console.log(`[delta] chunk ${chunk.partN} UNKNOWN DOMAIN: "${validated.data.domain}"`);
     warnings.push(`unknown-domain: ${validated.data.domain}`);
     cb.onEvent?.({ type: "delta.chunk.skip", chunkPart: chunk.partN, reason: "unknown-domain" });
+    cb.onEvent?.({ type: "delta.chunk.done", chunkPart: chunk.partN, chunkTotal: chunk.partTotal, accepted: false, durationMs: Date.now() - t0 });
+    return { chunk, delta: null, raw: success!.raw, warnings };
+  }
+
+  if (isMetaNoiseDelta(validated.data)) {
+    console.log(`[delta] chunk ${chunk.partN} META NOISE: "${validated.data.essence.slice(0, 80)}…"`);
+    warnings.push("meta-noise");
+    cb.onEvent?.({ type: "delta.chunk.skip", chunkPart: chunk.partN, reason: "meta-noise" });
     cb.onEvent?.({ type: "delta.chunk.done", chunkPart: chunk.partN, chunkTotal: chunk.partTotal, accepted: false, durationMs: Date.now() - t0 });
     return { chunk, delta: null, raw: success!.raw, warnings };
   }
@@ -273,6 +313,7 @@ async function extractOneChunk(
     acceptedAt: new Date().toISOString(),
   };
 
+  console.log(`[delta] chunk ${chunk.partN} ✓ ACCEPTED domain="${delta.domain}" essence="${delta.essence.slice(0, 60)}…"`);
   cb.onEvent?.({ type: "delta.chunk.done", chunkPart: chunk.partN, chunkTotal: chunk.partTotal, accepted: true, durationMs: Date.now() - t0 });
   return { chunk, delta, raw: success!.raw, warnings };
 }
@@ -300,7 +341,14 @@ export interface DeltaExtractResult {
 }
 
 export async function extractDeltaKnowledge(args: DeltaExtractArgs): Promise<DeltaExtractResult> {
-  const template = await loadPrompt(args.promptsDir ?? null, "delta-knowledge-extractor.md");
+  let template: string;
+  try {
+    template = await loadPrompt(args.promptsDir ?? null, "delta-knowledge-extractor.md");
+  } catch (e) {
+    console.error(`[delta-extractor] prompt load failed: ${e instanceof Error ? e.message : e}`);
+    return { perChunk: [], accepted: [], warnings: [`prompt-load-failed: ${e instanceof Error ? e.message : e}`] };
+  }
+
   const memory: ChapterMemory = { ledEssences: [], lastThesis: args.chapterThesis };
   const perChunk: ChunkResult[] = [];
   const accepted: DeltaKnowledge[] = [];

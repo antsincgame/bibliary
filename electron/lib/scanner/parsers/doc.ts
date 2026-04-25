@@ -78,12 +78,21 @@ async function parseDoc(filePath: string): Promise<ParseResult> {
     totalChars += cleaned.length;
   }
 
-  const baseName = path.basename(filePath, path.extname(filePath));
+  const firstH1 = sections.find((s) => s.level === 1)?.title;
+  const baseName = cleanDocTitle(path.basename(filePath, path.extname(filePath)));
   return {
-    metadata: { title: baseName, warnings },
+    metadata: { title: firstH1 || baseName, warnings },
     sections: sections.filter((s) => s.paragraphs.length > 0),
     rawCharCount: totalChars,
   };
+}
+
+/** Strip common "Microsoft Word - " or "Document1 - " artifacts from .doc filenames. */
+function cleanDocTitle(name: string): string {
+  return name
+    .replace(/^Microsoft\s+Word\s*[-–—]\s*/i, "")
+    .replace(/^Document\d*\s*[-–—]\s*/i, "")
+    .trim() || name;
 }
 
 function rawFallback(buf: Buffer, filePath: string, warnings: string[]): ParseResult {
@@ -95,7 +104,7 @@ function rawFallback(buf: Buffer, filePath: string, warnings: string[]): ParseRe
 
   const text = textChunks.join(" ");
   const cleaned = cleanParagraph(text);
-  const baseName = path.basename(filePath, path.extname(filePath));
+  const baseName = cleanDocTitle(path.basename(filePath, path.extname(filePath)));
 
   if (!cleaned) {
     return { metadata: { title: baseName, warnings }, sections: [], rawCharCount: 0 };

@@ -10,7 +10,7 @@ import { t } from "../i18n.js";
 import { fmtWords, fmtQuality } from "./format.js";
 import { renderMarkdown } from "../chat/markdown.js";
 
-/** @type {{ bookId: string; meta: any; html: string } | null} */
+/** @type {{ bookId: string; meta: any; html: string; coverDataUrl: string | null } | null} */
 let currentBook = null;
 
 /** @type {HTMLElement | null} */
@@ -27,6 +27,17 @@ let catalogBody = null;
 function stripFrontmatter(md) {
   const match = md.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
   return match ? md.slice(match[0].length) : md;
+}
+
+/**
+ * Extract the embedded cover reference from book.md.
+ * Covers are stored by the importer as `[img-cover]: data:image/...`.
+ * @param {string} md
+ * @returns {string | null}
+ */
+function extractCoverDataUrl(md) {
+  const match = md.match(/^\[img-cover\]:\s*(data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+)\s*$/m);
+  return match ? match[1] : null;
 }
 
 /**
@@ -67,8 +78,9 @@ export async function openBook(bookId, root) {
 
     const bodyMd = stripFrontmatter(content.markdown);
     const html = renderMarkdown(bodyMd);
+    const coverDataUrl = extractCoverDataUrl(content.markdown);
 
-    currentBook = { bookId, meta, html };
+    currentBook = { bookId, meta, html, coverDataUrl };
     renderReader(root);
   } catch (err) {
     clear(readerContainer);
@@ -108,15 +120,21 @@ function renderReader(root) {
   if (!readerContainer || !currentBook) return;
   clear(readerContainer);
 
-  const { meta, html } = currentBook;
+  const { meta, html, coverDataUrl } = currentBook;
   const q = typeof meta.qualityScore === "number" ? meta.qualityScore : null;
 
   const header = el("div", { class: "lib-reader-header" }, [
     buildBackButton(root),
+    coverDataUrl ? el("img", {
+      class: "lib-reader-cover",
+      src: coverDataUrl,
+      alt: meta.title || "Cover",
+    }) : null,
     el("div", { class: "lib-reader-meta" }, [
       el("h1", { class: "lib-reader-title" }, meta.titleEn || meta.title || meta.id),
       meta.author ? el("div", { class: "lib-reader-author" }, meta.author) : null,
       el("div", { class: "lib-reader-info" }, [
+        typeof meta.year === "number" ? el("span", { class: "lib-reader-year" }, String(meta.year)) : null,
         meta.domain ? el("span", { class: "lib-reader-domain" }, meta.domain) : null,
         el("span", { class: "lib-reader-words" }, fmtWords(meta.wordCount)),
         q !== null ? el("span", { class: "lib-reader-quality" }, `Quality: ${fmtQuality(q)}`) : null,

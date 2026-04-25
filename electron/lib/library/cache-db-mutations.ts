@@ -7,13 +7,13 @@ INSERT INTO books (
   word_count, chapter_count, original_format, source_archive,
   domain, quality_score, conceptual_density, originality, is_fiction_or_water,
   verdict_reason, evaluator_reasoning, evaluator_model, evaluated_at,
-  concepts_extracted, concepts_accepted, status, md_path
+  concepts_extracted, concepts_accepted, status, last_error, md_path
 ) VALUES (
   @id, @sha256, @title, @author, @title_en, @author_en, @year, @isbn, @publisher,
   @word_count, @chapter_count, @original_format, @source_archive,
   @domain, @quality_score, @conceptual_density, @originality, @is_fiction_or_water,
   @verdict_reason, @evaluator_reasoning, @evaluator_model, @evaluated_at,
-  @concepts_extracted, @concepts_accepted, @status, @md_path
+  @concepts_extracted, @concepts_accepted, @status, @last_error, @md_path
 )
 ON CONFLICT(id) DO UPDATE SET
   sha256              = excluded.sha256,
@@ -40,6 +40,7 @@ ON CONFLICT(id) DO UPDATE SET
   concepts_extracted  = excluded.concepts_extracted,
   concepts_accepted   = excluded.concepts_accepted,
   status              = excluded.status,
+  last_error          = excluded.last_error,
   md_path             = excluded.md_path
 `;
 
@@ -77,6 +78,7 @@ export function upsertBook(meta: BookCatalogMeta, mdPath: string): void {
     concepts_extracted: meta.conceptsExtracted ?? null,
     concepts_accepted: meta.conceptsAccepted ?? null,
     status: meta.status,
+    last_error: meta.lastError ?? null,
     md_path: mdPath,
   };
   const txn = db.transaction(() => {
@@ -113,7 +115,7 @@ export function deleteBook(id: string): void {
 export function setBookStatus(
   id: string,
   status: BookStatus,
-  extras?: { conceptsAccepted?: number; conceptsExtracted?: number },
+  extras?: { conceptsAccepted?: number; conceptsExtracted?: number; lastError?: string | null },
 ): boolean {
   const db = openCacheDb();
   const fields: string[] = ["status = @status"];
@@ -125,6 +127,10 @@ export function setBookStatus(
   if (typeof extras?.conceptsExtracted === "number") {
     fields.push("concepts_extracted = @concepts_extracted");
     params.concepts_extracted = extras.conceptsExtracted;
+  }
+  if (extras && "lastError" in extras) {
+    fields.push("last_error = @last_error");
+    params.last_error = extras.lastError ?? null;
   }
   const sql = `UPDATE books SET ${fields.join(", ")} WHERE id = @id`;
   const info = db.prepare(sql).run(params);
