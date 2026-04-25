@@ -57,3 +57,6 @@ data/preferences.json
 
 # Rebuild / native-module stash
 .electron-rebuild-stash/
+
+# DjVuLibre downloaded installers (not needed in repo)
+vendor/djvulibre/**/*_Setup.exe
