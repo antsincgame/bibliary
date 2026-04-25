@@ -1,26 +1,13 @@
 export type {
   SemanticChunk,
-  ExtractedConcept,
   ChapterMemory,
-  DedupedConcept,
-  AcceptedConcept,
-  JudgeResult,
+  AuraFlag,
+  DeltaKnowledge,
 } from "./types.js";
-export { ExtractedConceptSchema, JudgeResultSchema } from "./types.js";
+export { DeltaKnowledgeSchema, AURA_FLAGS, assertValidCollectionName } from "./types.js";
 
 export { chunkChapter } from "./semantic-chunker.js";
 export type { ChunkChapterArgs } from "./semantic-chunker.js";
 
-export { extractChapterConcepts, clearPromptCache } from "./concept-extractor.js";
-export type { ExtractChapterArgs, ExtractChapterResult, ExtractEvent, ExtractCallbacks } from "./concept-extractor.js";
-
-export { dedupChapterConcepts } from "./intra-dedup.js";
-export type { IntraDedupArgs, IntraDedupResult, IntraDedupEvent } from "./intra-dedup.js";
-
-export {
-  judgeAndAccept,
-  ACCEPTED_COLLECTION,
-  assertValidCollectionName,
-  clearJudgePromptCache,
-} from "./judge.js";
-export type { JudgeBatchArgs, JudgeBatchResult, JudgeCallbacks, JudgeEvent } from "./judge.js";
+export { extractDeltaKnowledge, clearPromptCache } from "./delta-extractor.js";
+export type { DeltaExtractArgs, DeltaExtractResult, DeltaExtractEvent, DeltaExtractCallbacks } from "./delta-extractor.js";

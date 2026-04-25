@@ -34,7 +34,7 @@ import * as path from "path";
 import { z } from "zod";
 import { chatWithPolicy } from "../electron/lmstudio-client.js";
 import { fetchQdrantJson, QDRANT_URL } from "../electron/lib/qdrant/http-client.js";
-import { assertValidCollectionName } from "../electron/lib/dataset-v2/judge.js";
+import { assertValidCollectionName } from "../electron/lib/dataset-v2/types.js";
 import { pickEvaluatorModel } from "../electron/lib/library/book-evaluator.js";
 
 // ── ANSI colors ─────────────────────────────────────────────────────────────

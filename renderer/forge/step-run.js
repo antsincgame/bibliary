@@ -2,7 +2,7 @@
 import { el, clear } from "../dom.js";
 import { t } from "../i18n.js";
 import { buildEvalPanel } from "../components/eval-panel.js";
-import { STATE, LAST_STEP, resetLocalRun } from "./state.js";
+import { STATE, LAST_STEP } from "./state.js";
 import { showToast, errMsg } from "./ui-controls.js";
 import { buildLocalRunSection } from "./local-run.js";
 
@@ -33,7 +33,7 @@ function buildRunSummary() {
 }
 
 /** @param {() => void} render */
-function buildWorkspaceActions(render) {
+function buildWorkspaceActions(_render) {
   const wrap = el("div", { class: "forge-workspace-actions" });
   const generateBtn = el("button", { class: "btn btn-gold", type: "button" }, t("forge.run.workspace.generate"));
   const openBtn = el("button", { class: "btn btn-ghost", type: "button" }, t("forge.run.workspace.open"));

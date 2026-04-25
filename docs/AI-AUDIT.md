@@ -1,6 +1,6 @@
 # Bibliary — AI Audit Document
 
-> **Version:** 2.9.0  
+> **Version:** 3.0.0  
 > **Date:** 2026-04-25  
 > **Purpose:** Comprehensive project context for any AI agent performing code review, bug hunting, refactoring, or feature development.
 

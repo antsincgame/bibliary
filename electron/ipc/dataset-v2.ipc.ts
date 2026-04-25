@@ -17,15 +17,13 @@ import { parseBook } from "../lib/scanner/parsers/index.js";
 import { isOcrSupported } from "../lib/scanner/ocr/index.js";
 import {
   chunkChapter,
-  extractChapterConcepts,
-  dedupChapterConcepts,
-  judgeAndAccept,
-  ACCEPTED_COLLECTION,
+  extractDeltaKnowledge,
   assertValidCollectionName,
-  type ExtractEvent,
-  type IntraDedupEvent,
-  type JudgeEvent,
+  type DeltaExtractEvent,
+  type DeltaKnowledge,
 } from "../lib/dataset-v2/index.js";
+import { extractChapterThesis } from "../lib/dataset-v2/delta-extractor.js";
+import { embedPassage } from "../lib/embedder/shared.js";
 import { chatWithPolicy, PROFILE } from "../lmstudio-client.js";
 import { getPreferencesStore } from "../lib/preferences/store.js";
 import { coordinator } from "../lib/resilience/batch-coordinator.js";
@@ -36,23 +34,20 @@ import {
   abortAllExtractionJobs,
 } from "../lib/dataset-v2/coordinator-pipeline.js";
 import { getModelProfile } from "../lib/dataset-v2/model-profile.js";
-import {
-  buildExtractorResponseFormat,
-  buildJudgeResponseFormat,
-} from "../lib/dataset-v2/json-schemas.js";
+import { buildDeltaKnowledgeResponseFormat } from "../lib/dataset-v2/json-schemas.js";
 import { ALLOWED_DOMAINS } from "../crystallizer-constants.js";
+
+const DEFAULT_COLLECTION = "delta-knowledge";
 
 interface StartExtractionArgs {
   bookSourcePath: string;
   /** Optional: индексы глав для обработки (по умолчанию — все). */
   chapterRange?: { from: number; to: number };
-  /** Override модели для extractor/judge (по умолчанию — BIG profile). */
+  /** Override модели (по умолчанию — BIG profile). */
   extractModel?: string;
-  judgeModel?: string;
-  scoreThreshold?: number;
   /**
    * Имя Qdrant-коллекции, куда уходят принятые концепты + где
-   * выполняется cross-library dedup. Если не указано — `ACCEPTED_COLLECTION`
+   * выполняется cross-library dedup. Если не указано — `DEFAULT_COLLECTION`
    * (back-compat). UI Iter 5/6 будет передавать выбранную тематическую
    * коллекцию (marketing, ux, seo, ...).
    */
@@ -64,7 +59,7 @@ interface StartExtractionResult {
   bookTitle: string;
   totalChapters: number;
   processedChapters: number;
-  totalConcepts: { extractedRaw: number; afterDedup: number; accepted: number; rejected: number };
+  totalDelta: { chunks: number; accepted: number; skipped: number };
   warnings: string[];
 }
 
@@ -106,28 +101,11 @@ export function abortAllDatasetV2(reason: string): void {
 }
 
 /**
- * Crystallizer LLM wrapper.
- *
- * Three guarantees vs the previous direct `chat()` call:
- *   1. `chatWithPolicy` provides retry/backoff/adaptive timeout (closes
- *      AUDIT-2026-04 heresy #1 -- pipeline no longer dies on a single
- *      network blip).
- *   2. `signal` is captured by closure and forwarded as `externalSignal`
- *      so `dataset-v2:cancel` aborts the in-flight HTTP request, not just
- *      the gap between requests.
- *   3. Adaptive model profile (model-profile.ts) автоматически подбирает
- *      maxTokens budget, response_format и stop sequences по тегам модели
- *      из curated-models.json. Thinking-модели (qwen3.6) получают 16k+ токенов
- *      и stop=["</think>"]; tool-capable-coder получают JSON Schema decoding.
- *      Защищает от "0 концептов" из-за выгорания max_tokens на reasoning.
- *
- * Caller указывает `role`: "extractor" определяет JSON Schema = массив концептов,
- * "judge" — single JudgeResult. Профиль модели — общий по тегам.
+ * Delta-Knowledge LLM wrapper — single role, unified pipeline.
  */
 function makeLlm(
   modelKey: string,
   signal: AbortSignal,
-  role: "extractor" | "judge",
 ): (args: {
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
   temperature?: number;
@@ -135,15 +113,9 @@ function makeLlm(
 }) => Promise<{ content: string; reasoningContent?: string }> {
   const profilePromise = getModelProfile(modelKey);
   const allowedDomains = Array.from(ALLOWED_DOMAINS).sort();
-  const responseFormatBuilder =
-    role === "extractor" ? () => buildExtractorResponseFormat(allowedDomains) : () => buildJudgeResponseFormat();
 
   return async ({ messages, temperature, maxTokens }) => {
     const profile = await profilePromise;
-    /* Caller (extractor.ts / judge.ts) задаёт hint для maxTokens, но профиль
-       модели имеет приоритет: thinking-моделям нужно МИНИМУМ profile.maxTokens,
-       чтобы не выгореть на reasoning. Берём максимум из двух — caller может
-       поднять выше профиля для длинных глав, но не опустить ниже. */
     const callerHint = maxTokens ?? 4096;
     const effectiveMaxTokens = Math.max(callerHint, profile.maxTokens);
 
@@ -152,7 +124,7 @@ function makeLlm(
         model: modelKey,
         messages,
         sampling: {
-          temperature: temperature ?? 0.4,
+          temperature: temperature ?? 0.3,
           top_p: 0.9,
           top_k: 30,
           min_p: 0,
@@ -160,26 +132,15 @@ function makeLlm(
           max_tokens: effectiveMaxTokens,
         },
         stop: profile.stop,
-        responseFormat: profile.useResponseFormat ? responseFormatBuilder() : undefined,
+        responseFormat: profile.useResponseFormat
+          ? buildDeltaKnowledgeResponseFormat(allowedDomains)
+          : undefined,
         chatTemplateKwargs: profile.chatTemplateKwargs,
       },
       { externalSignal: signal },
     );
-    /* Прокидываем оба поля — extractor/judge ниже разберут через reasoning-decoder. */
     return { content: response.content, reasoningContent: response.reasoningContent };
   };
-}
-
-/**
- * Dual-Prompt Routing: thinking-heavy модели (Qwen3.6, DeepSeek-R1) ломаются от
- * unicode-операторов mechanicus-грамматики (⊕ → ↑ ↓ ≡ ⊗ ∅ ⊙) — их RL-тюнинг
- * требует естественного языка для reasoning. Им даём cognitive-промпт.
- * Всем остальным (non-thinking-instruct, tool-capable-coder, small-fast,
- * default-fallback) — компактный mechanicus-промпт со скрина (плотность
- * <8 токенов/правило, идеален для не-reasoning моделей).
- */
-function pickPromptKey(profileSource: string): "mechanicus" | "cognitive" {
-  return profileSource === "thinking-heavy" ? "cognitive" : "mechanicus";
 }
 
 /**
@@ -194,10 +155,7 @@ async function runExtraction(
 ): Promise<StartExtractionResult> {
   if (!args || typeof args.bookSourcePath !== "string") throw new Error("bookSourcePath required");
 
-  /* Резолвим целевую коллекцию ДО запуска парсера/моделей: если имя
-     невалидно (опечатка с фронта), хотим получить понятную ошибку
-     прежде чем потратить минуты на parseBook + extraction. */
-  const targetCollection = args.targetCollection ?? ACCEPTED_COLLECTION;
+  const targetCollection = args.targetCollection ?? DEFAULT_COLLECTION;
   assertValidCollectionName(targetCollection);
 
   const jobId = randomUUID();
@@ -208,44 +166,19 @@ async function runExtraction(
     pipeline: "extraction",
     batchId: jobId,
     startedAt: new Date().toISOString(),
-    config: {
-      bookSourcePath: args.bookSourcePath,
-      extractModel: args.extractModel,
-      judgeModel: args.judgeModel,
-      chapterRange: args.chapterRange,
-      targetCollection,
-    },
+    config: { bookSourcePath: args.bookSourcePath, extractModel: args.extractModel, targetCollection },
   });
 
   const emitWithJob = (event: Record<string, unknown>): void => emit({ jobId, ...event });
-
   const extractModel = args.extractModel ?? PROFILE.BIG.key;
-  const judgeModel = args.judgeModel ?? PROFILE.BIG.key;
-  const llmExtract = makeLlm(extractModel, ctrl.signal, "extractor");
-  const llmJudge = makeLlm(judgeModel, ctrl.signal, "judge");
+  const llm = makeLlm(extractModel, ctrl.signal);
 
-  /* Routing промпта по тегам модели extractor'а. judge — отдельный single-object
-     промпт, не зависит от mechanicus/cognitive split. */
-  const extractProfile = await getModelProfile(extractModel);
-  const promptKey = pickPromptKey(extractProfile.source);
-  emitWithJob({
-    stage: "config",
-    phase: "info",
-    extractModel,
-    judgeModel,
-    promptKey,
-    profileSource: extractProfile.source,
-    targetCollection,
-  });
+  emitWithJob({ stage: "config", phase: "info", extractModel, targetCollection });
 
   const prefs = await getPreferencesStore().getAll();
 
   try {
     emitWithJob({ stage: "parse", phase: "start", bookSourcePath: args.bookSourcePath });
-    /* AUDIT MED-4: parseBook вызывался без opts → отсканированные PDF
-       проваливались в Crystallizer тихим "0 chapters", даже когда
-       prefs.ocrEnabled=true. Также signal не пробрасывался → cancel
-       не прерывал многомегабайтный PDF parse. */
     const parsed = await parseBook(args.bookSourcePath, {
       ocrEnabled: prefs.ocrEnabled && isOcrSupported(),
       ocrLanguages: prefs.ocrLanguages,
@@ -260,15 +193,26 @@ async function runExtraction(
     const range = args.chapterRange ?? { from: 0, to: totalChapters };
     emitWithJob({ stage: "parse", phase: "done", bookTitle: parsed.metadata.title, totalChapters });
 
-    const stats = { extractedRaw: 0, afterDedup: 0, accepted: 0, rejected: 0 };
+    const stats = { chunks: 0, accepted: 0, skipped: 0 };
     const warnings: string[] = [];
     let processed = 0;
+
+    /* Qdrant collection: ensure exists before first upsert */
+    const { fetchQdrantJson, QDRANT_URL } = await import("../lib/qdrant/http-client.js");
+    const { EMBEDDING_DIM } = await import("../lib/scanner/embedding.js");
+    await fetchQdrantJson(`${QDRANT_URL}/collections/${targetCollection}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        vectors: { size: EMBEDDING_DIM, distance: "Cosine" },
+      }),
+    }).catch(() => { /* collection may already exist */ });
 
     for (let ci = range.from; ci < Math.min(range.to, totalChapters); ci++) {
       if (ctrl.signal.aborted) throw new Error("job aborted");
       const section = parsed.sections[ci];
 
-      /* Stage 1 — topological chunker (async: thematic drift uses embeddings) */
+      /* Step 1 — semantic chunking */
       const chunks = await chunkChapter({
         section,
         chapterIndex: ci,
@@ -283,74 +227,69 @@ async function runExtraction(
       });
       emitWithJob({ stage: "chunker", chapterIndex: ci, chapterTitle: section.title, chunks: chunks.length });
       if (chunks.length === 0) continue;
+      stats.chunks += chunks.length;
       if (ctrl.signal.aborted) throw new Error("job aborted");
 
-      /* Stage 2 — extractor */
-      const extractRes = await extractChapterConcepts({
+      /* Step 2 — chapter thesis (macro-context, 1 LLM call) */
+      const chapterText = section.paragraphs.join("\n\n");
+      const thesis = await extractChapterThesis(section.title, chapterText, { llm }, null);
+      emitWithJob({ stage: "thesis", chapterIndex: ci, thesis });
+      if (ctrl.signal.aborted) throw new Error("job aborted");
+
+      /* Step 3 — delta extraction (AURA filter + essence/cipher per chunk) */
+      const deltaRes = await extractDeltaKnowledge({
         chunks,
+        chapterThesis: thesis,
         promptsDir: null,
-        promptKey,
         signal: ctrl.signal,
         callbacks: {
-          llm: llmExtract,
-          onEvent: (e: ExtractEvent) => emitWithJob({ stage: "extract", chapterIndex: ci, ...e }),
+          llm,
+          onEvent: (e: DeltaExtractEvent) => emitWithJob({ stage: "delta", chapterIndex: ci, ...e }),
         },
       });
-      stats.extractedRaw += extractRes.conceptsTotal.length;
-      warnings.push(...extractRes.warnings);
-      if (ctrl.signal.aborted) throw new Error("job aborted");
+      warnings.push(...deltaRes.warnings);
 
-      /* Stage 3 — intra-dedup */
-      const dedupRes = await dedupChapterConcepts({
-        concepts: extractRes.conceptsTotal,
-        bookSourcePath: args.bookSourcePath,
-        bookTitle: parsed.metadata.title,
-        chapterIndex: ci,
-        chapterTitle: section.title,
-        threshold: prefs.intraDedupThreshold,
-        onEvent: (e: IntraDedupEvent) => emitWithJob({ stage: "intra-dedup", chapterIndex: ci, ...e }),
-      });
-      stats.afterDedup += dedupRes.concepts.length;
-      if (ctrl.signal.aborted) throw new Error("job aborted");
-
-      /* Stage 4 — judge + cross-library + accept */
-      const judgeRes = await judgeAndAccept({
-        concepts: dedupRes.concepts,
-        promptsDir: null,
-        scoreThreshold: args.scoreThreshold ?? prefs.judgeScoreThreshold,
-        crossLibDupeThreshold: prefs.crossLibDupeThreshold,
-        signal: ctrl.signal,
-        targetCollection,
-        callbacks: {
-          llm: llmJudge,
-          onEvent: (e: JudgeEvent) => emitWithJob({ stage: "judge", chapterIndex: ci, ...e }),
-        },
-      });
-      stats.accepted += judgeRes.accepted.length;
-      stats.rejected += judgeRes.rejected.length;
+      /* Step 4 — upsert accepted deltas to Qdrant */
+      for (const delta of deltaRes.accepted) {
+        if (ctrl.signal.aborted) throw new Error("job aborted");
+        const vector = await embedPassage(delta.essence);
+        await fetchQdrantJson(`${QDRANT_URL}/collections/${targetCollection}/points?wait=true`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            points: [{
+              id: delta.id,
+              vector,
+              payload: {
+                domain: delta.domain,
+                chapterContext: delta.chapterContext,
+                essence: delta.essence,
+                cipher: delta.cipher,
+                proof: delta.proof,
+                applicability: delta.applicability,
+                auraFlags: delta.auraFlags,
+                tags: delta.tags,
+                bookSourcePath: delta.bookSourcePath,
+                acceptedAt: delta.acceptedAt,
+              },
+            }],
+          }),
+          timeoutMs: 15_000,
+        });
+        stats.accepted++;
+      }
+      stats.skipped += chunks.length - deltaRes.accepted.length;
       processed++;
 
       emitWithJob({
-        stage: "chapter",
-        phase: "done",
-        chapterIndex: ci,
-        extracted: extractRes.conceptsTotal.length,
-        deduped: dedupRes.concepts.length,
-        accepted: judgeRes.accepted.length,
-        rejected: judgeRes.rejected.length,
+        stage: "chapter", phase: "done", chapterIndex: ci,
+        chunks: chunks.length, accepted: deltaRes.accepted.length,
+        skipped: chunks.length - deltaRes.accepted.length,
       });
     }
 
     emitWithJob({ stage: "job", phase: "done", stats });
-
-    return {
-      jobId,
-      bookTitle: parsed.metadata.title,
-      totalChapters,
-      processedChapters: processed,
-      totalConcepts: stats,
-      warnings,
-    };
+    return { jobId, bookTitle: parsed.metadata.title, totalChapters, processedChapters: processed, totalDelta: stats, warnings };
   } finally {
     activeJobs.delete(jobId);
     untrackExtractionJob(jobId);
@@ -405,9 +344,6 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
         minQuality?: number;
         skipFictionOrWater?: boolean;
         extractModel?: string;
-        judgeModel?: string;
-        scoreThreshold?: number;
-        /** Тематическая Qdrant-коллекция для всех книг батча. */
         targetCollection?: string;
       }
     ): Promise<{
@@ -421,7 +357,7 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
         totalChapters: number;
         processedChapters: number;
         accepted: number;
-        rejected: number;
+        skipped: number;
       }>;
     }> => {
       if (!args || !Array.isArray(args.bookIds) || args.bookIds.length === 0) {
@@ -429,7 +365,7 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
       }
       /* Резолвим коллекцию ОДИН раз для всего батча. Все книги пишут
          в одну тематическую коллекцию -- это и есть смысл батча. */
-      const targetCollection = args.targetCollection ?? ACCEPTED_COLLECTION;
+      const targetCollection = args.targetCollection ?? DEFAULT_COLLECTION;
       assertValidCollectionName(targetCollection);
 
       const { getBookById, setBookStatus } = await import("../lib/library/cache-db.js");
@@ -494,7 +430,7 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
    * Сколько концептов в выбранной коллекции (для UI бейджа).
    *
    * Принимает `collection?: string` -- если не указано, читает
-   * `ACCEPTED_COLLECTION` (legacy default). UI Iter 5 будет передавать
+   * `DEFAULT_COLLECTION` (legacy default). UI Iter 5 будет передавать
    * выбранную тематическую коллекцию: бейдж покажет счётчик именно
    * для текущего датасета, а не общий микс по всем темам.
    */
@@ -502,7 +438,7 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
     "dataset-v2:list-accepted",
     async (_e, collection?: string): Promise<{ total: number; byDomain: Record<string, number>; collection: string }> => {
       const { fetchQdrantJson, QDRANT_URL } = await import("../lib/qdrant/http-client.js");
-      const targetCollection = collection ?? ACCEPTED_COLLECTION;
+      const targetCollection = collection ?? DEFAULT_COLLECTION;
       try {
         assertValidCollectionName(targetCollection);
       } catch (e) {
@@ -576,7 +512,7 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
     "dataset-v2:reject-accepted",
     async (_e, conceptId: string, collection?: string): Promise<boolean> => {
       if (typeof conceptId !== "string" || conceptId.length === 0) return false;
-      const targetCollection = collection ?? ACCEPTED_COLLECTION;
+      const targetCollection = collection ?? DEFAULT_COLLECTION;
       try {
         assertValidCollectionName(targetCollection);
       } catch (e) {

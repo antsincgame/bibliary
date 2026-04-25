@@ -14,8 +14,9 @@
  *   3. **Context overlap** — последний параграф предыдущего чанка дублируется
  *      в начало следующего как «крючок», чтобы LLM не теряла связность.
  *
- * Чанки < SAFE_LIMIT слов не режутся вообще — Qwen3.6 35B с 32k контекстом
- * легко обрабатывает 4000 слов без «lost in the middle».
+ * Чанки < SAFE_LIMIT слов не режутся вообще. Лимит снижен до 1500 слов
+ * для более гранулярной нарезки — локальная LLM лучше держит фокус
+ * на коротких фрагментах.
  */
 
 import type { BookSection } from "../scanner/parsers/index.js";
@@ -28,13 +29,16 @@ import type { SemanticChunk } from "./types.js";
 import { embedPassage } from "../embedder/shared.js";
 
 /** Максимум слов, при котором блок отдаётся LLM целиком без разрезания. */
-const SAFE_LIMIT = 4000;
+const SAFE_LIMIT = 1500;
 
 /** Минимальный размер для самостоятельного чанка. Меньше — склеиваем с соседом. */
 const MIN_CHUNK_WORDS = 300;
 
 /** Порог падения cosine similarity для детекции тематического сдвига. */
 const DRIFT_THRESHOLD = 0.45;
+
+/** Hard cap на чанк когда drift-границ нет. */
+const HARD_SPLIT_LIMIT = 2500;
 
 /** Сколько «overlap»-параграфов дублировать на стыке. */
 const OVERLAP_PARAGRAPHS = 1;
@@ -134,7 +138,7 @@ async function findThematicBoundaries(
 
 /**
  * Разделяет большой блок по тематическим границам. Если границ нет — режет
- * по hard-limit (SAFE_LIMIT * 1.5), чтобы не отдавать 10k слов в LLM.
+ * по hard-limit (HARD_SPLIT_LIMIT), чтобы не отдавать огромные блоки в LLM.
  */
 async function splitByThematicDrift(
   paragraphs: string[],
@@ -146,7 +150,7 @@ async function splitByThematicDrift(
   const boundaries = await findThematicBoundaries(paragraphs, signal, driftTh, maxPara);
 
   if (boundaries.length === 0) {
-    const hardLimit = Math.floor(safeLimit * 1.5);
+    const hardLimit = HARD_SPLIT_LIMIT;
     const result: string[][] = [];
     let buf: string[] = [];
     for (const p of paragraphs) {
@@ -165,7 +169,7 @@ async function splitByThematicDrift(
   let buf: string[] = [];
   for (let i = 0; i < paragraphs.length; i++) {
     buf.push(paragraphs[i]);
-    if (boundarySet.has(i) || wordsOf(buf) >= SAFE_LIMIT * 1.5) {
+    if (boundarySet.has(i) || wordsOf(buf) >= HARD_SPLIT_LIMIT) {
       result.push(buf);
       buf = [];
     }

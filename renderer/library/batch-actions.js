@@ -14,7 +14,10 @@ import { STATE, BATCH, CATALOG } from "./state.js";
  */
 export async function guardAndCrystallize(root, deps) {
   if (BATCH.active) return;
-  if (CATALOG.selected.size === 0) return;
+  if (CATALOG.selected.size === 0) {
+    await showAlert(t("library.catalog.guard.noSelection"));
+    return;
+  }
   if (!STATE.targetCollection) {
     await showAlert(t("library.catalog.guard.noCollection"));
     return;

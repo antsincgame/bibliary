@@ -165,6 +165,7 @@ export default {
   "library.catalog.status.failed": "failed",
   "library.catalog.guard.unevaluated": "{n} of selected books are not evaluated yet. Wait for evaluation to finish or unselect them.",
   "library.catalog.guard.lowQuality": "{n} of selected books have Quality < 50. Continue with extraction?",
+  "library.catalog.guard.noSelection": "Select books in the table first (checkboxes on the left).",
   "library.catalog.guard.noCollection": "Pick a target collection first (or create a new one with the «+» button).",
   "library.catalog.confirm.delete": "Delete «{title}» from the library? Files and evaluation will be erased permanently.",
   "library.catalog.batch.starting": "Starting extraction for {n} books → {collection}…",

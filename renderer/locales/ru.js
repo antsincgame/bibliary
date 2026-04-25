@@ -165,6 +165,7 @@ export default {
   "library.catalog.status.failed": "ошибка",
   "library.catalog.guard.unevaluated": "Среди выбранных есть {n} книг без оценки. Дождитесь завершения evaluation или снимите их с выбора.",
   "library.catalog.guard.lowQuality": "Среди выбранных есть {n} книг с Quality < 50. Действительно запустить извлечение?",
+  "library.catalog.guard.noSelection": "Сначала выделите книги в таблице (чекбоксы слева).",
   "library.catalog.guard.noCollection": "Сначала выберите целевую коллекцию (или создайте новую кнопкой «+»).",
   "library.catalog.confirm.delete": "Удалить «{title}» из библиотеки? Файлы и оценка будут стёрты безвозвратно.",
   "library.catalog.batch.starting": "Запускаю извлечение для {n} книг → {collection}…",

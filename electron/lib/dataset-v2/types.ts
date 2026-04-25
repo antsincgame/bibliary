@@ -1,15 +1,18 @@
 /**
- * Phase 3.1 — Dataset v2 типы (контракты между ступенями кристаллизации).
+ * Dataset v2 типы — Delta-Knowledge Pipeline.
+ *
+ * Единый пайплайн: чанкинг → AURA-фильтр → DeltaKnowledge → Qdrant.
+ * Один чанк = 0 или 1 запись в Qdrant.
  */
 import { z } from "zod";
 
-/** Чанк с breadcrumb-контекстом для concept-extractor. */
+/** Чанк с breadcrumb-контекстом для delta-extractor. */
 export interface SemanticChunk {
   /** Текст для LLM (без breadcrumb-обёртки — обёртка в `breadcrumb`). */
   text: string;
   /**
    * Структурированный контекст (JSON): bookTitle, chapter, subHeading, part.
-   * Stage 2 (extractor) подставляет его в промпт как {{BREADCRUMB}}.
+   * Extractor подставляет его в промпт как {{BREADCRUMB}}.
    */
   breadcrumb: string;
   partN: number;
@@ -27,67 +30,52 @@ export interface SemanticChunk {
   overlapText?: string;
 }
 
-export const ExtractedConceptSchema = z.object({
-  principle: z.string().min(20).max(400),
-  explanation: z.string().min(80).max(1500),
-  domain: z.string().min(2).max(60),
-  tags: z.array(z.string().min(1).max(40)).min(1).max(10),
-  noveltyHint: z.string().min(10).max(300),
-  sourceQuote: z.string().min(10).max(800),
-});
-/**
- * `extractorReasoning` -- содержимое <think> блока от LLM-экстрактора
- * (если модель reasoning-capable). Не приходит из LLM-JSON: добавляется
- * post-validation в concept-extractor.ts. Сохраняется в Qdrant payload и
- * тренировочных датасетах -- "мысли учителя" критичны для distillation.
- */
-export interface ExtractedConcept extends z.infer<typeof ExtractedConceptSchema> {
-  extractorReasoning?: string;
-}
-
-export const ExtractedConceptArraySchema = z.array(ExtractedConceptSchema).max(8);
-
 export interface ChapterMemory {
-  ledConcepts: string[];
-  lastSummary: string;
+  ledEssences: string[];
+  lastThesis: string;
 }
 
-/** Концепт после Stage 3 (intra-dedup): добавляется аудит-история мерджей. */
-export interface DedupedConcept extends ExtractedConcept {
-  /** SHA1-id, детерминированный по principle+chapterIndex+bookSourcePath. */
+/* ─────────────── AURA filter flags ─────────────── */
+
+/** A.У.Р.А. — четыре критерия уникальности знания. Min 2 из 4 для прохождения. */
+export type AuraFlag =
+  | "authorship"      // A — Авторский концепт: новая модель/формула/классификация
+  | "specialization"  // У — Узкая специализация: deep technical/scientific nuances
+  | "revision"        // Р — Разрушение мифов: опровергает default LLM knowledge
+  | "causality";      // А — Причинно-следственная механика: скрытое "почему"
+
+export const AURA_FLAGS: readonly AuraFlag[] = [
+  "authorship", "specialization", "revision", "causality",
+] as const;
+
+/* ─────────────── DeltaKnowledge — единый выходной тип ─────────────── */
+
+export const DeltaKnowledgeSchema = z.object({
+  domain: z.string().min(2).max(60),
+  chapterContext: z.string().min(10).max(300),
+  essence: z.string().min(30).max(800),
+  cipher: z.string().min(5).max(500),
+  proof: z.string().min(10).max(800),
+  applicability: z.string().max(500).default(""),
+  auraFlags: z.array(z.enum(["authorship", "specialization", "revision", "causality"])).min(2).max(4),
+  tags: z.array(z.string().min(1).max(40)).min(1).max(10),
+});
+
+export interface DeltaKnowledge extends z.infer<typeof DeltaKnowledgeSchema> {
+  /** SHA1 id, deterministic from essence + bookSourcePath + chapterIndex. */
   id: string;
   bookSourcePath: string;
   bookTitle: string;
   chapterIndex: number;
-  chapterTitle: string;
-  /** Если получился мерджем нескольких — id-исходники здесь. */
-  mergedFromIds: string[];
-}
-
-/** Концепт после Stage 4 (judge + cross-library check): принят. */
-export interface AcceptedConcept extends DedupedConcept {
-  judgeScore: number;
-  judgeReasoning: string;
   acceptedAt: string;
-  scoreBreakdown: { novelty: number; actionability: number; domain_fit: number };
-  /**
-   * <think> блок судьи (если reasoning-capable model). Отдельно от
-   * `judgeReasoning` (короткое summary из JSON) -- это полная цепочка
-   * рассуждений для distillation датасетов.
-   */
-  judgeReasoningTrace?: string;
 }
 
-export interface JudgeResult {
-  novelty: number;
-  actionability: number;
-  domain_fit: number;
-  reasoning: string;
-}
+/* ─────────────── Backward-compat: re-export assertValidCollectionName ─────────────── */
 
-export const JudgeResultSchema = z.object({
-  novelty: z.number().min(0).max(1),
-  actionability: z.number().min(0).max(1),
-  domain_fit: z.number().min(0).max(1),
-  reasoning: z.string().min(10).max(800),
-});
+const COLLECTION_NAME_RE = /^[A-Za-z0-9_-]{1,255}$/;
+
+export function assertValidCollectionName(name: string): void {
+  if (!COLLECTION_NAME_RE.test(name)) {
+    throw new Error(`Invalid collection name: "${name}". Must match ${COLLECTION_NAME_RE}`);
+  }
+}

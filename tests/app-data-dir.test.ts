@@ -5,7 +5,7 @@ import { resolveAppDataDir } from "../electron/lib/app-data-dir.js";
 
 const devBaseDir = path.join("D:", "projects", "bibliary", "dist-electron");
 const tempChildExe = path.join("C:", "Users", "User", "AppData", "Local", "Temp", "portable-x", "Bibliary.exe");
-const outerPortableExe = path.join("D:", "projects", "bibliary", "release", "dist-portable", "Bibliary 2.9.0.exe");
+const outerPortableExe = path.join("D:", "projects", "bibliary", "release", "dist-portable", "Bibliary 3.0.0.exe");
 
 test("resolveAppDataDir: BIBLIARY_DATA_DIR has highest priority", () => {
   const dataDir = path.join("D:", "custom", "bibliary-data");
