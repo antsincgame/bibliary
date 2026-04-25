@@ -26,4 +26,6 @@ nsis:
   oneClick: true
   perMachine: false
 asar: true
+extraMetadata:
+  type: commonjs
 afterPack: scripts/afterPack.js

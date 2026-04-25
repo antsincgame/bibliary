@@ -343,7 +343,22 @@ export async function convertBookToMarkdown(
     parsed = await parseBook(absFilePath, { ocrEnabled: true, ocrAccuracy: "accurate", ocrPdfDpi: 200, signal: opts.signal });
   }
 
-  const chapters: ConvertedChapter[] = parsed.sections.map((sec, i) => {
+  /* Fallback: if parser returned sections but all have 0 paragraphs,
+     collect all raw text and create a single virtual chapter when there's
+     enough content (>100 words). Prevents books from being marked unsupported
+     just because heading detection failed. */
+  let effectiveSections = parsed.sections;
+  if (effectiveSections.every((s) => s.paragraphs.length === 0) && parsed.rawCharCount > 500) {
+    const allText = effectiveSections
+      .map((s) => [s.title, ...s.paragraphs].join("\n"))
+      .join("\n")
+      .trim();
+    if (allText && countWords(allText) > 100) {
+      effectiveSections = [{ level: 1, title: parsed.metadata.title || "Text", paragraphs: [allText] }];
+    }
+  }
+
+  const chapters: ConvertedChapter[] = effectiveSections.map((sec, i) => {
     const wordsInChapter = sec.paragraphs.reduce((s, p) => s + countWords(p), 0);
     return { index: i, title: sec.title, paragraphs: sec.paragraphs, wordCount: wordsInChapter };
   });

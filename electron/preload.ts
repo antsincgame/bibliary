@@ -486,6 +486,8 @@ contextBridge.exposeInMainWorld("api", {
     cancelImport: (importId: string): Promise<boolean> => ipcRenderer.invoke("library:cancel-import", importId),
     catalog: (q?: LibraryCatalogQuery): Promise<{ rows: LibraryBookMeta[]; total: number; libraryRoot: string; dbPath: string }> =>
       ipcRenderer.invoke("library:catalog", q ?? {}),
+    tagStats: (): Promise<{ tag: string; count: number }[]> =>
+      ipcRenderer.invoke("library:tag-stats"),
     getBook: (bookId: string): Promise<(LibraryBookMeta & { mdPath: string }) | null> =>
       ipcRenderer.invoke("library:get-book", bookId),
     readBookMd: (bookId: string): Promise<{ markdown: string; mdPath: string } | null> =>

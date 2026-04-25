@@ -181,7 +181,7 @@ if (!gotLock) {
     app.quit();
   });
 
-  const FORCE_EXIT_MS = 6_000;
+  const FORCE_EXIT_MS = 4_000;
 
   function teardownSubsystems(): void {
     const subsystems: [string, () => void][] = [
@@ -210,15 +210,19 @@ if (!gotLock) {
 
     const forceTimer = setTimeout(() => {
       console.error("[main/shutdown] force-exit after timeout");
-      process.exit(1);
+      app.exit(0);
     }, FORCE_EXIT_MS);
     forceTimer.unref();
 
     if (!coordinator.isAnyActive()) {
+      console.log("[main/shutdown] idle path — no active batches");
       teardownSubsystems();
       telemetry.flush()
         .catch((err) => console.error("[main/shutdown] telemetry.flush Error:", err))
-        .finally(() => { clearTimeout(forceTimer); });
+        .finally(() => {
+          console.log("[main/shutdown] idle path — telemetry flushed, clearing force timer");
+          clearTimeout(forceTimer);
+        });
       return;
     }
 
@@ -226,6 +230,7 @@ if (!gotLock) {
     isQuitting = true;
     const startedAt = Date.now();
     const pendingIds = coordinator.listActive().map((b) => b.batchId);
+    console.log(`[main/shutdown] flush path — ${pendingIds.length} active batches: ${pendingIds.join(", ")}`);
     telemetry.logEvent({ type: "shutdown.flush.start", pendingBatches: pendingIds });
 
     void (async () => {
@@ -233,20 +238,24 @@ if (!gotLock) {
       try {
         const result = await coordinator.flushAll(SHUTDOWN_FLUSH_TIMEOUT_MS);
         if (result.ok) {
+          console.log(`[main/shutdown] flush OK in ${Date.now() - startedAt}ms`);
           telemetry.logEvent({ type: "shutdown.flush.ok", durationMs: Date.now() - startedAt });
         } else {
+          console.warn(`[main/shutdown] flush timeout, still pending: ${result.pending.join(", ")}`);
           telemetry.logEvent({ type: "shutdown.flush.timeout", pendingBatches: result.pending });
-          exitCode = 2;
+          exitCode = 0;
         }
       } catch (e) {
+        console.error("[main/shutdown] flush error:", e);
         telemetry.logEvent({
           type: "shutdown.flush.error",
           error: e instanceof Error ? e.message : String(e),
         });
-        exitCode = 3;
+        exitCode = 0;
       } finally {
         teardownSubsystems();
         await telemetry.flush().catch((err) => console.error("[main/shutdown] telemetry.flush Error:", err));
+        console.log("[main/shutdown] exiting with code", exitCode);
         clearTimeout(forceTimer);
         app.exit(exitCode);
       }

@@ -31,6 +31,7 @@ export const QUALITY_PRESETS = Object.freeze([
  * @property {number} quality        Minimum qualityScore (0 = no filter).
  * @property {boolean} hideFiction   Hide rows where isFictionOrWater === true.
  * @property {string} search         Free-text needle (case-insensitive).
+ * @property {string[]} [tags]       AND-filter: only rows whose tags include ALL of these.
  */
 
 /**
@@ -49,6 +50,7 @@ export function filterCatalog(rows, filters) {
   const q = filters.quality;
   const hide = filters.hideFiction;
   const needle = filters.search.trim().toLowerCase();
+  const tagFilter = filters.tags && filters.tags.length > 0 ? filters.tags : null;
   return rows.filter((row) => {
     if (q > 0) {
       const score = typeof row.qualityScore === "number" ? row.qualityScore : -1;
@@ -61,6 +63,10 @@ export function filterCatalog(rows, filters) {
         ...(row.tags ?? []),
       ].filter(Boolean).join(" ").toLowerCase();
       if (!haystack.includes(needle)) return false;
+    }
+    if (tagFilter) {
+      const rowTags = row.tags ?? [];
+      if (!tagFilter.every((tg) => rowTags.includes(tg))) return false;
     }
     return true;
   });

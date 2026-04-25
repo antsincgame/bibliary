@@ -17,5 +17,5 @@
 export { openCacheDb, closeCacheDb, getCacheDbPath } from "./cache-db-connection.js";
 export type { CatalogQuery, RevisionDedupBook } from "./cache-db-types.js";
 export { upsertBook, getKnownSha256s, deleteBook, setBookStatus } from "./cache-db-mutations.js";
-export { query, getBookById, streamBookIdsByStatus, getBooksByIds, listBooksForRevisionDedup } from "./cache-db-queries.js";
+export { query, getBookById, streamBookIdsByStatus, getBooksByIds, listBooksForRevisionDedup, queryTagStats } from "./cache-db-queries.js";
 export { rebuildFromFs, pruneMissing } from "./cache-db-rebuild.js";

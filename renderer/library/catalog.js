@@ -8,8 +8,9 @@ import { showAlert, showConfirm } from "../components/ui-dialog.js";
 import { CATALOG } from "./state.js";
 import { filterCatalog as filterCatalogPure, qualityClass, statusClass, QUALITY_PRESETS } from "./catalog-filter.js";
 import { fmtWords, fmtQuality } from "./format.js";
-import { guardAndCrystallize, cancelBatchExtraction, launchSynthesis } from "./batch-actions.js";
+import { guardAndCrystallize, cancelBatchExtraction } from "./batch-actions.js";
 import { openBook } from "./reader.js";
+import { openTagCloudModal } from "./tag-cloud.js";
 
 /** @type {Promise<void> | null} */
 let catalogLoadPromise = null;
@@ -236,16 +237,36 @@ export function buildCatalogToolbar(root) {
     },
   }, t("library.catalog.btn.rebuild"));
 
+  const tagCloudBtn = el("button", {
+    type: "button", class: "lib-btn lib-btn-ghost",
+    onclick: () => void openTagCloudModal({ root, renderCatalogTable }),
+  }, t("library.catalog.btn.tagCloud"));
+
+  const fictionLabel = el("label", {
+    class: "lib-catalog-fiction-label",
+    title: t("library.catalog.filter.hideFiction"),
+    "data-mode-min": "advanced",
+  }, [
+    fictionCb,
+    el("span", { class: "lib-catalog-fiction-text" }, t("library.catalog.filter.hideFiction")),
+  ]);
+
+  for (const btn of presetWrap.querySelectorAll(".lib-catalog-preset")) {
+    const q = Number(/** @type {HTMLElement} */ (btn).dataset.quality);
+    if (q > 0) /** @type {HTMLElement} */ (btn).dataset.modeMin = "advanced";
+  }
+
+  refreshBtn.dataset.modeMin = "advanced";
+  rebuildBtn.dataset.modeMin = "pro";
+
   return el("div", { class: "lib-catalog-toolbar lib-catalog-toolbar-compact" }, [
     searchInput,
+    tagCloudBtn,
     el("div", { class: "lib-catalog-quality-wrap" }, [
       el("label", { class: "lib-catalog-quality-label" }, t("library.catalog.filter.quality.label")),
       qualitySlider, qualityVal,
     ]),
-    el("label", { class: "lib-catalog-fiction-label", title: t("library.catalog.filter.hideFiction") }, [
-      fictionCb,
-      el("span", { class: "lib-catalog-fiction-text" }, t("library.catalog.filter.hideFiction")),
-    ]),
+    fictionLabel,
     presetWrap,
     refreshBtn, rebuildBtn,
   ]);
@@ -326,23 +347,9 @@ export function buildCatalogBottomBar(root, deps) {
     },
   }, t("library.catalog.btn.delete"));
 
-  const prioritizeBtn = el("button", {
-    type: "button", class: "lib-btn lib-btn-ghost",
-    title: t("library.catalog.tooltip.prioritize"),
-    onclick: async () => {
-      if (CATALOG.selected.size === 0) return;
-      const ids = Array.from(CATALOG.selected);
-      try {
-        const r = /** @type {any} */ (await window.api.library.evaluatorPrioritize(ids));
-        setCatalogStatus(root, t("library.catalog.toast.prioritized", {
-          n: String(r?.queued ?? ids.length),
-        }));
-      } catch (e) { console.warn("[library.prioritize]", e); }
-    },
-  }, t("library.catalog.btn.prioritize"));
-
   const reevaluateBtn = el("button", {
     type: "button", class: "lib-btn lib-btn-ghost",
+    "data-mode-min": "advanced",
     title: t("library.catalog.tooltip.reevaluate"),
     onclick: async () => {
       if (CATALOG.selected.size === 0) return;
@@ -359,15 +366,12 @@ export function buildCatalogBottomBar(root, deps) {
     },
   }, t("library.catalog.btn.reevaluate"));
 
-  const crystallizeBtn = el("button", {
+  deleteBtn.dataset.modeMin = "pro";
+
+  const chunksBtn = el("button", {
     type: "button", class: "lib-btn lib-btn-primary",
     onclick: () => void guardAndCrystallize(root, deps),
-  }, t("library.catalog.btn.crystallize"));
-
-  const synthesizeBtn = el("button", {
-    type: "button", class: "lib-btn lib-btn-secondary",
-    onclick: () => void launchSynthesis(),
-  }, t("library.catalog.btn.synthesize"));
+  }, t("library.catalog.btn.createChunks"));
 
   const cancelBatchBtn = el("button", {
     type: "button", class: "lib-btn lib-btn-danger lib-btn-cancel-batch",
@@ -380,7 +384,7 @@ export function buildCatalogBottomBar(root, deps) {
   return el("div", { class: "lib-catalog-bottombar" }, [
     summary,
     el("div", { class: "lib-catalog-actions" }, [
-      selectAllBtn, clearBtn, prioritizeBtn, reevaluateBtn, deleteBtn, synthesizeBtn, crystallizeBtn, cancelBatchBtn,
+      selectAllBtn, clearBtn, reevaluateBtn, deleteBtn, chunksBtn, cancelBatchBtn,
     ]),
     batchSummary,
   ]);

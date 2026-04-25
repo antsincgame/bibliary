@@ -1,6 +1,6 @@
 # Bibliary — AI Audit Document
 
-> **Version:** 2.7.0  
+> **Version:** 2.9.0  
 > **Date:** 2026-04-25  
 > **Purpose:** Comprehensive project context for any AI agent performing code review, bug hunting, refactoring, or feature development.
 
@@ -78,7 +78,7 @@ Bibliary is a **desktop Electron application** (Windows-first) that acts as a pe
 
 | Layer | Technology |
 |-------|-----------|
-| Runtime | Electron 36 + Node.js 22 |
+| Runtime | Electron 41 + Node.js 22 |
 | Language (main) | TypeScript 5.x (strict, ES modules) |
 | Language (renderer) | Vanilla JavaScript with JSDoc @ts-check |
 | Database | better-sqlite3 (SQLite, file-based) |
@@ -87,7 +87,7 @@ Bibliary is a **desktop Electron application** (Windows-first) that acts as a pe
 | PDF parsing | pdfjs-dist + optional OCR |
 | EPUB/FB2/DOCX | fast-xml-parser, jszip, mammoth |
 | Build | electron-builder (portable + installer) |
-| Tests | vitest |
+| Tests | node --test (built-in) + tsx |
 | Package manager | npm |
 
 ---
@@ -181,7 +181,7 @@ window.api.system.*                  → App info, hardware profiling
 
 | Issue | Location | Impact |
 |-------|----------|--------|
-| Large files (>500 LOC) | `i18n.js` (1818), `forge.js` (1050), `chat.js` (701), `cache-db.ts` (721), `import.ts` (678), `lmstudio-client.ts` (618) | Hard to navigate, high coupling risk |
+| Large files (>500 LOC) | `import.ts` (678), `lmstudio-client.ts` (618) remain; `cache-db.ts` split into 6 modules, `chat.js`/`forge.js`/`i18n.js` modularized in v2.8.0 | Reduced coupling, 4 of 6 resolved |
 | Swallowed promises | 15+ `.catch(() => undefined)` across codebase | Silent failures can mask real bugs |
 | Empty catch blocks | `evaluator-queue.ts`, `forge.ipc.ts`, `concept-extractor.ts`, `telemetry.ts`, `djvu-cli.ts` | Errors invisible at runtime |
 | `any` types in renderer JSDoc | `context-slider.js`, `welcome-wizard.js`, `reader.js`, `forge.js` | No type safety in UI components |
@@ -191,10 +191,10 @@ window.api.system.*                  → App info, hardware profiling
 | Issue | Location | Impact |
 |-------|----------|--------|
 | Duplicated HTTP-response pattern | `resp.text().catch(() => "")` in 10+ files | Could be a shared helper |
-| 192 TODO/FIXME markers | 175 in electron/, 17 in renderer/ | Deferred decisions accumulating |
+| ~~192 TODO/FIXME markers~~ | Cleaned: 0 real TODO/FIXME in code comments (v2.8.0) | Previous count included false positives (`temp`, `xxx` in identifiers) |
 | `build-gold-examples.cjs` orphan | `scripts/` | Dead code, 168 LOC |
 | Functions >50 LOC | `importBookFromFile`, UI flows in `forge.js` | Complexity hotspots |
-| No ESLint config | Project root | No automated style enforcement |
+| ESLint on renderer only | `npm run lint` covers `renderer/**/*.js` | No TS lint for electron/ yet |
 
 ### Low priority
 
@@ -237,7 +237,7 @@ window.api.system.*                  → App info, hardware profiling
 
 | Type | Count | Runner | Command |
 |------|-------|--------|---------|
-| Unit/Integration | 65+ | vitest | `npm test` |
+| Unit/Integration | 133 | node --test + tsx | `npm test` (auto-rebuilds better-sqlite3 for Node ABI) |
 | Electron Smoke | 1 | playwright-electron | `npm run test:smoke` |
 | E2E scripts | 12+ | tsx (manual) | `npm run e2e:*` |
 
@@ -295,7 +295,7 @@ Environment variables:
 5. **Error handling:** `console.error` / `console.warn` for logging (no external logger)
 6. **i18n:** All UI strings through `t("key")` from `renderer/i18n.js`
 7. **File naming:** kebab-case for files, camelCase for functions/variables
-8. **No ESLint** — code quality maintained manually and via TypeScript strict mode
+8. **ESLint for renderer** — `npm run lint` / `lint:fix` covers `renderer/**/*.js`; electron/ relies on TypeScript strict mode
 
 ---
 
@@ -353,7 +353,7 @@ bibliary/
 │   └── lib/
 │       ├── library/
 │       │   ├── import.ts               # Book import pipeline
-│       │   ├── cache-db.ts             # SQLite cache (schema + queries)
+│       │   ├── cache-db.ts             # SQLite cache (barrel re-export of 6 submodules)
 │       │   ├── book-evaluator.ts       # LLM-based quality evaluation
 │       │   ├── evaluator-queue.ts      # Evaluation job queue
 │       │   ├── surrogate-builder.ts    # Surrogate text for evaluation

@@ -4424,6 +4424,47 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
 }
 .ui-dialog-input { width: 100%; }
 
+/* === Tag Cloud Modal === */
+.tag-cloud-dialog { max-width: 720px; min-width: 400px; }
+.tag-cloud-container {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline;
+  max-height: 50vh; overflow-y: auto; padding: 12px 0;
+  justify-content: center;
+}
+.tag-cloud-pill {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 240, 255, 0.2);
+  background: rgba(0, 240, 255, 0.05);
+  color: var(--cyan, #0ff);
+  cursor: pointer;
+  transition: all 150ms ease;
+  font-family: var(--font-mono);
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.tag-cloud-pill:hover {
+  background: rgba(0, 240, 255, 0.12);
+  border-color: rgba(0, 240, 255, 0.5);
+  box-shadow: 0 0 8px rgba(0, 240, 255, 0.2);
+}
+.tag-cloud-pill-active {
+  background: rgba(255, 215, 0, 0.15) !important;
+  border-color: var(--gold, #ffd700) !important;
+  color: var(--gold, #ffd700) !important;
+  box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+}
+.tag-cloud-match-count {
+  display: block;
+  text-align: center;
+  font-size: 12px;
+  color: var(--gold, #ffd700);
+  margin: 4px 0 8px;
+  min-height: 1.4em;
+  font-family: var(--font-mono);
+}
+
 /* Reuse minimal button shapes (project doesn't have a global btn-* set) */
 .btn-primary, .btn-secondary, .btn-danger, .btn-danger-soft {
   font-family: var(--font-heading, var(--font-mono));

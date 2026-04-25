@@ -171,3 +171,14 @@ export function listBooksForRevisionDedup(): RevisionDedupBook[] {
     isbn: r.isbn ?? undefined,
   }));
 }
+
+/** Aggregate tag counts across all evaluated books. */
+export function queryTagStats(): { tag: string; count: number }[] {
+  const db = openCacheDb();
+  return db.prepare(`
+    SELECT tag, COUNT(*) as count
+    FROM book_tags
+    GROUP BY tag
+    ORDER BY count DESC, tag ASC
+  `).all() as { tag: string; count: number }[];
+}

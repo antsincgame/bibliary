@@ -353,13 +353,14 @@ export async function extractPdfCover(
  */
 export async function extractBookImages(
   filePath: string,
-  format: "pdf" | "epub" | "fb2" | "txt" | "docx" | "djvu",
+  format: import("./types.js").SupportedBookFormat,
   opts?: { maxImageBytes?: number; maxImagesPerBook?: number; signal?: AbortSignal },
 ): Promise<{ images: ImageRef[]; warnings: string[] }> {
   switch (format) {
     case "epub":
       return extractEpubImages(filePath, opts);
     case "docx":
+    case "doc":
       return extractDocxImages(filePath, opts);
     case "fb2":
       return extractFb2Images(filePath, opts);
@@ -367,6 +368,10 @@ export async function extractBookImages(
       return extractPdfCover(filePath, { maxImageBytes: opts?.maxImageBytes, signal: opts?.signal });
     case "djvu":
     case "txt":
+    case "rtf":
+    case "odt":
+    case "html":
+    case "htm":
       return { images: [], warnings: [] };
     default:
       return { images: [], warnings: [`unknown format: ${format}`] };

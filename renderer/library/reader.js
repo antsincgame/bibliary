@@ -8,6 +8,7 @@
 import { el, clear } from "../dom.js";
 import { t } from "../i18n.js";
 import { fmtWords, fmtQuality } from "./format.js";
+import { renderMarkdown } from "../chat/markdown.js";
 
 /** @type {{ bookId: string; meta: any; html: string } | null} */
 let currentBook = null;
@@ -26,19 +27,6 @@ let catalogBody = null;
 function stripFrontmatter(md) {
   const match = md.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
   return match ? md.slice(match[0].length) : md;
-}
-
-/**
- * Render markdown to sanitized HTML using window.marked.
- * @param {string} md
- * @returns {string}
- */
-function renderMarkdown(md) {
-  if (typeof window.marked !== "undefined" && window.marked.parse) {
-    return window.marked.parse(md, { breaks: false });
-  }
-  const escaped = md.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  return `<pre>${escaped}</pre>`;
 }
 
 /**

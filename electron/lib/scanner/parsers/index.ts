@@ -8,6 +8,10 @@ import { docxParser } from "./docx.js";
 import { epubParser } from "./epub.js";
 import { imageParser } from "./image.js";
 import { djvuParser } from "./djvu.js";
+import { docParser } from "./doc.js";
+import { rtfParser } from "./rtf.js";
+import { odtParser } from "./odt.js";
+import { htmlParser, htmParser } from "./html.js";
 
 export type { BookParser, ParseOptions, ParseResult, BookSection, BookMetadata, SupportedExt } from "./types.js";
 
@@ -16,6 +20,11 @@ const PARSERS: Record<SupportedExt, BookParser> = {
   epub: epubParser,
   fb2: fb2Parser,
   docx: docxParser,
+  doc: docParser,
+  rtf: rtfParser,
+  odt: odtParser,
+  html: htmlParser,
+  htm: htmParser,
   txt: txtParser,
   djvu: djvuParser,
   png: imageParser,

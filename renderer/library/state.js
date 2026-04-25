@@ -84,6 +84,8 @@ export const CATALOG = {
     quality: 0,
     hideFiction: false,
     search: "",
+    /** @type {string[]} */
+    tags: [],
   },
   loading: false,
   unsubEvaluator: /** @type {null | (() => void)} */ (null),

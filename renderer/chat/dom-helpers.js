@@ -73,6 +73,6 @@ export function chatToast(text, kind = "success", ttl = 5000) {
 /** @param {number} n */
 export function formatTokensShort(n) {
   if (n >= 1_000_000) return `${Math.round((n / 1_000_000) * 10) / 10}M`;
-  if (n >= 1_000) return `${Math.round(n / 1024)}K`;
+  if (n >= 1_000) return `${Math.round((n / 1_000) * 10) / 10}K`;
   return String(n);
 }

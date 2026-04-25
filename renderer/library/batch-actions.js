@@ -159,7 +159,7 @@ export function updateBatchUi(root) {
     } else {
       btn.removeAttribute("disabled");
       btn.classList.remove("lib-btn-busy");
-      btn.textContent = t("library.catalog.btn.crystallize");
+      btn.textContent = t("library.catalog.btn.createChunks");
     }
   }
   if (cancelBtn) {

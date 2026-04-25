@@ -41,6 +41,7 @@ import {
   pruneMissing,
   upsertBook,
   getCacheDbPath,
+  queryTagStats,
   type CatalogQuery,
 } from "../lib/library/cache-db.js";
 import {
@@ -69,7 +70,7 @@ import { resetRevisionDedupCache } from "../lib/library/revision-dedup.js";
 import type { BookCatalogMeta, BookStatus } from "../lib/library/types.js";
 
 const SUPPORTED_FILE_FILTERS = [
-  { name: "Books", extensions: ["pdf", "epub", "fb2", "docx", "txt", "djvu"] },
+  { name: "Books", extensions: ["pdf", "epub", "fb2", "docx", "doc", "rtf", "odt", "html", "htm", "txt", "djvu"] },
   { name: "Archives (will be unpacked)", extensions: ["zip", "cbz"] },
   { name: "All files", extensions: ["*"] },
 ];
@@ -268,6 +269,10 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
       };
     }
   );
+
+  ipcMain.handle("library:tag-stats", (): { tag: string; count: number }[] => {
+    return queryTagStats();
+  });
 
   ipcMain.handle(
     "library:get-book",
