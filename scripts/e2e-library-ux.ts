@@ -9,24 +9,24 @@
  * Запуск:  npx tsx scripts/e2e-library-ux.ts
  */
 
-import * as os from "os";
 import * as path from "path";
 import { promises as fs } from "fs";
 import { tmpdir } from "os";
 import { QdrantClient } from "@qdrant/js-client-rest";
 import {
-  probeBooks,
   parseBook,
   chunkBook,
   ingestBook,
   ScannerStateStore,
   detectExt,
-  isSupportedBook,
 } from "../electron/lib/scanner/index.js";
+import { collectProbeBooksFromRoots, getSourceRootsFromArgv, pickChunkableBooksByExt } from "./e2e-source-roots.js";
 
 const QDRANT_URL = process.env.QDRANT_URL ?? "http://localhost:6333";
 const COLLECTION = process.env.BIBLIARY_E2E_LIBUX_COLLECTION ?? "bibliary-e2e-libux";
 const MAX_PER_FORMAT_BYTES = 5 * 1024 * 1024;
+const ARGV = process.argv.slice(2);
+const SOURCE_ROOTS = getSourceRootsFromArgv(ARGV, path.join(process.cwd(), "data", "library"));
 
 const COLOR = {
   reset: "\x1b[0m",
@@ -40,6 +40,10 @@ const COLOR = {
 let passed = 0;
 let failed = 0;
 const failures: string[] = [];
+
+async function collectProbeBooks(): Promise<Array<{ ext: string; absPath: string; fileName: string; sizeBytes: number; mtimeMs: number }>> {
+  return collectProbeBooksFromRoots(SOURCE_ROOTS, 4);
+}
 
 async function step(label: string, fn: () => Promise<void> | void): Promise<void> {
   process.stdout.write(`  ${label.padEnd(72, ".")} `);
@@ -59,12 +63,12 @@ async function main(): Promise<void> {
   console.log(`\n${COLOR.bold}== Bibliary E2E Library UX ==${COLOR.reset}\n`);
   console.log(`Qdrant     : ${QDRANT_URL}`);
   console.log(`Collection : ${COLLECTION}\n`);
+  console.log(`Roots      : ${SOURCE_ROOTS.join(" | ")}\n`);
 
-  const downloads = path.join(os.homedir(), "Downloads");
-  const all = await probeBooks(downloads, 1);
-  const sample = all
-    .filter((b) => isSupportedBook(b.absPath) && b.sizeBytes < MAX_PER_FORMAT_BYTES)
-    .slice(0, 3);
+  const all = await collectProbeBooks();
+  const sample = (await pickChunkableBooksByExt(all, ["pdf", "epub", "fb2", "docx", "doc", "djvu", "txt", "rtf"], {
+    maxBytes: MAX_PER_FORMAT_BYTES,
+  })).slice(0, 3);
 
   await step("E2E-1 — probeBooks нашёл хотя бы 2 книги для теста", () => {
     if (sample.length < 2) throw new Error(`only ${sample.length} books usable`);
@@ -119,14 +123,16 @@ async function main(): Promise<void> {
   await step("E2E-6 — knownPaths поведение: повторный probe возвращает уже-известные пути", async () => {
     const state = await store.read();
     const known = new Set(Object.keys(state.books));
-    const probed = await probeBooks(downloads, 1);
+    const probed = await collectProbeBooks();
     const overlap = probed.filter((p) => known.has(p.absPath));
     if (overlap.length === 0) throw new Error("no overlap, smart resume не покажет 'already in Qdrant'");
   });
 
   /* === Delete from collection (имитация scanner:delete-from-collection) === */
   await step("E2E-7 — удаление точек книги по filter bookSourcePath", async () => {
-    const target = sample[0].absPath;
+    const state = await store.read();
+    const target = Object.keys(state.books)[0];
+    if (!target) throw new Error("no stored book for delete");
     const before = await qdrant.scroll(COLLECTION, {
       limit: 100,
       filter: { must: [{ key: "bookSourcePath", match: { value: target } }] },

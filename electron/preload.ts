@@ -386,8 +386,6 @@ contextBridge.exposeInMainWorld("api", {
       bookSourcePath: string;
       chapterRange?: { from: number; to: number };
       extractModel?: string;
-      judgeModel?: string;
-      scoreThreshold?: number;
       /** Имя Qdrant-коллекции для тематической изоляции принятых концептов. */
       targetCollection?: string;
     }): Promise<{
@@ -395,7 +393,7 @@ contextBridge.exposeInMainWorld("api", {
       bookTitle: string;
       totalChapters: number;
       processedChapters: number;
-      totalConcepts: { extractedRaw: number; afterDedup: number; accepted: number; rejected: number };
+      totalDelta: { chunks: number; accepted: number; skipped: number };
       warnings: string[];
     }> => ipcRenderer.invoke("dataset-v2:start-extraction", args),
     /** Multi-book батч из Library: guard'ит по quality_score и is_fiction_or_water. */
@@ -404,8 +402,6 @@ contextBridge.exposeInMainWorld("api", {
       minQuality?: number;
       skipFictionOrWater?: boolean;
       extractModel?: string;
-      judgeModel?: string;
-      scoreThreshold?: number;
       /** Тематическая Qdrant-коллекция для всех книг батча. */
       targetCollection?: string;
     }): Promise<{
@@ -419,7 +415,7 @@ contextBridge.exposeInMainWorld("api", {
         totalChapters: number;
         processedChapters: number;
         accepted: number;
-        rejected: number;
+        skipped: number;
       }>;
     }> => ipcRenderer.invoke("dataset-v2:start-batch", args),
     cancel: (jobId: string): Promise<boolean> => ipcRenderer.invoke("dataset-v2:cancel", jobId),
@@ -504,6 +500,7 @@ contextBridge.exposeInMainWorld("api", {
     evaluatorCancelCurrent: (): Promise<boolean> => ipcRenderer.invoke("library:evaluator-cancel-current"),
     reevaluate: (bookId: string): Promise<{ ok: boolean; reason?: string }> =>
       ipcRenderer.invoke("library:evaluator-reevaluate", { bookId }),
+    reevaluateAll: (): Promise<{ queued: number }> => ipcRenderer.invoke("library:reevaluate-all"),
     setEvaluatorModel: (modelKey: string | null): Promise<boolean> =>
       ipcRenderer.invoke("library:evaluator-set-model", modelKey),
     /* Phase 4: priority enqueue + runtime slot regulation. */

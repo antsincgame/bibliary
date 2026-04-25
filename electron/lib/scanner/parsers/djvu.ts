@@ -4,6 +4,7 @@ import { cleanParagraph, looksLikeHeading, type BookParser, type ParseOptions, t
 import { isOcrSupported, recognizeImageBuffer } from "../ocr/index.js";
 import { recognizeWithVisionLlm } from "../../llm/vision-ocr.js";
 import { getDjvuInstallHint, getDjvuPageCount, runDdjvu, runDjvutxt } from "./djvu-cli.js";
+import { imageBufferToPng } from "../../native/sharp-loader.js";
 
 const MAX_DJVU_FILE_BYTES = 500 * 1024 * 1024;
 
@@ -81,14 +82,16 @@ async function ocrDjvuPages(
     if (opts.signal?.aborted) throw new Error("djvu OCR aborted");
     try {
       const imageBuffer = await runDdjvu(filePath, page, dpi, opts.signal);
+      const pngBuffer = await imageBufferToPng(imageBuffer);
       const result = provider === "vision-llm"
-        ? await recognizeWithVisionLlm(imageBuffer, {
+        ? await recognizeWithVisionLlm(pngBuffer, {
           apiKey: opts.openrouterApiKey,
           languages: opts.ocrLanguages ?? [],
           signal: opts.signal,
+          mimeType: "image/png",
         })
         : await recognizeImageBuffer(
-          new Uint8Array(imageBuffer.buffer, imageBuffer.byteOffset, imageBuffer.byteLength),
+          new Uint8Array(pngBuffer.buffer, pngBuffer.byteOffset, pngBuffer.byteLength),
           page,
           opts.ocrLanguages ?? [],
           opts.ocrAccuracy ?? "accurate",

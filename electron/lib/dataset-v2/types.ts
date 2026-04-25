@@ -62,7 +62,7 @@ export const DeltaKnowledgeSchema = z.object({
 });
 
 export interface DeltaKnowledge extends z.infer<typeof DeltaKnowledgeSchema> {
-  /** SHA1 id, deterministic from essence + bookSourcePath + chapterIndex. */
+  /** SHA1 id, deterministic from chunk source identity. */
   id: string;
   bookSourcePath: string;
   bookTitle: string;

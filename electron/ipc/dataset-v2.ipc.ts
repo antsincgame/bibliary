@@ -300,6 +300,14 @@ async function runExtraction(
           timeoutMs: 15_000,
         });
         stats.accepted++;
+        emitWithJob({
+          stage: "accepted",
+          conceptId: delta.id,
+          principle: delta.essence,
+          domain: delta.domain,
+          score: 1,
+          collection: targetCollection,
+        });
       }
       stats.skipped += chunks.length - deltaRes.accepted.length;
       processed++;

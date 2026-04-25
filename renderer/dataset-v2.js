@@ -3,6 +3,7 @@ import { el, clear } from "./dom.js";
 import { t } from "./i18n.js";
 import { buildNeonHero, neonDivider } from "./components/neon-helpers.js";
 import { buildModelSelect } from "./components/model-select.js";
+import { buildCollectionPicker } from "./components/collection-picker.js";
 import { showAlert } from "./components/ui-dialog.js";
 
 /**
@@ -18,7 +19,7 @@ const STATE = {
   /** @type {Array<{collection: string, books: Array<{bookSourcePath: string, fileName: string, totalChunks: number, status: string}>}>} */
   history: [],
   selectedBook: "",
-  scoreThreshold: 0.6,
+  targetCollection: "",
   /** @type {string | null} */
   currentJobId: null,
   busy: false,
@@ -47,7 +48,7 @@ const CRYSTAL_MODEL_HINTS = ["qwen3.6", "qwen3-coder", "mistral-small", "qwen3.5
 
 /** Активные экземпляры model-select для extractor/judge. Создаются в renderControls. */
 let extractorSelect = /** @type {ReturnType<typeof buildModelSelect> | null} */ (null);
-let judgeSelect = /** @type {ReturnType<typeof buildModelSelect> | null} */ (null);
+let collectionPicker = /** @type {ReturnType<typeof buildCollectionPicker> | null} */ (null);
 
 function fmtTime(ts) {
   return new Date(ts).toLocaleTimeString();
@@ -63,35 +64,6 @@ async function loadHistory() {
   } catch {
     STATE.history = [];
   }
-}
-
-/**
- * Читает глобальный судейский порог из preferences.judgeScoreThreshold.
- * Если pref не задан или не валиден — STATE.scoreThreshold остаётся как есть (0.6 fallback).
- */
-async function loadThresholdFromPrefs() {
-  try {
-    const prefs = /** @type {any} */ (await window.api.preferences.getAll());
-    const v = Number(prefs?.judgeScoreThreshold);
-    if (Number.isFinite(v) && v >= 0 && v <= 1) {
-      STATE.scoreThreshold = v;
-    }
-  } catch {
-    /* ignore — оставляем дефолт STATE.scoreThreshold */
-  }
-}
-
-/**
- * Сохраняет порог в preferences. Debounced через таймер модульного уровня —
- * пользователь дёргает slider десятки раз, пишем только после паузы.
- */
-let _thresholdSaveTimer = /** @type {ReturnType<typeof setTimeout> | null} */ (null);
-function saveThresholdToPrefs(value) {
-  if (_thresholdSaveTimer) clearTimeout(_thresholdSaveTimer);
-  _thresholdSaveTimer = setTimeout(() => {
-    _thresholdSaveTimer = null;
-    void window.api.preferences.set({ judgeScoreThreshold: value }).catch((err) => console.error("[dataset-v2/saveThreshold] Error:", err));
-  }, 500);
 }
 
 function pushEvent(stage, summary, level = "info") {
@@ -141,23 +113,37 @@ function buildCrystalModelRow(role) {
   return { row: instance.wrap, instance };
 }
 
-function buildThresholdRow() {
-  const label = el("label", { class: "cv-label", title: t("crystal.threshold.tooltip") }, t("crystal.threshold.label"));
-  const input = el("input", {
-    type: "range",
-    min: "0",
-    max: "1",
-    step: "0.05",
-    value: String(STATE.scoreThreshold),
-    class: "cv-range",
+function buildCollectionRow(root) {
+  collectionPicker = buildCollectionPicker({
+    id: "cv-target-collection",
+    labelText: t("library.collection.target"),
+    initialValue: STATE.targetCollection,
+    onChange: (name) => {
+      STATE.targetCollection = String(name || "");
+      void renderAcceptedTotal(root);
+    },
+    onCreate: async () => {
+      await collectionPicker?.refresh();
+    },
+    loadCollections: async () => {
+      try {
+        return await window.api.getCollections();
+      } catch {
+        return [];
+      }
+    },
+    createCollection: async (name) => {
+      try {
+        const res = /** @type {{ ok?: boolean, error?: string } | null} */ (await window.api.qdrant.create({ name }));
+        return res && res.ok !== false
+          ? { ok: true }
+          : { ok: false, error: res?.error || "unknown" };
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    },
   });
-  const value = el("span", { class: "cv-range-value" }, STATE.scoreThreshold.toFixed(2));
-  input.addEventListener("input", () => {
-    STATE.scoreThreshold = Number(input.value);
-    value.textContent = STATE.scoreThreshold.toFixed(2);
-    saveThresholdToPrefs(STATE.scoreThreshold);
-  });
-  return el("div", { class: "cv-row" }, [label, input, value]);
+  return collectionPicker.root;
 }
 
 function buildActionsRow(root) {
@@ -191,9 +177,8 @@ function buildActionsRow(root) {
       onclick: async () => {
         await Promise.all([
           loadHistory(),
-          loadThresholdFromPrefs(),
           extractorSelect?.refresh() ?? Promise.resolve(),
-          judgeSelect?.refresh() ?? Promise.resolve(),
+          collectionPicker?.refresh() ?? Promise.resolve(),
         ]);
         renderControls(root);
         renderAcceptedTotal(root);
@@ -210,15 +195,12 @@ function renderControls(root) {
   clear(wrap);
 
   const extractorRow = buildCrystalModelRow("extractor");
-  const judgeRow = buildCrystalModelRow("judge");
   extractorSelect = extractorRow.instance;
-  judgeSelect = judgeRow.instance;
 
   wrap.append(
     buildSourceRow(),
+    buildCollectionRow(root),
     extractorRow.row,
-    judgeRow.row,
-    buildThresholdRow(),
     buildActionsRow(root)
   );
 
@@ -320,7 +302,7 @@ function buildRejectButton(concept, root) {
   btn.addEventListener("click", async () => {
     btn.disabled = true;
     try {
-      const ok = await window.api.datasetV2.rejectAccepted(concept.conceptId);
+      const ok = await window.api.datasetV2.rejectAccepted(concept.conceptId, STATE.targetCollection || undefined);
       if (ok) {
         concept.rejected = true;
         STATE.stats.accepted = Math.max(0, STATE.stats.accepted - 1);
@@ -345,7 +327,7 @@ async function renderAcceptedTotal(root) {
   const node = root.querySelector("#cv-accepted-total");
   if (!node) return;
   try {
-    const info = await window.api.datasetV2.listAccepted();
+    const info = await window.api.datasetV2.listAccepted(STATE.targetCollection || undefined);
     node.textContent = String(info?.total ?? 0);
   } catch {
     node.textContent = "?";
@@ -381,74 +363,47 @@ function handleChunkerEvent(root, payload) {
   renderStats(root);
 }
 
-function handleExtractEvent(root, payload) {
-  const eventType = String(payload.type ?? "");
-  if (eventType === "extract.chunk.done") {
-    const raw = Number(payload.raw ?? 0);
-    const valid = Number(payload.valid ?? 0);
-    STATE.stats.extracted += valid;
-    pushEvent(
-      "extract",
-      `chunk ${payload.chunkPart}/${payload.chunkTotal}: raw=${raw} valid=${valid} (${payload.durationMs}ms)`,
-      valid > 0 ? "good" : "warn"
-    );
-    renderStats(root);
-  } else if (eventType === "extract.chunk.error") {
-    pushEvent("extract", `chunk ${payload.chunkPart}: ${payload.error}`, "bad");
-  }
+function handleConfigEvent(_root, payload) {
+  pushEvent("config", `collection=${payload.targetCollection ?? "delta-knowledge"} · model=${payload.extractModel ?? "?"}`, "info");
 }
 
-function handleDedupEvent(root, payload) {
-  const eventType = String(payload.type ?? "");
-  if (eventType === "intra-dedup.merge") {
-    pushEvent("dedup", `merge sim=${Number(payload.sim).toFixed(3)} «${payload.principleA}» ↔ «${payload.principleB}»`, "warn");
-  } else if (eventType === "intra-dedup.done") {
-    STATE.stats.deduped = Number(payload.after ?? STATE.stats.deduped);
-    pushEvent("dedup", `${payload.before} → ${payload.after} (мерджей: ${payload.mergedPairs})`, "info");
-    renderStats(root);
-  }
+function handleThesisEvent(_root, payload) {
+  if (typeof payload.thesis !== "string" || !payload.thesis) return;
+  pushEvent("thesis", `Тезис главы: ${payload.thesis.slice(0, 120)}`, "info");
 }
 
-function handleJudgeEvent(root, payload) {
+function handleDeltaEvent(root, payload) {
   const eventType = String(payload.type ?? "");
-  if (eventType === "judge.score") {
+  if (eventType === "delta.chunk.start") {
+    pushEvent("delta", `chunk ${payload.chunkPart}/${payload.chunkTotal} → анализ`, "info");
+    return;
+  }
+  if (eventType === "delta.chunk.done") {
+    STATE.stats.extracted += 1;
+    if (payload.accepted) {
+      STATE.stats.accepted += 1;
+    } else {
+      STATE.stats.deduped += 1;
+    }
     pushEvent(
-      "judge",
-      `score=${Number(payload.score).toFixed(2)} N=${Number(payload.novelty).toFixed(2)} A=${Number(payload.actionability).toFixed(2)} D=${Number(payload.domain_fit).toFixed(2)}`,
-      "info"
+      "delta",
+      `chunk ${payload.chunkPart}/${payload.chunkTotal}: ${payload.accepted ? "accepted" : "skipped"} (${payload.durationMs}ms)`,
+      payload.accepted ? "good" : "warn"
     );
-    return;
-  }
-  if (eventType === "judge.accept") {
-    STATE.stats.accepted++;
-    const score = Number(payload.score ?? 0);
-    pushEvent("judge", `ACCEPT ${score.toFixed(2)} «${payload.principle}»`, "good");
-    STATE.acceptedThisSession.push({
-      conceptId: String(payload.conceptId ?? ""),
-      principle: String(payload.principle ?? ""),
-      domain: String(payload.domain ?? "?"),
-      score,
-    });
-    renderStats(root);
-    renderAccepted(root);
-    renderAcceptedTotal(root);
-    return;
-  }
-  if (eventType === "judge.reject.lowscore") {
-    STATE.stats.rejected++;
-    pushEvent("judge", `REJECT lowscore=${Number(payload.score).toFixed(2)} «${payload.principle}»`, "warn");
     renderStats(root);
     return;
   }
-  if (eventType === "judge.crossdupe") {
-    STATE.stats.rejected++;
-    pushEvent("judge", `REJECT crossdupe sim=${Number(payload.sim).toFixed(3)} «${payload.principle}»`, "warn");
-    renderStats(root);
+  if (eventType === "delta.chunk.skip") {
+    pushEvent("delta", `chunk ${payload.chunkPart}: ${payload.reason}`, "warn");
     return;
   }
-  if (eventType === "judge.reject.error") {
-    STATE.stats.rejected++;
-    pushEvent("judge", `REJECT error «${payload.principle}»: ${payload.reason}`, "bad");
+  if (eventType === "delta.retry") {
+    pushEvent("delta", `chunk ${payload.chunkPart}: retry #${payload.attempt} (${payload.reason})`, "warn");
+    return;
+  }
+  if (eventType === "delta.chunk.error") {
+    STATE.stats.rejected += 1;
+    pushEvent("delta", `chunk ${payload.chunkPart}: ${payload.error}`, "bad");
     renderStats(root);
   }
 }
@@ -457,23 +412,44 @@ function handleChapterEvent(_root, payload) {
   if (String(payload.phase ?? "") !== "done") return;
   pushEvent(
     "chapter",
-    `done #${payload.chapterIndex}: extracted=${payload.extracted} deduped=${payload.deduped} accepted=${payload.accepted} rejected=${payload.rejected}`,
+    `done #${payload.chapterIndex}: chunks=${payload.chunks} accepted=${payload.accepted} skipped=${payload.skipped}`,
     "good"
   );
 }
 
+function handleAcceptedEvent(root, payload) {
+  const principle = String(payload.principle ?? "").trim();
+  if (!principle) return;
+  STATE.acceptedThisSession.push({
+    conceptId: String(payload.conceptId ?? ""),
+    principle,
+    domain: String(payload.domain ?? "?"),
+    score: Number(payload.score ?? 1),
+  });
+  renderAccepted(root);
+  renderAcceptedTotal(root);
+}
+
 function handleJobEvent(root, payload) {
   if (String(payload.phase ?? "") !== "done") return;
+  if (payload.stats) {
+    STATE.stats.chunks = Number(payload.stats.chunks ?? STATE.stats.chunks);
+    STATE.stats.extracted = Number(payload.stats.chunks ?? STATE.stats.extracted);
+    STATE.stats.deduped = Number(payload.stats.skipped ?? STATE.stats.deduped);
+    STATE.stats.accepted = Number(payload.stats.accepted ?? STATE.stats.accepted);
+  }
   pushEvent("job", "DONE — вся книга обработана", "good");
+  renderStats(root);
   setBusy(root, false);
 }
 
 const STAGE_HANDLERS = {
+  "config": handleConfigEvent,
   "parse": handleParseEvent,
   "chunker": handleChunkerEvent,
-  "extract": handleExtractEvent,
-  "intra-dedup": handleDedupEvent,
-  "judge": handleJudgeEvent,
+  "thesis": handleThesisEvent,
+  "delta": handleDeltaEvent,
+  "accepted": handleAcceptedEvent,
   "chapter": handleChapterEvent,
   "job": handleJobEvent,
 };
@@ -497,9 +473,12 @@ async function startJob(root) {
     await showAlert(t("crystal.alert.noBook"));
     return;
   }
+  if (!STATE.targetCollection) {
+    await showAlert(t("library.catalog.guard.noCollection"));
+    return;
+  }
   const extractModel = extractorSelect?.getValue() ?? "";
-  const judgeModel = judgeSelect?.getValue() ?? "";
-  if (!extractModel || !judgeModel) {
+  if (!extractModel) {
     await showAlert(t("crystal.alert.noModel"));
     return;
   }
@@ -513,13 +492,12 @@ async function startJob(root) {
     const result = await window.api.datasetV2.startExtraction({
       bookSourcePath: STATE.selectedBook,
       extractModel,
-      judgeModel,
-      scoreThreshold: STATE.scoreThreshold,
+      targetCollection: STATE.targetCollection || undefined,
     });
     STATE.currentJobId = result.jobId;
     pushEvent(
       "job",
-      `Финал: extracted=${result.totalConcepts.extractedRaw}, accepted=${result.totalConcepts.accepted}, rejected=${result.totalConcepts.rejected}`,
+      `Финал: chunks=${result.totalDelta.chunks}, accepted=${result.totalDelta.accepted}, skipped=${result.totalDelta.skipped}`,
       "good"
     );
   } catch (e) {
@@ -582,7 +560,7 @@ export function mountCrystal(root) {
      AUDIT 2026-04-21: добавлен .catch — без него любая ошибка IPC (preferences,
      scanner.listHistory) превращалась в unhandledrejection и Crystallizer
      оставался полупустым без диагностики. */
-  Promise.all([loadHistory(), loadThresholdFromPrefs()])
+  Promise.all([loadHistory()])
     .then(() => {
       renderControls(root);
       renderStats(root);

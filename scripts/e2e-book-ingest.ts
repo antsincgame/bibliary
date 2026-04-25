@@ -15,20 +15,20 @@
 
 import * as path from "path";
 import { promises as fs } from "fs";
-import * as os from "os";
 import { tmpdir } from "os";
 import { QdrantClient } from "@qdrant/js-client-rest";
-import { pipeline } from "@xenova/transformers";
 import {
-  probeBooks,
   ingestBook,
   ScannerStateStore,
-  detectExt,
 } from "../electron/lib/scanner/index.js";
+import { embedQuery } from "../electron/lib/embedder/shared.js";
+import { collectProbeBooksFromRoots, getSourceRootsFromArgv, pickChunkableBooksByExt } from "./e2e-source-roots.js";
 
 const QDRANT_URL = process.env.QDRANT_URL ?? "http://localhost:6333";
 const COLLECTION = process.env.BIBLIARY_E2E_BOOK_COLLECTION ?? "bibliary-e2e-books";
 const MAX_PER_FORMAT_BYTES = 8 * 1024 * 1024;
+const ARGV = process.argv.slice(2);
+const SOURCE_ROOTS = getSourceRootsFromArgv(ARGV, path.join(process.cwd(), "data", "library"));
 
 const COLOR = {
   reset: "\x1b[0m",
@@ -43,6 +43,10 @@ const COLOR = {
 let passed = 0;
 let failed = 0;
 const failures: string[] = [];
+
+async function collectProbeBooks(): Promise<Array<{ ext: string; absPath: string; fileName: string; sizeBytes: number; mtimeMs: number }>> {
+  return collectProbeBooksFromRoots(SOURCE_ROOTS, 4);
+}
 
 async function step(label: string, fn: () => Promise<void> | void): Promise<void> {
   process.stdout.write(`  ${label.padEnd(70, ".")} `);
@@ -62,15 +66,13 @@ async function main(): Promise<void> {
   console.log(`\n${COLOR.bold}== Bibliary E2E book ingest ==${COLOR.reset}\n`);
   console.log(`Qdrant     : ${QDRANT_URL}`);
   console.log(`Collection : ${COLLECTION}`);
+  console.log(`Roots      : ${SOURCE_ROOTS.join(" | ")}`);
 
-  const downloads = path.join(os.homedir(), "Downloads");
-  const all = await probeBooks(downloads, 1);
+  const all = await collectProbeBooks();
 
-  const sample: { ext: string; absPath: string; fileName: string; sizeBytes: number }[] = [];
-  for (const ext of ["pdf", "epub", "fb2", "docx", "txt"]) {
-    const first = all.find((b) => b.ext === ext && b.sizeBytes < MAX_PER_FORMAT_BYTES);
-    if (first) sample.push(first);
-  }
+  const sample = await pickChunkableBooksByExt(all, ["pdf", "epub", "fb2", "docx", "doc", "djvu", "txt", "rtf"], {
+    maxBytes: MAX_PER_FORMAT_BYTES,
+  });
   console.log(`\nSample: ${sample.length} формат(ов): ${sample.map((s) => s.ext).join(", ")}\n`);
 
   const qdrant = new QdrantClient({ url: QDRANT_URL });
@@ -126,7 +128,8 @@ async function main(): Promise<void> {
   });
 
   await step("E2E-5 — RESUME: повторный ingest skip всех chunks", async () => {
-    const book = sample[0];
+    const book = sample.find((entry) => ingestStats[entry.ext]?.total > 0);
+    if (!book) throw new Error("no chunkable sample for resume");
     const r = await ingestBook(book.absPath, {
       collection: COLLECTION,
       qdrantUrl: QDRANT_URL,
@@ -150,10 +153,8 @@ async function main(): Promise<void> {
     }
   });
 
-  const extractor = await pipeline("feature-extraction", "Xenova/multilingual-e5-small");
   async function search(q: string, limit = 3): Promise<Array<{ score: number; text: string; book: string }>> {
-    const out = await extractor(`query: ${q}`, { pooling: "mean", normalize: true });
-    const vec = Array.from(out.data as Float32Array);
+    const vec = await embedQuery(q);
     const res = await qdrant.search(COLLECTION, { vector: vec, limit, with_payload: true });
     return res.map((p) => ({
       score: p.score,
@@ -194,11 +195,9 @@ async function main(): Promise<void> {
   });
 
   await step("E2E-9 — payload фильтр по bookTitle работает", async () => {
-    const titles = new Set(Object.values(ingestStats).map((_, i) => sample[i]));
-    if (titles.size === 0) return;
-    const targetBook = sample[0];
-    const out = await extractor(`query: introduction`, { pooling: "mean", normalize: true });
-    const vec = Array.from(out.data as Float32Array);
+    const targetBook = sample.find((entry) => ingestStats[entry.ext]?.upserted > 0);
+    if (!targetBook) throw new Error("no target book with upserted chunks");
+    const vec = await embedQuery("introduction");
     const r = await qdrant.search(COLLECTION, {
       vector: vec,
       limit: 5,

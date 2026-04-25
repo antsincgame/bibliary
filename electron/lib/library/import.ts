@@ -227,7 +227,7 @@ export async function importBookFromFile(
   if (fnMeta) {
     const m = convResult.meta;
     if (!m.author && fnMeta.author) m.author = fnMeta.author;
-    if (!m.year && fnMeta.year) m.year = fnMeta.year;
+    if (m.year == null && fnMeta.year) m.year = fnMeta.year;
     if (fnMeta.title && (m.title === path.parse(absPath).name || m.originalFormat === "txt")) {
       m.title = fnMeta.title;
     }

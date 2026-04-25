@@ -405,6 +405,12 @@ async function evaluateOneInSlot(bookId: string, slot: SlotState): Promise<void>
     /* 2. Surrogate. */
     const surrogate = buildSurrogate(chapters);
 
+    /* 2b. Pre-scan: regex hints for author/year from frontmatter + filename + full text. */
+    const metaHints = extractMetadataHints(md, meta);
+    const surrogateWithHints = metaHints.length > 0
+      ? `# METADATA HINTS (from filename, frontmatter, and text scan — use these as strong clues)\n${metaHints.join("\n")}\n\n${surrogate.surrogate}`
+      : surrogate.surrogate;
+
     /* 3. Pick model. Override has priority. */
     const model = modelOverride ?? (await deps.pickEvaluatorModel());
     if (!model) {
@@ -419,7 +425,7 @@ async function evaluateOneInSlot(bookId: string, slot: SlotState): Promise<void>
     /* 4. LLM call. Используем signal этого слота — параллельные слоты
        имеют независимые AbortController'ы, cancel одного не валит других. */
     const slotSignal = slot.controller!.signal;
-    const result = await deps.evaluateBook(surrogate.surrogate, { model, signal: slotSignal });
+    const result = await deps.evaluateBook(surrogateWithHints, { model, signal: slotSignal });
     if (!result.evaluation) {
       const failed: BookCatalogMeta = {
         ...meta,
@@ -442,6 +448,7 @@ async function evaluateOneInSlot(bookId: string, slot: SlotState): Promise<void>
       ...meta,
       titleEn: ev.title_en,
       authorEn: ev.author_en,
+      year: ev.year ?? meta.year,
       domain: ev.domain,
       tags: ev.tags,
       qualityScore: ev.quality_score,
@@ -496,6 +503,56 @@ async function persistFrontmatter(meta: BookCatalogMeta, mdPath: string, md: str
   let next = replaceFrontmatter(md, meta);
   if (reasoning !== undefined) next = upsertEvaluatorReasoning(next, reasoning);
   await deps.writeFile(mdPath, next);
+}
+
+/**
+ * Pre-scan book.md and catalog meta for bibliographic hints (author, year,
+ * publisher, ISBN) using regex. Results are prepended to the surrogate so
+ * the LLM has strong clues even when the surrogate text itself is vague.
+ */
+function extractMetadataHints(
+  md: string,
+  meta: BookCatalogMeta & { mdPath: string },
+): string[] {
+  const hints: string[] = [];
+
+  if (meta.author && meta.author.length > 0) {
+    hints.push(`- Filename/parser author: ${meta.author}`);
+  }
+  if (meta.year != null && meta.year > 0) {
+    hints.push(`- Filename/parser year: ${meta.year}`);
+  }
+  if (meta.isbn) {
+    hints.push(`- ISBN: ${meta.isbn}`);
+  }
+  if (meta.publisher) {
+    hints.push(`- Publisher: ${meta.publisher}`);
+  }
+
+  const filename = meta.originalFile ?? "";
+  if (filename.length > 0) {
+    hints.push(`- Original filename: ${filename}`);
+    const fnYear = filename.match(/(?:^|[\s_\-.(])(\d{4})(?:[\s_\-.)$])/);
+    if (fnYear && +fnYear[1] >= 1800 && +fnYear[1] <= 2030 && meta.year == null) {
+      hints.push(`- Year from filename: ${fnYear[1]}`);
+    }
+  }
+
+  const textSample = md.slice(0, 20000);
+  const copyrightMatch = textSample.match(/(?:copyright|©)\s*(\d{4})\s+(.{2,60})/i);
+  if (copyrightMatch) {
+    hints.push(`- Copyright line: © ${copyrightMatch[1]} ${copyrightMatch[2].trim()}`);
+  }
+  const isbnMatch = textSample.match(/isbn[\s:\-]*([\dxX\-]{10,17})/i);
+  if (isbnMatch && !meta.isbn) {
+    hints.push(`- ISBN from text: ${isbnMatch[1]}`);
+  }
+  const authorLineRu = textSample.match(/(?:автор|author)\s*[:：]\s*(.{2,60})/i);
+  if (authorLineRu && !meta.author) {
+    hints.push(`- Author line from text: ${authorLineRu[1].trim()}`);
+  }
+
+  return hints;
 }
 
 /** Тестовый helper: сбрасывает все счётчики и состояние. Только для unit-tests. */

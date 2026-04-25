@@ -76,9 +76,12 @@ export async function openBook(bookId, root) {
       return;
     }
 
-    const bodyMd = stripFrontmatter(content.markdown);
-    const html = renderMarkdown(bodyMd);
+    let bodyMd = stripFrontmatter(content.markdown);
     const coverDataUrl = extractCoverDataUrl(content.markdown);
+    if (coverDataUrl) {
+      bodyMd = bodyMd.replace(/^!\[Cover\]\[img-cover\]\s*$/m, "");
+    }
+    const html = renderMarkdown(bodyMd);
 
     currentBook = { bookId, meta, html, coverDataUrl };
     renderReader(root);

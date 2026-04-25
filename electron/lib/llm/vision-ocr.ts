@@ -5,6 +5,7 @@ export async function recognizeWithVisionLlm(
     languages?: string[];
     signal?: AbortSignal;
     model?: string;
+    mimeType?: string;
   } = {},
 ): Promise<{ text: string; confidence: number }> {
   const apiKey = opts.apiKey || process.env.OPENROUTER_API_KEY || "";
@@ -13,6 +14,7 @@ export async function recognizeWithVisionLlm(
   }
 
   const model = opts.model || process.env.OPENROUTER_OCR_MODEL || "google/gemini-2.0-flash-exp:free";
+  const mimeType = opts.mimeType || "image/png";
   const languages = (opts.languages || []).filter(Boolean).join(", ");
   const prompt = [
     "Extract plain text from the scanned book page image.",
@@ -29,7 +31,7 @@ export async function recognizeWithVisionLlm(
         role: "user",
         content: [
           { type: "text", text: prompt },
-          { type: "image_url", image_url: { url: `data:image/tiff;base64,${imageBuffer.toString("base64")}` } },
+          { type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBuffer.toString("base64")}` } },
         ],
       },
     ],

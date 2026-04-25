@@ -14,6 +14,8 @@ import * as path from "path";
 import JSZip from "jszip";
 import { XMLParser } from "fast-xml-parser";
 import type { ImageRef } from "./types.js";
+import { runDdjvu } from "../scanner/parsers/djvu-cli.js";
+import { imageBufferToPng } from "../native/sharp-loader.js";
 
 const DEFAULT_MAX_IMAGES = 100;
 const DEFAULT_MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -345,6 +347,36 @@ export async function extractPdfCover(
   }
 }
 
+/* ─────────────────────────── DJVU (cover only) ─────────────────────────── */
+
+export async function extractDjvuCover(
+  filePath: string,
+  opts?: { maxImageBytes?: number; targetWidth?: number; signal?: AbortSignal; dpi?: number },
+): Promise<{ images: ImageRef[]; warnings: string[] }> {
+  const warnings: string[] = [];
+  const maxBytes = opts?.maxImageBytes ?? DEFAULT_MAX_IMAGE_BYTES;
+  const targetWidth = opts?.targetWidth ?? 600;
+  const dpi = Math.max(72, opts?.dpi ?? 200);
+
+  try {
+    if (opts?.signal?.aborted) return { images: [], warnings: ["djvu-cover: aborted"] };
+    const tiff = await runDdjvu(filePath, 0, dpi, opts?.signal);
+    if (tiff.length === 0) return { images: [], warnings: ["djvu-cover: empty render"] };
+    const png = await imageBufferToPng(tiff, targetWidth);
+
+    if (png.length > maxBytes) {
+      return { images: [], warnings: [`djvu-cover: rendered ${png.length} bytes > ${maxBytes} cap`] };
+    }
+
+    return {
+      images: [{ id: "img-cover", mimeType: "image/png", buffer: png, caption: "Page 1 (cover)" }],
+      warnings,
+    };
+  } catch (e) {
+    return { images: [], warnings: [`djvu-cover: render failed -- ${e instanceof Error ? e.message : String(e)}`] };
+  }
+}
+
 /* ─────────────────────────── Dispatcher ─────────────────────────── */
 
 /**
@@ -360,13 +392,15 @@ export async function extractBookImages(
     case "epub":
       return extractEpubImages(filePath, opts);
     case "docx":
-    case "doc":
       return extractDocxImages(filePath, opts);
+    case "doc":
+      return { images: [], warnings: [] };
     case "fb2":
       return extractFb2Images(filePath, opts);
     case "pdf":
       return extractPdfCover(filePath, { maxImageBytes: opts?.maxImageBytes, signal: opts?.signal });
     case "djvu":
+      return extractDjvuCover(filePath, { maxImageBytes: opts?.maxImageBytes, signal: opts?.signal });
     case "txt":
     case "rtf":
     case "odt":

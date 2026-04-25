@@ -1,9 +1,8 @@
 /**
  * Archive Extractor — распаковка архивов с книгами в temp-директорию.
  *
- * Текущая реализация (lean): полноценная поддержка ZIP / CBZ через JSZip
- * (уже в зависимостях). Для RAR / 7z / CBR возвращает понятный warning,
- * не пытаясь подтянуть тяжёлые нативные бинарники в portable-сборку.
+ * ZIP / CBZ читаются через JSZip. RAR / CBR / 7z читаются через реальный
+ * 7-Zip binary, если он доступен в bundled dependency или `BIBLIARY_7Z_PATH`.
  *
  * Контракт: на выходе массив абсолютных путей к временно распакованным
  * книгам поддерживаемых форматов. Caller (import.ts) скармливает их
@@ -11,14 +10,17 @@
  * через `cleanupExtractedDir(tempDir)`.
  */
 
-import { promises as fs } from "fs";
+import { promises as fs, existsSync } from "fs";
 import * as path from "path";
 import * as os from "os";
+import { spawn } from "child_process";
+import { createRequire } from "module";
 import { randomUUID } from "crypto";
 import JSZip from "jszip";
 import { detectExt } from "../scanner/parsers/index.js";
 import { SUPPORTED_BOOK_EXTS } from "./types.js";
 const ARCHIVE_EXTS = new Set([".zip", ".cbz", ".rar", ".cbr", ".7z"]);
+const req = createRequire(path.join(process.cwd(), "package.json"));
 
 /**
  * Anti-zip-bomb hard limits. Применяются ДО записи на диск, чтобы один
@@ -101,6 +103,79 @@ export async function cleanupExtractedDir(tempDir: string): Promise<void> {
 function sanitizeEntryName(entryName: string): string {
   const base = path.basename(entryName);
   return base.replace(/[<>:"|?*\x00-\x1F]/g, "_");
+}
+
+function isInside(parent: string, child: string): boolean {
+  const rel = path.relative(parent, child);
+  return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+}
+
+function resolveExistingBinary(candidate: unknown): string | null {
+  if (typeof candidate !== "string" || candidate.length === 0) return null;
+  if (candidate === "7z" || candidate === "7za") return candidate;
+  return path.isAbsolute(candidate) && requireExists(candidate) ? candidate : null;
+}
+
+function requireExists(filePath: string): boolean {
+  return existsSync(filePath);
+}
+
+function resolve7zBinary(): string | null {
+  const env = process.env.BIBLIARY_7Z_PATH?.trim();
+  if (env && requireExists(env)) return env;
+  const vendorCandidates = [
+    typeof process.resourcesPath === "string"
+      ? path.join(process.resourcesPath, "vendor", "7zip", "win32-x64", "7z.exe")
+      : "",
+    path.join(process.cwd(), "vendor", "7zip", "win32-x64", "7z.exe"),
+  ].filter(Boolean);
+  for (const candidate of vendorCandidates) {
+    if (requireExists(candidate)) return candidate;
+  }
+  for (const pkg of ["7z-bin", "7zip-bin"]) {
+    try {
+      const mod = req(pkg) as { path7z?: string; path7za?: string };
+      const resolved = resolveExistingBinary(mod.path7z ?? mod.path7za);
+      if (resolved) return resolved;
+    } catch {
+      /* optional helper package is not available */
+    }
+  }
+  return process.platform === "win32" ? null : "7z";
+}
+
+function run7z(args: string[], signal?: AbortSignal): Promise<{ stdout: string; stderr: string }> {
+  const binary = resolve7zBinary();
+  if (!binary) {
+    return Promise.reject(new Error("7-Zip binary not found. Set BIBLIARY_7Z_PATH or install bundled 7z-bin binaries."));
+  }
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error("aborted"));
+      return;
+    }
+    const child = spawn(binary, args, { windowsHide: true });
+    let stdout = "";
+    let stderr = "";
+    const onAbort = (): void => {
+      child.kill();
+      reject(new Error("aborted"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => { stdout += String(chunk); });
+    child.stderr.on("data", (chunk) => { stderr += String(chunk); });
+    child.on("error", (err) => {
+      signal?.removeEventListener("abort", onAbort);
+      reject(err);
+    });
+    child.on("close", (code) => {
+      signal?.removeEventListener("abort", onAbort);
+      if (code === 0) resolve({ stdout, stderr });
+      else reject(new Error(`7z exited ${code}: ${(stderr || stdout).slice(0, 500)}`));
+    });
+  });
 }
 
 async function extractZipLike(absPath: string, tempDir: string, warnings: string[]): Promise<ExtractedBook[]> {
@@ -199,6 +274,137 @@ async function extractZipLike(absPath: string, tempDir: string, warnings: string
   return out;
 }
 
+async function extractWith7z(absPath: string, tempDir: string, warnings: string[]): Promise<ExtractedBook[]> {
+  const limits = resolveLimits();
+  const sourceArchive = path.basename(absPath);
+  let listed;
+  try {
+    listed = await run7z(["l", "-slt", "-ba", absPath]);
+  } catch (err) {
+    warnings.push(`archive-extractor: 7z list failed for ${sourceArchive}: ${err instanceof Error ? err.message : String(err)}`);
+    return [];
+  }
+
+  const entries = parse7zList(listed.stdout)
+    .filter((entry) => !entry.isDir)
+    .filter((entry) => {
+      const ext = detectExt(entry.path);
+      return Boolean(ext && (SUPPORTED_BOOK_EXTS as ReadonlySet<string>).has(ext));
+    });
+
+  if (entries.length === 0) return [];
+  if (entries.some((entry) => path.isAbsolute(entry.path) || entry.path.split(/[\\/]+/).includes(".."))) {
+    warnings.push(`archive-extractor: ${sourceArchive} contains unsafe paths — refused`);
+    return [];
+  }
+  if (entries.length > limits.maxFiles) {
+    warnings.push(`archive-extractor: ${sourceArchive} has ${entries.length} book files (>${limits.maxFiles} limit) — refused`);
+    return [];
+  }
+
+  const estimatedTotal = entries.reduce((sum, entry) => sum + (entry.size ?? 0), 0);
+  if (estimatedTotal > limits.maxExtractedBytes) {
+    const totalGb = (estimatedTotal / 1024 / 1024 / 1024).toFixed(2);
+    const limitGb = (limits.maxExtractedBytes / 1024 / 1024 / 1024).toFixed(2);
+    warnings.push(`archive-extractor: ${sourceArchive} would extract to ~${totalGb} GB (>${limitGb} GB limit) — refused`);
+    return [];
+  }
+
+  try {
+    await run7z(["x", "-y", `-o${tempDir}`, absPath]);
+  } catch (err) {
+    warnings.push(`archive-extractor: 7z extract failed for ${sourceArchive}: ${err instanceof Error ? err.message : String(err)}`);
+    return [];
+  }
+
+  return collectExtractedBooks(tempDir, sourceArchive, limits, warnings);
+}
+
+async function collectExtractedBooks(
+  tempDir: string,
+  sourceArchive: string,
+  limits: ArchiveLimits,
+  warnings: string[],
+): Promise<ExtractedBook[]> {
+  const out: ExtractedBook[] = [];
+  let totalBytes = 0;
+
+  async function walk(dir: string): Promise<void> {
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch (err) {
+      warnings.push(`archive-extractor: cannot read extracted dir ${dir}: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      const resolved = path.resolve(full);
+      if (!isInside(tempDir, resolved)) {
+        warnings.push(`archive-extractor: skipped unsafe extracted path ${full}`);
+        continue;
+      }
+      if (entry.isDirectory()) {
+        await walk(resolved);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const ext = detectExt(entry.name);
+      if (!ext || !(SUPPORTED_BOOK_EXTS as ReadonlySet<string>).has(ext)) continue;
+      const stat = await fs.stat(resolved);
+      totalBytes += stat.size;
+      if (out.length >= limits.maxFiles) {
+        warnings.push(`archive-extractor: ${sourceArchive} has more than ${limits.maxFiles} extracted book files — truncated`);
+        return;
+      }
+      if (totalBytes > limits.maxExtractedBytes) {
+        warnings.push(`archive-extractor: ${sourceArchive} extracted books exceed ${limits.maxExtractedBytes} bytes — truncated`);
+        return;
+      }
+      out.push({
+        absPath: resolved,
+        entryName: path.relative(tempDir, resolved),
+        sourceArchive,
+      });
+    }
+  }
+
+  await walk(tempDir);
+  return out;
+}
+
+function parse7zList(text: string): Array<{ path: string; size?: number; isDir: boolean }> {
+  const entries: Array<{ path: string; size?: number; isDir: boolean }> = [];
+  let current: { path?: string; size?: number; attributes?: string } = {};
+  const flush = (): void => {
+    if (!current.path) return;
+    entries.push({
+      path: current.path,
+      size: current.size,
+      isDir: Boolean(current.attributes?.startsWith("D")),
+    });
+    current = {};
+  };
+  for (const line of text.split(/\r?\n/)) {
+    const idx = line.indexOf(" = ");
+    if (idx === -1) continue;
+    const key = line.slice(0, idx).trim();
+    const value = line.slice(idx + 3);
+    if (key === "Path") {
+      flush();
+      current.path = value;
+    } else if (key === "Size") {
+      const n = Number(value);
+      if (Number.isFinite(n)) current.size = n;
+    } else if (key === "Attributes") {
+      current.attributes = value;
+    }
+  }
+  flush();
+  return entries;
+}
+
 /**
  * Главный entry-point: распаковывает архив, возвращает поддерживаемые книги.
  *
@@ -215,18 +421,12 @@ export async function extractArchive(absPath: string): Promise<ExtractResult> {
     return { books, tempDir, warnings };
   }
 
-  if (ext === ".rar" || ext === ".cbr") {
-    warnings.push(
-      `archive-extractor: RAR/CBR is not supported in portable mode (${path.basename(absPath)}). Please extract manually with WinRAR/7-Zip and re-import the resulting folder.`,
-    );
-    return { books: [], tempDir, warnings };
-  }
-
-  if (ext === ".7z") {
-    warnings.push(
-      `archive-extractor: 7z is not supported in portable mode (${path.basename(absPath)}). Please extract manually with 7-Zip and re-import the resulting folder.`,
-    );
-    return { books: [], tempDir, warnings };
+  if (ext === ".rar" || ext === ".cbr" || ext === ".7z") {
+    const books = await extractWith7z(absPath, tempDir, warnings);
+    if (books.length === 0 && warnings.length === 0) {
+      warnings.push(`archive-extractor: ${ext.slice(1).toUpperCase()} archive contains no supported book files (${path.basename(absPath)})`);
+    }
+    return { books, tempDir, warnings };
   }
 
   warnings.push(`archive-extractor: unsupported archive type: ${ext}`);

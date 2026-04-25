@@ -250,6 +250,19 @@ export function buildCatalogToolbar(root) {
     },
   }, t("library.catalog.btn.rebuild"));
 
+  const reevaluateAllBtn = el("button", {
+    type: "button", class: "lib-btn lib-btn-ghost",
+    onclick: async () => {
+      try {
+        const res = await window.api.library.reevaluateAll();
+        await showAlert(t("library.catalog.toast.reevaluateAll", { n: String(res.queued) }));
+      } catch (e) {
+        await showAlert(e instanceof Error ? e.message : String(e));
+      }
+      void renderCatalog(root);
+    },
+  }, t("library.catalog.btn.reevaluateAll"));
+
   const tagCloudBtn = el("button", {
     type: "button", class: "lib-btn lib-btn-ghost",
     onclick: () => void openTagCloudModal({ root, renderCatalogTable }),
@@ -271,6 +284,7 @@ export function buildCatalogToolbar(root) {
 
   refreshBtn.dataset.modeMin = "advanced";
   rebuildBtn.dataset.modeMin = "pro";
+  reevaluateAllBtn.dataset.modeMin = "pro";
 
   return el("div", { class: "lib-catalog-toolbar lib-catalog-toolbar-compact" }, [
     searchInput,
@@ -281,7 +295,7 @@ export function buildCatalogToolbar(root) {
     ]),
     fictionLabel,
     presetWrap,
-    refreshBtn, rebuildBtn,
+    refreshBtn, rebuildBtn, reevaluateAllBtn,
   ]);
 }
 

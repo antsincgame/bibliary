@@ -112,8 +112,9 @@ function makeFakeEvaluation(qualityScore: number, isFiction = false): Evaluation
     evaluation: {
       title_en: "Fake Title",
       author_en: "Test Author",
+      year: 2024,
       domain: "test domain",
-      tags: ["a", "b"],
+      tags: ["a", "b", "c", "d", "e", "f", "g", "h"],
       is_fiction_or_water: isFiction,
       conceptual_density: 70,
       originality: 60,

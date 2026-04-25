@@ -1,6 +1,6 @@
 {
   "name": "bibliary",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "type": "module",
   "main": "dist-electron/main.js",
   "description": "Vector knowledge store — natural language concepts for site generation",
@@ -37,6 +37,7 @@
     "test:e2e:library": "tsx scripts/e2e-batch-library.ts",
     "test:e2e:bibliarifull": "tsx scripts/e2e-bibliarifull-library-import.ts",
     "test:e2e:bibliarifull-bundle": "tsx scripts/e2e-bibliarifull-bundle-import.ts",
+    "test:e2e:full-corpus": "tsx scripts/e2e-full-corpus-library-import.ts",
     "dataset:synth": "tsx scripts/dataset-synth.ts",
     "dataset:probe-model": "tsx scripts/probe-evaluator-pick.ts",
     "test": "npm run test:rebuild-native && node --import tsx --test tests/*.test.ts",
@@ -50,7 +51,8 @@
     "test:agent-memory-live": "tsx scripts/test-agent-memory-live.ts",
     "lint": "tsc -p tsconfig.electron.json --noEmit && eslint \"renderer/**/*.js\" --ignore-pattern \"renderer/vendor/**\" --max-warnings=0",
     "lint:fix": "eslint \"renderer/**/*.js\" --ignore-pattern \"renderer/vendor/**\" --fix",
-    "setup:djvulibre": "node scripts/download-djvulibre-win.cjs"
+    "setup:djvulibre": "node scripts/download-djvulibre-win.cjs",
+    "setup:7zip": "node scripts/download-7zip-win.cjs"
   },
   "dependencies": {
     "@lmstudio/sdk": "^1.5.0",
@@ -58,6 +60,8 @@
     "@napi-rs/system-ocr": "^1.0.2",
     "@qdrant/js-client-rest": "^1.12.0",
     "@xenova/transformers": "^2.17.2",
+    "7z-bin": "^0.0.8",
+    "7zip-bin": "^5.2.0",
     "better-sqlite3": "^12.9.0",
     "dotenv": "^16.4.7",
     "fast-xml-parser": "^4.5.1",

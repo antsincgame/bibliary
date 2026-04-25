@@ -161,7 +161,8 @@ export interface ConvertOptions {
  */
 export interface BookEvaluation {
   title_en: string;
-  author_en?: string;
+  author_en: string;
+  year: number | null;
   domain: string;
   tags: string[];
   is_fiction_or_water: boolean;

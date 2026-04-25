@@ -283,11 +283,23 @@ export function upsertEvaluatorReasoning(markdown: string, reasoning: string | n
 
 /**
  * Body Markdown'а: главы как `## Title`, параграфы разделены пустой
- * строкой. Обложка вставляется в начало body как `![Cover][img-cover]`.
+ * строкой. Все найденные картинки вставляются в начало body как reference-
+ * style изображения, чтобы reader видел и обложку, и внутритекстовые
+ * иллюстрации, а parseBookMarkdownChapters их не принимал за текст главы.
  */
-function buildBody(chapters: ConvertedChapter[], hasCover: boolean): string {
+function escapeMarkdownAlt(text: string): string {
+  return text.replace(/[[\]]+/g, "").replace(/\s+/g, " ").trim();
+}
+
+function buildBody(chapters: ConvertedChapter[], images: ImageRef[]): string {
   const parts: string[] = [];
-  if (hasCover) parts.push("![Cover][img-cover]\n");
+  const cover = images.find((img) => img.id === "img-cover") ?? null;
+  const gallery = images.filter((img) => img.id !== "img-cover");
+  if (cover) parts.push("![Cover][img-cover]\n");
+  for (let i = 0; i < gallery.length; i++) {
+    const alt = escapeMarkdownAlt(gallery[i].caption || `Illustration ${i + 1}`) || `Illustration ${i + 1}`;
+    parts.push(`![${alt}][${gallery[i].id}]\n`);
+  }
   for (const ch of chapters) {
     const title = ch.title.trim() || `Chapter ${ch.index + 1}`;
     parts.push(`## ${title}\n`);
@@ -382,7 +394,7 @@ export async function convertBookToMarkdown(
     warnings: allWarnings.length > 0 ? allWarnings : undefined,
   };
 
-  const body = buildBody(chapters, cover !== null);
+  const body = buildBody(chapters, images);
   const refs = buildImageRefs(images);
   const markdown = `${buildFrontmatter(meta)}\n\n# ${meta.title}\n\n${body}${refs}`;
 

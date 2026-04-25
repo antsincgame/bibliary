@@ -52,13 +52,6 @@ export const AbsoluteFilePathArraySchema = z
   .array(AbsoluteFilePathSchema)
   .max(1000, "too many paths in one batch (max 1000)");
 
-/** A model identifier from LM Studio (free-form string but capped). */
-export const ModelKeySchema = z.string().min(1).max(512);
-
-/** A free-text user query (chat / search). Cap at 32k chars to avoid
- * accidental DoS via paste of an entire book into the search box. */
-export const UserQuerySchema = z.string().min(1).max(32_768);
-
 /**
  * Wraps `schema.parse(raw)` in a friendly error shape. Returns the
  * parsed value or throws `Error("invalid <argName>: <details>")`.

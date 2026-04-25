@@ -86,6 +86,25 @@ async function qdrantUpsert(
   }
 }
 
+async function qdrantUpsertAdaptive(
+  url: string,
+  collection: string,
+  points: QdrantPoint[],
+  apiKey: string | undefined,
+  signal?: AbortSignal
+): Promise<void> {
+  if (points.length === 0) return;
+  try {
+    await qdrantUpsert(url, collection, points, apiKey, signal);
+    return;
+  } catch (err) {
+    if (points.length <= 1) throw err;
+    const mid = Math.ceil(points.length / 2);
+    await qdrantUpsertAdaptive(url, collection, points.slice(0, mid), apiKey, signal);
+    await qdrantUpsertAdaptive(url, collection, points.slice(mid), apiKey, signal);
+  }
+}
+
 async function ensureCollection(
   url: string,
   collection: string,
@@ -155,6 +174,19 @@ export async function ingestBook(filePath: string, opts: IngestOptions): Promise
   emit({ phase: "chunk", bookSourcePath: filePath, bookTitle });
   const chunks: BookChunk[] = chunkBook(parsed, filePath, opts.chunkerOptions);
   if (chunks.length === 0) {
+    if (opts.state) {
+      const cur = await opts.state.read();
+      const existing = cur.books[filePath];
+      await opts.state.upsertBook({
+        bookSourcePath: filePath,
+        collection: opts.collection,
+        totalChunks: 0,
+        processedChunkIds: existing?.processedChunkIds ?? [],
+        startedAt: existing?.startedAt ?? new Date().toISOString(),
+        lastUpdatedAt: new Date().toISOString(),
+        status: "done",
+      });
+    }
     emit({ phase: "done", bookSourcePath: filePath, bookTitle, message: "no extractable text" });
     return { bookTitle, totalChunks: 0, embedded: 0, upserted: 0, skipped: 0, warnings: parsed.metadata.warnings };
   }
@@ -186,7 +218,7 @@ export async function ingestBook(filePath: string, opts: IngestOptions): Promise
   const flush = async (): Promise<void> => {
     if (buf.length === 0) return;
     if (opts.signal?.aborted) throw new Error("ingest aborted");
-    await qdrantUpsert(opts.qdrantUrl, opts.collection, buf, opts.qdrantApiKey, opts.signal);
+    await qdrantUpsertAdaptive(opts.qdrantUrl, opts.collection, buf, opts.qdrantApiKey, opts.signal);
     upserted += buf.length;
     if (opts.state) await opts.state.markProgress(filePath, flushedIds.splice(0));
     emit({

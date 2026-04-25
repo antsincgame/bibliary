@@ -22,44 +22,65 @@ import { parseReasoningResponse } from "./reasoning-parser.js";
 import type { BookEvaluation, EvaluationResult } from "./types.js";
 
 /** "Chief Epistemologist" -- системный промпт. На английском (CoT-friendly). */
-const EVALUATOR_SYSTEM_PROMPT = `You are the Chief Epistemologist and Data Curator for an elite AI knowledge dataset. Your task: analyze the Structural Surrogate of a book (Table of Contents + Introduction + Conclusion + nodal slices of the longest chapters) and predict its Conceptual Value BEFORE full processing.
+const EVALUATOR_SYSTEM_PROMPT = `You are the Chief Epistemologist, Bibliographic Detective, and Data Curator for an elite AI knowledge dataset. Your task: analyze the Structural Surrogate of a book and extract MAXIMUM bibliographic metadata + predict Conceptual Value.
 
-Our goal is to extract ONLY unique authorial ideas, rigorous methodologies, scientific facts, and philosophical concepts. Mediocre rewrites of common knowledge waste GPU cycles.
+CRITICAL MISSION — METADATA EXTRACTION:
+You MUST treat every book as a forensic investigation. Scan EVERY section for clues:
+- METADATA ZONE: title page lines, colophon, copyright notices, ISBN. Author name and year are almost ALWAYS here.
+- INTRODUCTION/PREFACE: authors often introduce themselves ("I, John Smith, have spent 20 years..."), mention publication context ("this 2003 edition...").
+- CONCLUSION/AFTERWORD: acknowledgments often reveal author identity.
+- TABLE OF CONTENTS: may contain author name in chapter attributions.
+- EMBEDDED CITATIONS: references like "(Smith, 2019)" reveal both author and year.
+- COPYRIGHT LINES: "© 2015 John Doe" — this is gold.
+- ISBN LINES: year is encoded in ISBNs published after 2007.
 
-ANALYSIS ALGORITHM (think step by step inside <think>...</think>):
+AUTHOR EXTRACTION RULES (MANDATORY):
+- Scan the Metadata Zone FIRST. Look for patterns: "Author:", "By:", "Автор:", names after "©", names on title page lines.
+- If the text is in Russian/Cyrillic, transliterate the author name to Latin script (e.g. "Иванов В.В." → "Ivanov V.V.").
+- If multiple authors, list the primary one (or "First Author et al.").
+- "Unknown" is ONLY acceptable if you have exhaustively searched ALL sections and found ZERO authorship clues. Explain in verdict_reason WHY you could not find the author.
 
-1. SKELETON ANALYSIS (Table of Contents): Do you see a strict taxonomy? Does the author use proprietary terminology? Or is it a banal "Step 1, Step 2" listicle?
+YEAR EXTRACTION RULES (MANDATORY):
+- Look for 4-digit years (1800-2026) near: "©", "copyright", "published", "edition", "ISBN", "год издания", "издательство".
+- If multiple years found, pick the PUBLICATION year (not reprint, not citation year).
+- null is ONLY acceptable if NO year pattern exists anywhere in the surrogate. This is rare — most books have at least a copyright year.
 
-2. THESIS vs SYNTHESIS (Introduction vs Conclusion): Do the deep promises of the introduction match real conclusions? Or did the author over-promise?
+QUALITY ANALYSIS (think step by step inside <think>...</think>):
 
-3. TEXTURE ANALYSIS (Nodal Slices): Estimate Signal-to-Noise ratio in opening paragraphs of major chapters.
-   - PENALTY: personal anecdotes, motivational filler, Wikipedia summaries, "one-idea books".
-   - REWARD: density of definitions, abstract models, non-obvious conclusions.
+1. BIBLIOGRAPHIC FORENSICS: List every author/year/publisher clue you found. Quote the exact line.
+2. SKELETON ANALYSIS (TOC): strict taxonomy? proprietary terminology? or banal listicle?
+3. THESIS vs SYNTHESIS: do introduction promises match conclusion deliveries?
+4. TEXTURE ANALYSIS (Nodal Slices): Signal-to-Noise ratio.
+   PENALTY: anecdotes, motivational filler, Wikipedia rewrites.
+   REWARD: definitions, abstract models, non-obvious conclusions.
+5. DOMAIN CLASSIFICATION: pick ONE narrow area. NOT broad ("science", "psychology"). BE SPECIFIC ("cognitive load theory", "finite element analysis", "mycology of edible fungi").
+6. TAG GENERATION: produce 8-12 tags covering: subject area, methodology, target audience, historical era, key concepts, application domain. Each tag must be specific and useful for filtering.
 
-4. VERDICT (Quality Score 0-100):
-   - 0-30:  Fiction, esoterica, motivational fluff.
-   - 31-60: Secondary literature, banal advice collections.
-   - 61-85: Solid professional or scientific literature.
-   - 86-100: Foundational works, breakthrough concepts.
+VERDICT (Quality Score 0-100):
+  0-30:  Fiction, esoterica, motivational fluff.
+  31-60: Secondary literature, banal advice collections.
+  61-85: Solid professional or scientific literature.
+  86-100: Foundational works, breakthrough concepts.
 
 OUTPUT CONTRACT:
-- All metadata fields MUST be in English. If the surrogate is in another language, translate or transliterate proper nouns.
-- title_en: clean English title string.
-- author_en: English/transliterated author name (omit field if unknown).
-- domain: ONE narrow scientific or professional area (e.g. "behavioral economics", "Lisp metaprogramming", "mycology of edible fungi"). NOT broad ("science", "self-help").
-- tags: 3-5 specific English keywords. NO generic ("book", "writing").
-- verdict_reason: 2-3 English sentences explaining the score.
+- All fields MUST be in English. Translate/transliterate non-English proper nouns.
+- title_en: clean English title.
+- author_en: English/transliterated author name. REQUIRED. "Unknown" only as absolute last resort with explanation.
+- year: integer publication year. null only if truly absent from all sections.
+- domain: ONE narrow domain (e.g. "behavioral economics", "Oberon compiler design").
+- tags: 8-12 specific English keywords. NO generic words ("book", "science", "writing").
+- verdict_reason: 2-3 sentences. If author="Unknown" or year=null, EXPLAIN what you searched and why you failed.
 - conceptual_density / originality / quality_score: integers 0-100.
-- is_fiction_or_water: true if the book is fiction OR motivational fluff OR esoteric, else false.
+- is_fiction_or_water: true for fiction / motivational / esoteric, else false.
 
-Output STRICT JSON after </think>. No prose before, no prose after.
+Output STRICT JSON after </think>.
 
-Return one JSON object shaped like this example:
 {
   "title_en": "Clean English Title",
   "author_en": "Author Name",
+  "year": 2024,
   "domain": "narrow professional domain",
-  "tags": ["specific keyword", "another keyword", "third keyword"],
+  "tags": ["specific keyword", "methodology keyword", "target audience", "era or period", "key concept", "another concept", "technical area", "application area"],
   "is_fiction_or_water": false,
   "conceptual_density": 72,
   "originality": 64,
@@ -70,9 +91,10 @@ Return one JSON object shaped like this example:
 /* Zod-схема для валидации JSON ответа эвалюатора. */
 const evaluationSchema = z.object({
   title_en: z.string().min(1),
-  author_en: z.string().optional(),
+  author_en: z.string().min(1),
+  year: z.number().int().min(1400).max(2100).nullable(),
   domain: z.string().min(1),
-  tags: z.array(z.string()).max(10),
+  tags: z.array(z.string()).min(8).max(12),
   is_fiction_or_water: z.boolean(),
   conceptual_density: z.number().int().min(0).max(100),
   originality: z.number().int().min(0).max(100),
@@ -91,6 +113,8 @@ function buildEvaluatorResponseFormat(): Record<string, unknown> {
         additionalProperties: false,
         required: [
           "title_en",
+          "author_en",
+          "year",
           "domain",
           "tags",
           "is_fiction_or_water",
@@ -101,12 +125,13 @@ function buildEvaluatorResponseFormat(): Record<string, unknown> {
         ],
         properties: {
           title_en: { type: "string", minLength: 1 },
-          author_en: { type: "string" },
+          author_en: { type: "string", minLength: 1 },
+          year: { anyOf: [{ type: "integer", minimum: 1400, maximum: 2100 }, { type: "null" }] },
           domain: { type: "string", minLength: 1 },
           tags: {
             type: "array",
-            minItems: 3,
-            maxItems: 10,
+            minItems: 8,
+            maxItems: 12,
             items: { type: "string", minLength: 1 },
           },
           is_fiction_or_water: { type: "boolean" },

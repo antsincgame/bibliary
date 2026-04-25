@@ -53,6 +53,11 @@ export async function openTagCloudModal(deps) {
   const overlay = buildOverlay();
   const title = el("div", { class: "qdrant-dialog-title" }, t("library.tagCloud.title"));
   const matchCounter = el("span", { class: "tag-cloud-match-count" }, "");
+  const searchInput = el("input", {
+    type: "text",
+    class: "lib-catalog-search tag-cloud-search",
+    placeholder: t("library.tagCloud.search.placeholder"),
+  });
 
   const cloud = el("div", { class: "tag-cloud-container" });
 
@@ -82,6 +87,13 @@ export async function openTagCloudModal(deps) {
     pillMap.set(tag, pill);
     cloud.appendChild(pill);
   }
+
+  searchInput.addEventListener("input", () => {
+    const needle = String(searchInput.value || "").trim().toLowerCase();
+    for (const [tag, pill] of pillMap.entries()) {
+      pill.hidden = needle.length > 0 && !tag.toLowerCase().includes(needle);
+    }
+  });
 
   function updateMatchCount() {
     if (selected.size === 0) {
@@ -134,7 +146,7 @@ export async function openTagCloudModal(deps) {
     class: "qdrant-dialog ui-dialog tag-cloud-dialog",
     role: "dialog",
     "aria-modal": "true",
-  }, [title, matchCounter, cloud, actions]);
+  }, [title, searchInput, matchCounter, cloud, actions]);
 
   dialog.addEventListener("click", (e) => e.stopPropagation());
   overlay.appendChild(dialog);

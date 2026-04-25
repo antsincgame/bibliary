@@ -8,10 +8,9 @@
  */
 
 import { promises as fs } from "fs";
-import * as os from "os";
 import * as path from "path";
-import { probeBooks } from "../electron/lib/scanner/parsers/index.js";
 import { convertBookToMarkdown, parseFrontmatter } from "../electron/lib/library/md-converter.js";
+import { collectProbeBooksFromRoots, getSourceRootsFromArgv, argValues } from "./e2e-source-roots.js";
 
 const COLOR = {
   reset: "\x1b[0m",
@@ -23,26 +22,22 @@ const COLOR = {
   bold: "\x1b[1m",
 };
 
-function pickArg(argv: string[], flag: string): string | null {
-  const i = argv.indexOf(flag);
-  return i >= 0 && i + 1 < argv.length ? argv[i + 1] : null;
-}
-
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
-  const downloads = pickArg(argv, "--downloads") ?? path.join(os.homedir(), "Downloads");
+  const roots = getSourceRootsFromArgv(argv, path.join(process.cwd(), "data", "library"));
+  const samplePerFormat = Math.max(1, Number(argValues(argv, "--sample-per-format")[0] ?? "2"));
   const outDir = path.resolve(process.cwd(), "release", "smoke-md-converter");
   await fs.mkdir(outDir, { recursive: true });
 
   console.log(`${COLOR.bold}=== md-converter smoke test ===${COLOR.reset}`);
-  console.log(`Downloads: ${downloads}`);
+  console.log(`Roots    : ${roots.join(" | ")}`);
   console.log(`Out      : ${outDir}\n`);
 
-  const all = await probeBooks(downloads, 4, false);
-  const eligible = all.filter((b) => ["pdf", "epub", "fb2", "txt", "docx"].includes(b.ext) && b.sizeBytes <= 50 * 1024 * 1024);
+  const all = await collectProbeBooksFromRoots(roots, 4, false);
+  const eligible = all.filter((b) => ["pdf", "epub", "fb2", "txt", "docx", "doc", "rtf", "djvu", "html", "htm", "odt"].includes(b.ext) && b.sizeBytes <= 50 * 1024 * 1024);
 
-  /* По одной книге каждого формата, выбирая средние по размеру (не самые
-     мелкие чеки и не самые жирные сборники). */
+  /* По несколько книг каждого формата, выбирая средние по размеру
+     вместо крайних случаев-монстров и микрофайлов. */
   const byFormat = new Map<string, typeof eligible>();
   for (const b of eligible) {
     const arr = byFormat.get(b.ext) ?? [];
@@ -52,11 +47,33 @@ async function main(): Promise<void> {
   const samples: typeof eligible = [];
   for (const [, arr] of byFormat) {
     arr.sort((a, b) => a.sizeBytes - b.sizeBytes);
-    samples.push(arr[Math.floor(arr.length / 2)]);
+    if (arr.length === 0) continue;
+    if (arr.length <= samplePerFormat) {
+      samples.push(...arr);
+      continue;
+    }
+    const step = (arr.length - 1) / Math.max(1, samplePerFormat - 1);
+    const picked = new Set<number>();
+    for (let i = 0; i < samplePerFormat; i++) {
+      picked.add(Math.round(i * step));
+    }
+    for (const index of picked) samples.push(arr[index]);
   }
 
   let passed = 0;
   let failed = 0;
+  const report: Array<{
+    fileName: string;
+    absPath: string;
+    ext: string;
+    chapterCount?: number;
+    wordCount?: number;
+    imageCount?: number;
+    illustrationCount?: number;
+    warnings?: string[];
+    status: "pass" | "fail";
+    errors?: string[];
+  }> = [];
   for (const book of samples) {
     const sizeMb = (book.sizeBytes / 1024 / 1024).toFixed(2);
     process.stdout.write(`${COLOR.cyan}[${book.ext}]${COLOR.reset} ${book.fileName} ${COLOR.dim}(${sizeMb} MB)${COLOR.reset} ... `);
@@ -86,24 +103,71 @@ async function main(): Promise<void> {
       for (const img of result.images) {
         if (!result.markdown.includes(`[${img.id}]: data:`)) errors.push(`image ref ${img.id} missing in markdown`);
       }
+      if (result.images.some((img) => img.id === "img-cover") && !result.markdown.includes("![Cover][img-cover]")) {
+        errors.push("cover not inlined in body");
+      }
+      for (const img of result.images.filter((entry) => entry.id !== "img-cover")) {
+        const inlineRe = new RegExp(`!\\[[^\\]]*\\]\\[${img.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\]`);
+        if (!inlineRe.test(result.markdown)) errors.push(`illustration ${img.id} not inlined in body`);
+      }
 
       if (errors.length === 0) {
         console.log(`${COLOR.green}PASS${COLOR.reset} ${COLOR.dim}${dur}s, ${result.chapters.length}ch, ${result.meta.wordCount}w, ${result.images.length}img, md=${(result.markdown.length / 1024).toFixed(1)}KB${COLOR.reset}`);
         passed++;
+        report.push({
+          fileName: book.fileName,
+          absPath: book.absPath,
+          ext: book.ext,
+          chapterCount: result.chapters.length,
+          wordCount: result.meta.wordCount,
+          imageCount: result.images.length,
+          illustrationCount: result.images.filter((img) => img.id !== "img-cover").length,
+          warnings: result.meta.warnings,
+          status: "pass",
+        });
       } else {
         console.log(`${COLOR.red}FAIL${COLOR.reset}`);
         for (const e of errors) console.log(`    ${COLOR.red}✗${COLOR.reset} ${e}`);
         failed++;
+        report.push({
+          fileName: book.fileName,
+          absPath: book.absPath,
+          ext: book.ext,
+          chapterCount: result.chapters.length,
+          wordCount: result.meta.wordCount,
+          imageCount: result.images.length,
+          illustrationCount: result.images.filter((img) => img.id !== "img-cover").length,
+          warnings: result.meta.warnings,
+          status: "fail",
+          errors,
+        });
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.log(`${COLOR.red}ERROR${COLOR.reset}\n    ${COLOR.dim}${msg}${COLOR.reset}`);
       failed++;
+      report.push({
+        fileName: book.fileName,
+        absPath: book.absPath,
+        ext: book.ext,
+        status: "fail",
+        errors: [msg],
+      });
     }
   }
 
+  const reportPath = path.join(outDir, `${new Date().toISOString().replace(/[:.]/g, "-")}-report.json`);
+  await fs.writeFile(reportPath, JSON.stringify({
+    roots,
+    samplePerFormat,
+    discovered: all.length,
+    sampled: samples.length,
+    report,
+  }, null, 2), "utf8");
+
   console.log(`\n${COLOR.bold}Result:${COLOR.reset} ${passed} passed, ${failed} failed`);
   console.log(`Artifacts in: ${outDir}`);
+  console.log(`Report    : ${reportPath}`);
   process.exit(failed > 0 ? 1 : 0);
 }
 

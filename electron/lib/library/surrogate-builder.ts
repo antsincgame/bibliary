@@ -22,6 +22,8 @@ const MAX_NODAL_CHAPTERS = 5;
 const NODAL_PARAGRAPHS_PER_CHAPTER = 2;
 const MAX_TOC_CHAPTERS = 240;
 const MAX_NODAL_PARAGRAPH_WORDS = 250;
+const META_ZONE_LINES = 40;
+const MAX_META_ZONE_HITS = 20;
 
 function wordCount(text: string): number {
   return text.split(/\s+/).filter(Boolean).length;
@@ -85,6 +87,54 @@ function flattenParagraphs(chapters: ConvertedChapter[]): string[] {
     }
   }
   return out;
+}
+
+/**
+ * Extracts a "Metadata Zone" — lines likely to contain author, year, ISBN,
+ * publisher, copyright. Sources: first/last N lines of full text (title page
+ * and colophon) + grep for bibliographic patterns anywhere in the text.
+ */
+const META_PATTERNS = [
+  /(?:copyright|©)\s*.{2,80}/i,
+  /isbn[\s:\-]*[\dxX\-]{10,17}/i,
+  /\b(?:author|автор|by)\s*[:：]\s*.{2,60}/i,
+  /\b(?:published|издательство|publisher|press|verlag)\s*[:：]?\s*.{2,60}/i,
+  /\b(?:edition|издание|год\s*издания|year)\s*[:：]?\s*\d{4}/i,
+  /\b(?:19|20)\d{2}\s*(?:г\.?|год|year|edition)/i,
+];
+
+function buildMetadataZone(chapters: ConvertedChapter[]): string {
+  const allLines: string[] = [];
+  for (const ch of chapters) {
+    for (const p of ch.paragraphs) {
+      for (const line of p.split(/\n/)) {
+        const t = line.trim();
+        if (t.length > 0) allLines.push(t);
+      }
+    }
+  }
+  if (allLines.length === 0) return "";
+
+  const seen = new Set<string>();
+  const hits: string[] = [];
+  const MAX_LINE_LEN = 200;
+
+  const headLines = allLines.slice(0, META_ZONE_LINES).filter((l) => l.length <= MAX_LINE_LEN);
+  const tailLines = allLines.slice(-META_ZONE_LINES).filter((l) => l.length <= MAX_LINE_LEN);
+  for (const line of [...headLines, ...tailLines]) {
+    if (!seen.has(line)) { seen.add(line); hits.push(line); }
+  }
+
+  for (const line of allLines) {
+    if (hits.length >= headLines.length + tailLines.length + MAX_META_ZONE_HITS) break;
+    if (seen.has(line) || line.length > MAX_LINE_LEN) continue;
+    if (META_PATTERNS.some((rx) => rx.test(line))) {
+      seen.add(line);
+      hits.push(line);
+    }
+  }
+
+  return hits.length > 0 ? hits.join("\n") : "";
 }
 
 /** Строит TOC: одна строка на главу `N. Название`. */
@@ -160,6 +210,8 @@ export function buildSurrogate(chapters: ConvertedChapter[]): SurrogateDocument 
     };
   }
 
+  const metaZone = buildMetadataZone(chapters);
+
   const flat = flattenParagraphs(chapters);
   const intro = takeFirstWords(flat, TARGET_INTRO_WORDS);
   const outro = takeLastWords(flat, TARGET_OUTRO_WORDS);
@@ -172,6 +224,9 @@ export function buildSurrogate(chapters: ConvertedChapter[]): SurrogateDocument 
   });
 
   const parts: string[] = [];
+  if (metaZone.length > 0) {
+    parts.push("# Metadata Zone (title page, colophon, copyright, ISBN — scan for author & year)", metaZone, "");
+  }
   parts.push("# Table of Contents", buildToc(chapters), "");
   parts.push("# Introduction (first ~1000 words)", intro.text, "");
   parts.push("# Conclusion (last ~1000 words)", outro.text, "");

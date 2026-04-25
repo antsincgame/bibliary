@@ -133,9 +133,9 @@ function tryParseJson(raw: string): unknown {
   return JSON.parse(cleaned);
 }
 
-function makeId(essence: string, bookSourcePath: string, chapterIndex: number): string {
+function makeId(bookSourcePath: string, chapterIndex: number, partN: number, partTotal: number, chunkText: string): string {
   const h = createHash("sha1")
-    .update(`${bookSourcePath}|${chapterIndex}|${essence}`)
+    .update(`${bookSourcePath}|${chapterIndex}|${partN}|${partTotal}|${chunkText}`)
     .digest("hex");
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
 }
@@ -306,7 +306,7 @@ async function extractOneChunk(
 
   const delta: DeltaKnowledge = {
     ...validated.data,
-    id: makeId(validated.data.essence, chunk.bookSourcePath, chunk.chapterIndex),
+    id: makeId(chunk.bookSourcePath, chunk.chapterIndex, chunk.partN, chunk.partTotal, chunk.text),
     bookSourcePath: chunk.bookSourcePath,
     bookTitle: chunk.bookTitle,
     chapterIndex: chunk.chapterIndex,

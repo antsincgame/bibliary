@@ -42,6 +42,8 @@ import {
   upsertBook,
   getCacheDbPath,
   queryTagStats,
+  streamBookIdsByStatus,
+  getBooksByIds,
   type CatalogQuery,
 } from "../lib/library/cache-db.js";
 import { convertBookToMarkdown } from "../lib/library/md-converter.js";
@@ -72,7 +74,7 @@ import type { BookCatalogMeta, BookStatus } from "../lib/library/types.js";
 
 const SUPPORTED_FILE_FILTERS = [
   { name: "Books", extensions: ["pdf", "epub", "fb2", "docx", "doc", "rtf", "odt", "html", "htm", "txt", "djvu"] },
-  { name: "Archives (will be unpacked)", extensions: ["zip", "cbz"] },
+  { name: "Archives (will be unpacked)", extensions: ["zip", "cbz", "rar", "cbr", "7z"] },
   { name: "All files", extensions: ["*"] },
 ];
 
@@ -365,6 +367,26 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
       return { ok: true };
     }
   );
+  ipcMain.handle("library:reevaluate-all", async (): Promise<{ queued: number }> => {
+    const statuses: BookStatus[] = ["evaluated", "indexed", "crystallizing"];
+    const pageSize = 500;
+    let cursor: string | null = null;
+    let queued = 0;
+    while (true) {
+      const { ids, nextCursor } = streamBookIdsByStatus(statuses, pageSize, cursor);
+      if (ids.length === 0) break;
+      const rows = getBooksByIds(ids);
+      for (const meta of rows) {
+        const reset: BookCatalogMeta = { ...meta, status: "imported" as BookStatus };
+        upsertBook(reset, meta.mdPath);
+        enqueueBook(meta.id);
+        queued += 1;
+      }
+      if (!nextCursor) break;
+      cursor = nextCursor;
+    }
+    return { queued };
+  });
   ipcMain.handle(
     "library:evaluator-set-model",
     async (_e, modelKey: string | null): Promise<boolean> => {
