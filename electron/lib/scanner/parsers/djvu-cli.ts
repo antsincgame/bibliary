@@ -21,6 +21,16 @@ function candidateRoots(): string[] {
     roots.add(path.join(process.resourcesPath, "vendor", "djvulibre", "win32-x64"));
     roots.add(path.join(process.resourcesPath, "vendor", "djvulibre"));
   }
+  if (process.platform === "win32") {
+    const pf86 = process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)";
+    const pf64 = process.env["ProgramFiles"] ?? "C:\\Program Files";
+    for (const base of [pf86, pf64]) {
+      roots.add(path.join(base, "DjVuLibre"));
+      roots.add(path.join(base, "DjView"));
+    }
+    const localApp = process.env["LOCALAPPDATA"] ?? "";
+    if (localApp) roots.add(path.join(localApp, "Programs", "DjVuLibre"));
+  }
   return [...roots];
 }
 
@@ -84,7 +94,7 @@ export async function runDdjvu(filePath: string, pageIndex: number, dpi: number,
   const out = path.join(tmpdir(), `bibliary-djvu-${randomUUID()}.tif`);
   const page = Math.max(1, pageIndex + 1);
   try {
-    await runBinary(tool.binary, ["-format=tiff", `-page=${page}`, `-dpi=${Math.max(72, dpi)}`, filePath, out], signal);
+    await runBinary(tool.binary, ["-format=tiff", `-page=${page}`, `-scale=${Math.max(72, dpi)}`, filePath, out], signal);
     return await fs.readFile(out);
   } finally {
     await fs.unlink(out).catch((err) => console.error("[djvu-cli/renderPage] unlink Error:", err));

@@ -49,7 +49,8 @@
     "test:agent-internals": "tsx scripts/test-agent-internals.ts",
     "test:agent-memory-live": "tsx scripts/test-agent-memory-live.ts",
     "lint": "tsc -p tsconfig.electron.json --noEmit && eslint \"renderer/**/*.js\" --ignore-pattern \"renderer/vendor/**\" --max-warnings=0",
-    "lint:fix": "eslint \"renderer/**/*.js\" --ignore-pattern \"renderer/vendor/**\" --fix"
+    "lint:fix": "eslint \"renderer/**/*.js\" --ignore-pattern \"renderer/vendor/**\" --fix",
+    "setup:djvulibre": "node scripts/download-djvulibre-win.cjs"
   },
   "dependencies": {
     "@lmstudio/sdk": "^1.5.0",
