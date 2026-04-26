@@ -1,5 +1,6 @@
-import { app, BrowserWindow, session, type OnHeadersReceivedListenerDetails } from "electron";
+import { app, BrowserWindow, session, protocol, net, type OnHeadersReceivedListenerDetails } from "electron";
 import * as path from "path";
+import { promises as fs } from "fs";
 import {
   registerAllIpcHandlers,
   abortAllIngests,
@@ -29,6 +30,8 @@ import { SHUTDOWN_FLUSH_TIMEOUT_MS } from "./lib/resilience/constants";
 import { getWindowsParentExecutablePath, resolveAppDataDir } from "./lib/app-data-dir.js";
 import { closeCacheDb } from "./lib/library/cache-db.js";
 import { killAllSynthChildren } from "./ipc/dataset-v2.ipc.js";
+import { resolveBlobFromUrl, getBlobsRoot } from "./lib/library/library-store.js";
+import { resolveLibraryRoot } from "./lib/library/paths.js";
 
 process.on("unhandledRejection", (reason) => {
   console.error("[main] unhandledRejection:", reason);
@@ -68,7 +71,7 @@ const CSP_HEADER = [
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
-  "img-src 'self' data: https:",
+  "img-src 'self' data: https: bibliary-asset:",
   "connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com http://localhost:* http://127.0.0.1:* https:",
   "object-src 'none'",
   "base-uri 'self'",
@@ -83,6 +86,22 @@ function applyCsp(): void {
       callback({ responseHeaders: headers });
     }
   );
+}
+
+function registerAssetProtocol(): void {
+  protocol.handle("bibliary-asset", async (request) => {
+    const url = request.url;
+    const libraryRoot = resolveLibraryRoot();
+    const resolved = await resolveBlobFromUrl(libraryRoot, url);
+    if (!resolved) {
+      return new Response("Not Found", { status: 404 });
+    }
+    const blobsBase = path.resolve(getBlobsRoot(libraryRoot));
+    if (!path.resolve(resolved).startsWith(blobsBase)) {
+      return new Response("Forbidden", { status: 403 });
+    }
+    return net.fetch(`file://${resolved}`);
+  });
 }
 
 function createWindow(): void {
@@ -110,6 +129,19 @@ function createWindow(): void {
     mainWindow = null;
   });
 }
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "bibliary-asset",
+    privileges: {
+      standard: false,
+      secure: true,
+      supportFetchAPI: true,
+      bypassCSP: false,
+      stream: true,
+    },
+  },
+]);
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -170,6 +202,7 @@ if (!gotLock) {
        LLM calls) symmetrically with dataset/forge. */
     registerExtractionPipeline();
     applyCsp();
+    registerAssetProtocol();
     startWatchdog(() => mainWindow);
     registerAllIpcHandlers(() => mainWindow);
     /* Library subsystem: подписывает evaluator-queue на broadcast в renderer

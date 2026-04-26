@@ -11,6 +11,7 @@ import { fmtWords, fmtQuality } from "./format.js";
 import { guardAndCrystallize, cancelBatchExtraction } from "./batch-actions.js";
 import { openBook } from "./reader.js";
 import { openTagCloudModal } from "./tag-cloud.js";
+import { mountCollectionViews } from "./collection-views.js";
 
 /** @type {Promise<void> | null} */
 let catalogLoadPromise = null;
@@ -277,6 +278,31 @@ export function buildCatalogToolbar(root) {
     onclick: () => void openTagCloudModal({ root, renderCatalogTable }),
   }, t("library.catalog.btn.tagCloud"));
 
+  let collectionsVisible = false;
+  const collectionsBtn = el("button", {
+    type: "button", class: "lib-btn lib-btn-ghost",
+    onclick: () => {
+      collectionsVisible = !collectionsVisible;
+      const panel = root.querySelector(".lib-collections");
+      if (panel) {
+        panel.remove();
+        collectionsVisible = false;
+      } else {
+        const body = root.querySelector(".lib-catalog-body");
+        if (body) {
+          mountCollectionViews(/** @type {HTMLElement} */ (body), (bookIds) => {
+            if (bookIds.length === 0) {
+              CATALOG.filters.filterBookIds = null;
+            } else {
+              CATALOG.filters.filterBookIds = new Set(bookIds);
+            }
+            renderCatalogTable(root);
+          });
+        }
+      }
+    },
+  }, t("library.catalog.btn.collections") || "Коллекции");
+
   const fictionLabel = el("label", {
     class: "lib-catalog-fiction-label",
     title: t("library.catalog.filter.hideFiction"),
@@ -298,6 +324,7 @@ export function buildCatalogToolbar(root) {
   return el("div", { class: "lib-catalog-toolbar lib-catalog-toolbar-compact" }, [
     searchInput,
     tagCloudBtn,
+    collectionsBtn,
     el("div", { class: "lib-catalog-quality-wrap" }, [
       el("label", { class: "lib-catalog-quality-label" }, t("library.catalog.filter.quality.label")),
       qualitySlider, qualityVal,

@@ -18,13 +18,16 @@
 import { promises as fs } from "fs";
 import * as path from "path";
 import { detectExt, type SupportedExt } from "../scanner/parsers/index.js";
-import { convertBookToMarkdown, replaceFrontmatter } from "./md-converter.js";
+import { convertBookToMarkdown, replaceFrontmatter, injectCasImageRefs } from "./md-converter.js";
 import { getLibraryRoot } from "./paths.js";
 import { upsertBook, getBookById, getKnownSha256s } from "./cache-db.js";
 import { extractArchive, isArchive, cleanupExtractedDir } from "./archive-extractor.js";
 import { SUPPORTED_BOOK_EXTS, type BookCatalogMeta, type SupportedBookFormat } from "./types.js";
-import { resolveStoredBookPaths } from "./storage-contract.js";
+import { resolveStoredBookPaths, resolveHumanBookPaths } from "./storage-contract.js";
 import { computeFileSha256, bookIdFromSha } from "./sha-stream.js";
+import { putBlob, getBlobsRoot } from "./library-store.js";
+import { extractSphereFromImportPath } from "./path-sanitizer.js";
+import { processIllustrations } from "./illustration-worker.js";
 import { findNearDuplicate, registerForNearDup } from "./near-dup-detector.js";
 import {
   computeRevisionScore,
@@ -61,6 +64,8 @@ export interface ImportFolderOptions {
   scanArchives?: boolean;
   /** OCR-флаг для PDF (медленно). По умолчанию false. */
   ocrEnabled?: boolean;
+  /** Import root folder (для определения Sphere из первого сегмента пути). */
+  importRoot?: string;
   /**
    * Макс. глубина вложенности относительно `folderPath` (см. file-walker).
    * По умолчанию 16. Для «только три уровня папок» передай 3.
@@ -248,7 +253,7 @@ export async function importBookFromFile(
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return persistFailedImport(absPath, ext as SupportedBookFormat, sha256, msg, warnings, opts.sourceArchive);
+    return persistFailedImport(absPath, ext as SupportedBookFormat, sha256, msg, warnings, opts.sourceArchive, (opts as ImportFolderOptions).importRoot);
   }
   /* Накопленные warnings — единый список. И в `ImportResult.warnings`
      (transient, для UI), и в `finalMeta.warnings` (persistent, в
@@ -308,13 +313,30 @@ export async function importBookFromFile(
     }
   }
 
-  /* Подготавливаем папку library/{slug}/. Slug = meta.id (16 hex SHA content). */
+  /* Save images to CAS (.blobs/) and set assetUrl on each ImageRef. */
   const root = await getLibraryRoot();
-  const stored = resolveStoredBookPaths(root, convResult.meta.id, convResult.meta.originalFormat);
+  for (const img of convResult.images) {
+    if (img.buffer.length > 0) {
+      try {
+        const ref = await putBlob(root, img.buffer, img.mimeType);
+        img.assetUrl = ref.assetUrl;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        warnings.push(`CAS putBlob failed for ${img.id}: ${msg}`);
+      }
+    }
+  }
+
+  /* Rebuild markdown with CAS asset URLs (no Base64). */
+  convResult.markdown = rebuildMarkdownAfterCas(convResult);
+
+  /* Human-readable path: {Sphere}/{Author_Title}/{Title}.md */
+  const importRoot = (opts as ImportFolderOptions).importRoot;
+  const stored = await resolveHumanBookPaths(root, convResult.meta, absPath, importRoot);
   const bookDir = stored.bookDir;
   await fs.mkdir(bookDir, { recursive: true });
 
-  /* Копируем оригинал. Имя файла нормализуем как `original.{ext}`. */
+  /* Copy original file. */
   const originalDest = stored.originalPath;
   try {
     await fs.copyFile(absPath, originalDest);
@@ -323,8 +345,7 @@ export async function importBookFromFile(
     return { outcome: "failed", warnings, error: `copy-original failed: ${msg}`, sourceArchive: opts.sourceArchive };
   }
 
-  /* Near-duplicate check (PDF/EPUB одной книги): только soft-warning, без
-     автомёрджа. Пользователь увидит подсказку в UI и сам решит судьбу. */
+  /* Near-duplicate soft-warning. */
   const nearDupId = findNearDuplicate(convResult.meta);
   if (nearDupId && nearDupId !== convResult.meta.id) {
     warnings.push(
@@ -332,16 +353,20 @@ export async function importBookFromFile(
     );
   }
 
-  /* Финальная meta: originalFile = "original.{ext}", sourceArchive,
-     warnings — тот же агрегированный список (parser + near-dup). */
+  /* Determine sphere from import root. */
+  const sphere = importRoot
+    ? extractSphereFromImportPath(absPath, importRoot)
+    : "unsorted";
+
   const finalMeta: BookCatalogMeta = {
     ...convResult.meta,
     originalFile: stored.originalFile,
     sourceArchive: opts.sourceArchive,
+    sphere,
     warnings: warnings.length > 0 ? [...warnings] : undefined,
   };
 
-  /* Перестраиваем markdown с финальной meta (новый frontmatter). */
+  /* Write markdown with final meta. */
   const mdPath = stored.mdPath;
   const finalMd = rebuildMarkdownWithFinalMeta(convResult.markdown, finalMeta);
   try {
@@ -351,9 +376,44 @@ export async function importBookFromFile(
     return { outcome: "failed", warnings, error: `write book.md failed: ${msg}`, sourceArchive: opts.sourceArchive };
   }
 
+  /* Write meta.json manifest. */
+  try {
+    const metaJsonPath = path.join(bookDir, "meta.json");
+    await fs.writeFile(metaJsonPath, JSON.stringify(finalMeta, null, 2), "utf-8");
+  } catch {
+    warnings.push("meta.json write failed (non-critical)");
+  }
+
+  /* Write illustrations.json stub (filled by Vision in Phase 2). */
+  try {
+    const illustrationsPath = path.join(bookDir, "illustrations.json");
+    const illustrationData = convResult.images
+      .filter((img) => img.assetUrl)
+      .map((img) => ({
+        id: img.id,
+        sha256: img.assetUrl!.replace("bibliary-asset://sha256/", ""),
+        mimeType: img.mimeType,
+        bytes: img.buffer.length,
+        role: img.id === "img-cover" ? "cover" : "illustration",
+        caption: img.caption ?? null,
+      }));
+    await fs.writeFile(illustrationsPath, JSON.stringify(illustrationData, null, 2), "utf-8");
+  } catch {
+    warnings.push("illustrations.json write failed (non-critical)");
+  }
+
   upsertBook(finalMeta, mdPath);
   registerForNearDup(finalMeta, finalMeta.id);
   registerForRevisionDedup(finalMeta);
+
+  /* Fire-and-forget Vision OCR for illustrations.json enrichment.
+     Runs in background after successful import; does not block the import pipeline. */
+  if (convResult.images.length > 0) {
+    const blobsRoot = getBlobsRoot(root);
+    void processIllustrations(bookDir, blobsRoot, opts.signal).catch(() => {
+      /* Non-critical: background Vision OCR failed silently */
+    });
+  }
 
   return { outcome: "added", bookId: finalMeta.id, meta: finalMeta, warnings, sourceArchive: opts.sourceArchive };
 }
@@ -363,6 +423,11 @@ function rebuildMarkdownWithFinalMeta(markdown: string, finalMeta: BookCatalogMe
   return replaceFrontmatter(markdown, finalMeta);
 }
 
+/** Rebuild markdown to inject CAS asset URLs into the image refs section. */
+function rebuildMarkdownAfterCas(conv: { meta: BookCatalogMeta; images: import("./types.js").ImageRef[]; markdown: string }): string {
+  return injectCasImageRefs(conv.markdown, conv.images, conv.meta);
+}
+
 async function persistFailedImport(
   absPath: string,
   format: SupportedBookFormat,
@@ -370,6 +435,7 @@ async function persistFailedImport(
   error: string,
   warnings: string[],
   sourceArchive?: string,
+  importRoot?: string,
 ): Promise<ImportResult> {
   const failureWarning = `parser failed: ${error}`;
   const metaWarnings = [...warnings, failureWarning];
@@ -380,6 +446,7 @@ async function persistFailedImport(
     originalFile: `original.${format}`,
     originalFormat: format,
     sourceArchive,
+    sphere: importRoot ? extractSphereFromImportPath(absPath, importRoot) : "unsorted",
     title: fnMeta?.title ?? path.parse(absPath).name,
     author: fnMeta?.author,
     year: fnMeta?.year,
@@ -391,7 +458,7 @@ async function persistFailedImport(
 
   try {
     const root = await getLibraryRoot();
-    const stored = resolveStoredBookPaths(root, meta.id, format);
+    const stored = await resolveHumanBookPaths(root, meta, absPath, importRoot);
     await fs.mkdir(stored.bookDir, { recursive: true });
     await fs.copyFile(absPath, stored.originalPath);
     const bodyTitle = meta.title.replace(/\r?\n/g, " ").trim() || path.parse(absPath).name;
@@ -469,6 +536,10 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
   const stat = await fs.stat(folderPath);
   if (!stat.isDirectory()) {
     throw new Error(`importFolderToLibrary: not a directory: ${folderPath}`);
+  }
+
+  if (!opts.importRoot) {
+    opts.importRoot = folderPath;
   }
 
   const result: ImportFolderResult = {
@@ -684,6 +755,7 @@ async function runImportTaskWithTimeout(
         visionMetaEnabled: opts.visionMetaEnabled,
         visionModelKey: opts.visionModelKey,
         onVisionMetaEvent: opts.onVisionMetaEvent,
+        importRoot: opts.importRoot,
       }),
       new Promise<ImportResult>((_, reject) => {
         localCtl.signal.addEventListener("abort", () => {

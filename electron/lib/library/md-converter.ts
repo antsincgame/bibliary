@@ -5,13 +5,12 @@
  *   1. YAML frontmatter с lean-метаданными (читается SQLite-кэшем при rebuild)
  *   2. Опциональную секцию `## Evaluator Reasoning` с CoT эпистемолога
  *   3. Структурированный текст с заголовками глав
- *   4. Reference links для картинок (Base64 Data URIs в самом конце файла)
+ *   4. Reference links на CAS assets (bibliary-asset://sha256/...)
  *
- * Контракт читаемости: длинные Base64-строки ВСЕГДА в конце документа,
- * чтобы человек или редактор мог листать главы без зависаний.
+ * Картинки НЕ встраиваются как Base64. Буферы передаются caller'у (import.ts),
+ * который сохраняет их в CAS (.blobs/) и проставляет assetUrl перед записью.
  *
- * Контракт CPU/GPU: эта функция -- чистая CPU-задача. Безопасно вызывать
- * параллельно с GPU-кристаллизацией (LM Studio).
+ * Контракт CPU/GPU: эта функция -- чистая CPU-задача.
  */
 
 import * as path from "path";
@@ -61,6 +60,7 @@ function buildFrontmatter(meta: BookCatalogMeta): string {
   lines.push(`originalFile: ${escapeYaml(meta.originalFile)}`);
   lines.push(`originalFormat: ${meta.originalFormat}`);
   if (meta.sourceArchive) lines.push(`sourceArchive: ${escapeYaml(meta.sourceArchive)}`);
+  if (meta.sphere) lines.push(`sphere: ${escapeYaml(meta.sphere)}`);
   // bibliographic
   lines.push(`title: ${escapeYaml(meta.title)}`);
   if (meta.author) lines.push(`author: ${escapeYaml(meta.author)}`);
@@ -180,6 +180,7 @@ export function replaceFrontmatter(markdown: string, newMeta: BookCatalogMeta): 
 const REASONING_HEADER = "## Evaluator Reasoning";
 const REASONING_FOOTER = "<!-- /evaluator-reasoning -->";
 const IMAGE_REFS_MARKER = "<!-- Image references (Base64 Data URIs) -->";
+const IMAGE_REFS_MARKER_CAS = "<!-- Image references (CAS asset links) -->";
 const CHAPTER_RE = /^## (?!Evaluator Reasoning)(.+)$/;
 
 /**
@@ -207,10 +208,10 @@ export function parseBookMarkdownChapters(markdown: string): ConvertedChapter[] 
       : -1;
     if (reasoningEnd !== -1) rest = rest.slice(0, reasoningStart) + rest.slice(reasoningEnd);
   }
-  /* Отрезаем секцию image refs (всё после маркера -- Base64 Data URIs). */
-  const imgIdx = rest.indexOf(IMAGE_REFS_MARKER);
+  /* Отрезаем секцию image refs (Base64 или CAS asset links). */
+  let imgIdx = rest.indexOf(IMAGE_REFS_MARKER_CAS);
+  if (imgIdx === -1) imgIdx = rest.indexOf(IMAGE_REFS_MARKER);
   if (imgIdx !== -1) {
-    /* Поднимаемся до начала "---" разделителя перед маркером. */
     const sep = rest.lastIndexOf("\n---\n", imgIdx);
     rest = sep !== -1 ? rest.slice(0, sep) : rest.slice(0, imgIdx);
   }
@@ -247,6 +248,34 @@ export function parseBookMarkdownChapters(markdown: string): ConvertedChapter[] 
   }
   flush();
   return chapters;
+}
+
+/**
+ * Перестраивает секцию image refs в markdown с CAS asset URLs.
+ * Вызывается из import.ts ПОСЛЕ putBlob (когда img.assetUrl заполнен).
+ *
+ * Логика:
+ *   1. Удаляет старую секцию image refs (если была — от предыдущего прогона).
+ *   2. Добавляет новую секцию с bibliary-asset://sha256/... ссылками.
+ *   3. Заменяет frontmatter на finalMeta.
+ */
+export function injectCasImageRefs(markdown: string, images: ImageRef[], meta: BookCatalogMeta): string {
+  // Strip existing image refs section (both markers)
+  let body = markdown;
+  let casIdx = body.indexOf(IMAGE_REFS_MARKER_CAS);
+  let oldIdx = casIdx === -1 ? body.indexOf(IMAGE_REFS_MARKER) : casIdx;
+  if (oldIdx !== -1) {
+    const sep = body.lastIndexOf("\n---\n", oldIdx);
+    body = sep !== -1 ? body.slice(0, sep) : body.slice(0, oldIdx);
+    body = body.replace(/\n+$/, "\n");
+  }
+
+  // Build new refs section
+  const refs = buildImageRefs(images);
+
+  // Replace frontmatter with final meta
+  const withFm = replaceFrontmatter(`${body}${refs}`, meta);
+  return withFm;
 }
 
 /**
@@ -310,17 +339,19 @@ function buildBody(chapters: ConvertedChapter[], images: ImageRef[]): string {
 }
 
 /**
- * Секция reference-links в самом конце файла. Каждая ссылка -- одна длинная
- * строка с Data URI. Разделители-комментарии помогают человеку быстро
- * прыгнуть до начала галереи.
+ * Секция reference-links в самом конце файла.
+ * Картинки ссылаются через bibliary-asset:// на CAS blobs.
+ * Base64 Data URI больше не используются.
  */
 function buildImageRefs(images: ImageRef[]): string {
   if (images.length === 0) return "";
-  const parts: string[] = ["", "---", "", "<!-- Image references (Base64 Data URIs) -->"];
+  const parts: string[] = ["", "---", "", "<!-- Image references (CAS asset links) -->"];
   for (const img of images) {
-    const b64 = img.buffer.toString("base64");
-    parts.push(`[${img.id}]: data:${img.mimeType};base64,${b64}`);
+    if (img.assetUrl) {
+      parts.push(`[${img.id}]: ${img.assetUrl}`);
+    }
   }
+  if (parts.length <= 4) return "";
   return parts.join("\n") + "\n";
 }
 

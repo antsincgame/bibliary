@@ -42,9 +42,15 @@ import {
   upsertBook,
   getCacheDbPath,
   queryTagStats,
+  queryByDomain,
+  queryByAuthor,
+  queryByYear,
+  queryBySphere,
+  queryByTag,
   streamBookIdsByStatus,
   getBooksByIds,
   type CatalogQuery,
+  type CollectionGroup,
 } from "../lib/library/cache-db.js";
 import { convertBookToMarkdown } from "../lib/library/md-converter.js";
 import {
@@ -559,6 +565,26 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
 
   ipcMain.handle("library:tag-stats", (): { tag: string; count: number }[] => {
     return queryTagStats();
+  });
+
+  ipcMain.handle("library:collection-by-domain", (): CollectionGroup[] => {
+    return queryByDomain();
+  });
+
+  ipcMain.handle("library:collection-by-author", (): CollectionGroup[] => {
+    return queryByAuthor();
+  });
+
+  ipcMain.handle("library:collection-by-year", (): CollectionGroup[] => {
+    return queryByYear();
+  });
+
+  ipcMain.handle("library:collection-by-sphere", (): CollectionGroup[] => {
+    return queryBySphere();
+  });
+
+  ipcMain.handle("library:collection-by-tag", (): CollectionGroup[] => {
+    return queryByTag();
   });
 
   ipcMain.handle(

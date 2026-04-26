@@ -4,13 +4,13 @@ import type { BookCatalogMeta, BookStatus } from "./types.js";
 const UPSERT_SQL = `
 INSERT INTO books (
   id, sha256, title, author, title_en, author_en, year, isbn, publisher,
-  word_count, chapter_count, original_format, source_archive,
+  word_count, chapter_count, original_format, source_archive, sphere,
   domain, quality_score, conceptual_density, originality, is_fiction_or_water,
   verdict_reason, evaluator_reasoning, evaluator_model, evaluated_at,
   concepts_extracted, concepts_accepted, status, last_error, md_path
 ) VALUES (
   @id, @sha256, @title, @author, @title_en, @author_en, @year, @isbn, @publisher,
-  @word_count, @chapter_count, @original_format, @source_archive,
+  @word_count, @chapter_count, @original_format, @source_archive, @sphere,
   @domain, @quality_score, @conceptual_density, @originality, @is_fiction_or_water,
   @verdict_reason, @evaluator_reasoning, @evaluator_model, @evaluated_at,
   @concepts_extracted, @concepts_accepted, @status, @last_error, @md_path
@@ -28,6 +28,7 @@ ON CONFLICT(id) DO UPDATE SET
   chapter_count       = excluded.chapter_count,
   original_format     = excluded.original_format,
   source_archive      = excluded.source_archive,
+  sphere              = excluded.sphere,
   domain              = excluded.domain,
   quality_score       = excluded.quality_score,
   conceptual_density  = excluded.conceptual_density,
@@ -65,6 +66,7 @@ export function upsertBook(meta: BookCatalogMeta, mdPath: string): void {
     chapter_count: meta.chapterCount,
     original_format: meta.originalFormat,
     source_archive: meta.sourceArchive ?? null,
+    sphere: meta.sphere ?? null,
     domain: meta.domain ?? null,
     quality_score: meta.qualityScore ?? null,
     conceptual_density: meta.conceptualDensity ?? null,

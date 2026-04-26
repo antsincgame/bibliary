@@ -182,3 +182,112 @@ export function queryTagStats(): { tag: string; count: number }[] {
     ORDER BY count DESC, tag ASC
   `).all() as { tag: string; count: number }[];
 }
+
+// ─── Collection Views (Phase 3: virtual views from SQLite) ───────────
+
+export interface CollectionGroup {
+  label: string;
+  count: number;
+  bookIds: string[];
+}
+
+/** Group books by AI-assigned domain. */
+export function queryByDomain(): CollectionGroup[] {
+  const db = openCacheDb();
+  const rows = db.prepare(`
+    SELECT COALESCE(domain, 'unclassified') as label, COUNT(*) as count,
+           GROUP_CONCAT(id) as ids
+    FROM books
+    GROUP BY label
+    ORDER BY count DESC, label ASC
+  `).all() as Array<{ label: string; count: number; ids: string }>;
+  return rows.map((r) => ({
+    label: r.label,
+    count: r.count,
+    bookIds: r.ids ? r.ids.split(",") : [],
+  }));
+}
+
+/** Group books by author. */
+export function queryByAuthor(): CollectionGroup[] {
+  const db = openCacheDb();
+  const rows = db.prepare(`
+    SELECT COALESCE(COALESCE(author_en, author), 'Unknown Author') as label,
+           COUNT(*) as count, GROUP_CONCAT(id) as ids
+    FROM books
+    GROUP BY label
+    ORDER BY count DESC, label ASC
+  `).all() as Array<{ label: string; count: number; ids: string }>;
+  return rows.map((r) => ({
+    label: r.label,
+    count: r.count,
+    bookIds: r.ids ? r.ids.split(",") : [],
+  }));
+}
+
+/** Group books by publication year. */
+export function queryByYear(): CollectionGroup[] {
+  const db = openCacheDb();
+  const rows = db.prepare(`
+    SELECT COALESCE(CAST(year AS TEXT), 'Unknown Year') as label,
+           COUNT(*) as count, GROUP_CONCAT(id) as ids
+    FROM books
+    WHERE year IS NOT NULL
+    GROUP BY year
+    ORDER BY year DESC
+  `).all() as Array<{ label: string; count: number; ids: string }>;
+
+  const unknown = db.prepare(`
+    SELECT COUNT(*) as count, GROUP_CONCAT(id) as ids
+    FROM books WHERE year IS NULL
+  `).get() as { count: number; ids: string | null };
+
+  const result = rows.map((r) => ({
+    label: r.label,
+    count: r.count,
+    bookIds: r.ids ? r.ids.split(",") : [],
+  }));
+
+  if (unknown.count > 0) {
+    result.push({
+      label: "Unknown Year",
+      count: unknown.count,
+      bookIds: unknown.ids ? unknown.ids.split(",") : [],
+    });
+  }
+
+  return result;
+}
+
+/** Group books by sphere (import folder domain). */
+export function queryBySphere(): CollectionGroup[] {
+  const db = openCacheDb();
+  const rows = db.prepare(`
+    SELECT COALESCE(sphere, 'unsorted') as label, COUNT(*) as count,
+           GROUP_CONCAT(id) as ids
+    FROM books
+    GROUP BY label
+    ORDER BY count DESC, label ASC
+  `).all() as Array<{ label: string; count: number; ids: string }>;
+  return rows.map((r) => ({
+    label: r.label,
+    count: r.count,
+    bookIds: r.ids ? r.ids.split(",") : [],
+  }));
+}
+
+/** Group books by LLM-assigned tag (by-tag with bookIds for filtering). */
+export function queryByTag(): CollectionGroup[] {
+  const db = openCacheDb();
+  const rows = db.prepare(`
+    SELECT bt.tag as label, COUNT(*) as count, GROUP_CONCAT(bt.book_id) as ids
+    FROM book_tags bt
+    GROUP BY bt.tag
+    ORDER BY count DESC, bt.tag ASC
+  `).all() as Array<{ label: string; count: number; ids: string }>;
+  return rows.map((r) => ({
+    label: r.label,
+    count: r.count,
+    bookIds: r.ids ? r.ids.split(",") : [],
+  }));
+}

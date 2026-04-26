@@ -2,6 +2,14 @@
 import * as path from "path";
 import type { BookStatus, BookCatalogMeta } from "./types.js";
 import { getBookDir } from "./paths.js";
+import {
+  buildHumanBookPath,
+  resolveWithMaxPathGuard,
+  extractSphereFromImportPath,
+  resolveCollisionSuffix,
+  type HumanBookPath,
+} from "./path-sanitizer.js";
+import { promises as fs } from "fs";
 
 interface EvaluationLike {
   quality_score: number;
@@ -13,6 +21,8 @@ export interface StoredBookPaths {
   mdPath: string;
   originalFile: string;
   originalPath: string;
+  /** Relative path from library root (for SQLite md_path). */
+  relPath: string;
 }
 
 export interface CrystallizeGateResult {
@@ -24,6 +34,7 @@ export function getStoredOriginalFileName(format: BookCatalogMeta["originalForma
   return `original.${format}`;
 }
 
+/** Legacy ID-based path resolver. Kept for gating functions. */
 export function resolveStoredBookPaths(
   libraryRoot: string,
   bookId: string,
@@ -36,6 +47,44 @@ export function resolveStoredBookPaths(
     mdPath: path.join(bookDir, "book.md"),
     originalFile,
     originalPath: path.join(bookDir, originalFile),
+    relPath: path.join(bookId, "book.md"),
+  };
+}
+
+/**
+ * Human-readable path resolver.
+ * Structure: {libraryRoot}/{Sphere}/{Author_Title}/{Title}.md
+ * Handles MAX_PATH fallback and collision suffixes.
+ */
+export async function resolveHumanBookPaths(
+  libraryRoot: string,
+  meta: Pick<BookCatalogMeta, "id" | "title" | "author" | "originalFormat">,
+  importSourcePath: string,
+  importRoot?: string,
+): Promise<StoredBookPaths> {
+  const sphere = importRoot
+    ? extractSphereFromImportPath(importSourcePath, importRoot)
+    : "unsorted";
+
+  const humanPath = buildHumanBookPath({
+    sphere,
+    author: meta.author,
+    title: meta.title,
+    bookIdShort: meta.id.slice(0, 8),
+  });
+
+  const resolved = resolveWithMaxPathGuard(libraryRoot, humanPath, meta.id.slice(0, 8));
+  const bookDir = await resolveCollisionSuffix(resolved.bookDir, fs);
+
+  const mdFileName = path.basename(resolved.mdPath);
+  const originalFile = getStoredOriginalFileName(meta.originalFormat);
+
+  return {
+    bookDir,
+    mdPath: path.join(bookDir, mdFileName),
+    originalFile,
+    originalPath: path.join(bookDir, originalFile),
+    relPath: path.relative(libraryRoot, path.join(bookDir, mdFileName)),
   };
 }
 

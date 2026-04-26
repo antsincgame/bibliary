@@ -85,7 +85,6 @@ async function ocrDjvuPages(
       const pngBuffer = await imageBufferToPng(imageBuffer);
       const result = provider === "vision-llm"
         ? await recognizeWithVisionLlm(pngBuffer, {
-          apiKey: opts.openrouterApiKey,
           languages: opts.ocrLanguages ?? [],
           signal: opts.signal,
           mimeType: "image/png",

@@ -51,7 +51,9 @@ export function filterCatalog(rows, filters) {
   const hide = filters.hideFiction;
   const needle = filters.search.trim().toLowerCase();
   const tagFilter = filters.tags && filters.tags.length > 0 ? filters.tags : null;
+  const bookIdFilter = filters.filterBookIds instanceof Set ? filters.filterBookIds : null;
   return rows.filter((row) => {
+    if (bookIdFilter && !bookIdFilter.has(row.id)) return false;
     if (q > 0) {
       const score = typeof row.qualityScore === "number" ? row.qualityScore : -1;
       if (score < q) return false;

@@ -31,13 +31,15 @@ function stripFrontmatter(md) {
 
 /**
  * Extract the embedded cover reference from book.md.
- * Covers are stored by the importer as `[img-cover]: data:image/...`.
+ * Supports both legacy Base64 data URIs and new CAS asset URLs.
  * @param {string} md
  * @returns {string | null}
  */
 function extractCoverDataUrl(md) {
-  const match = md.match(/^\[img-cover\]:\s*(data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+)\s*$/m);
-  return match ? match[1] : null;
+  const casMatch = md.match(/^\[img-cover\]:\s*(bibliary-asset:\/\/sha256\/[a-f0-9]{64})\s*$/m);
+  if (casMatch) return casMatch[1];
+  const b64Match = md.match(/^\[img-cover\]:\s*(data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+)\s*$/m);
+  return b64Match ? b64Match[1] : null;
 }
 
 /**

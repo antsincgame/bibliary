@@ -88,6 +88,8 @@ export const CATALOG = {
     search: "",
     /** @type {string[]} */
     tags: [],
+    /** @type {Set<string> | null} */
+    filterBookIds: null,
   },
   loading: false,
   unsubEvaluator: /** @type {null | (() => void)} */ (null),

@@ -152,3 +152,33 @@ test("filterCatalog: combined filters (quality + fiction + search) all apply", (
   const out = filterCatalog(rows, { quality: 70, hideFiction: true, search: "topology" });
   assert.deepEqual(out.map((r: { id: string }) => r.id), ["a"]);
 });
+
+// Phase 3 gate: filterBookIds
+test("filterCatalog: filterBookIds=null passes all rows through", () => {
+  const rows = [{ id: "a" }, { id: "b" }, { id: "c" }];
+  const out = filterCatalog(rows, { quality: 0, hideFiction: false, search: "", filterBookIds: null });
+  assert.equal(out.length, 3);
+});
+
+test("filterCatalog: filterBookIds=Set restricts to matching ids only", () => {
+  const rows = [{ id: "a" }, { id: "b" }, { id: "c" }];
+  const out = filterCatalog(rows, { quality: 0, hideFiction: false, search: "", filterBookIds: new Set(["a", "c"]) });
+  assert.deepEqual(out.map((r: { id: string }) => r.id), ["a", "c"]);
+});
+
+test("filterCatalog: filterBookIds=empty Set returns zero rows", () => {
+  const rows = [{ id: "a" }, { id: "b" }];
+  const out = filterCatalog(rows, { quality: 0, hideFiction: false, search: "", filterBookIds: new Set() });
+  assert.equal(out.length, 0);
+});
+
+test("filterCatalog: filterBookIds combines with quality filter (AND)", () => {
+  const rows = [
+    { id: "a", qualityScore: 90 },
+    { id: "b", qualityScore: 30 },
+    { id: "c", qualityScore: 80 },
+  ];
+  const out = filterCatalog(rows, { quality: 70, hideFiction: false, search: "", filterBookIds: new Set(["a", "b"]) });
+  // b is in the set but fails quality; a passes both
+  assert.deepEqual(out.map((r: { id: string }) => r.id), ["a"]);
+});

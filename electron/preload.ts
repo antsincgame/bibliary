@@ -95,6 +95,7 @@ interface LibraryBookMeta {
   importedAt: string;
   originalFile: string;
   sourceArchive?: string;
+  sphere?: string;
   sha256: string;
   warnings?: string[];
   lastError?: string;
@@ -570,6 +571,16 @@ contextBridge.exposeInMainWorld("api", {
       smokeLibrary
         ? Promise.resolve([{ tag: "cybernetics", count: 1 }, { tag: "systems", count: 1 }, { tag: "marketing", count: 1 }])
         : ipcRenderer.invoke("library:tag-stats"),
+    collectionByDomain: (): Promise<Array<{ label: string; count: number; bookIds: string[] }>> =>
+      ipcRenderer.invoke("library:collection-by-domain"),
+    collectionByAuthor: (): Promise<Array<{ label: string; count: number; bookIds: string[] }>> =>
+      ipcRenderer.invoke("library:collection-by-author"),
+    collectionByYear: (): Promise<Array<{ label: string; count: number; bookIds: string[] }>> =>
+      ipcRenderer.invoke("library:collection-by-year"),
+    collectionBySphere: (): Promise<Array<{ label: string; count: number; bookIds: string[] }>> =>
+      ipcRenderer.invoke("library:collection-by-sphere"),
+    collectionByTag: (): Promise<Array<{ label: string; count: number; bookIds: string[] }>> =>
+      ipcRenderer.invoke("library:collection-by-tag"),
     getBook: (bookId: string): Promise<(LibraryBookMeta & { mdPath: string }) | null> =>
       smokeLibrary
         ? Promise.resolve((smokeLibrary.rows.find((row) => row.id === bookId) as LibraryBookMeta & { mdPath: string } | undefined) ?? null)

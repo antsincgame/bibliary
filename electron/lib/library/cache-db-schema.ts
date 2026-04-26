@@ -61,6 +61,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS books_fts USING fts5(
  *   v1 → v2: пересоздать books_fts без `content=''`.
  *   v2 → v3: year, isbn, publisher columns + indexes.
  *   v3 → v4: last_error column for diagnosable failed extraction/evaluation.
+ *   v4 → v5: sphere column + idx_books_sphere, idx_books_author indexes.
  */
 export function applyMigrations(db: Database.Database): void {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number } | undefined;
@@ -102,5 +103,14 @@ export function applyMigrations(db: Database.Database): void {
     const existing = new Set(cols.map((c) => c.name));
     if (!existing.has("last_error")) db.exec("ALTER TABLE books ADD COLUMN last_error TEXT");
     db.pragma("user_version = 4");
+  }
+
+  if (current < 5) {
+    const cols = db.pragma("table_info(books)") as Array<{ name: string }>;
+    const existing = new Set(cols.map((c) => c.name));
+    if (!existing.has("sphere")) db.exec("ALTER TABLE books ADD COLUMN sphere TEXT");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_books_sphere ON books(sphere)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_books_author ON books(author)");
+    db.pragma("user_version = 5");
   }
 }

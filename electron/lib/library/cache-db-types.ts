@@ -15,6 +15,7 @@ export interface BookRow {
   chapter_count: number;
   original_format: string;
   source_archive: string | null;
+  sphere: string | null;
   domain: string | null;
   quality_score: number | null;
   conceptual_density: number | null;
@@ -48,6 +49,7 @@ export function rowToMeta(row: BookRow, tags: string[]): BookCatalogMeta & { mdP
     originalFile: getStoredOriginalFileName(originalFormat),
     originalFormat,
     sourceArchive: row.source_archive ?? undefined,
+    sphere: row.sphere ?? undefined,
     domain: row.domain ?? undefined,
     tags: tags.length > 0 ? tags : undefined,
     qualityScore: row.quality_score ?? undefined,

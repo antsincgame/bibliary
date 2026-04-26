@@ -52,6 +52,8 @@ export interface BookCatalogMeta {
   originalFormat: SupportedBookFormat;
   /** Если книга извлечена из архива -- имя архива для трассировки. */
   sourceArchive?: string;
+  /** Sphere — корневая папка домена из import root (напр. "Mathematics"). */
+  sphere?: string;
   // ── bibliographic (original-language verbatim, English mirror for UI) ──
   /** Заголовок как пришёл от парсера (исходный язык). */
   title: string;
@@ -109,10 +111,12 @@ export interface ImageRef {
   id: string;
   /** MIME-тип, напр. `image/jpeg`. */
   mimeType: string;
-  /** Сырые байты картинки (до Base64-кодирования). */
+  /** Сырые байты картинки. */
   buffer: Buffer;
   /** Опциональная подпись/alt-text (если удалось извлечь). */
   caption?: string;
+  /** CAS asset URL (bibliary-asset://sha256/...). Заполняется при сохранении в CAS. */
+  assetUrl?: string;
 }
 
 /** Одна глава книги, как она пойдёт в .md. */

@@ -92,9 +92,15 @@ test("import: dedup happens BEFORE parsing — duplicate is fast and writes no n
 
   const first = await importBookFromFile(file);
   assert.equal(first.outcome, "added");
-  const bookDir = path.join(sb.libraryRoot, first.bookId!);
-  const dirStat = await stat(bookDir);
-  assert.ok(dirStat.isDirectory(), "library/{id}/ must exist after first import");
+  /* New human-readable layout: the book directory is no longer {id}/.
+     Instead, verify that the md_path written to DB actually exists. */
+  const meta = first.meta!;
+  assert.ok(meta.id, "bookId must be set");
+  const { getBookById } = await import("../electron/lib/library/cache-db.js");
+  const dbEntry = getBookById(meta.id);
+  assert.ok(dbEntry, "book must be in SQLite after import");
+  const dirStat = await stat(path.dirname(dbEntry!.mdPath));
+  assert.ok(dirStat.isDirectory(), "book directory must exist after first import");
 
   /* Замеряем длительность 2-го импорта: он должен быть кратно быстрее парсинга,
      потому что мы дедупим до convertBookToMarkdown. На современной машине

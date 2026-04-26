@@ -6,6 +6,7 @@ import { el, clear } from "../dom.js";
 import { t } from "../i18n.js";
 import { IMPORT_STATE } from "./state.js";
 import { buildEvaluatorPanel, refreshEvaluatorState } from "./evaluator.js";
+import { refreshCollectionViews } from "./collection-views.js";
 import { showLibraryToast } from "./toast.js";
 import { showAlert } from "../components/ui-dialog.js";
 
@@ -375,6 +376,7 @@ async function runImport(invoke, deps) {
       skipped: String((res.skipped ?? 0) + (res.duplicate ?? 0) + (res.failed ?? 0)),
     });
     void deps.renderCatalog(root);
+    refreshCollectionViews();
   } catch (e) {
     if (status) status.textContent = t("library.import.progress.failed", {
       error: e instanceof Error ? e.message : String(e),
