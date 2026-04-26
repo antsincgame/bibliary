@@ -77,6 +77,23 @@ export interface ImportFolderOptions {
   onProgress?: (event: ProgressEvent) => void;
   /** Колбэк после успешного импорта -- evaluator-queue его подхватывает. */
   onBookImported?: (meta: BookCatalogMeta) => void;
+  /**
+   * OCR-провайдер для DJVU. "system" | "vision-llm" | "none". Default "system".
+   * Берётся из preferences и пробрасывается в md-converter.
+   * "vision-llm" использует локальную vision-модель LM Studio.
+   */
+  djvuOcrProvider?: "system" | "vision-llm" | "none";
+  /** Хинты OCR-языков ("uk", "en", "ru"). Первый — primary для Windows OCR. */
+  ocrLanguages?: string[];
+  /** Включить Vision LLM extraction метаданных из обложки (через LM Studio). */
+  visionMetaEnabled?: boolean;
+  /** Override modelKey vision-модели в LM Studio. Пусто = автодетект. */
+  visionModelKey?: string;
+  /**
+   * Колбэк vision-meta событий — для логирования в IPC слой.
+   * Импорт каждой книги может вызвать start/success/failed.
+   */
+  onVisionMetaEvent?: (event: { phase: "start" | "success" | "failed"; bookFile: string; message?: string; durationMs?: number; meta?: unknown }) => void;
 }
 
 /**
@@ -107,6 +124,14 @@ export interface ProgressEvent {
   duplicateReason?: ImportResult["duplicateReason"];
   existingBookId?: string;
   existingBookTitle?: string;
+  /**
+   * Текст ошибки или предупреждения для UI/лога. Заполняется когда
+   * outcome === "failed" (тогда это error) или когда у успешного файла
+   * есть warnings (например, OCR fallback) — тогда это первая warning.
+   */
+  errorMessage?: string;
+  /** Все warnings конкретно этого файла, пробрасываются в UI лог. */
+  fileWarnings?: string[];
   /** Backward-compat: старый UI читает index/total. */
   index: number;
   total: number;
@@ -205,13 +230,21 @@ export async function importBookFromFile(
   }
 
   /* Парсинг + Markdown — sha передаём как precomputed, чтобы не читать файл
-     второй раз. */
+     второй раз. Pref'ы (djvuOcrProvider/ocrLanguages/visionMetaEnabled/visionModelKey)
+     пробрасываются из IPC слоя — без них локальный Vision LLM не работает на импорте. */
   let convResult;
   try {
     convResult = await convertBookToMarkdown(absPath, {
       ocrEnabled: opts.ocrEnabled === true,
       signal: opts.signal,
       precomputedSha256: sha256,
+      djvuOcrProvider: opts.djvuOcrProvider,
+      ocrLanguages: opts.ocrLanguages,
+      visionMetaEnabled: opts.visionMetaEnabled,
+      visionModelKey: opts.visionModelKey,
+      onVisionMetaEvent: opts.onVisionMetaEvent
+        ? (e) => opts.onVisionMetaEvent!({ ...e, bookFile: path.basename(absPath) })
+        : undefined,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -450,7 +483,7 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
   const counters = { discovered: 0, processed: 0 };
   const emit = (
     phase: ProgressEventPhase,
-    extras: Pick<ProgressEvent, "currentFile" | "outcome" | "duplicateReason" | "existingBookId" | "existingBookTitle"> = {},
+    extras: Pick<ProgressEvent, "currentFile" | "outcome" | "duplicateReason" | "existingBookId" | "existingBookTitle" | "errorMessage" | "fileWarnings"> = {},
   ): void => {
     if (!opts.onProgress) return;
     opts.onProgress({
@@ -462,6 +495,8 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
       duplicateReason: extras.duplicateReason,
       existingBookId: extras.existingBookId,
       existingBookTitle: extras.existingBookTitle,
+      errorMessage: extras.errorMessage,
+      fileWarnings: extras.fileWarnings,
       index: counters.processed,
       total: counters.discovered,
     });
@@ -575,9 +610,21 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
       let firstDuplicateReason: ImportResult["duplicateReason"] | undefined = itemResults[0]?.duplicateReason;
       let firstExistingBookId: string | undefined = itemResults[0]?.existingBookId;
       let firstExistingBookTitle: string | undefined = itemResults[0]?.existingBookTitle;
+      let firstError: string | undefined;
+      const aggregatedFileWarnings: string[] = [];
       for (const r of itemResults) {
         result[r.outcome] += 1;
-        if (r.warnings.length > 0) result.warnings.push(...r.warnings);
+        if (r.warnings.length > 0) {
+          result.warnings.push(...r.warnings);
+          aggregatedFileWarnings.push(...r.warnings);
+        }
+        /* КРИТИЧНО: r.error больше не теряется. До этого фикса timeout/pool
+           failures были видны только в счётчике `failed` без причины. */
+        if (r.error) {
+          const tagged = `${path.basename(settled.input.bookPath)}: ${r.error}`;
+          result.warnings.push(`[ERROR] ${tagged}`);
+          if (!firstError) firstError = tagged;
+        }
         if (r.outcome === "added" && r.meta && opts.onBookImported) opts.onBookImported(r.meta);
         firstOutcome = r.outcome;
         firstDuplicateReason = r.duplicateReason;
@@ -590,6 +637,8 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
         duplicateReason: firstDuplicateReason,
         existingBookId: firstExistingBookId,
         existingBookTitle: firstExistingBookTitle,
+        errorMessage: firstError,
+        fileWarnings: aggregatedFileWarnings.length > 0 ? aggregatedFileWarnings : undefined,
       });
     }
   } finally {
@@ -630,6 +679,11 @@ async function runImportTaskWithTimeout(
         ocrEnabled: opts.ocrEnabled,
         signal: localCtl.signal,
         sourceArchive: task.sourceArchive,
+        djvuOcrProvider: opts.djvuOcrProvider,
+        ocrLanguages: opts.ocrLanguages,
+        visionMetaEnabled: opts.visionMetaEnabled,
+        visionModelKey: opts.visionModelKey,
+        onVisionMetaEvent: opts.onVisionMetaEvent,
       }),
       new Promise<ImportResult>((_, reject) => {
         localCtl.signal.addEventListener("abort", () => {

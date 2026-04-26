@@ -1,6 +1,6 @@
 # Дообучение (локально) — WSL + Unsloth runner (Phase 3.3, Pro tier)
 
-> v3.0.0 · «полный цикл fine-tune без выхода из Bibliary»
+> v3.1.0 · «полный цикл fine-tune без выхода из Bibliary»
 >
 > Внутреннее (исторические) название: Forge Local. В UI — **«Дообучение → локально»** (RU) / **«Fine-tuning → local»** (EN). Идентификаторы кода (`forge:start-local`, `LocalRunner`, `electron/lib/forge/wsl.ts`) сохранены ради backward compatibility.
 
@@ -194,11 +194,10 @@ const summary = await runEval({
 
 ## Тесты
 
-`scripts/test-forge-local.ts` — 14 тестов:
-- WSL detect не падает (3)
-- parseMetric парсит trainer log (3)
-- ROUGE-L математика (4)
-- runEval с mock chat (2)
-- chatMLToEvalCases (2)
+Отдельного `scripts/test-forge-local.ts` нет. Логика покрыта в рамках общего unit-suite:
 
-Не требуют живого WSL/LM Studio — все mock.
+- `tests/dataset-synth-presets.test.ts` — пресеты синтеза
+
+Тесты WSL detect, parseMetric, ROUGE-L и runEval можно запустить вручную через разработческий DevTools в приложении или через `npm run test:agent-internals`.
+
+Для полного unit-покрытия forge-local модулей — см. P2.6 в `docs/ROADMAP-TO-MVP.md`.

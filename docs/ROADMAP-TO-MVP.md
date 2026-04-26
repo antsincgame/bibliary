@@ -1,310 +1,263 @@
-# ROADMAP TO MVP — Bibliary
+# ROADMAP — Bibliary v3.x
 
-> Что осталось пользователю до production-готового MVP. Все пункты
-> отсортированы по приоритету (P0 > P1 > P2). Каждый пункт даёт оценку
-> усилий и явный критерий "сделано".
-
-## v2.7.0 — Library + Dataset Factory (закрыто 2026-04-24)
-
-| Слой | Готовность | Что нового |
-|------|-----------|-----------|
-| File-System Library    | ✅ 100%  | `data/library/{id}/{original.{ext},book.md}` + SQLite cache |
-| Pre-flight Evaluation  | ✅ 100%  | Surrogate + Chief Epistemologist + CoT parser |
-| DataGrid Catalog UI    | ✅ 100%  | Quality / Hide-fiction filters, presets, batch-select |
-| Thematic Collections   | ✅ 100%  | `targetCollection` параметризован сквозь pipeline |
-| Dataset Synthesis      | ✅ 100%  | `dataset-synth.ts` + `--include-reasoning` + 10 presets |
-| Batch cancellation     | ✅ 100%  | `dataset-v2:cancel-batch` + per-book parse timeout 8 мин |
-| Shared storage contract| ✅ 100%  | `storage-contract.ts` для UI + E2E + cache-db |
-| Batch-runner extract   | ✅ 100%  | Pure `runBatchExtraction(args, deps)` отделён от IPC |
-| Renderer strangler #1  | ✅ 100%  | format.js + catalog-filter.js (≈70 строк выкушено) |
-| Tests                  | ✅ 100%  | 65/65 unit + 1/1 Electron smoke (playwright) |
-| Docs purge             | ✅ 100%  | 7 устаревших snapshot-ов выселены в `.servitor-trash/` |
-
-## Текущее состояние (v2.7.0, 2026-04-24)
-
-| Слой               | Готовность | Что есть                                                  |
-|--------------------|-----------|-----------------------------------------------------------|
-| Scanner / Ingest   | 95%       | Все парсеры, drag&drop, multi-file, OCR opt-in            |
-| Library UI         | 95%       | Tabs, preview, queue, dropzone, grouping, history         |
-| BookHunter         | 90%       | 4 источника, лицензии, download&ingest                    |
-| Crystallizer       | 95%       | 6-стадийный пайплайн, prefs runtime, AbortError fix       |
-| Forge              | 95%       | 3-step self-hosted wizard, YaRN, LocalRunner WSL          |
-| Forge Agent        | 85%       | Tools + approval + multiturn history (B1) + memory (B7)   |
-| Chat / RAG         | 95%       | Semantic search, sampling presets, compare guard, neon    |
-| Settings           | 100%      | 39 prefs, mode-gated, bool/enum/tags, atomic write        |
-| Models / LM Studio | 95%       | Profiles, switch, YaRN                                    |
-| Qdrant UI          | 100%      | Cluster, collections, search, info                        |
-| Resilience         | 95%       | Atomic write, lockfile, watchdog, abortAll on quit        |
-| OCR (Phase 6.0)    | 90%       | OS-native (system-ocr + canvas), opt-in, per-task         |
-| Neon UI            | 100%      | Hero/sacred-cards/divider/spinner — все 9/9 маршрутов     |
-| Onboarding Wizard  | 95%       | 4 шага, restore prefs, block-without-model, real skip     |
-| Help-KB (Karpathy) | 100%      | Synthetic KB о приложении, search_help tool агента        |
-| Long-term Memory   | 100%      | bibliary_memory + recall_memory tool, fire-and-forget     |
-| Library v2         | 100%      | FS-first, Pre-flight Evaluation, DataGrid, thematic colls |
-| Dataset Factory    | 100%      | dataset-synth + 10 presets + reasoning trace preservation |
-| Tests              | 100%      | 65 unit + 1 Electron smoke + live E2E (`test:e2e:library`)|
-| i18n               | 100%      | RU + EN, ~1740 keys (мёртвые удалены)                     |
-
-Общий progress: **~98%**.
+> Живой технический roadmap. Обновляется при каждом релизе.
+> Содержит: историю закрытых milestone'ов, инвентарь технического долга, приоритизированные задачи.
 
 ---
 
-## P0 — Закрыть критические дыры (1-2 дня)
+## История закрытых milestone'ов
 
-### P0.1. Wire forge / resilience / qdrant / bookhunter runtime preferences ✅ DONE
-### P0.1.b. Phase 2.5R: wire LOCK + watchdog runtime preferences ✅ DONE
-
-В дополнение к P0.1:
-- `lockRetries`, `lockStaleMs` -- через `configureFileLockDefaults()`
-- `healthPollIntervalMs`, `healthFailThreshold`, `watchdogLivenessTimeoutMs`
-  -- через `configureWatchdog()` в watchdog
-- preferences IPC применяет side-effects на каждом `set`/`reset`
-- 3 BAD swallowed catches (`batch.ipc.ts`, `forge.ipc.ts`, `profile-manager.js`)
-  заменены на `console.error` диагностику
-- Magic number `384` извлечён в `electron/lib/scanner/embedding.ts` как
-  `EMBEDDING_DIM` (использовался в 3 местах: ingest.ts, judge.ts, qdrant.ipc.ts)
-- Введён `docs/QUALITY-GATES.md` с 5 gate-уровнями (Pre-commit, Pre-push,
-  Pre-PR, Pre-RC, Pre-release) и таблицей контрольных метрик
-
-
-**Было:** `forgeHeartbeatMs`, `forgeMaxWallMs`, `policyMaxRetries`,
-`policyBaseBackoffMs`, `hardTimeoutCapMs`, `qdrantTimeoutMs`,
-`qdrantSearchLimit`, `searchPerSourceLimit`, `downloadMaxRetries`,
-`ocrPdfDpi` -- сохранялись в preferences, видны в Settings, но backend
-их не читал.
-
-**Сделано в коммите `<this commit>`:**
-
-- `electron/ipc/forge.ipc.ts` -> `LocalRunner.start({ heartbeatMs, maxWallMs })`
-  через `getPreferencesStore()`.
-- `electron/lib/resilience/lm-request-policy.ts` -- новая фабрика
-  `buildRequestPolicy(prefs)`. `electron/dataset-generator.ts` использует её
-  через локальный helper `getRuntimePolicy()`.
-- `electron/lib/qdrant/http-client.ts` -- `fetchQdrantJson(url, opts)` теперь
-  принимает `{ timeoutMs }`. `qdrant.ipc.ts` (search) пробрасывает
-  `prefs.qdrantTimeoutMs` и `prefs.qdrantSearchLimit`.
-- `electron/ipc/bookhunter.ipc.ts` -- `aggregateSearch` получает
-  `prefs.searchPerSourceLimit`, `downloadBook` -- `prefs.downloadMaxRetries`.
-  `download-and-ingest` дополнительно пробрасывает `parseOptions` (OCR,
-  upsertBatch, maxBookChars).
-- `electron/lib/scanner/parsers/pdf.ts` -- `rasterisePdfPages({ dpi })`
-  получает `opts.ocrPdfDpi` (OCR signal тоже пробрасывается в `recognize`).
-
-**Критерий "сделано" (выполнен):** изменение значения в Settings → следующий
-run наследует новое значение без перезапуска приложения. 33/34 ключей wired,
-1 (`refreshIntervalMs`) зарезервирован для будущего auto-refresh.
-
-### P0.1.c. chat() / chatWithTools() через withPolicy ✅ DONE
-
-`electron/lmstudio-client.ts` теперь экспортирует `chatWithPolicy` и
-`chatWithToolsAndPolicy` -- обёртки через `withPolicy` (буфер таймаута,
-exp. backoff, abortGrace). `chat`/`chatWithTools` остались для скриптов.
-
-- `electron/ipc/lmstudio.ipc.ts` (chat / compare) → `chatWithPolicy`
-- `electron/ipc/agent.ipc.ts` (ReAct loop) → `chatWithToolsAndPolicy`
-- ~~HF API (`electron/lib/hf/client.ts`) теперь имеет `fetchWithTimeout` (10s).~~
-  **Удалено в v2.4 при переходе на self-hosted-only** — см. `docs/FINE-TUNING.md`.
-
-Результат: один transient 5xx больше не убивает chat / agent действие
-пользователя -- сначала retry с adaptive backoff.
-
-### P0.1.d. Цикл forge/state ↔ resilience/bootstrap ✅ DONE
-
-- `electron/lib/forge/state.ts` импортирует только `batch-coordinator` и
-  `checkpoint-store` напрямую (не barrel).
-- `electron/lib/resilience/bootstrap.ts` больше не импортирует forge/state.
-- `electron/main.ts` вызывает `initForgeStore(dataDir)` после
-  `initResilienceLayer` и до `registerForgePipeline`.
-
-### P0.1.e. Crystallizer pipeline в coordinator ✅ DONE
-
-- Новый файл `electron/lib/dataset-v2/coordinator-pipeline.ts` --
-  PipelineHandle с `pause = abort`, `cancel = abort`, остальное no-op
-  (state в Qdrant).
-- `electron/main.ts` вызывает `registerExtractionPipeline()` после dataset
-  и forge.
-- `dataset-v2.ipc.ts` теперь репортит `reportBatchStart/End` и регистрирует
-  AbortController в `trackExtractionJob`.
-
-Результат: при offline LM Studio watchdog `pauseAll()` останавливает
-extraction наравне с dataset/forge, не оставляя зависшие LLM retries.
-
-### P0.2. E2E тест полного цикла ✅ DONE
-
-`scripts/e2e-full-mvp.ts` (`npm run test:e2e:mvp`) -- 35 шагов покрывают
-весь user journey на реальных данных:
-
-T0  Health-check LM Studio + Qdrant
-T1  Probe Downloads (~289 файлов, 3+ форматов)
-T2  Parallel ingest 3 тематических коллекций под file-lock
-T3  RAG retrieval per theme (top-1 score >= 0.55)
-T4  OCR одной картинки через @napi-rs/system-ocr
-T5  OCR scanned PDF (rasterise + recognize)
-T6  Crystallizer: extractChapterConcepts -> dedup -> judge -> Qdrant
-T7  Forge prepareDataset (ChatML split 90/10)
-T8  Forge generateBundle (Unsloth + AutoTrain + Colab + Axolotl + README)
-T9  Cleanup всех e2e-коллекций
-
-Запуск (LM Studio + Qdrant должны быть запущены):
-  npm run test:e2e:mvp
-
-Опции:
-  --downloads "C:/path"   -- альтернативная папка с книгами
-  --skip-crystal          -- без LLM-этапа (быстро, ~5 сек)
-  --skip-forge            -- без bundle generation
-
-Текущий результат на dev-машине (после fix flaky):
-  35 PASS, 0 FAIL, 0 SKIP, ~25-30 секунд
-  Воспроизводится 3+ раза подряд (greedy decoding + cross-lib bypass)
-  3 коллекции по 80 чанков каждая
-  Crystal принимает 3 концепта из 1 главы
-  Forge bundle: 4 конфига + README на диске
-
-Детерминизм:
-- temperature=0, top_k=1, top_p=1 в LLM вызовах E2E
-- crossLibDupeThreshold=1.01 в judgeAndAccept (>1.0 = unreachable
-  cosine; production-collection накапливает между прогонами и без
-  этого тест становился flaky на втором прогоне)
-- scoreThreshold=0 -- проверяем функционирование pipeline, не quality
-- Quality assertions вынесены в отдельный TODO "split E2E pipeline+quality"
-
-**Проблема:** есть `scripts/e2e-book-ingest.ts` и `e2e-library-ux.ts`, но они
-покрывают только Library. Нет цепочки **drop → ingest → crystallize → forge bundle → eval**.
-
-**Решение:** добавить `scripts/e2e-full-mvp.ts` -- скрипт прогоняющий sample
-PDF (включая 1 scanned + 1 image) через все стадии. Проверяет JSON snapshots.
-
-**Критерий "сделано":** `npm run test:e2e:mvp` зелёный за <10 минут на pure-CPU.
-
-### P0.3. Auto-update / OTA каналы — DEFERRED to v2.7
-
-**Проблема:** electron-builder конфигурация есть, но publisher (GitHub
-Releases / S3) не настроен. Пользователю придётся вручную качать новые
-версии.
-
-**Решение:** в `package.json#build.publish` указать GitHub Releases provider,
-выпустить v0.1.0-rc1.
-
-**Критерий "сделано":** в приложении появляется баннер "новая версия
-доступна" + один клик для apply.
-
-**Статус (v2.6.0):** отложено осознанно. Для finalization цикла v2.6 решили
-выпустить portable .exe вручную чтобы не блокироваться на GitHub Releases
-provider. Auto-update инфраструктура — следующая major (v2.7 или v0.1.0-rc1).
+| Версия | Дата | Ключевые закрытые задачи |
+|--------|------|--------------------------|
+| **v2.7.0** | 2026-04-24 | Library + Dataset Factory; Pre-flight Evaluator; DataGrid каталог; Crystallizer pipeline в coordinator; E2E тест `scripts/e2e-full-mvp.ts` |
+| **v3.0.0** | 2026-04-25 | Import logging (JSONL persistence + real-time UI); Vision-meta local LM Studio; Graceful shutdown (active import count); Ukrainian OCR patterns; Tag cloud search; Year column; Re-evaluate all |
+| **v3.1.0** | 2026-04-26 | Vision-meta multi-model fallback (`pickVisionModels`); PDF/DJVU page gallery (до 12 страниц); Library UI hardening (dropzone drag-drop, busy-lock, danger-confirm); E2E smoke harness (`BIBLIARY_SMOKE_UI_HARNESS`); Полная i18n-локализация Library |
 
 ---
 
-## P1 — Качество и UX (3-5 дней)
+## Текущее состояние — v3.1.0 (2026-04-26)
 
-### P1.1. Real-time прогресс ingest на dropzone
+| Слой | Готовность | Примечание |
+|------|------------|------------|
+| Scanner / Import | 97% | Все форматы; drag-drop; multi-file; OCR; RAR/7z; архивы вложенные |
+| Library UI | 100% | Catalog, reader, import, tag cloud, quality filter, год, i18n RU/EN |
+| Pre-flight Evaluator | 97% | LLM scoring; surrogate; CoT; parallel slots; priority queue |
+| Vision-meta | 95% | Multi-model fallback; local LM Studio only; graceful degrade |
+| Image extraction | 90% | EPUB/FB2/DOCX native; PDF/DJVU до 12 страниц; обложки |
+| BookHunter | 90% | 4 источника (Gutendex, Archive, OpenLibrary, arXiv); download+ingest |
+| Crystallizer (dataset-v2) | 95% | Delta-knowledge; AURA; semantic chunker; e5-small embeddings |
+| Forge / Fine-tuning | 95% | 3-step wizard; Unsloth+Axolotl; YaRN; LocalRunner WSL; Eval |
+| Agent | 85% | ReAct loop; tools; approval gate; memory; multiturn |
+| Chat / RAG | 95% | Semantic search; compare-mode; sampling presets |
+| Settings | 100% | 55 ключей в PreferencesSchema; 41 открыт в UI; 14 внутренних/wizard |
+| Models / YaRN | 95% | Profiles; context slider; atomic patch; backup+revert |
+| Qdrant UI | 100% | Cluster; collections; search; info |
+| Resilience | 95% | Atomic write; lockfile; watchdog; abortAll on quit; coordinator |
+| OCR | 90% | Windows.Media.Ocr; macOS Vision; DJVU; PDF rasterize |
+| Neon / 2666 UI | 100% | Все 9 маршрутов; 2666 + Neon корпоративный стиль |
+| Onboarding Wizard | 95% | 4 шага; restore prefs; block без модели |
+| Help-KB | 90% | Synthetic KB о приложении; search_help tool агента |
+| Tests | 97% | ~153 unit/integration + 1 Electron smoke + 12 E2E-скриптов |
+| i18n | 100% | RU + EN; ~1800+ ключей |
+| CI/CD | 0% | GitHub Actions отсутствуют |
 
-Сейчас ingest пишет в `STATE.progress` Map, но dropzone не показывает
-прогресс drop'нутых файлов. Надо: маленький прогресс-бар внутри dropzone
-пока активны drag-ingests.
-
-### P1.2. Saving sessions / restore selection
-
-Пользователь выбирает 50 книг → закрывает приложение → возвращается → список
-пуст. Нужно: persist `STATE.books` + `STATE.selected` per collection в
-`data/library-session.json`. Restore при mountLibrary.
-
-### P1.3. Полный Neon rollout ✅ DONE (v2.6.0)
-
-Закрыто в Strike 2/3 финализационного цикла:
-- `Chat` hero — `buildNeonHero({ pattern: "flower" })` для пустого
-  состояния через `renderer/chat.js mountChat()`
-- `Docs` hero — `buildNeonHero({ pattern: "metatron" })` через
-  `renderer/docs.js buildHeader()`
-- CSS `.chat-welcome-neon` (отключение двойной aury) и `.docs-hero-wrap`
-  (общий border-bottom) добавлены
-
-Все 9/9 маршрутов теперь Neon-стилизованы.
-
-### P1.4. Onboarding wizard improvements ✅ DONE (v2.6.0)
-
-Wizard уже вызывается на первом запуске + закрыто в Strike 1
-финализационного цикла:
-- A3: восстанавливает chatModel из preferences при повторном открытии
-- A4: блокирует "Далее" на Setup-шаге без выбранной модели + helper
-  кнопка "Open LM Studio" (через новый IPC `system:open-external`)
-- A10: skip с confirm-dialog если уходит без модели со step >= 2
-
-### P1.5. Notifications system
-
-`TOAST_TTL_MS` есть в prefs, но centralised toast manager в renderer
-отсутствует -- каждый модуль показывает alert(). Создать
-`renderer/components/toast.js` со стеком, anim, auto-dismiss. Заменить
-~10 alert()-ов.
+Общий progress: **~97%** (CI/CD и ряд P2 задач тянут вниз).
 
 ---
 
-## P2 — Расширение и оптимизация (1-2 недели)
+## Инвентарь технического долга
 
-### P2.1. Cloud sync / TON licensing
+Результат аудита кодовой базы v3.1.0. Сгруппирован по критичности.
 
-`docs/REPORT-USER-SKILLS.md` упоминает TON licensing как стратегическую цель.
-Нужно: создать `electron/lib/licensing/ton.ts` (token validation, expiry),
-`renderer/components/license-gate.js` (paywall на pro features). Pro features
--- forge local runner, crystallizer >100 chunks.
+### P0 — Настоящие баги (блокируют качество в production)
 
-### P2.2. Crystallizer streaming UI
+| ID | Описание | Файл | Симптом |
+|----|----------|------|---------|
+| **B-01** | Race condition в evaluator-queue при `DEFAULT_SLOT_COUNT=2`: тест `"continues after single book fails"` нестабилен, т.к. обе книги стартуют параллельно и `count`-счётчик первого вызова может сработать на книге B вместо A | `electron/lib/library/evaluator-queue.ts` | Книга может получить статус `failed` недетерминированно при >1 слоте |
+| **B-02** | `loadCatalog` в каталоге при ошибке IPC пишет только в `console.error` — пользователь видит пустую таблицу без объяснений | `renderer/library/catalog.js` | Молчаливый сбой: пользователь не понимает, пуста ли библиотека или произошла ошибка |
+| **B-03** | `evaluateBook()` может выбросить исключение, если `listLoaded()` / `listDownloaded()` падают при недоступном LM Studio — `evaluator-queue` перехватит, но standalone вызовы не защищены | `electron/lib/library/book-evaluator.ts` | Потенциальный crash при offline LM Studio в нестандартных call site'ах |
 
-Сейчас Crystallizer показывает только "Глава X/Y" -- нет визуализации
-концептов в реальном времени. Нужно: per-chunk live preview принятых
-концептов справа от лога.
+### P1 — Качество и UX (следующий sprint)
 
-### P2.3. Multi-language OCR detection
+| ID | Описание | Файл |
+|----|----------|------|
+| **Q-01** | `visionModelKey` / `visionMetaEnabled` есть в `PreferencesSchema` (55 ключей), но отсутствуют в `renderer/settings/sections.js` — пользователь не может управлять через UI Settings | `renderer/settings/sections.js` |
+| **Q-02** | Bulk delete в каталоге: ошибки удаления отдельных книг уходят в `console.warn` без feedback пользователю | `renderer/library/catalog.js` |
+| **Q-03** | Session persistence (`data/library-session.json`) — не реализовано; при перезапуске теряется выбор книг | Планировалось в P1.2 старого roadmap |
+| **Q-04** | `help-kb` по умолчанию ингестит только 3 файла из docs/ — после удаления `STATE-OF-PROJECT.md` нужно обновить список на актуальные docs | `electron/lib/help-kb/ingest.ts` |
+| **Q-05** | Централизованный toast/notification manager в renderer отсутствует — модули используют разные подходы (`showAlert`, `showLibraryToast`, `setCatalogStatus`) | `renderer/components/` |
 
-Сейчас OCR languages передаются вручную. Можно автодетектить из metadata
-PDF (`Language` field) или first-N pages text-detect. Wire to
-`prefs.ocrLanguages` как fallback.
+### P2 — Архитектура и инфраструктура
 
-### P2.4. Bundle download optimisation
+| ID | Описание | Файл/область | Сложность |
+|----|----------|-------------|-----------|
+| **A-01** | CI/CD отсутствует — нет `.github/workflows/`. Ни линт, ни тесты не запускаются автоматически на push | `.github/workflows/` | S |
+| **A-02** | Auto-update (`electron-updater`) деферировано с v2.6. `package.json#build.publish` не настроен | `electron-builder.yml`, `package.json` | M |
+| **A-03** | `HARD_SPLIT_LIMIT` (2500 слов) захардкожен в semantic-chunker, а `chunkSafeLimit` (4000 в prefs) — настраиваем; семантическое несоответствие | `electron/lib/dataset-v2/semantic-chunker.ts` | S |
+| **A-04** | При >800 параграфов drift-detection пропускается полностью — только hard-split. Нет fallback-стратегии для больших книг | `electron/lib/dataset-v2/semantic-chunker.ts` | M |
+| **A-05** | `@xenova/transformers` — 60 MB embeddings грузятся при первом старте блокирующе. Нет progress UI и on-demand download | `electron/lib/scanner/embedding.ts` | M |
+| **A-06** | Нет unit-тестов для: Forge wizard, BookHunter, Agent, DJVU-парсера, YaRN engine, resilience/watchdog. Тестовое покрытие неравномерно | `tests/` | L |
+| **A-07** | Сборочная конфигурация только Windows (`electron-builder.yml` без macOS/Linux targets) | `electron-builder.yml` | M |
+| **A-08** | RTF/DOC/ODT парсеры хрупкие — regex-strip или binary fallback; на сложных файлах регулярно возвращают пустые sections | `electron/lib/scanner/parsers/rtf.ts`, `doc.ts`, `odt.ts` | L |
 
-`@xenova/transformers` тащит 60MB embeddings model на первом запуске. Нужно:
-on-demand download с progress UI вместо blocking startup.
+### P3 — Backlog (после первого public release)
 
-### P2.5. Memory profiler для long sessions
-
-После 4-6 часов работы memory растёт. Добавить:
-`electron/lib/profiler/heap-snapshots.ts` -- снимать snapshot каждые 30
-минут, anomaly detect, alert в resilience-bar.
-
----
-
-## P3 — Долгий хвост (после первого release)
-
-- Полные unit-тесты для парсеров (текущее покрытие: smoke only)
-- Maestro E2E на Windows/macOS (UI-уровень)
-- Telemetry dashboard (renderer route + IPC)
-- Plugin system (3rd-party crystallizer roles)
-- Mobile companion (read-only, через cloud sync)
-
----
-
-## Сборочный чеклист первого RC
-
-- [ ] P0.1, P0.2, P0.3 закрыты
-- [ ] `npm run electron:build` собирает .exe + .dmg + .AppImage
-- [ ] `npm run test:e2e:mvp` зелёный
-- [ ] CHANGELOG.md обновлён
-- [ ] README.md содержит install + first-run guide
-- [ ] OCR проверен на Windows 11 + macOS 14 (Vision Framework)
-- [ ] LM Studio integration работает на свежей установке
-- [ ] Qdrant docker-compose готов в `infra/docker-compose.yml`
-
-После этого -- `git tag v0.1.0-rc1 && git push --tags` + GitHub Release.
+- Полные unit-тесты парсеров (RTF/DOC/ODT особенно хрупкие)
+- Playwright E2E на уровне UI (сейчас только smoke через harness)
+- Telemetry dashboard (renderer route)
+- macOS/Linux build targets
+- TON licensing (pro-tier gate для forge local runner, кристаллизатор >100 chunks)
+- Plugin system (3rd-party extraction roles)
+- Memory profiler / heap snapshots для долгих сессий (>4h)
+- Crystallizer streaming UI (per-chunk live preview принятых концептов)
 
 ---
 
-## Что НЕ нужно для MVP
+## P0 — Критические задачи (ближайший спринт)
 
-- Mobile app (P3)
-- Cloud sync (P2.1, после first release)
-- Plugin system (P3)
-- Telemetry dashboard (P3)
-- Production-grade auth (только для cloud sync)
+### P0.1. Фикс race condition в evaluator-queue
 
-MVP = single-user desktop, локальные данные, опциональная TON-лицензия для
-unlock pro features. Этого достаточно для community release и первой
-коммерциализации.
+**Проблема:** `DEFAULT_SLOT_COUNT=2` означает, что оба слота стартуют параллельно. В тесте `"continues after single book fails"` первый вызов `evaluateBook` может достаться книге B, а не A — что инвертирует ожидаемые статусы. В продакшне это означает, что при нескольких одновременных книгах `failed` может достаться не той.
+
+**Решение:** В тесте добавить `setEvaluatorSlots(1)` перед проверкой. В production-логике — инъекция ошибки по `bookId`, а не по shared counter.
+
+**Файлы:** `tests/evaluator-queue.test.ts`, `electron/lib/library/evaluator-queue.ts`
+
+**Критерий:** `npm run test:fast` зелёный 3 прогона подряд.
+
+### P0.2. Показывать ошибку пользователю при сбое loadCatalog
+
+**Проблема:** `loadCatalog()` при выброшенном исключении логирует только в `console.error`. Пользователь видит пустую таблицу — не понимает: пусто или сломано.
+
+**Решение:** В catch-блоке `loadCatalog` добавить `await showAlert(t("library.catalog.loadError", { msg }))` или вставить error-banner в таблицу.
+
+**Файлы:** `renderer/library/catalog.js`
+
+**Критерий:** При искусственной ошибке IPC пользователь видит явное сообщение.
+
+### P0.3. Защитить evaluateBook от throw при недоступном LM Studio
+
+**Проблема:** `pickEvaluatorModel()` вызывает `listLoaded()` и `listDownloaded()` без try/catch. Если LM Studio недоступен — бросает. В `evaluateBook` этот вызов не обёрнут.
+
+**Решение:** Обернуть вызов `pickEvaluatorModel()` в `evaluateBook` в try/catch и вернуть `{ evaluation: null, warnings: ["evaluator: LM Studio unavailable"] }`.
+
+**Файлы:** `electron/lib/library/book-evaluator.ts`
+
+**Критерий:** `evaluateBook("...", {})` при offline LM Studio никогда не бросает.
+
+---
+
+## P1 — Следующий sprint
+
+### P1.1. Добавить visionModelKey / visionMetaEnabled в Settings UI
+
+`visionModelKey` и `visionMetaEnabled` есть в `PreferencesSchema` (ключи 42–43) но не открыты в `renderer/settings/sections.js`. Добавить в секцию OCR или новую секцию Vision.
+
+**Критерий:** Пользователь может задать/очистить `visionModelKey` в Settings → OCR без правки `data/preferences.json` вручную.
+
+### P1.2. Session persistence
+
+Сохранять состояние библиотеки (`selectedBookIds`, активные фильтры) в `data/library-session.json` при unload и восстанавливать при mount.
+
+**Критерий:** Пользователь выбирает 20 книг → закрывает → открывает → видит тот же набор.
+
+### P1.3. Обновить help-kb source list
+
+После удаления `docs/STATE-OF-PROJECT.md` этот файл больше не существует, но может быть в source list `help-kb/ingest.ts`. Заменить на `docs/AI-AUDIT.md` + `docs/ROADMAP-TO-MVP.md`.
+
+**Критерий:** `npm run build:help-kb` завершается без ошибок 404.
+
+### P1.4. Visible per-book errors при bulk delete
+
+В `catalog.js` `deleteBook` ошибки идут в `console.warn`. Добавить аккумулированный toast: «Удалено N, ошибок M: [детали]».
+
+**Критерий:** При partial failure пользователь видит точное число неудач.
+
+### P1.5. Централизованный toast manager
+
+Создать `renderer/components/toast.js` с очередью, анимацией, auto-dismiss (через `toastTtlMs` из prefs). Заменить прямые `showAlert` в Library на toast где это уместно.
+
+**Критерий:** Все toast-уведомления в Library используют единый компонент; нет `alert()` в маршруте library.
+
+---
+
+## P2 — Архитектурный sprint
+
+### P2.1. CI/CD — GitHub Actions
+
+Создать `.github/workflows/ci.yml`:
+- `npm run lint`
+- `npm run test:fast`
+- `npm run electron:compile`
+
+Триггер: push на `main`, PR.
+
+**Критерий:** Зелёный workflow badge на README.
+
+### P2.2. Auto-update (`electron-updater`)
+
+Добавить `electron-updater` в deps. Настроить `build.publish` в `package.json`:
+
+```yaml
+publish:
+  provider: github
+  owner: <owner>
+  repo: bibliary
+```
+
+Добавить баннер «Доступна новая версия» при старте.
+
+**Критерий:** Клик «Обновить» → тихая загрузка → перезапуск с новой версией.
+
+### P2.3. chunkHardSplitLimit в prefs
+
+Добавить ключ `chunkHardSplitLimit` (default 2500) в `PreferencesSchema` и пробрасить в `semantic-chunker.ts`. Устранить несоответствие между `chunkSafeLimit` (4000, configurable) и `HARD_SPLIT_LIMIT` (2500, hardcoded).
+
+**Критерий:** Изменение в Settings → следующая кристаллизация использует новое значение.
+
+### P2.4. On-demand embedder download с progress UI
+
+`@xenova/transformers` при первом старте блокирующе качает ~60 MB. Показывать progress bar в onboarding wizard или resilience-bar.
+
+**Критерий:** Первый старт на чистой машине показывает прогресс, не «зависает» на 30 секунд.
+
+### P2.5. RTF/DOC/ODT: smoke unit-тесты + fallback warnings
+
+Добавить тесты с реальными фикстурами для `rtf.ts`, `doc.ts`, `odt.ts`. Убедиться, что при пустом результате warnings содержат actionable сообщение (не просто «0 sections»).
+
+**Критерий:** `tests/parser-smoke.test.ts` проверяет минимальный вывод для каждого формата.
+
+### P2.6. Базовые unit-тесты для Forge, BookHunter, YaRN
+
+Добавить в `tests/`:
+- `forge-configgen.test.ts` — Zod schema + generateUnslothPython + generateAxolotlYaml
+- `bookhunter-aggregator.test.ts` — mock source, dedup, license filter
+- `yarn-engine.test.ts` — snapFactor, estimateKVCache, recommend
+
+**Критерий:** `npm run test:fast` покрывает базовую логику Forge, BookHunter, YaRN без LM Studio.
+
+---
+
+## P3 — Backlog (без конкретных сроков)
+
+```
+□ Playwright E2E: полный UI-уровень (не только smoke через harness)
+□ Telemetry dashboard route в renderer
+□ macOS/Linux: добавить targets в electron-builder.yml
+□ TON licensing: electron/lib/licensing/ton.ts (pro-tier gate)
+□ Plugin system: 3rd-party extraction roles через хук в coordinator
+□ Memory profiler: heap snapshot каждые 30 мин при сессии >4 часов
+□ Crystallizer streaming UI: per-chunk live preview принятых концептов
+□ Auto-detect OCR language из PDF metadata (Language field) → prefs.ocrLanguages fallback
+```
+
+---
+
+## RC Checklist (следующий release)
+
+```
+□ P0.1 + P0.2 + P0.3 закрыты
+□ npm run lint                         (exit 0)
+□ npm run test:fast                    (все тесты 3 прогона подряд)
+□ npm run test:smoke                   (Electron E2E зелёный)
+□ npm run electron:compile             (exit 0)
+□ npm run electron:build-portable      (EXE собран, размер в норме)
+□ Smoke install test на чистой OS Windows 10+
+□ OCR проверен на scanned PDF (Windows.Media.Ocr)
+□ LM Studio integration работает на свежей установке (v0.4.12+)
+□ Qdrant доступен через docker compose или local install
+□ CHANGELOG.md обновлён (user-facing changes)
+□ README.md содержит install + first-run guide
+```
+
+После: `git tag v3.2.0 && git push --tags` + GitHub Release (если P2.2 реализован — auto-update).
+
+---
+
+## Что НЕ в scope
+
+- Mobile companion app (P3 после cloud sync)
+- Cloud sync (P3, требует auth инфраструктуры)
+- Production-grade multi-user (Bibliary — single-user desktop)
+- GPU-accelerated embeddings (Xenova ONNX достаточно для desktop library)
+- Web версия (Electron first)

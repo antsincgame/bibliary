@@ -14,11 +14,12 @@ import * as path from "path";
 import JSZip from "jszip";
 import { XMLParser } from "fast-xml-parser";
 import type { ImageRef } from "./types.js";
-import { runDdjvu } from "../scanner/parsers/djvu-cli.js";
+import { getDjvuPageCount, runDdjvu } from "../scanner/parsers/djvu-cli.js";
 import { imageBufferToPng } from "../native/sharp-loader.js";
 
 const DEFAULT_MAX_IMAGES = 100;
 const DEFAULT_MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const DEFAULT_RASTER_PAGE_LIMIT = 12;
 
 const IMAGE_MIME_BY_EXT: Record<string, string> = {
   jpg: "image/jpeg",
@@ -55,6 +56,12 @@ function makeCtx(opts?: { maxImageBytes?: number; maxImagesPerBook?: number }, w
 
 function pad3(n: number): string {
   return String(n).padStart(3, "0");
+}
+
+function rasterPageLimit(maxImagesPerBook: number | undefined): number {
+  const env = Number.parseInt(process.env.BIBLIARY_RASTER_IMAGE_PAGE_LIMIT ?? "", 10);
+  const fallback = Number.isInteger(env) && env > 0 ? env : DEFAULT_RASTER_PAGE_LIMIT;
+  return Math.max(1, Math.min(maxImagesPerBook ?? fallback, fallback));
 }
 
 /* ─────────────────────────── EPUB ─────────────────────────── */
@@ -273,25 +280,25 @@ export async function extractFb2Images(
   }
 }
 
-/* ─────────────────────────── PDF (cover only) ─────────────────────────── */
+/* ─────────────────────────── PDF (page gallery) ─────────────────────────── */
 
 /**
- * Полное извлечение картинок из PDF -- слишком дорогое (нужен парс
- * `getOperatorList()` каждой страницы и сборка обратно в PNG из xObject'ов).
- * На этом этапе генерируем ОДНУ обложку: рендерим первую страницу как PNG
- * через @napi-rs/canvas (CPU, без GPU). Этого достаточно для каталога.
+ * Универсальное извлечение визуального слоя PDF: рендерим первые N страниц
+ * как PNG. Это не пытается достать raw XObject, зато гарантированно сохраняет
+ * обложку, схемы, таблицы и сканы как иллюстрации в `book.md`.
  */
-export async function extractPdfCover(
+export async function extractPdfImages(
   filePath: string,
-  opts?: { maxImageBytes?: number; targetWidth?: number; signal?: AbortSignal },
+  opts?: { maxImageBytes?: number; maxImagesPerBook?: number; targetWidth?: number; signal?: AbortSignal },
 ): Promise<{ images: ImageRef[]; warnings: string[] }> {
   const warnings: string[] = [];
   const maxBytes = opts?.maxImageBytes ?? DEFAULT_MAX_IMAGE_BYTES;
   const targetWidth = opts?.targetWidth ?? 600;
+  const pageLimit = rasterPageLimit(opts?.maxImagesPerBook);
 
   let doc: Awaited<ReturnType<typeof import("pdfjs-dist/legacy/build/pdf.mjs").getDocument>["promise"]> | null = null;
   try {
-    if (opts?.signal?.aborted) return { images: [], warnings: ["pdf-cover: aborted"] };
+    if (opts?.signal?.aborted) return { images: [], warnings: ["pdf-images: aborted"] };
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
     const buf = await fs.readFile(filePath);
     const data = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
@@ -305,53 +312,68 @@ export async function extractPdfCover(
       doc = await loadingTask.promise;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      return { images: [], warnings: [`pdf-cover: getDocument failed -- ${msg.slice(0, 120)}`] };
+      return { images: [], warnings: [`pdf-images: getDocument failed -- ${msg.slice(0, 120)}`] };
     }
 
     if (doc.numPages === 0) {
-      return { images: [], warnings: ["pdf-cover: 0 pages"] };
+      return { images: [], warnings: ["pdf-images: 0 pages"] };
     }
-
-    const page = await doc.getPage(1);
-    const initialViewport = page.getViewport({ scale: 1 });
-    const scale = targetWidth / initialViewport.width;
-    const viewport = page.getViewport({ scale });
 
     const { createCanvas } = await import("@napi-rs/canvas");
-    const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
-    const ctx2d = canvas.getContext("2d");
+    const images: ImageRef[] = [];
+    const pagesToRender = Math.min(doc.numPages, pageLimit);
 
-    /* pdfjs ожидает Web-canvas-совместимый контекст. @napi-rs/canvas почти
-       полностью совместим, но pdfjs требует свойство `canvas` на контексте. */
-    (ctx2d as unknown as { canvas: unknown }).canvas = canvas;
+    for (let pageIndex = 0; pageIndex < pagesToRender; pageIndex++) {
+      if (opts?.signal?.aborted) {
+        warnings.push("pdf-images: aborted");
+        break;
+      }
+      const page = await doc.getPage(pageIndex + 1);
+      const initialViewport = page.getViewport({ scale: 1 });
+      const scale = targetWidth / initialViewport.width;
+      const viewport = page.getViewport({ scale });
 
-    await page.render({
-      canvasContext: ctx2d as unknown as CanvasRenderingContext2D,
-      viewport,
-    } as Parameters<typeof page.render>[0]).promise;
+      const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+      const ctx2d = canvas.getContext("2d");
 
-    const png = canvas.toBuffer("image/png");
-    await page.cleanup();
+      /* pdfjs ожидает Web-canvas-совместимый контекст. @napi-rs/canvas почти
+         полностью совместим, но pdfjs требует свойство `canvas` на контексте. */
+      (ctx2d as unknown as { canvas: unknown }).canvas = canvas;
 
-    if (png.length > maxBytes) {
-      return { images: [], warnings: [`pdf-cover: rendered ${png.length} bytes > ${maxBytes} cap`] };
+      await page.render({
+        canvasContext: ctx2d as unknown as CanvasRenderingContext2D,
+        viewport,
+      } as Parameters<typeof page.render>[0]).promise;
+
+      const png = canvas.toBuffer("image/png");
+      await page.cleanup();
+
+      if (png.length > maxBytes) {
+        warnings.push(`pdf-images: page ${pageIndex + 1} rendered ${png.length} bytes > ${maxBytes} cap, skipped`);
+        continue;
+      }
+      images.push({
+        id: pageIndex === 0 ? "img-cover" : `img-${pad3(pageIndex)}`,
+        mimeType: "image/png",
+        buffer: png,
+        caption: pageIndex === 0 ? "Page 1 (cover)" : `Page ${pageIndex + 1}`,
+      });
     }
-    return {
-      images: [{ id: "img-cover", mimeType: "image/png", buffer: png, caption: "Page 1 (cover)" }],
-      warnings,
-    };
+
+    if (doc.numPages > pagesToRender) warnings.push(`pdf-images: page gallery limited to ${pagesToRender}/${doc.numPages} pages`);
+    return { images, warnings };
   } catch (e) {
-    return { images: [], warnings: [`pdf-cover: render failed -- ${e instanceof Error ? e.message : String(e)}`] };
+    return { images: [], warnings: [`pdf-images: render failed -- ${e instanceof Error ? e.message : String(e)}`] };
   } finally {
-    await doc?.destroy().catch((err) => console.error("[image-extractors/pdfCover] destroy Error:", err));
+    await doc?.destroy().catch((err) => console.error("[image-extractors/pdfImages] destroy Error:", err));
   }
 }
 
-/* ─────────────────────────── DJVU (cover only) ─────────────────────────── */
+/* ─────────────────────────── DJVU (page gallery) ─────────────────────────── */
 
-export async function extractDjvuCover(
+export async function extractDjvuImages(
   filePath: string,
-  opts?: { maxImageBytes?: number; targetWidth?: number; signal?: AbortSignal; dpi?: number },
+  opts?: { maxImageBytes?: number; maxImagesPerBook?: number; targetWidth?: number; signal?: AbortSignal; dpi?: number },
 ): Promise<{ images: ImageRef[]; warnings: string[] }> {
   const warnings: string[] = [];
   const maxBytes = opts?.maxImageBytes ?? DEFAULT_MAX_IMAGE_BYTES;
@@ -359,21 +381,47 @@ export async function extractDjvuCover(
   const dpi = Math.max(72, opts?.dpi ?? 200);
 
   try {
-    if (opts?.signal?.aborted) return { images: [], warnings: ["djvu-cover: aborted"] };
-    const tiff = await runDdjvu(filePath, 0, dpi, opts?.signal);
-    if (tiff.length === 0) return { images: [], warnings: ["djvu-cover: empty render"] };
-    const png = await imageBufferToPng(tiff, targetWidth);
+    if (opts?.signal?.aborted) return { images: [], warnings: ["djvu-images: aborted"] };
+    let pageCount = 1;
+    try {
+      pageCount = await getDjvuPageCount(filePath, opts?.signal);
+    } catch (e) {
+      warnings.push(`djvu-images: page count failed -- ${e instanceof Error ? e.message : String(e)}`);
+    }
+    const pagesToRender = Math.min(pageCount, rasterPageLimit(opts?.maxImagesPerBook));
+    const images: ImageRef[] = [];
 
-    if (png.length > maxBytes) {
-      return { images: [], warnings: [`djvu-cover: rendered ${png.length} bytes > ${maxBytes} cap`] };
+    for (let pageIndex = 0; pageIndex < pagesToRender; pageIndex++) {
+      if (opts?.signal?.aborted) {
+        warnings.push("djvu-images: aborted");
+        break;
+      }
+      try {
+        const tiff = await runDdjvu(filePath, pageIndex, dpi, opts?.signal);
+        if (tiff.length === 0) {
+          warnings.push(`djvu-images: page ${pageIndex + 1} empty render`);
+          continue;
+        }
+        const png = await imageBufferToPng(tiff, targetWidth);
+        if (png.length > maxBytes) {
+          warnings.push(`djvu-images: page ${pageIndex + 1} rendered ${png.length} bytes > ${maxBytes} cap, skipped`);
+          continue;
+        }
+        images.push({
+          id: pageIndex === 0 ? "img-cover" : `img-${pad3(pageIndex)}`,
+          mimeType: "image/png",
+          buffer: png,
+          caption: pageIndex === 0 ? "Page 1 (cover)" : `Page ${pageIndex + 1}`,
+        });
+      } catch (e) {
+        warnings.push(`djvu-images: page ${pageIndex + 1} render failed -- ${e instanceof Error ? e.message : String(e)}`);
+      }
     }
 
-    return {
-      images: [{ id: "img-cover", mimeType: "image/png", buffer: png, caption: "Page 1 (cover)" }],
-      warnings,
-    };
+    if (pageCount > pagesToRender) warnings.push(`djvu-images: page gallery limited to ${pagesToRender}/${pageCount} pages`);
+    return { images, warnings };
   } catch (e) {
-    return { images: [], warnings: [`djvu-cover: render failed -- ${e instanceof Error ? e.message : String(e)}`] };
+    return { images: [], warnings: [`djvu-images: render failed -- ${e instanceof Error ? e.message : String(e)}`] };
   }
 }
 
@@ -398,9 +446,9 @@ export async function extractBookImages(
     case "fb2":
       return extractFb2Images(filePath, opts);
     case "pdf":
-      return extractPdfCover(filePath, { maxImageBytes: opts?.maxImageBytes, signal: opts?.signal });
+      return extractPdfImages(filePath, { maxImageBytes: opts?.maxImageBytes, maxImagesPerBook: opts?.maxImagesPerBook, signal: opts?.signal });
     case "djvu":
-      return extractDjvuCover(filePath, { maxImageBytes: opts?.maxImageBytes, signal: opts?.signal });
+      return extractDjvuImages(filePath, { maxImageBytes: opts?.maxImageBytes, maxImagesPerBook: opts?.maxImagesPerBook, signal: opts?.signal });
     case "txt":
     case "rtf":
     case "odt":

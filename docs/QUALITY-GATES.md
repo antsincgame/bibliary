@@ -4,8 +4,7 @@
 > с этим документом. "Зелёный" результат = можно двигать дальше; "красный"
 > -- блокирует.
 >
-> Применяем по `omnissiah-docs/refactor-rubric`: один тип gate -- один
-> уровень безопасности (Type 1 / Type 2 / Type 3).
+> Применяем rubric: один тип gate -- один уровень безопасности (Type 1 / Type 2 / Type 3).
 
 ## Gate 0 -- Pre-commit (локально, каждый коммит)
 
@@ -43,11 +42,11 @@ Type 2, обязательно. Время: <10 мин.
 
 ```
 □ Gate 1 пройден
-□ Все 34 preferences keys wired в runtime ИЛИ помечены
-  (UNUSED / RESERVED) в docs/UI-TESTER-REPORT.md
-□ Если изменился UI -- /ui-tester scan (0 dead handlers)
-□ Если изменился schema preferences -- migration test
-  (data/preferences.json совместим с прошлой версией)
+□ Если изменился PreferencesSchema (55 ключей) -- проверить backward compat:
+  data/preferences.json от прошлой версии не падает при load
+□ Если добавлен новый preference key -- открыть в renderer/settings/sections.js
+  ИЛИ явно пометить «internal» комментарием в PreferencesSchema
+□ Если изменился UI -- проверить что нет dead handlers (кнопок без обработчиков)
 □ Diff для CHANGELOG.md (если user-facing change)
 □ Refactor-rubric checklist (что Type, какой ROI)
 ```
@@ -58,13 +57,15 @@ Type 2+3, обязательно. Время: <30 мин.
 
 ```
 □ Gate 2 пройден
+□ npm run test:smoke                                (Electron UI E2E, playwright)
 □ npm run test:e2e:scanner                          (живой Qdrant)
 □ npm run test:e2e:library-ux                       (живой Qdrant)
+□ npm run test:e2e:full-corpus                      (реальный корпус книг)
 □ npm run test:e2e:bookhunter                       (живая сеть)
 □ npm run test:agent-live                           (живой LM Studio)
-□ npm run electron:build                            (.exe / .dmg / .AppImage)
-□ Smoke install test на чистой OS
-□ OCR прогон на 1 scanned PDF + 1 image (Windows + macOS)
+□ npm run electron:build-portable                   (.exe Windows portable)
+□ Smoke install test на чистой OS Windows 10+
+□ OCR прогон на 1 scanned PDF (Windows.Media.Ocr)
 □ docs/ROADMAP-TO-MVP.md -- P0 пункты закрыты
 ```
 
@@ -93,9 +94,15 @@ Type 3, обязательно. Время: <2 часа.
 ### Wired preferences ratio
 
 ```
-Цель: 100% (39/39)
-Текущее: 38/39 (97%)
-   Reserved: refreshIntervalMs (для будущих poll loops)
+Итого ключей в PreferencesSchema: 55
+Открыто в Settings UI:           41 (74%)
+Внутренних/wizard:               14 (26%) — chatModel, agentModel, extractorModel,
+                                            judgeModel, chatHistoryCap, chatHistoryPersist,
+                                            onboardingDone, onboardingVersion, seenRebrandV2,
+                                            libraryGroupBy, visionModelKey, visionMetaEnabled,
+                                            ingestUpsertBatch, maxBookChars
+
+P1-задача: добавить visionModelKey/visionMetaEnabled в UI Settings → OCR секция.
 ```
 
 ### Test coverage by route
@@ -117,31 +124,19 @@ P1 пункт roadmap: написать smoke тесты для Chat / Qdrant / 
 ### Файлы > 400 строк (Type 2 кандидаты на split)
 
 ```
-981  renderer/dataset.js          -- разбить на step1/2/3/4/intro модули
-847  renderer/library.js          -- выделить browse/search/history панели
-549  renderer/forge.js
-497  renderer/forge-agent.js
-489  renderer/dataset-v2.js
-420  electron/lib/forge/configgen.ts
-403  renderer/components/context-slider.js
+(актуальный список — запустить: git ls-files | xargs wc -l | sort -rn | head -20)
+Ориентировочные кандидаты: renderer/forge.js, renderer/dataset-v2.js,
+electron/lib/forge/configgen.ts, renderer/components/context-slider.js
 ```
 
-ROI этого split сейчас < 2.0 (нет тестов покрывающих UI behaviour).
-План: сначала написать smoke тесты, потом split.
+ROI этого split < 2.0 пока нет тестов покрывающих UI behaviour.
+План: сначала Electron E2E smoke (P2.6), потом split.
 
 ### Hot-path функции > 50 строк
 
 ```
-~320  buildContextSlider             (renderer/components/context-slider.js)
-~148  runAgentLoop                   (electron/lib/agent/loop.ts)
-~145  ingestBook                     (electron/lib/scanner/ingest.ts)
-~143  renderStep1                    (renderer/dataset.js)
-~98   handleAgentEvent               (renderer/forge-agent.js)
-~98   extractOne                     (electron/lib/dataset-v2/concept-extractor.ts)
-~89   renderStep4
-~88   renderStep2
-~85   mountAgent
-~83   buildStepRun                   (renderer/forge.js)
+(актуальный список — запустить: grep -n "^function\|^async function\|^export function" electron/**/*.ts | awk -F: '{print $2}' | sort)
+Известные hotspots: buildContextSlider (context-slider.js), runAgentLoop (agent/loop.ts)
 ```
 
 Не блокирующее. Type 2 refactor candidates на P2/P3.
@@ -164,5 +159,5 @@ ROI > 2.0   → делать сейчас
 | Type 2 | Split god-class, extract layer, replace pattern | Нужны до начала | Адаптация тестов ожидается |
 | Type 3 | Split monolith, swap library, change API | Нужны + plan | Migration path + rollback |
 
-Текущий проект в **Type 1 режиме до RC**. Type 2 (split renderer/* >400)
-после P0.2 (e2e MVP).
+Текущий проект в **Type 1 режиме**. Type 2 (split крупных renderer-файлов)
+планируется после написания полноценных UI-level E2E тестов.

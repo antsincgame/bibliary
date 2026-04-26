@@ -547,9 +547,22 @@ function extractMetadataHints(
   if (isbnMatch && !meta.isbn) {
     hints.push(`- ISBN from text: ${isbnMatch[1]}`);
   }
-  const authorLineRu = textSample.match(/(?:автор|author)\s*[:：]\s*(.{2,60})/i);
+  const authorLineRu = textSample.match(/(?:автор|author|by)\s*[:：]\s*(.{2,60})/i);
   if (authorLineRu && !meta.author) {
     hints.push(`- Author line from text: ${authorLineRu[1].trim()}`);
+  }
+  /* Украинская специфика: ловим "видавництво", "рік видання", "друкарня". */
+  const ukPublisher = textSample.match(/(?:видавництво|видавець|друкарня)\s*[:：]?\s*([^\n]{2,80})/i);
+  if (ukPublisher && !meta.publisher) {
+    hints.push(`- Publisher (uk) from text: ${ukPublisher[1].trim()}`);
+  }
+  const ukYear = textSample.match(/\b(?:рік\s*видання|видання)\s*[:：]?\s*((?:19|20)\d{2})/i);
+  if (ukYear && meta.year == null) {
+    hints.push(`- Year (uk) from text: ${ukYear[1]}`);
+  }
+  /* Ukrainian-specific letter signal — даём подсказку модели о языке. */
+  if (/[іїєґІЇЄҐ]/.test(textSample)) {
+    hints.push(`- Likely Ukrainian (i/ї/є/ґ detected)`);
   }
 
   return hints;

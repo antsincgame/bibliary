@@ -90,7 +90,7 @@ export function renderCatalogTable(root) {
       ? `${t("library.catalog.empty.title")} — ${t("library.catalog.empty.body")}`
       : t("library.catalog.empty.filtered");
     tbody.appendChild(el("tr", { class: "lib-catalog-empty-row" }, [
-      el("td", { colspan: "7", class: "lib-catalog-empty-cell" }, msg),
+      el("td", { colspan: "8", class: "lib-catalog-empty-cell" }, msg),
     ]));
     return;
   }
@@ -105,14 +105,20 @@ export function renderCatalogTable(root) {
       if (sEl) sEl.textContent = t("library.catalog.summary.selected", { n: String(CATALOG.selected.size) });
     });
     const q = typeof row.qualityScore === "number" ? row.qualityScore : null;
+    /* Title cell: предпочитаем titleEn (после оценки) или original title (после vision-meta).
+       Fallback на id только если оба пусты — этого почти не бывает после vision enrichment. */
+    const displayTitle = row.titleEn || row.title || row.id;
     const titleCell = el("td", {
       class: "lib-catalog-cell-title lib-catalog-cell-clickable",
-      title: row.titleEn || row.title || row.id,
+      title: row.title && row.titleEn && row.title !== row.titleEn
+        ? `${row.titleEn} (orig: ${row.title})`
+        : displayTitle,
       onclick: () => {
         const pane = root.closest(".lib-pane-catalog") || root;
         openBook(row.id, pane);
       },
-    }, row.title || row.id);
+    }, displayTitle);
+    const displayAuthor = row.authorEn || row.author || "";
     const statusText = statusLabel(row.status);
     const errorText = compactError(row.lastError);
     const statusCell = el("td", {
@@ -126,7 +132,8 @@ export function renderCatalogTable(root) {
     }, [
       el("td", { class: "lib-catalog-cell-cb" }, [cb]),
       titleCell,
-      el("td", { class: "lib-catalog-cell-author" }, row.author || ""),
+      el("td", { class: "lib-catalog-cell-author" }, displayAuthor),
+      el("td", { class: "lib-catalog-cell-year" }, row.year ? String(row.year) : ""),
       el("td", { class: "lib-catalog-cell-domain" }, row.domain || ""),
       el("td", { class: "lib-catalog-cell-words" }, fmtWords(row.wordCount)),
       el("td", { class: "lib-catalog-cell-quality" }, q !== null ? fmtQuality(q) : ""),
@@ -228,12 +235,14 @@ export function buildCatalogToolbar(root) {
 
   const refreshBtn = el("button", {
     type: "button", class: "lib-btn lib-btn-ghost",
-    onclick: () => void renderCatalog(root),
+    onclick: (ev) => void withButtonBusy(ev, async () => {
+      await renderCatalog(root);
+    }),
   }, t("library.catalog.btn.refresh"));
 
   const rebuildBtn = el("button", {
     type: "button", class: "lib-btn lib-btn-ghost",
-    onclick: async () => {
+    onclick: (ev) => void withButtonBusy(ev, async () => {
       try {
         const res = await window.api.library.rebuildCache();
         await showAlert(t("library.catalog.rebuild.done", {
@@ -247,12 +256,12 @@ export function buildCatalogToolbar(root) {
         }));
       }
       void renderCatalog(root);
-    },
+    }),
   }, t("library.catalog.btn.rebuild"));
 
   const reevaluateAllBtn = el("button", {
     type: "button", class: "lib-btn lib-btn-ghost",
-    onclick: async () => {
+    onclick: (ev) => void withButtonBusy(ev, async () => {
       try {
         const res = await window.api.library.reevaluateAll();
         await showAlert(t("library.catalog.toast.reevaluateAll", { n: String(res.queued) }));
@@ -260,7 +269,7 @@ export function buildCatalogToolbar(root) {
         await showAlert(e instanceof Error ? e.message : String(e));
       }
       void renderCatalog(root);
-    },
+    }),
   }, t("library.catalog.btn.reevaluateAll"));
 
   const tagCloudBtn = el("button", {
@@ -313,6 +322,7 @@ export function buildCatalogTable() {
       el("th", { class: "lib-catalog-th-cb" }),
       el("th", {}, t("library.catalog.col.title")),
       el("th", {}, t("library.catalog.col.author")),
+      el("th", { class: "lib-catalog-th-year" }, t("library.catalog.col.year")),
       el("th", {}, t("library.catalog.col.domain")),
       el("th", {}, t("library.catalog.col.words")),
       el("th", {}, t("library.catalog.col.quality")),
@@ -360,25 +370,29 @@ export function buildCatalogBottomBar(root, deps) {
 
   const deleteBtn = el("button", {
     type: "button", class: "lib-btn lib-btn-danger",
-    onclick: async () => {
+    onclick: (ev) => void withButtonBusy(ev, async () => {
       if (CATALOG.selected.size === 0) return;
       if (!(await showConfirm(t("library.catalog.confirm.delete", {
         title: `${CATALOG.selected.size} books`,
-      })))) return;
+      }), {
+        title: t("library.catalog.confirm.deleteTitle"),
+        okText: t("library.catalog.btn.delete"),
+        okVariant: "danger",
+      }))) return;
       for (const bookId of Array.from(CATALOG.selected)) {
         try { await window.api.library.deleteBook(bookId, true); }
         catch (e) { console.warn("[library.delete]", bookId, e); }
       }
       CATALOG.selected.clear();
       await deps.renderCatalog(root);
-    },
+    }),
   }, t("library.catalog.btn.delete"));
 
   const reevaluateBtn = el("button", {
     type: "button", class: "lib-btn lib-btn-ghost",
     "data-mode-min": "advanced",
     title: t("library.catalog.tooltip.reevaluate"),
-    onclick: async () => {
+    onclick: (ev) => void withButtonBusy(ev, async () => {
       if (CATALOG.selected.size === 0) return;
       const ids = Array.from(CATALOG.selected);
       let queued = 0;
@@ -390,7 +404,7 @@ export function buildCatalogBottomBar(root, deps) {
       }
       setCatalogStatus(root, t("library.catalog.toast.reevaluated", { n: String(queued) }));
       await deps.renderCatalog(root);
-    },
+    }),
   }, t("library.catalog.btn.reevaluate"));
 
   deleteBtn.dataset.modeMin = "pro";
@@ -399,7 +413,7 @@ export function buildCatalogBottomBar(root, deps) {
     type: "button", class: "lib-btn lib-btn-ghost",
     "data-mode-min": "advanced",
     title: t("library.catalog.tooltip.reparse"),
-    onclick: async () => {
+    onclick: (ev) => void withButtonBusy(ev, async () => {
       /* Если ничего не выбрано — переparsим ВСЕ unsupported. */
       const targets = CATALOG.selected.size > 0
         ? CATALOG.rows.filter((r) => CATALOG.selected.has(r.id) && r.status === "unsupported")
@@ -437,7 +451,7 @@ export function buildCatalogBottomBar(root, deps) {
       const detail = errors.slice(0, 3).join("\n");
       await showAlert(detail ? `${summary}\n\n${detail}` : summary);
       await deps.renderCatalog(root);
-    },
+    }),
   }, t("library.catalog.btn.reparse"));
 
   const chunksBtn = el("button", {
@@ -484,4 +498,31 @@ function setCatalogStatus(root, text) {
     delete /** @type {HTMLElement} */ (statusEl).dataset.clearTimer;
   }, 4000);
   /** @type {HTMLElement} */ (statusEl).dataset.clearTimer = String(timer);
+}
+
+/**
+ * Prevent duplicate async actions from double-clicks while preserving the
+ * existing button layout and handlers.
+ * @param {Event|HTMLButtonElement} evOrButton
+ * @param {() => Promise<void>} task
+ */
+async function withButtonBusy(evOrButton, task) {
+  const btn = evOrButton instanceof HTMLButtonElement
+    ? evOrButton
+    : evOrButton.currentTarget instanceof HTMLButtonElement
+      ? evOrButton.currentTarget
+      : null;
+  if (btn?.disabled) return;
+  if (btn) {
+    btn.disabled = true;
+    btn.classList.add("lib-btn-busy");
+  }
+  try {
+    await task();
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove("lib-btn-busy");
+    }
+  }
 }

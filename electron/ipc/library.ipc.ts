@@ -70,7 +70,49 @@ import { resolveLibraryRoot } from "../lib/library/paths.js";
 import { scanFolder, type ScanReport, type ScanProgressEvent } from "../lib/library/scan-folder.js";
 import { unregisterFromNearDup, resetNearDupCache } from "../lib/library/near-dup-detector.js";
 import { resetRevisionDedupCache } from "../lib/library/revision-dedup.js";
+import {
+  getImportLogger,
+  type ImportLogEntry,
+  type ImportLogCategory,
+  type ImportLogLevel,
+} from "../lib/library/import-logger.js";
+import { getPreferencesStore } from "../lib/preferences/store.js";
 import type { BookCatalogMeta, BookStatus } from "../lib/library/types.js";
+
+/**
+ * Читает relevant prefs для импорта. Безопасно — если store не инициализирован
+ * (например в тесте), возвращает дефолты, не throw.
+ *
+ * Vision-meta использует ИСКЛЮЧИТЕЛЬНО локальную LM Studio:
+ *   - visionMetaEnabled — флаг (default true);
+ *   - visionModelKey — override modelKey, пусто = автодетект среди загруженных.
+ * Никаких облачных API — если в LM Studio нет vision-модели, импорт работает
+ * без enrichment'а (graceful degradation, причина в логе).
+ */
+async function readImportPrefs(): Promise<{
+  djvuOcrProvider: "system" | "vision-llm" | "none";
+  ocrLanguages: string[];
+  visionMetaEnabled: boolean;
+  visionModelKey?: string;
+}> {
+  try {
+    const store = getPreferencesStore();
+    const prefs = await store.getAll();
+    return {
+      djvuOcrProvider: prefs.djvuOcrProvider,
+      ocrLanguages: prefs.ocrLanguages ?? [],
+      visionMetaEnabled: prefs.visionMetaEnabled !== false,
+      visionModelKey: prefs.visionModelKey?.trim() || undefined,
+    };
+  } catch {
+    return {
+      djvuOcrProvider: "system",
+      ocrLanguages: [],
+      visionMetaEnabled: true,
+      visionModelKey: undefined,
+    };
+  }
+}
 
 const SUPPORTED_FILE_FILTERS = [
   { name: "Books", extensions: ["pdf", "epub", "fb2", "docx", "doc", "rtf", "odt", "html", "htm", "txt", "djvu"] },
@@ -87,6 +129,38 @@ export function abortAllLibrary(reason: string): void {
     activeImports.delete(id);
   }
   cancelCurrentEvaluation(reason);
+}
+
+/** Сколько импортов сейчас в работе. Используется в `before-quit` чтобы не закрывать app посреди работы. */
+export function activeLibraryImportCount(): number {
+  return activeImports.size;
+}
+
+/**
+ * Грейс-завершение всех импортов: abort + ждём пока они освободят activeImports.
+ * Возвращает true если успели за timeoutMs, false иначе. Используется в shutdown
+ * pipeline до закрытия cache-db и BrowserWindow — иначе fs.writeFile в импорте
+ * может оборваться посередине и оставить полу-битый book.md.
+ */
+export async function flushLibraryImports(timeoutMs: number, reason: string): Promise<boolean> {
+  if (activeImports.size === 0) return true;
+  for (const [, ctrl] of activeImports.entries()) ctrl.abort(reason);
+
+  const startedAt = Date.now();
+  const logger = getImportLogger();
+  while (activeImports.size > 0) {
+    if (Date.now() - startedAt > timeoutMs) {
+      await logger.write({
+        importId: "shutdown",
+        level: "error",
+        category: "import.crash",
+        message: `flushLibraryImports: ${activeImports.size} imports still active after ${timeoutMs}ms`,
+      });
+      return false;
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return true;
 }
 
 /**
@@ -106,6 +180,7 @@ export async function bootstrapLibrarySubsystem(getMainWindow: () => BrowserWind
       }
     });
   }
+  ensureImportLogBridge(getMainWindow);
   /* Bootstrap может потерпеть неудачу если cache-db ещё не инициализирована
      (например, первый запуск без папки library). Не критично -- следующий
      импорт сам поставит книги в очередь. */
@@ -121,6 +196,93 @@ function broadcastImportProgress(getMainWindow: () => BrowserWindow | null, impo
   if (win && !win.isDestroyed()) {
     win.webContents.send("library:import-progress", { importId, ...evt });
   }
+  /* Зеркалим в logger как структурированное событие. Это даёт persistent
+     audit trail в data/logs/import-*.jsonl, не зависящий от того, открыт ли UI. */
+  void mirrorProgressToLogger(importId, evt);
+}
+
+function broadcastImportLog(getMainWindow: () => BrowserWindow | null, entry: ImportLogEntry): void {
+  const win = getMainWindow();
+  if (win && !win.isDestroyed()) {
+    win.webContents.send("library:import-log", entry);
+  }
+}
+
+let importLogBridgeInstalled = false;
+
+function ensureImportLogBridge(getMainWindow: () => BrowserWindow | null): void {
+  if (importLogBridgeInstalled) return;
+  importLogBridgeInstalled = true;
+  getImportLogger().subscribe((entry) => broadcastImportLog(getMainWindow, entry));
+}
+
+/**
+ * Превращает ProgressEvent в одну структурированную лог-запись. Никаких
+ * ad-hoc форматов: каждый thrown ошибки/duplicate/added имеет свою category.
+ */
+async function mirrorProgressToLogger(importId: string, evt: ProgressEvent): Promise<void> {
+  const logger = getImportLogger();
+  if (evt.phase === "discovered") {
+    /* discovered события могут идти десятками тысяч в секунду — debug-уровень,
+       чтобы UI не утонул, но в файл всё равно попадало. */
+    if (evt.discovered % 50 === 0) {
+      await logger.write({
+        importId,
+        level: "debug",
+        category: "scan.discovered",
+        message: `Discovered ${evt.discovered} files`,
+      });
+    }
+    return;
+  }
+  if (evt.phase === "scan-complete") {
+    await logger.write({
+      importId,
+      level: "info",
+      category: "scan.complete",
+      message: `Scan finished: ${evt.discovered} files queued for processing`,
+    });
+    return;
+  }
+  /* phase = "processed" */
+  let category: ImportLogCategory;
+  let level: ImportLogLevel;
+  switch (evt.outcome) {
+    case "added":
+      category = "file.added";
+      level = "info";
+      break;
+    case "duplicate":
+      category = "file.duplicate";
+      level = "info";
+      break;
+    case "skipped":
+      category = "file.skipped";
+      level = "info";
+      break;
+    case "failed":
+      category = "file.failed";
+      level = "error";
+      break;
+    default:
+      category = "file.skipped";
+      level = "info";
+  }
+  const baseMessage = evt.outcome === "duplicate" && evt.existingBookTitle
+    ? `Duplicate of "${evt.existingBookTitle}" (${evt.duplicateReason ?? "unknown"})`
+    : evt.outcome === "failed"
+      ? evt.errorMessage ?? "Import failed"
+      : `${evt.outcome ?? "processed"}: ${evt.processed}/${evt.discovered}`;
+  await logger.write({
+    importId,
+    level,
+    category,
+    message: baseMessage,
+    file: evt.currentFile,
+    details: evt.fileWarnings && evt.fileWarnings.length > 0
+      ? { warnings: evt.fileWarnings }
+      : undefined,
+  });
 }
 
 export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): void {
@@ -165,21 +327,76 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
       const ctrl = new AbortController();
       activeImports.set(importId, ctrl);
       const t0 = Date.now();
+      const logger = getImportLogger();
+      const logFile = await logger.startSession(importId);
+      const prefs = await readImportPrefs();
+      await logger.write({
+        importId, level: "info", category: "import.start",
+        message: `Importing folder ${args.folder}`,
+        details: {
+          folder: args.folder, scanArchives: args.scanArchives === true, ocrEnabled: args.ocrEnabled === true, maxDepth: args.maxDepth, logFile,
+          djvuOcrProvider: prefs.djvuOcrProvider, ocrLanguages: prefs.ocrLanguages,
+          visionMetaEnabled: prefs.visionMetaEnabled, visionModelKey: prefs.visionModelKey,
+        },
+      });
+      let endStatus: "ok" | "failed" | "cancelled" = "ok";
       try {
         const opts: ImportFolderOptions = {
           scanArchives: args.scanArchives === true,
           ocrEnabled: args.ocrEnabled === true,
           maxDepth: typeof args.maxDepth === "number" ? args.maxDepth : undefined,
+          djvuOcrProvider: prefs.djvuOcrProvider,
+          ocrLanguages: prefs.ocrLanguages,
+          visionMetaEnabled: prefs.visionMetaEnabled,
+          visionModelKey: prefs.visionModelKey,
           onProgress: (evt) => broadcastImportProgress(getMainWindow, importId, evt),
+          onVisionMetaEvent: (e) => {
+            const cat = e.phase === "start"
+              ? "vision.start"
+              : e.phase === "success" ? "vision.success" : "vision.failed";
+            const lvl = e.phase === "failed" ? "warn" : "info";
+            void logger.write({
+              importId, level: lvl, category: cat,
+              message: e.message ?? `vision-meta ${e.phase}`,
+              file: e.bookFile,
+              durationMs: e.durationMs,
+              details: e.meta ? { meta: e.meta } : undefined,
+            });
+          },
           /* Каждую новую книгу немедленно ставим в очередь оценки --
              не ждём конца импорта, чтобы LLM начала работать сразу. */
-          onBookImported: (meta) => enqueueBook(meta.id),
+          onBookImported: (meta) => {
+            enqueueBook(meta.id);
+            void logger.write({
+              importId, level: "info", category: "evaluator.queued",
+              message: `Queued for evaluation: ${meta.titleEn || meta.title || meta.id}`,
+              file: meta.originalFile,
+              details: { bookId: meta.id, format: meta.originalFormat, words: meta.wordCount },
+            });
+          },
           signal: ctrl.signal,
         };
         const result = await importFolderToLibrary(args.folder, opts);
+        if (ctrl.signal.aborted) endStatus = "cancelled";
+        await logger.write({
+          importId, level: "info", category: "import.complete",
+          message: `Import done: +${result.added} added, ${result.duplicate} dup, ${result.skipped} skip, ${result.failed} fail`,
+          durationMs: Date.now() - t0,
+          details: { ...result },
+        });
         return { importId, ...result, durationMs: Date.now() - t0 };
+      } catch (err) {
+        endStatus = "failed";
+        const msg = err instanceof Error ? err.message : String(err);
+        await logger.write({
+          importId, level: "error", category: "import.crash",
+          message: `Import threw: ${msg}`,
+          details: { stack: err instanceof Error ? err.stack : undefined },
+        });
+        throw err;
       } finally {
         activeImports.delete(importId);
+        await logger.endSession({ status: endStatus });
       }
     }
   );
@@ -204,6 +421,30 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
       const importId = randomUUID();
       const ctrl = new AbortController();
       activeImports.set(importId, ctrl);
+      const logger = getImportLogger();
+      const logFile = await logger.startSession(importId);
+      const prefs = await readImportPrefs();
+      await logger.write({
+        importId, level: "info", category: "import.start",
+        message: `Importing ${args.paths.length} files`,
+        details: {
+          fileCount: args.paths.length, scanArchives: args.scanArchives === true, ocrEnabled: args.ocrEnabled === true, logFile,
+          djvuOcrProvider: prefs.djvuOcrProvider, ocrLanguages: prefs.ocrLanguages,
+          visionMetaEnabled: prefs.visionMetaEnabled, visionModelKey: prefs.visionModelKey,
+        },
+      });
+      const onVisionMetaEvent = (e: { phase: "start" | "success" | "failed"; bookFile: string; message?: string; durationMs?: number; meta?: unknown }) => {
+        const cat = e.phase === "start" ? "vision.start" : e.phase === "success" ? "vision.success" : "vision.failed";
+        const lvl = e.phase === "failed" ? "warn" : "info";
+        void logger.write({
+          importId, level: lvl, category: cat,
+          message: e.message ?? `vision-meta ${e.phase}`,
+          file: e.bookFile,
+          durationMs: e.durationMs,
+          details: e.meta ? { meta: e.meta } : undefined,
+        });
+      };
+      let endStatus: "ok" | "failed" | "cancelled" = "ok";
       try {
         const aggregate = { total: 0, added: 0, duplicate: 0, skipped: 0, failed: 0, warnings: [] as string[] };
         for (let i = 0; i < args.paths.length; i++) {
@@ -214,6 +455,11 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
               scanArchives: args.scanArchives === true,
               ocrEnabled: args.ocrEnabled === true,
               signal: ctrl.signal,
+              djvuOcrProvider: prefs.djvuOcrProvider,
+              ocrLanguages: prefs.ocrLanguages,
+              visionMetaEnabled: prefs.visionMetaEnabled,
+              visionModelKey: prefs.visionModelKey,
+              onVisionMetaEvent,
             });
             for (const r of itemResults) {
               aggregate.total += 1;
@@ -237,23 +483,61 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
               total: args.paths.length,
             });
           } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
             aggregate.total += 1;
             aggregate.failed += 1;
-            aggregate.warnings.push(`${p}: ${e instanceof Error ? e.message : String(e)}`);
+            const tagged = `${p}: ${msg}`;
+            aggregate.warnings.push(`[ERROR] ${tagged}`);
+            /* Раньше в этой ветке прогресс не emit'ился — UI просто видел замолчание.
+               Теперь явно сигналим failed-файл, чтобы лог-панель показала причину. */
+            broadcastImportProgress(getMainWindow, importId, {
+              phase: "processed",
+              discovered: args.paths.length,
+              processed: i + 1,
+              currentFile: p,
+              outcome: "failed",
+              errorMessage: msg,
+              index: i + 1,
+              total: args.paths.length,
+            });
           }
         }
+        if (ctrl.signal.aborted) endStatus = "cancelled";
+        await logger.write({
+          importId, level: "info", category: "import.complete",
+          message: `Import done: +${aggregate.added} added, ${aggregate.duplicate} dup, ${aggregate.skipped} skip, ${aggregate.failed} fail`,
+          details: { ...aggregate },
+        });
         return { importId, ...aggregate };
+      } catch (err) {
+        endStatus = "failed";
+        const msg = err instanceof Error ? err.message : String(err);
+        await logger.write({
+          importId, level: "error", category: "import.crash",
+          message: `Import threw: ${msg}`,
+          details: { stack: err instanceof Error ? err.stack : undefined },
+        });
+        throw err;
       } finally {
         activeImports.delete(importId);
+        await logger.endSession({ status: endStatus });
       }
     }
   );
+
+  ipcMain.handle("library:import-log-snapshot", async (): Promise<ImportLogEntry[]> => {
+    return getImportLogger().snapshot();
+  });
 
   ipcMain.handle("library:cancel-import", async (_e, importId: string): Promise<boolean> => {
     const ctrl = activeImports.get(importId);
     if (!ctrl) return false;
     ctrl.abort("user-cancel");
     activeImports.delete(importId);
+    await getImportLogger().write({
+      importId, level: "warn", category: "import.cancel",
+      message: "Import cancelled by user",
+    });
     return true;
   });
 

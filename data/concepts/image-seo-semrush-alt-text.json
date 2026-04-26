@@ -1,8 +1,0 @@
-[
-  {
-    "principle": "Write alt text as if describing the image to someone on the phone — specific, under 125 chars, one natural keyword, never a keyword dump",
-    "explanation": "X.seo|alt_text_quality: alt -> phone_description_test(how_would_you_describe_to_blind_listener); max_125_chars(screen_readers_truncate_after); 1-2_keywords_naturally NOT keyword_stuffing; skip_prefixes: 'image_of'+'picture_of'(screen_reader_announces_image_already); decorative_images -> alt='' (empty_NOT_missing); NO:alt='shoes' NO:alt='LL_Bean_brown_leather_hiking_walking_winter_duck_boots'; progression: bad='cats' -> good='sleeping cats with yarn' -> best='two ginger kittens sleeping with pink and purple balls of yarn'",
-    "domain": "seo",
-    "tags": ["alt-text", "accessibility", "screen-readers", "keyword-placement", "image-seo"]
-  }
-]

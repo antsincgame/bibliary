@@ -8,6 +8,7 @@
  */
 import { el } from "../dom.js";
 import { t } from "../i18n.js";
+import { showAlert } from "../components/ui-dialog.js";
 import { CATALOG } from "./state.js";
 
 const MIN_FONT = 12;
@@ -25,6 +26,9 @@ export async function openTagCloudModal(deps) {
     stats = await window.api.library.tagStats();
   } catch (e) {
     console.warn("[tag-cloud] failed to load tag stats:", e);
+    await showAlert(t("library.tagCloud.loadFailed", {
+      msg: e instanceof Error ? e.message : String(e),
+    }));
     return;
   }
   if (stats.length === 0) {

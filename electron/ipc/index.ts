@@ -22,7 +22,13 @@ import { registerBookhunterIpc, abortAllBookhunter } from "./bookhunter.ipc.js";
 import { registerAgentIpc, abortAllAgents } from "./agent.ipc.js";
 import { registerPreferencesIpc } from "./preferences.ipc.js";
 import { registerChatHistoryIpc } from "./chat-history.ipc.js";
-import { registerLibraryIpc, abortAllLibrary, bootstrapLibrarySubsystem } from "./library.ipc.js";
+import {
+  registerLibraryIpc,
+  abortAllLibrary,
+  activeLibraryImportCount,
+  flushLibraryImports,
+  bootstrapLibrarySubsystem,
+} from "./library.ipc.js";
 
 export {
   abortAllIngests,
@@ -32,6 +38,8 @@ export {
   abortAllForgeLocal,
   abortAllForgeEval,
   abortAllLibrary,
+  activeLibraryImportCount,
+  flushLibraryImports,
   bootstrapLibrarySubsystem,
 };
 

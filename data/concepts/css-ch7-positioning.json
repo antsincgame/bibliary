@@ -1,8 +1,0 @@
-[
-  {
-    "principle": "Always set position relative on the parent when using absolute positioning inside it — without a positioned ancestor the child escapes to the viewport",
-    "explanation": "X.ux|absolute_positioning: position_absolute -> positions_to_nearest_positioned_ancestor; if_no_positioned_ancestor -> element_escapes_to_viewport; fix: add_position_relative_to_parent; z-index_trap: element_inside_stacking_context_can_never_appear_above_sibling_context_regardless_of_z-index_value; modal_pattern: overlay_z-index_200 + header_z-index_100 -> header_always_above_overlay_if_in_higher_stacking_context; NO:position_absolute_without_relative_parent NO:fighting_z-index_without_understanding_stacking_context eg: \"modal_z-index_9999_still_under_header\" >> \"header_z-index_100 + modal_z-index_200_in_same_stacking_context\"",
-    "domain": "ux",
-    "tags": ["css", "positioning", "z-index", "stacking-context", "modal", "absolute"]
-  }
-]

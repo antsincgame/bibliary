@@ -1,8 +1,0 @@
-[
-  {
-    "principle": "Build one authoritative page per topic instead of multiple pages targeting synonyms — when two pages chase the same intent Google splits ranking signals between them and neither wins",
-    "explanation": "X.seo|keyword_cannibalization: multiple_pages_same_intent -> Google_splits_signals -> both_rank_worse_than_one_consolidated_page_would; detect: pages_where_title+H1+body_target_same_search_intent(even_with_synonym_variations); fix: consolidate_to_single_page + 301_redirect_weaker_URL_to_winner + merge_backlinks; prevent: map_keywords_to_pages_BEFORE_creating_content + 1_focus_keyword_per_page; NO:/web-design + /website-design + /site-design(all_same_intent) NO:launching_new_page_without_checking_topic_overlap; eg: /seo-guide + /seo-tutorial + /learn-seo competing >> consolidate -> /seo-guide + 301_from_others",
-    "domain": "seo",
-    "tags": ["keyword-cannibalization", "content-consolidation", "site-architecture", "ranking-dilution", "topic-mapping"]
-  }
-]

@@ -9,6 +9,8 @@ import {
   abortAllForgeLocal,
   abortAllForgeEval,
   abortAllLibrary,
+  activeLibraryImportCount,
+  flushLibraryImports,
   bootstrapLibrarySubsystem,
 } from "./ipc";
 import { disposeClient } from "./lmstudio-client";
@@ -214,8 +216,15 @@ if (!gotLock) {
     }, FORCE_EXIT_MS);
     forceTimer.unref();
 
-    if (!coordinator.isAnyActive()) {
-      console.log("[main/shutdown] idle path — no active batches");
+    /* CRITICAL: даже если coordinator пуст (нет extraction/forge), может идти
+       library import — fs.writeFile / copyFile / cache-db upsert. Если выйти
+       прямо сейчас, book.md останется полу-битым, SHA-кэш не сохранится.
+       Дожидаемся abort + завершения активных импортов до закрытия БД. */
+    const activeImports = activeLibraryImportCount();
+    const idle = !coordinator.isAnyActive() && activeImports === 0;
+
+    if (idle) {
+      console.log("[main/shutdown] idle path — no active batches or imports");
       teardownSubsystems();
       telemetry.flush()
         .catch((err) => console.error("[main/shutdown] telemetry.flush Error:", err))
@@ -223,6 +232,22 @@ if (!gotLock) {
           console.log("[main/shutdown] idle path — telemetry flushed, clearing force timer");
           clearTimeout(forceTimer);
         });
+      return;
+    }
+
+    if (activeImports > 0) {
+      console.log(`[main/shutdown] flush path — ${activeImports} active library imports`);
+      event.preventDefault();
+      isQuitting = true;
+      const startedAt = Date.now();
+      void (async () => {
+        const ok = await flushLibraryImports(SHUTDOWN_FLUSH_TIMEOUT_MS, "app-quit");
+        console.log(`[main/shutdown] library import flush ${ok ? "OK" : "TIMEOUT"} in ${Date.now() - startedAt}ms`);
+        teardownSubsystems();
+        await telemetry.flush().catch((err) => console.error("[main/shutdown] telemetry.flush Error:", err));
+        clearTimeout(forceTimer);
+        app.exit(0);
+      })();
       return;
     }
 

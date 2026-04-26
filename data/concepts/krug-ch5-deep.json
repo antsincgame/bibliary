@@ -1,8 +1,0 @@
-[
-  {
-    "principle": "Words users skip still cost attention — their presence signals 'you might need to read this', which makes pages feel harder than they actually are",
-    "explanation": "X.ux|unread_word_tax: unread_text != zero_cost; mechanism: presence_of_text -> user_must_assess_whether_to_read -> decision_to_skip == cognitive_work_spent; cumulative: many_unread_words -> page_feels_more_complex_than_it_is -> task_feels_daunting_before_starting; krug_third_law: cut_half_the_words -> cut_half_of_whats_left (realistic_not_hyperbolic); three_payoffs_of_cutting: (1)noise_reduced (2)useful_content_more_prominent (3)shorter_page_more_visible_without_scrolling; applies_to: hero_copy+feature_descriptions+form_labels+tooltips+error_messages+section_intros; good_text_nobody_needs==noise; NO:keeping_well_written_sentences_that_dont_help_user_complete_task NO:padding_sections_to_look_thorough; eg: 103_word_survey_intro >> 34_words_zero_meaning_lost",
-    "domain": "ux",
-    "tags": ["dont-make-me-think", "word-count", "cognitive-load", "brevity", "content-reduction", "scanning"]
-  }
-]

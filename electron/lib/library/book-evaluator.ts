@@ -36,12 +36,15 @@ You MUST treat every book as a forensic investigation. Scan EVERY section for cl
 
 AUTHOR EXTRACTION RULES (MANDATORY):
 - Scan the Metadata Zone FIRST. Look for patterns: "Author:", "By:", "Автор:", names after "©", names on title page lines.
-- If the text is in Russian/Cyrillic, transliterate the author name to Latin script (e.g. "Иванов В.В." → "Ivanov V.V.").
+- For Cyrillic scripts (Russian, Ukrainian, Bulgarian, Serbian, Macedonian), transliterate to Latin (e.g. "Іваненко П.К." → "Ivanenko P.K.", "Иванов В.В." → "Ivanov V.V.").
+- Ukrainian markers: і, ї, є, ґ. Don't confuse with Russian — these are different languages.
 - If multiple authors, list the primary one (or "First Author et al.").
 - "Unknown" is ONLY acceptable if you have exhaustively searched ALL sections and found ZERO authorship clues. Explain in verdict_reason WHY you could not find the author.
 
 YEAR EXTRACTION RULES (MANDATORY):
-- Look for 4-digit years (1800-2026) near: "©", "copyright", "published", "edition", "ISBN", "год издания", "издательство".
+- Look for 4-digit years (1800-2026) near: "©", "copyright", "published", "edition", "ISBN".
+- Russian markers: "год издания", "издательство", "г." after the year.
+- Ukrainian markers: "рік видання", "видавництво", "р." after the year, "накладом".
 - If multiple years found, pick the PUBLICATION year (not reprint, not citation year).
 - null is ONLY acceptable if NO year pattern exists anywhere in the surrogate. This is rare — most books have at least a copyright year.
 

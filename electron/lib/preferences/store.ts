@@ -82,6 +82,12 @@ export const PreferencesSchema = z.object({
   djvuRenderDpi: z.number().int().min(100).max(600).default(200),
   openrouterApiKey: z.string().max(512).default(""),
 
+  // -- Vision-meta (локальная LM Studio multimodal модель для извлечения метаданных из обложек) --
+  /** Ручной override modelKey vision-модели. Пусто = автоматический поиск среди загруженных. */
+  visionModelKey: z.string().default(""),
+  /** Включить vision-meta. Default true — если в LM Studio есть vision-модель, она будет использована. */
+  visionMetaEnabled: z.boolean().default(true),
+
   // -- Library UI --
   libraryGroupBy: z.enum(["none", "ext", "status", "folder"]).default("none"),
 

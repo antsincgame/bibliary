@@ -123,6 +123,66 @@ interface LibraryEvaluatorStatus {
   totalFailed: number;
 }
 
+function createSmokeLibraryHarness(): {
+  rows: LibraryBookMeta[];
+  progressCb: ((payload: unknown) => void) | null;
+  logCb: ((payload: unknown) => void) | null;
+  evaluatorCb: ((payload: unknown) => void) | null;
+  importLog: Array<Record<string, unknown>>;
+} {
+  const now = new Date().toISOString();
+  return {
+    rows: [
+      {
+        id: "book-a",
+        title: "Cybernetic Predictive Devices",
+        titleEn: "Cybernetic Predictive Devices",
+        author: "N. Wiener",
+        authorEn: "N. Wiener",
+        year: 1965,
+        domain: "cybernetics",
+        wordCount: 12000,
+        qualityScore: 92,
+        status: "evaluated",
+        tags: ["cybernetics", "systems", "prediction"],
+        isFictionOrWater: false,
+        importedAt: now,
+        originalFile: "smoke-book-a.txt",
+        sha256: "a".repeat(64),
+      },
+      {
+        id: "book-b",
+        title: "Marketing Fog",
+        author: "Anon",
+        year: 2020,
+        domain: "marketing",
+        wordCount: 3000,
+        qualityScore: 35,
+        status: "evaluated",
+        tags: ["marketing", "water"],
+        isFictionOrWater: true,
+        importedAt: now,
+        originalFile: "smoke-book-b.txt",
+        sha256: "b".repeat(64),
+      },
+    ],
+    progressCb: null,
+    logCb: null,
+    evaluatorCb: null,
+    importLog: [{
+      level: "info",
+      category: "system.info",
+      ts: now,
+      importId: "smoke-import",
+      message: "Smoke harness online",
+    }],
+  };
+}
+
+const smokeLibrary = process.env.BIBLIARY_SMOKE_UI_HARNESS === "1"
+  ? createSmokeLibraryHarness()
+  : null;
+
 /* Servitor sweep 2026-04-22 (вторая волна, после god+sherlok аудита):
    Удалены 5 dead preload методов и соответствующие IPC handlers:
    - resilience.scanUnfinished + resilience:scan-unfinished
@@ -451,8 +511,10 @@ contextBridge.exposeInMainWorld("api", {
   },
 
   library: {
-    pickFolder: (): Promise<string | null> => ipcRenderer.invoke("library:pick-folder"),
-    pickFiles: (): Promise<string[]> => ipcRenderer.invoke("library:pick-files"),
+    pickFolder: (): Promise<string | null> =>
+      smokeLibrary ? Promise.resolve("smoke-folder") : ipcRenderer.invoke("library:pick-folder"),
+    pickFiles: (): Promise<string[] | { paths: string[] }> =>
+      smokeLibrary ? Promise.resolve({ paths: ["smoke-book.txt"] }) : ipcRenderer.invoke("library:pick-files"),
     importFolder: (args: {
       folder: string;
       scanArchives?: boolean;
@@ -467,7 +529,9 @@ contextBridge.exposeInMainWorld("api", {
       failed: number;
       warnings: string[];
       durationMs: number;
-    }> => ipcRenderer.invoke("library:import-folder", args),
+    }> => smokeLibrary
+      ? Promise.resolve({ importId: "smoke-import", total: 1, added: 1, duplicate: 0, skipped: 0, failed: 0, warnings: [], durationMs: 1 })
+      : ipcRenderer.invoke("library:import-folder", args),
     importFiles: (args: {
       paths: string[];
       scanArchives?: boolean;
@@ -480,37 +544,69 @@ contextBridge.exposeInMainWorld("api", {
       skipped: number;
       failed: number;
       warnings: string[];
-    }> => ipcRenderer.invoke("library:import-files", args),
-    cancelImport: (importId: string): Promise<boolean> => ipcRenderer.invoke("library:cancel-import", importId),
+    }> => {
+      if (!smokeLibrary) return ipcRenderer.invoke("library:import-files", args);
+      const progress = { importId: "smoke-import", phase: "processed", discovered: 1, processed: 1, outcome: "added", index: 1, total: 1 };
+      smokeLibrary.progressCb?.(progress);
+      const log = {
+        level: "info",
+        category: "file.added",
+        ts: new Date().toISOString(),
+        importId: "smoke-import",
+        message: "Imported smoke-book.txt",
+        file: "smoke-book.txt",
+      };
+      smokeLibrary.importLog.push(log);
+      smokeLibrary.logCb?.(log);
+      return Promise.resolve({ importId: "smoke-import", total: 1, added: 1, duplicate: 0, skipped: 0, failed: 0, warnings: [] });
+    },
+    cancelImport: (importId: string): Promise<boolean> =>
+      smokeLibrary ? Promise.resolve(true) : ipcRenderer.invoke("library:cancel-import", importId),
     catalog: (q?: LibraryCatalogQuery): Promise<{ rows: LibraryBookMeta[]; total: number; libraryRoot: string; dbPath: string }> =>
-      ipcRenderer.invoke("library:catalog", q ?? {}),
+      smokeLibrary
+        ? Promise.resolve({ rows: smokeLibrary.rows, total: smokeLibrary.rows.length, libraryRoot: "smoke-library", dbPath: "smoke.db" })
+        : ipcRenderer.invoke("library:catalog", q ?? {}),
     tagStats: (): Promise<{ tag: string; count: number }[]> =>
-      ipcRenderer.invoke("library:tag-stats"),
+      smokeLibrary
+        ? Promise.resolve([{ tag: "cybernetics", count: 1 }, { tag: "systems", count: 1 }, { tag: "marketing", count: 1 }])
+        : ipcRenderer.invoke("library:tag-stats"),
     getBook: (bookId: string): Promise<(LibraryBookMeta & { mdPath: string }) | null> =>
-      ipcRenderer.invoke("library:get-book", bookId),
+      smokeLibrary
+        ? Promise.resolve((smokeLibrary.rows.find((row) => row.id === bookId) as LibraryBookMeta & { mdPath: string } | undefined) ?? null)
+        : ipcRenderer.invoke("library:get-book", bookId),
     readBookMd: (bookId: string): Promise<{ markdown: string; mdPath: string } | null> =>
-      ipcRenderer.invoke("library:read-book-md", bookId),
+      smokeLibrary
+        ? Promise.resolve({ markdown: "---\ntitle: Cybernetic Predictive Devices\n---\n# Cybernetic Predictive Devices\nSmoke reader body.", mdPath: "smoke.md" })
+        : ipcRenderer.invoke("library:read-book-md", bookId),
     deleteBook: (bookId: string, deleteFiles?: boolean): Promise<{ ok: boolean; reason?: string }> =>
-      ipcRenderer.invoke("library:delete-book", { bookId, deleteFiles }),
+      smokeLibrary
+        ? Promise.resolve({ ok: true }).then((res) => {
+          smokeLibrary.rows = smokeLibrary.rows.filter((row) => row.id !== bookId);
+          return res;
+        })
+        : ipcRenderer.invoke("library:delete-book", { bookId, deleteFiles }),
     rebuildCache: (): Promise<{ scanned: number; ingested: number; skipped: number; pruned: number; errors: string[] }> =>
-      ipcRenderer.invoke("library:rebuild-cache"),
-    evaluatorStatus: (): Promise<LibraryEvaluatorStatus> => ipcRenderer.invoke("library:evaluator-status"),
-    evaluatorPause: (): Promise<boolean> => ipcRenderer.invoke("library:evaluator-pause"),
-    evaluatorResume: (): Promise<boolean> => ipcRenderer.invoke("library:evaluator-resume"),
-    evaluatorCancelCurrent: (): Promise<boolean> => ipcRenderer.invoke("library:evaluator-cancel-current"),
+      smokeLibrary ? Promise.resolve({ scanned: smokeLibrary.rows.length, ingested: smokeLibrary.rows.length, skipped: 0, pruned: 0, errors: [] }) : ipcRenderer.invoke("library:rebuild-cache"),
+    evaluatorStatus: (): Promise<LibraryEvaluatorStatus> =>
+      smokeLibrary ? Promise.resolve({ running: false, paused: false, currentBookId: null, currentTitle: null, queueLength: 0, totalEvaluated: 0, totalFailed: 0 }) : ipcRenderer.invoke("library:evaluator-status"),
+    evaluatorPause: (): Promise<boolean> => smokeLibrary ? Promise.resolve(true) : ipcRenderer.invoke("library:evaluator-pause"),
+    evaluatorResume: (): Promise<boolean> => smokeLibrary ? Promise.resolve(true) : ipcRenderer.invoke("library:evaluator-resume"),
+    evaluatorCancelCurrent: (): Promise<boolean> => smokeLibrary ? Promise.resolve(true) : ipcRenderer.invoke("library:evaluator-cancel-current"),
     reevaluate: (bookId: string): Promise<{ ok: boolean; reason?: string }> =>
-      ipcRenderer.invoke("library:evaluator-reevaluate", { bookId }),
-    reevaluateAll: (): Promise<{ queued: number }> => ipcRenderer.invoke("library:reevaluate-all"),
+      smokeLibrary ? Promise.resolve({ ok: true }) : ipcRenderer.invoke("library:evaluator-reevaluate", { bookId }),
+    reevaluateAll: (): Promise<{ queued: number }> =>
+      smokeLibrary ? Promise.resolve({ queued: smokeLibrary.rows.length }) : ipcRenderer.invoke("library:reevaluate-all"),
     setEvaluatorModel: (modelKey: string | null): Promise<boolean> =>
       ipcRenderer.invoke("library:evaluator-set-model", modelKey),
     /* Phase 4: priority enqueue + runtime slot regulation. */
     evaluatorPrioritize: (bookIds: string[]): Promise<{ ok: boolean; queued: number }> =>
       ipcRenderer.invoke("library:evaluator-prioritize", { bookIds }),
     evaluatorSetSlots: (n: number): Promise<{ ok: boolean; slots: number }> =>
-      ipcRenderer.invoke("library:evaluator-set-slots", n),
-    evaluatorGetSlots: (): Promise<number> => ipcRenderer.invoke("library:evaluator-get-slots"),
+      smokeLibrary ? Promise.resolve({ ok: true, slots: n }) : ipcRenderer.invoke("library:evaluator-set-slots", n),
+    evaluatorGetSlots: (): Promise<number> =>
+      smokeLibrary ? Promise.resolve(2) : ipcRenderer.invoke("library:evaluator-get-slots"),
     reparseBook: (bookId: string): Promise<{ ok: boolean; chapters?: number; reason?: string }> =>
-      ipcRenderer.invoke("library:reparse-book", bookId),
+      smokeLibrary ? Promise.resolve({ ok: true, chapters: 1 }) : ipcRenderer.invoke("library:reparse-book", bookId),
     onImportProgress: (cb: (payload: {
       importId: string;
       phase: "discovered" | "processed" | "scan-complete";
@@ -521,10 +617,16 @@ contextBridge.exposeInMainWorld("api", {
       duplicateReason?: "duplicate_sha" | "duplicate_isbn" | "duplicate_older_revision";
       existingBookId?: string;
       existingBookTitle?: string;
+      errorMessage?: string;
+      fileWarnings?: string[];
       /** Backward-compat: для старого UI = processed/discovered. */
       index: number;
       total: number;
     }) => void): (() => void) => {
+      if (smokeLibrary) {
+        smokeLibrary.progressCb = cb as (payload: unknown) => void;
+        return () => { smokeLibrary.progressCb = null; };
+      }
       const l = (_e: unknown, p: {
         importId: string;
         phase: "discovered" | "processed" | "scan-complete";
@@ -535,12 +637,62 @@ contextBridge.exposeInMainWorld("api", {
         duplicateReason?: "duplicate_sha" | "duplicate_isbn" | "duplicate_older_revision";
         existingBookId?: string;
         existingBookTitle?: string;
+        errorMessage?: string;
+        fileWarnings?: string[];
         index: number;
         total: number;
       }) => cb(p);
       ipcRenderer.on("library:import-progress", l);
       return () => ipcRenderer.removeListener("library:import-progress", l);
     },
+    onImportLog: (cb: (entry: {
+      ts: string;
+      importId: string;
+      level: "debug" | "info" | "warn" | "error";
+      category: string;
+      message: string;
+      file?: string;
+      details?: Record<string, unknown>;
+      durationMs?: number;
+    }) => void): (() => void) => {
+      if (smokeLibrary) {
+        smokeLibrary.logCb = cb as (payload: unknown) => void;
+        return () => { smokeLibrary.logCb = null; };
+      }
+      const l = (_e: unknown, entry: {
+        ts: string;
+        importId: string;
+        level: "debug" | "info" | "warn" | "error";
+        category: string;
+        message: string;
+        file?: string;
+        details?: Record<string, unknown>;
+        durationMs?: number;
+      }) => cb(entry);
+      ipcRenderer.on("library:import-log", l);
+      return () => ipcRenderer.removeListener("library:import-log", l);
+    },
+    importLogSnapshot: (): Promise<Array<{
+      ts: string;
+      importId: string;
+      level: "debug" | "info" | "warn" | "error";
+      category: string;
+      message: string;
+      file?: string;
+      details?: Record<string, unknown>;
+      durationMs?: number;
+    }>> => smokeLibrary
+      ? Promise.resolve(smokeLibrary.importLog as Array<{
+        ts: string;
+        importId: string;
+        level: "debug" | "info" | "warn" | "error";
+        category: string;
+        message: string;
+        file?: string;
+        details?: Record<string, unknown>;
+        durationMs?: number;
+      }>)
+      : ipcRenderer.invoke("library:import-log-snapshot"),
     onEvaluatorEvent: (cb: (payload: {
       type: string;
       bookId?: string;
@@ -551,6 +703,10 @@ contextBridge.exposeInMainWorld("api", {
       error?: string;
       remaining?: number;
     }) => void): (() => void) => {
+      if (smokeLibrary) {
+        smokeLibrary.evaluatorCb = cb as (payload: unknown) => void;
+        return () => { smokeLibrary.evaluatorCb = null; };
+      }
       const l = (_e: unknown, p: {
         type: string;
         bookId?: string;
@@ -565,9 +721,9 @@ contextBridge.exposeInMainWorld("api", {
       return () => ipcRenderer.removeListener("library:evaluator-event", l);
     },
     scanFolder: (folder: string): Promise<{ scanId: string }> =>
-      ipcRenderer.invoke("library:scan-folder", { folder }),
+      smokeLibrary ? Promise.resolve({ scanId: "scan-smoke" }) : ipcRenderer.invoke("library:scan-folder", { folder }),
     cancelScan: (scanId: string): Promise<boolean> =>
-      ipcRenderer.invoke("library:cancel-scan", scanId),
+      smokeLibrary ? Promise.resolve(true) : ipcRenderer.invoke("library:cancel-scan", scanId),
     onScanProgress: (cb: (payload: {
       scanId: string;
       phase: "walking" | "metadata" | "dedup" | "done";
@@ -576,6 +732,7 @@ contextBridge.exposeInMainWorld("api", {
       bookFilesFound: number;
       currentFile?: string;
     }) => void): (() => void) => {
+      if (smokeLibrary) return () => {};
       const l = (_e: unknown, p: Parameters<typeof cb>[0]) => cb(p);
       ipcRenderer.on("library:scan-progress", l);
       return () => ipcRenderer.removeListener("library:scan-progress", l);
@@ -585,6 +742,7 @@ contextBridge.exposeInMainWorld("api", {
       report?: unknown;
       error?: string;
     }) => void): (() => void) => {
+      if (smokeLibrary) return () => {};
       const l = (_e: unknown, p: Parameters<typeof cb>[0]) => cb(p);
       ipcRenderer.on("library:scan-report", l);
       return () => ipcRenderer.removeListener("library:scan-report", l);

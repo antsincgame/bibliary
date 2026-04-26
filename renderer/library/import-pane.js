@@ -2,11 +2,20 @@
 /**
  * Import pane: folder/file import with live progress and evaluator panel.
  */
-import { el } from "../dom.js";
+import { el, clear } from "../dom.js";
 import { t } from "../i18n.js";
 import { IMPORT_STATE } from "./state.js";
 import { buildEvaluatorPanel, refreshEvaluatorState } from "./evaluator.js";
 import { showLibraryToast } from "./toast.js";
+import { showAlert } from "../components/ui-dialog.js";
+
+const LOG_RING_SIZE = 1000;
+const LOG_LEVEL_PRIORITY = { debug: 0, info: 1, warn: 2, error: 3 };
+
+/** @type {{level: string, category: string, ts: string, message: string, file?: string, details?: Record<string, unknown>}[]} */
+const LOG_RING = [];
+let LOG_FILTER_LEVEL = "info";
+let LOG_PANEL_REF = null;
 
 /**
  * @param {object} deps
@@ -75,8 +84,10 @@ export function buildImportPane(deps) {
     el("div", { class: "lib-import-dropzone-title" }, t("library.import.dropzone.title")),
     el("div", { class: "lib-import-dropzone-hint" }, t("library.import.dropzone.hint")),
   ]);
+  installImportDropHandlers(dropzone, deps);
 
   const status = el("div", { class: "lib-import-status", "aria-live": "polite" }, "");
+  const logPanel = buildLogPanel();
 
   const evaluatorPanel = buildEvaluatorPanel();
 
@@ -84,7 +95,7 @@ export function buildImportPane(deps) {
     type: "button",
     class: "lib-btn lib-import-scan-folder",
     onclick: () => scanFolderForDuplicates(status, scanReportContainer),
-  }, t("library.import.btn.scanFolder") || "Scan Folder (Dedup Report)");
+  }, t("library.import.btn.scanFolder"));
 
   const scanReportContainer = el("div", { class: "lib-scan-report" });
 
@@ -93,6 +104,7 @@ export function buildImportPane(deps) {
     el("div", { class: "lib-import-actions" }, [pickFolderBtn, pickFilesBtn, scanBtn, cancelBtn]),
     opts,
     status,
+    logPanel,
     scanReportContainer,
     evaluatorPanel,
   ]);
@@ -103,6 +115,173 @@ export function buildImportPane(deps) {
 /** @param {HTMLElement} root */
 export function renderImport(root) {
   void refreshEvaluatorState(root);
+  /* При открытии вкладки тянем snapshot лога — даже если импорт не идёт сейчас,
+     юзер увидит, что было в прошлой сессии (включая краш-причины). */
+  void hydrateLogSnapshot();
+}
+
+/**
+ * Real-time лог-панель: скроллируемый список событий с фильтром по уровню,
+ * счётчиком ошибок/предупреждений и кнопками Clear/Copy.
+ * Подписывается на `onImportLog` единожды (модульный flag), чтобы повторный
+ * рендер не плодил listener'ов.
+ *
+ * @returns {HTMLElement}
+ */
+function buildLogPanel() {
+  if (LOG_PANEL_REF) return LOG_PANEL_REF;
+
+  const counterErr = el("span", { class: "lib-import-log-counter lib-import-log-counter-err" }, "0");
+  const counterWarn = el("span", { class: "lib-import-log-counter lib-import-log-counter-warn" }, "0");
+  const counterInfo = el("span", { class: "lib-import-log-counter lib-import-log-counter-info" }, "0");
+
+  const filterSelect = /** @type {HTMLSelectElement} */ (el("select", {
+    class: "lib-import-log-filter",
+    title: t("library.import.log.filterTooltip"),
+  }, [
+    el("option", { value: "debug" }, t("library.import.log.filter.debug")),
+    el("option", { value: "info", selected: "selected" }, t("library.import.log.filter.info")),
+    el("option", { value: "warn" }, t("library.import.log.filter.warn")),
+    el("option", { value: "error" }, t("library.import.log.filter.error")),
+  ]));
+  filterSelect.addEventListener("change", () => {
+    LOG_FILTER_LEVEL = filterSelect.value;
+    rerenderLogList();
+  });
+
+  const clearBtn = el("button", {
+    type: "button",
+    class: "lib-btn lib-btn-ghost lib-import-log-btn",
+    onclick: () => {
+      LOG_RING.length = 0;
+      rerenderLogList();
+      updateCounters();
+    },
+  }, t("library.import.log.clear") || "Clear");
+
+  const copyBtn = el("button", {
+    type: "button",
+    class: "lib-btn lib-btn-ghost lib-import-log-btn",
+    onclick: async () => {
+      const text = LOG_RING.map((e) =>
+        `[${e.ts}] [${e.level.toUpperCase()}] [${e.category}] ${e.message}${e.file ? ` (${e.file})` : ""}`
+      ).join("\n");
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (e) {
+        await showAlert(t("library.import.log.copyFailed", {
+          msg: e instanceof Error ? e.message : String(e),
+        }));
+      }
+    },
+  }, t("library.import.log.copy"));
+
+  const header = el("div", { class: "lib-import-log-header" }, [
+    el("span", { class: "lib-import-log-title" }, t("library.import.log.title")),
+    counterErr,
+    counterWarn,
+    counterInfo,
+    el("span", { class: "lib-import-log-spacer" }),
+    filterSelect,
+    clearBtn,
+    copyBtn,
+  ]);
+
+  const list = el("div", { class: "lib-import-log-list", "aria-live": "polite" });
+
+  const panel = el("div", { class: "lib-import-log-panel" }, [header, list]);
+
+  LOG_PANEL_REF = panel;
+  /** @type {any} */ (panel)._counterErr = counterErr;
+  /** @type {any} */ (panel)._counterWarn = counterWarn;
+  /** @type {any} */ (panel)._counterInfo = counterInfo;
+  /** @type {any} */ (panel)._list = list;
+
+  if (typeof window.api?.library?.onImportLog === "function") {
+    window.api.library.onImportLog((entry) => pushLogEntry(entry));
+  }
+
+  return panel;
+}
+
+async function hydrateLogSnapshot() {
+  if (typeof window.api?.library?.importLogSnapshot !== "function") return;
+  try {
+    const snap = await window.api.library.importLogSnapshot();
+    if (Array.isArray(snap) && snap.length > 0) {
+      LOG_RING.length = 0;
+      for (const e of snap) LOG_RING.push(e);
+      rerenderLogList();
+      updateCounters();
+    }
+  } catch (_e) { /* tolerate: snapshot is best-effort */ }
+}
+
+/** @param {{level: string, category: string, ts: string, message: string, file?: string, details?: any}} entry */
+function pushLogEntry(entry) {
+  LOG_RING.push(entry);
+  if (LOG_RING.length > LOG_RING_SIZE) LOG_RING.shift();
+  updateCounters();
+  if (entryPassesFilter(entry)) appendLogRow(entry);
+}
+
+/** @param {{level: string}} entry */
+function entryPassesFilter(entry) {
+  const want = LOG_LEVEL_PRIORITY[/** @type {keyof typeof LOG_LEVEL_PRIORITY} */ (LOG_FILTER_LEVEL)] ?? 1;
+  const have = LOG_LEVEL_PRIORITY[/** @type {keyof typeof LOG_LEVEL_PRIORITY} */ (entry.level)] ?? 1;
+  return have >= want;
+}
+
+function rerenderLogList() {
+  if (!LOG_PANEL_REF) return;
+  const list = /** @type {HTMLElement} */ (/** @type {any} */ (LOG_PANEL_REF)._list);
+  if (!list) return;
+  clear(list);
+  for (const entry of LOG_RING) {
+    if (entryPassesFilter(entry)) appendLogRow(entry);
+  }
+}
+
+/** @param {{level: string, category: string, ts: string, message: string, file?: string}} entry */
+function appendLogRow(entry) {
+  if (!LOG_PANEL_REF) return;
+  const list = /** @type {HTMLElement} */ (/** @type {any} */ (LOG_PANEL_REF)._list);
+  if (!list) return;
+
+  const time = entry.ts.slice(11, 19); /* HH:MM:SS из ISO-8601 */
+  const fileLabel = entry.file ? trimFile(entry.file) : "";
+  const row = el("div", { class: `lib-import-log-row lib-import-log-${entry.level}` }, [
+    el("span", { class: "lib-import-log-time" }, time),
+    el("span", { class: "lib-import-log-cat" }, entry.category),
+    el("span", { class: "lib-import-log-msg" }, entry.message),
+    fileLabel ? el("span", { class: "lib-import-log-file", title: entry.file }, fileLabel) : null,
+  ].filter(Boolean));
+  list.appendChild(row);
+  /* Авто-скролл вниз только если пользователь не отскроллился вверх */
+  const distanceFromBottom = list.scrollHeight - list.scrollTop - list.clientHeight;
+  if (distanceFromBottom < 40) list.scrollTop = list.scrollHeight;
+}
+
+/** @param {string} p */
+function trimFile(p) {
+  const idx = Math.max(p.lastIndexOf("\\"), p.lastIndexOf("/"));
+  return idx >= 0 ? p.slice(idx + 1) : p;
+}
+
+function updateCounters() {
+  if (!LOG_PANEL_REF) return;
+  const ce = /** @type {HTMLElement} */ (/** @type {any} */ (LOG_PANEL_REF)._counterErr);
+  const cw = /** @type {HTMLElement} */ (/** @type {any} */ (LOG_PANEL_REF)._counterWarn);
+  const ci = /** @type {HTMLElement} */ (/** @type {any} */ (LOG_PANEL_REF)._counterInfo);
+  let e = 0; let w = 0; let i = 0;
+  for (const entry of LOG_RING) {
+    if (entry.level === "error") e++;
+    else if (entry.level === "warn") w++;
+    else if (entry.level === "info") i++;
+  }
+  if (ce) ce.textContent = String(e);
+  if (cw) cw.textContent = String(w);
+  if (ci) ci.textContent = String(i);
 }
 
 /** @param {object} deps */
@@ -152,7 +331,7 @@ async function runImport(invoke, deps) {
   const cancelBtn = /** @type {HTMLElement|null} */ (root.querySelector(".lib-import-cancel"));
   IMPORT_STATE.busy = true;
   if (cancelBtn) cancelBtn.style.display = "";
-  if (status) status.textContent = "...";
+  if (status) status.textContent = t("library.import.progress.starting");
   let unsubscribeProgress = null;
   try {
     if (typeof window.api?.library?.onImportProgress === "function") {
@@ -211,6 +390,98 @@ async function runImport(invoke, deps) {
 }
 
 /**
+ * @param {HTMLElement} dropzone
+ * @param {object} deps
+ */
+function installImportDropHandlers(dropzone, deps) {
+  const stop = (/** @type {DragEvent} */ ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+  };
+
+  for (const evName of ["dragenter", "dragover"]) {
+    dropzone.addEventListener(evName, (ev) => {
+      stop(/** @type {DragEvent} */ (ev));
+      dropzone.classList.add("lib-import-dropzone-active");
+    });
+  }
+  for (const evName of ["dragleave", "drop"]) {
+    dropzone.addEventListener(evName, (ev) => {
+      stop(/** @type {DragEvent} */ (ev));
+      dropzone.classList.remove("lib-import-dropzone-active");
+    });
+  }
+
+  dropzone.addEventListener("drop", async (ev) => {
+    const entries = collectDroppedEntries(/** @type {DragEvent} */ (ev));
+    if (entries.length === 0) return;
+    await runImport(() => importDroppedEntries(entries), deps);
+  });
+}
+
+/**
+ * @param {DragEvent} ev
+ * @returns {{path: string; isDirectory: boolean}[]}
+ */
+function collectDroppedEntries(ev) {
+  /** @type {{path: string; isDirectory: boolean}[]} */
+  const entries = [];
+  const seen = new Set();
+  const items = ev.dataTransfer?.items;
+  if (items && items.length > 0) {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const file = item.getAsFile?.();
+      const filePath = file?.path;
+      if (!filePath || seen.has(filePath)) continue;
+      const entry = item.webkitGetAsEntry?.();
+      entries.push({ path: filePath, isDirectory: entry?.isDirectory === true });
+      seen.add(filePath);
+    }
+  }
+  const files = ev.dataTransfer?.files;
+  if (files) {
+    for (let i = 0; i < files.length; i++) {
+      const filePath = files[i].path;
+      if (!filePath || seen.has(filePath)) continue;
+      entries.push({ path: filePath, isDirectory: false });
+      seen.add(filePath);
+    }
+  }
+  return entries;
+}
+
+/** @param {{path: string; isDirectory: boolean}[]} entries */
+async function importDroppedEntries(entries) {
+  const files = entries.filter((e) => !e.isDirectory).map((e) => e.path);
+  const dirs = entries.filter((e) => e.isDirectory).map((e) => e.path);
+  const total = { importId: null, added: 0, skipped: 0, duplicate: 0, failed: 0 };
+  const merge = (/** @type {any} */ res) => {
+    if (!res) return;
+    total.importId = res.importId || total.importId;
+    total.added += Number(res.added ?? 0);
+    total.skipped += Number(res.skipped ?? 0);
+    total.duplicate += Number(res.duplicate ?? 0);
+    total.failed += Number(res.failed ?? 0);
+  };
+
+  if (files.length > 0) {
+    merge(await window.api.library.importFiles({
+      paths: files,
+      scanArchives: IMPORT_STATE.scanArchives,
+    }));
+  }
+  for (const folder of dirs) {
+    merge(await window.api.library.importFolder({
+      folder,
+      scanArchives: IMPORT_STATE.scanArchives,
+      maxDepth: IMPORT_STATE.recursive ? 16 : 0,
+    }));
+  }
+  return total;
+}
+
+/**
  * @param {HTMLElement} statusEl
  * @param {HTMLElement} reportContainer
  */
@@ -225,7 +496,7 @@ async function scanFolderForDuplicates(statusEl, reportContainer) {
   if (!folderPath) return;
 
   IMPORT_STATE.busy = true;
-  statusEl.textContent = t("library.import.scan.starting") || "Starting scan...";
+  statusEl.textContent = t("library.import.scan.starting");
   reportContainer.innerHTML = "";
 
   let scanId = "";
@@ -245,18 +516,23 @@ async function scanFolderForDuplicates(statusEl, reportContainer) {
   unsubProgress = window.api.library.onScanProgress((evt) => {
     if (scanId && evt.scanId !== scanId) return;
     if (evt.phase === "walking") {
-      statusEl.textContent = `Scanning files... ${evt.bookFilesFound} books found`;
+      statusEl.textContent = t("library.import.scan.walking", {
+        n: String(evt.bookFilesFound),
+      });
     } else if (evt.phase === "metadata") {
-      statusEl.textContent = `Extracting metadata: ${evt.scannedFiles} / ${evt.totalFiles}`;
+      statusEl.textContent = t("library.import.scan.metadata", {
+        done: String(evt.scannedFiles),
+        total: String(evt.totalFiles),
+      });
     } else if (evt.phase === "dedup") {
-      statusEl.textContent = "Analyzing duplicates...";
+      statusEl.textContent = t("library.import.scan.dedup");
     }
   });
 
   unsubReport = window.api.library.onScanReport((payload) => {
     if (scanId && payload.scanId !== scanId) return;
     if (payload.error) {
-      statusEl.textContent = `Scan failed: ${payload.error}`;
+      statusEl.textContent = t("library.import.scan.failed", { msg: payload.error });
     } else {
       statusEl.textContent = "";
       renderScanReport(/** @type {any} */ (payload.report), reportContainer);
@@ -268,7 +544,9 @@ async function scanFolderForDuplicates(statusEl, reportContainer) {
     const res = await window.api.library.scanFolder(folderPath);
     scanId = res.scanId;
   } catch (e) {
-    statusEl.textContent = `Scan error: ${e instanceof Error ? e.message : String(e)}`;
+    statusEl.textContent = t("library.import.scan.error", {
+      msg: e instanceof Error ? e.message : String(e),
+    });
     cleanup();
   }
 }
@@ -282,17 +560,17 @@ function renderScanReport(report, container) {
   if (!report) return;
 
   const summary = el("div", { class: "lib-scan-summary" }, [
-    el("div", { class: "lib-scan-stat" }, `${report.bookFiles} books found`),
-    el("div", { class: "lib-scan-stat" }, `${report.exactDuplicates} exact duplicates (SHA)`),
-    el("div", { class: "lib-scan-stat" }, `${report.formatDuplicates} format duplicates`),
-    el("div", { class: "lib-scan-stat" }, `${report.fuzzyMatches?.length ?? 0} fuzzy matches`),
-    el("div", { class: "lib-scan-stat lib-scan-stat-highlight" }, `~${report.uniqueBooks} unique works`),
+    el("div", { class: "lib-scan-stat" }, t("library.import.scan.report.books", { n: String(report.bookFiles) })),
+    el("div", { class: "lib-scan-stat" }, t("library.import.scan.report.exact", { n: String(report.exactDuplicates) })),
+    el("div", { class: "lib-scan-stat" }, t("library.import.scan.report.format", { n: String(report.formatDuplicates) })),
+    el("div", { class: "lib-scan-stat" }, t("library.import.scan.report.fuzzy", { n: String(report.fuzzyMatches?.length ?? 0) })),
+    el("div", { class: "lib-scan-stat lib-scan-stat-highlight" }, t("library.import.scan.report.unique", { n: String(report.uniqueBooks) })),
   ]);
   container.appendChild(summary);
 
   if (report.editionGroups && report.editionGroups.length > 0) {
     const edTitle = el("div", { class: "lib-scan-section-title" },
-      `Edition/Format Groups (${report.editionGroups.length})`);
+      t("library.import.scan.report.editions", { n: String(report.editionGroups.length) }));
     container.appendChild(edTitle);
 
     for (const group of report.editionGroups.slice(0, 100)) {
@@ -311,7 +589,7 @@ function renderScanReport(report, container) {
 
   if (report.fuzzyMatches && report.fuzzyMatches.length > 0) {
     const fzTitle = el("div", { class: "lib-scan-section-title" },
-      `Fuzzy Matches — Review Needed (${report.fuzzyMatches.length})`);
+      t("library.import.scan.report.fuzzyTitle", { n: String(report.fuzzyMatches.length) }));
     container.appendChild(fzTitle);
 
     for (const pair of report.fuzzyMatches.slice(0, 50)) {

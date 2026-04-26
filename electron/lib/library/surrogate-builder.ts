@@ -98,9 +98,9 @@ const META_PATTERNS = [
   /(?:copyright|©)\s*.{2,80}/i,
   /isbn[\s:\-]*[\dxX\-]{10,17}/i,
   /\b(?:author|автор|by)\s*[:：]\s*.{2,60}/i,
-  /\b(?:published|издательство|publisher|press|verlag)\s*[:：]?\s*.{2,60}/i,
-  /\b(?:edition|издание|год\s*издания|year)\s*[:：]?\s*\d{4}/i,
-  /\b(?:19|20)\d{2}\s*(?:г\.?|год|year|edition)/i,
+  /\b(?:published|издательство|publisher|press|verlag|видавництво|видавець|друкарня)\s*[:：]?\s*.{2,60}/i,
+  /\b(?:edition|издание|год\s*издания|year|рік\s*видання|видання|накладом)\s*[:：]?\s*\d{4}/i,
+  /\b(?:19|20)\d{2}\s*(?:г\.?|год|year|edition|р\.?|рік|року)/i,
 ];
 
 function buildMetadataZone(chapters: ConvertedChapter[]): string {

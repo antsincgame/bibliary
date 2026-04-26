@@ -149,6 +149,24 @@ export interface ConvertOptions {
    * посчитал хэш потоково для дедупликации до парсинга.
    */
   precomputedSha256?: string;
+  /**
+   * OCR-провайдер для DJVU. Передаётся в parseBook. Default "system".
+   * "vision-llm" использует локальную vision-модель LM Studio.
+   */
+  djvuOcrProvider?: "system" | "vision-llm" | "none";
+  /** Хинты языков для OCR ("uk", "en", "ru"). Первый — primary. */
+  ocrLanguages?: string[];
+  /**
+   * Включить Vision-meta: после извлечения обложки отправить её в локальную
+   * vision-модель LM Studio (qwen3-vl, llava, pixtral, gemma-3, minicpm-v и т.д.)
+   * и получить title/author/year/language. Заметно улучшает качество для
+   * PDF/DJVU без metadata. Если в LM Studio нет vision-модели — graceful skip.
+   */
+  visionMetaEnabled?: boolean;
+  /** Override modelKey vision-модели. Пусто = автодетект среди загруженных. */
+  visionModelKey?: string;
+  /** Логгер для отчёта о прогрессе vision-meta вызова. */
+  onVisionMetaEvent?: (event: { phase: "start" | "success" | "failed"; message?: string; durationMs?: number; meta?: unknown }) => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

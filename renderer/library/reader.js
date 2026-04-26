@@ -88,7 +88,9 @@ export async function openBook(bookId, root) {
   } catch (err) {
     clear(readerContainer);
     readerContainer.appendChild(
-      el("div", { class: "lib-reader-error" }, `Error: ${err instanceof Error ? err.message : String(err)}`)
+      el("div", { class: "lib-reader-error" }, t("library.reader.error", {
+        msg: err instanceof Error ? err.message : String(err),
+      }))
     );
     readerContainer.appendChild(buildBackButton(root));
   }
@@ -131,7 +133,7 @@ function renderReader(root) {
     coverDataUrl ? el("img", {
       class: "lib-reader-cover",
       src: coverDataUrl,
-      alt: meta.title || "Cover",
+      alt: meta.title || t("library.reader.coverAlt"),
     }) : null,
     el("div", { class: "lib-reader-meta" }, [
       el("h1", { class: "lib-reader-title" }, meta.titleEn || meta.title || meta.id),
@@ -140,7 +142,7 @@ function renderReader(root) {
         typeof meta.year === "number" ? el("span", { class: "lib-reader-year" }, String(meta.year)) : null,
         meta.domain ? el("span", { class: "lib-reader-domain" }, meta.domain) : null,
         el("span", { class: "lib-reader-words" }, fmtWords(meta.wordCount)),
-        q !== null ? el("span", { class: "lib-reader-quality" }, `Quality: ${fmtQuality(q)}`) : null,
+        q !== null ? el("span", { class: "lib-reader-quality" }, t("library.reader.quality", { value: fmtQuality(q) })) : null,
         meta.chapterCount ? el("span", { class: "lib-reader-chapters" }, `${meta.chapterCount} ${t("library.reader.chapters")}`) : null,
       ].filter(Boolean)),
       meta.tags && meta.tags.length > 0

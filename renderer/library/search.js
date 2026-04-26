@@ -159,7 +159,7 @@ function refreshSearchCardActions(card, candidate, root, dlState) {
           }
         } catch (e) {
           console.warn("[search] openExternal failed:", e);
-          await showAlert(`Откройте в браузере: ${candidate.webPageUrl}`);
+          await showAlert(t("library.search.openExternalFallback", { url: candidate.webPageUrl }));
         }
       },
     }, t("library.search.btn.openPage"));

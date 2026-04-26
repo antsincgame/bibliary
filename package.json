@@ -8,13 +8,6 @@
     "node": ">=18"
   },
   "scripts": {
-    "init": "tsx src/init-collection.ts",
-    "load": "tsx src/load.ts",
-    "search": "tsx src/search.ts",
-    "llm": "tsx src/llm-prompt.ts",
-    "chat": "tsx src/rag-chat.ts",
-    "export": "tsx scripts/export-all.ts",
-    "duplicates": "tsx scripts/find-duplicates.ts",
     "inventory": "tsx scripts/inventory.ts",
     "validate-batch": "tsx scripts/validate-batch.ts",
     "postinstall": "npx @electron/rebuild --only better-sqlite3 --force 2>nul || echo [postinstall] @electron/rebuild skipped (OK for non-Electron use)",

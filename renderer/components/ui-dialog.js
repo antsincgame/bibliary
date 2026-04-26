@@ -7,6 +7,7 @@ import { t } from "../i18n.js";
  * @property {string} [title]
  * @property {string} [okText]
  * @property {string} [cancelText]
+ * @property {"default"|"danger"} [okVariant]
  */
 
 /**
@@ -80,7 +81,10 @@ function showDialog(config) {
 
     const actions = el("div", { class: "qdrant-dialog-actions ui-dialog-actions" });
     const okBtn = /** @type {HTMLButtonElement} */ (
-      el("button", { class: "btn-primary", type: "button" }, config.okText || t("dialog.ok"))
+      el("button", {
+        class: config.okVariant === "danger" ? "btn-danger" : "btn-primary",
+        type: "button",
+      }, config.okText || t("dialog.ok"))
     );
     const cancelBtn = /** @type {HTMLButtonElement} */ (
       el("button", { class: "btn-secondary", type: "button" }, config.cancelText || t("dialog.cancel"))

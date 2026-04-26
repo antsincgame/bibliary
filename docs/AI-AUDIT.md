@@ -1,14 +1,14 @@
 # Bibliary — AI Audit Document
 
-> **Version:** 3.0.0  
-> **Date:** 2026-04-25  
+> **Version:** 3.1.0  
+> **Date:** 2026-04-26  
 > **Purpose:** Comprehensive project context for any AI agent performing code review, bug hunting, refactoring, or feature development.
 
 ---
 
 ## 1. What Is Bibliary?
 
-Bibliary is a **desktop Electron application** (Windows-first) that acts as a personal knowledge library. It ingests books (PDF, EPUB, FB2, DJVU, DOCX, Markdown, plain text, and archives containing them), converts them to structured Markdown with YAML frontmatter, evaluates their quality using a local LLM (via LM Studio), and stores everything in a file-system-first library backed by SQLite metadata cache.
+Bibliary is a **desktop Electron application** (Windows-first) that acts as a personal knowledge library. It ingests books (PDF, EPUB, FB2, DJVU, DOCX, RTF, ODT, HTML/TXT, and archives ZIP/RAR/7z/CBZ/CBR containing them), converts them to structured Markdown with YAML frontmatter, evaluates their quality using a local LLM (via LM Studio), and stores everything in a file-system-first library backed by SQLite metadata cache.
 
 **Core value proposition:** Turn a folder of unorganized books into a searchable, rated, AI-enriched knowledge base — entirely offline, no cloud required.
 
@@ -70,7 +70,7 @@ Bibliary is a **desktop Electron application** (Windows-first) that acts as a pe
 | `renderer/library/` | Library UI: catalog, import pane, reader |
 | `renderer/components/` | Shared UI components |
 | `scripts/` | Dev tools, E2E tests, dataset tools |
-| `tests/` | Unit/integration tests (vitest) |
+| `tests/` | Unit/integration tests (node --test) |
 | `docs/` | Project documentation |
 | `data/` | Runtime data (gitignored): DB, library files, prefs |
 
@@ -86,8 +86,8 @@ Bibliary is a **desktop Electron application** (Windows-first) that acts as a pe
 | Embeddings | @xenova/transformers (ONNX, local) |
 | PDF parsing | pdfjs-dist + optional OCR |
 | EPUB/FB2/DOCX | fast-xml-parser, jszip, mammoth |
-| Build | electron-builder (portable + installer) |
-| Tests | node --test (built-in) + tsx |
+| Build | electron-builder (portable + installer, Windows-only targets) |
+| Tests | node --test (built-in) + tsx (нет vitest.config.ts) |
 | Package manager | npm |
 
 ---
@@ -106,12 +106,19 @@ User drops file/folder
         ├─ 2. Copy original file → data/library/{id}/original.{ext}
         │
         ├─ 3. Parse to Markdown
-        │     ├─ PDF → pdfjs-dist (+ optional OCR)
-        │     ├─ EPUB → fast-xml-parser + jszip
-        │     ├─ FB2 → fast-xml-parser
-        │     ├─ DJVU → djvu-cli (external tool)
-        │     ├─ DOCX → mammoth
+        │     ├─ PDF → pdfjs-dist (+ optional OCR + page gallery up to 12 pages)
+        │     ├─ EPUB → fast-xml-parser + jszip (+ cover + illustrations)
+        │     ├─ FB2 → fast-xml-parser (+ binary images)
+        │     ├─ DJVU → djvu-cli + ddjvu (page gallery, OCR)
+        │     ├─ DOCX → mammoth (+ word/media/ images)
+        │     ├─ RTF/ODT/HTML → regex/zip parsers
+        │     ├─ RAR/CBR/7z → bundled 7z.exe (vendor/7zip/)
         │     └─ MD/TXT → passthrough
+        │
+        ├─ 3.5. Vision-meta enrichment (optional)
+        │     └─ Cover image → local LM Studio multimodal model
+        │           (pickVisionModels: tries all loaded vision models in fallback chain)
+        │           → title/author/year/language/publisher
         │
         ├─ 4. Filename metadata parsing (title, author, year)
         │
@@ -135,7 +142,7 @@ Each book lives in `data/library/{uuid}/`:
 - `original.pdf` (or `.epub`, `.fb2`, etc.) — pristine copy of the source file
 - `book.md` — Markdown with YAML frontmatter containing all metadata
 
-Frontmatter fields: `id`, `title`, `titleEn`, `author`, `domain`, `tags[]`, `wordCount`, `chapterCount`, `qualityScore`, `qualityVerdict`, `status`, `sourceFile`, `importedAt`, `evaluatedAt`, `isFiction`, `language`.
+Frontmatter fields: `id`, `sha256`, `title`, `titleEn`, `author`, `authorEn`, `year`, `isbn`, `publisher`, `domain`, `tags[]`, `wordCount`, `chapterCount`, `qualityScore`, `conceptualDensity`, `originality`, `isFictionOrWater`, `verdictReason`, `evaluatorModel`, `evaluatedAt`, `status`, `originalFile`, `originalFormat`, `sourceArchive`, `warnings[]`.
 
 ---
 
@@ -144,20 +151,28 @@ Frontmatter fields: `id`, `title`, `titleEn`, `author`, `domain`, `tags[]`, `wor
 The renderer communicates with the main process through `window.api`:
 
 ```
-window.api.library.catalog(opts)     → BookRow[]
-window.api.library.getBook(id)       → BookMeta | null
-window.api.library.readBookMd(id)    → { markdown: string } | null
-window.api.library.deleteBook(id)    → boolean
-window.api.library.importFiles(paths, opts) → ImportResult
-window.api.library.importFolder(dir, opts)  → ImportResult
-window.api.library.evaluateBooks(ids)       → EvalResult
-window.api.scanner.*                 → Scanning / ingest operations
-window.api.lmstudio.*               → LM Studio connection, model listing
-window.api.agent.*                   → AI agent chat loop
-window.api.rag.*                     → RAG search
-window.api.forge.*                   → Site generation
-window.api.datasetV2.*               → Training data synthesis
-window.api.system.*                  → App info, hardware profiling
+window.api.library.catalog(opts)            → { rows, total, libraryRoot, dbPath }
+window.api.library.getBook(id)             → BookMeta | null
+window.api.library.readBookMd(id)          → { markdown, mdPath } | null
+window.api.library.deleteBook(id, del?)    → { ok, reason? }
+window.api.library.importFiles(args)       → ImportResult
+window.api.library.importFolder(args)      → ImportResult
+window.api.library.importLogSnapshot()     → ImportLogEntry[]
+window.api.library.tagStats()             → { tag, count }[]
+window.api.library.rebuildCache()         → { scanned, ingested, pruned, errors }
+window.api.library.reevaluateAll()        → { queued }
+window.api.library.evaluatorStatus()      → EvaluatorStatus
+window.api.library.evaluatorSetSlots(n)   → { ok, slots }
+window.api.library.scanFolder(folder)     → { scanId }
+window.api.library.onImportProgress(cb)   → unsubscribe
+window.api.library.onImportLog(cb)        → unsubscribe
+window.api.scanner.*                      → Scanning / ingest operations
+window.api.lmstudio.*                     → LM Studio connection, model listing
+window.api.agent.*                        → AI agent chat loop
+window.api.forge.*                        → Fine-tuning wizard + LocalRunner WSL
+window.api.datasetV2.*                    → Training data synthesis + Crystallizer
+window.api.yarn.*                         → YaRN context expansion
+window.api.system.*                       → App info, hardware profiling, openExternal
 ```
 
 ---
@@ -166,43 +181,44 @@ window.api.system.*                  → App info, hardware profiling
 
 1. **File-system-first architecture** — Books stored as plain files (MD + original), not locked in a database blob. Survives DB corruption.
 2. **Fully offline** — No cloud dependencies. LM Studio runs locally. Embeddings via ONNX locally.
-3. **Robust parsing pipeline** — 7 format parsers with fallback chains, OCR opt-in, archive extraction (nested ZIPs/RARs).
-4. **Pre-flight evaluation** — Books are rated by AI before heavy processing, saving LLM tokens.
-5. **Resilience layer** — Checkpoint store, batch coordinator, file locks, atomic writes, telemetry, graceful shutdown.
-6. **Comprehensive test suite** — 65+ unit/integration tests, E2E scripts, Electron smoke test.
-7. **Bilingual UI** — Russian and English with `i18n.js`.
-8. **Portable build** — Single `.exe` with co-located data directory, no install required.
+3. **Robust parsing pipeline** — 11 format parsers (PDF/EPUB/FB2/DJVU/DOCX/DOC/RTF/ODT/HTML/TXT + archives RAR/7z/CBR/CBZ) with OCR fallback chains.
+4. **Vision-meta multi-model fallback** — Cover image → chain of all loaded vision models; falls back to next if title/author/year/language incomplete.
+5. **PDF/DJVU page gallery** — First N pages (configurable via `BIBLIARY_RASTER_IMAGE_PAGE_LIMIT`, default 12) rendered as PNG and embedded in `book.md`.
+6. **Pre-flight evaluation** — Books rated by AI (Chief Epistemologist) before heavy processing, saving LLM tokens on low-quality content.
+7. **Resilience layer** — Checkpoint store, batch coordinator, file locks, atomic writes, telemetry, graceful shutdown.
+8. **Comprehensive test suite** — ~153 unit/integration tests (22 files), E2E scripts, Electron smoke E2E with UI harness.
+9. **Bilingual UI** — Russian and English with `i18n.js` (~1800+ keys); UI hardening with dropzone drag-drop, busy-lock, danger-confirm.
+10. **Portable build** — Single `.exe` with co-located data directory, no install required.
 
 ---
 
 ## 6. Known Weaknesses & Technical Debt
 
-### High priority
+### P0 — Настоящие баги (высокий приоритет)
 
-| Issue | Location | Impact |
-|-------|----------|--------|
-| Large files (>500 LOC) | `import.ts` (678), `lmstudio-client.ts` (618) remain; `cache-db.ts` split into 6 modules, `chat.js`/`forge.js`/`i18n.js` modularized in v2.8.0 | Reduced coupling, 4 of 6 resolved |
-| Swallowed promises | 15+ `.catch(() => undefined)` across codebase | Silent failures can mask real bugs |
-| Empty catch blocks | `evaluator-queue.ts`, `forge.ipc.ts`, `concept-extractor.ts`, `telemetry.ts`, `djvu-cli.ts` | Errors invisible at runtime |
-| `any` types in renderer JSDoc | `context-slider.js`, `welcome-wizard.js`, `reader.js`, `forge.js` | No type safety in UI components |
+| Проблема | Файл | Симптом |
+|----------|------|---------|
+| Race condition в evaluator-queue при `DEFAULT_SLOT_COUNT=2` | `electron/lib/library/evaluator-queue.ts` | Книга может получить `failed` недетерминированно |
+| `loadCatalog` ошибка IPC → только `console.error` | `renderer/library/catalog.js` | Пустая таблица без объяснений для пользователя |
+| `evaluateBook()` может выбросить при offline LM Studio | `electron/lib/library/book-evaluator.ts` | Потенциальный crash в standalone call sites |
 
-### Medium priority
+### P1 — Качество и UX
 
-| Issue | Location | Impact |
-|-------|----------|--------|
-| Duplicated HTTP-response pattern | `resp.text().catch(() => "")` in 10+ files | Could be a shared helper |
-| ~~192 TODO/FIXME markers~~ | Cleaned: 0 real TODO/FIXME in code comments (v2.8.0) | Previous count included false positives (`temp`, `xxx` in identifiers) |
-| `build-gold-examples.cjs` orphan | `scripts/` | Dead code, 168 LOC |
-| Functions >50 LOC | `importBookFromFile`, UI flows in `forge.js` | Complexity hotspots |
-| ESLint on renderer only | `npm run lint` covers `renderer/**/*.js` | No TS lint for electron/ yet |
+| Проблема | Файл | Влияние |
+|----------|------|---------|
+| `visionModelKey`/`visionMetaEnabled` не в Settings UI | `renderer/settings/sections.js` | Пользователь не может управлять vision через UI |
+| Bulk delete errors → `console.warn` | `renderer/library/catalog.js` | Молчаливые частичные сбои при удалении |
+| Session persistence не реализована | — | Потеря выбора книг при перезапуске |
+| No centralized toast manager | `renderer/components/` | Разношёрстные уведомления: showAlert / status / toast |
 
-### Low priority
+### Низкий приоритет
 
-| Issue | Location | Impact |
-|-------|----------|--------|
-| Vendor JS in repo | `marked.umd.js`, `purify.min.js` | Could use npm + bundler instead |
-| `marked` npm dep possibly redundant | `package.json` | UI uses UMD bundle from repo, not the npm package |
-| 14+ scripts not in package.json | `scripts/` | Discoverability — developers won't know they exist |
+| Проблема | Файл | Влияние |
+|----------|------|---------|
+| Vendor JS в репозитории | `renderer/marked.umd.js`, `renderer/vendor/purify.min.js` | Могло бы быть через npm + bundler |
+| ~74 пустых `catch {}` блоков | Весь код | Большинство — intentional fallback, но стоит аудита |
+| ESLint только для renderer | `npm run lint` | electron/ полагается только на TypeScript strict mode |
+| RTF/DOC/ODT парсеры хрупкие | `electron/lib/scanner/parsers/` | Сложные файлы часто дают пустые sections |
 
 ---
 
@@ -235,13 +251,17 @@ window.api.system.*                  → App info, hardware profiling
 
 ## 8. Testing
 
-| Type | Count | Runner | Command |
-|------|-------|--------|---------|
-| Unit/Integration | 133 | node --test + tsx | `npm test` (auto-rebuilds better-sqlite3 for Node ABI) |
-| Electron Smoke | 1 | playwright-electron | `npm run test:smoke` |
-| E2E scripts | 12+ | tsx (manual) | `npm run e2e:*` |
+| Тип | Файлов | ~Тест-кейсов | Runner | Команда |
+|-----|--------|-------------|--------|---------|
+| Unit/Integration | 21 | ~153 | node --test + tsx | `npm test` (auto-rebuilds better-sqlite3) |
+| Electron Smoke (UI E2E) | 1 | 1 multi-step | playwright-electron | `npm run test:smoke` |
+| E2E live scripts | 12+ | — | tsx (manual, требует LM Studio+Qdrant) | `npm run test:e2e:*` |
 
-Test files live in `tests/` and follow the `*.test.ts` pattern.
+Тест-файлы в `tests/` и `tests/smoke/`, паттерн `*.test.ts`. Используется **`node --test`** (встроенный runner) с **`tsx`** для TypeScript без компиляции. Файл `vitest.config.ts` **не существует** — проект не использует vitest.
+
+**Smoke E2E** запускается с `BIBLIARY_SMOKE_UI_HARNESS=1` — preload перехватывает library IPC и возвращает детерминированные данные без SQLite/LM Studio/Qdrant.
+
+**Тестовое покрытие по областям:** library import/dedup/archive/revision ✓, evaluator queue ✓, batch runner ✓, vision-meta ✓, semantic chunker (surrogate builder) ✓. **Не покрыто:** Forge wizard, BookHunter, Agent, DJVU parser, YaRN engine, resilience/watchdog.
 
 ---
 
@@ -252,13 +272,21 @@ Test files live in `tests/` and follow the `*.test.ts` pattern.
 npm run electron:dev          # Compile TS + launch Electron
 
 # Build portable (.exe)
-npm run build:portable        # scripts/build-portable.js → release/
+npm run electron:build-portable  # scripts/build-portable.js → release/dist-portable/
 
-# Build installer
-npm run build:installer       # electron-builder standard
+# Build installer (NSIS)
+npm run electron:build        # electron-builder standard
 
 # Compile only (no launch)
 npm run electron:compile      # tsc -p tsconfig.electron.json
+
+# Tests
+npm run test:fast             # unit tests без rebuild native (быстро)
+npm test                      # rebuild better-sqlite3 + unit tests
+npm run test:smoke            # Electron UI E2E (playwright)
+
+# Lint
+npm run lint                  # tsc --noEmit + eslint renderer/**/*.js
 ```
 
 **Portable build specifics:**
@@ -271,18 +299,32 @@ npm run electron:compile      # tsc -p tsconfig.electron.json
 
 ## 10. Configuration
 
-| File | Purpose |
-|------|---------|
+| Файл | Назначение |
+|------|-----------|
 | `tsconfig.electron.json` | TypeScript config for main process |
-| `electron-builder.yml` | Build configuration |
-| `vitest.config.ts` | Test runner config |
-| `data/preferences.json` | User preferences (model, quality thresholds) |
-| `data/prompts/` | Customizable LLM prompt templates |
+| `electron-builder.yml` | Build configuration (Windows-only: NSIS + portable) |
+| `data/preferences.json` | User preferences (55 keys via PreferencesSchema) |
+| `electron/defaults/prompts/` | Bundled LLM prompt templates (7 files) |
+| `electron/defaults/synth-prompts/` | Domain-specific synthesis prompts (10 files) |
+| `electron/defaults/curated-models.json` | Scoring database for evaluator model selection |
+| `electron/defaults/hardware-presets.json` | Hardware presets for VRAM forecasting |
 
-Environment variables:
-- `BIBLIARY_DATA_DIR` — Override data directory (default: `./data/`)
-- `BIBLIARY_RAG_SCORE_THRESHOLD` — RAG relevance threshold (default: 0.55)
-- `PORTABLE_EXECUTABLE_DIR` — Set by portable launcher on Windows
+Переменные среды:
+
+| Переменная | Назначение | Default |
+|-----------|-----------|---------|
+| `BIBLIARY_DATA_DIR` | Корневая папка данных | `./data/` |
+| `BIBLIARY_LIBRARY_ROOT` | Явная папка библиотеки | `{data}/library` |
+| `BIBLIARY_EVAL_SLOTS` | Параллельных слотов эвалюатора | `2` |
+| `BIBLIARY_7Z_PATH` | Путь к 7z.exe | bundled `vendor/7zip/` |
+| `BIBLIARY_RASTER_IMAGE_PAGE_LIMIT` | Макс страниц для PDF/DJVU gallery | `12` |
+| `BIBLIARY_VISION_MODEL_MARKERS` | CSV маркеров vision-моделей (erase hardcode) | builtin list |
+| `BIBLIARY_VISION_META_MODEL_ATTEMPTS` | Макс попыток fallback vision-моделей | `3` |
+| `BIBLIARY_SMOKE_UI_HARNESS` | Smoke harness mode для Electron E2E | — |
+| `BIBLIARY_ARCHIVE_MAX_BYTES` | Лимит байт для архива | `2 GB` |
+| `BIBLIARY_PROMPTS_DEFAULT_DIR` | Override директории промптов | bundled defaults |
+| `PORTABLE_EXECUTABLE_DIR` | Устанавливается portable launcher'ом | — |
+| `OPENROUTER_API_KEY` | Только для vision OCR через OpenRouter (опционально) | — |
 
 ---
 
@@ -323,10 +365,12 @@ npm run electron:dev
 ### Common pitfalls
 
 1. **`npm install` breaks `better-sqlite3`** — The postinstall script handles this, but if you see `NODE_MODULE_VERSION` errors, run `npx @electron/rebuild --only better-sqlite3 --force`
-2. **`sharp` DLL issues in portable build** — `@xenova/transformers` imports MUST be dynamic (lazy). Never add static `import ... from "@xenova/transformers"` at module top level. The portable `.exe` runs from a temp directory where native `.node` binaries may lack DLL dependencies
-3. **Stale compiled files in `dist-electron/`** — TypeScript incremental compilation does NOT delete `.js` files when the corresponding `.ts` source is removed. Always use `npm run electron:compile` (which runs `electron:clean` first) instead of bare `tsc`. A stale `ipc-handlers.js` with static `require("@xenova/transformers")` caused a startup crash in the portable build
+2. **`sharp` DLL issues in portable build** — `@xenova/transformers` imports MUST be dynamic (lazy). Never add static `import ... from "@xenova/transformers"` at module top level
+3. **Stale compiled files in `dist-electron/`** — Always use `npm run electron:compile` (runs `electron:clean` first) instead of bare `tsc`
 4. **Data directory confusion** — Dev mode uses `./data/`, portable uses `../data/` relative to exe, `BIBLIARY_DATA_DIR` env var overrides both
 5. **`marked` duplication** — The npm package `marked` may be redundant; the renderer uses `renderer/marked.umd.js` loaded via `<script>` tag
+6. **Нет CI/CD** — `.github/workflows/` пуста. Все проверки — ручные
+7. **`DEFAULT_SLOT_COUNT=2`** — evaluator-queue по умолчанию параллелен; race conditions в тестах возможны без `setEvaluatorSlots(1)`
 
 ---
 
@@ -339,17 +383,19 @@ bibliary/
 │   ├── preload.ts                       # contextBridge (renderer API)
 │   ├── lmstudio-client.ts               # LM Studio REST + SDK wrapper
 │   ├── crystallizer-constants.ts         # Shared constants
-│   ├── ipc/
+│   ├── ipc/                             # 16 IPC handler files
 │   │   ├── index.ts                     # Register all IPC handlers
-│   │   ├── library.ipc.ts              # Library CRUD + import + evaluate
+│   │   ├── library.ipc.ts              # Library CRUD + import + evaluate (25+ channels)
 │   │   ├── scanner.ipc.ts             # Scanner/ingest operations
 │   │   ├── agent.ipc.ts               # AI agent chat loop
 │   │   ├── lmstudio.ipc.ts            # Model management
 │   │   ├── dataset-v2.ipc.ts          # Training data synthesis
-│   │   ├── forge.ipc.ts               # Site generation
+│   │   ├── forge.ipc.ts               # Fine-tuning wizard + LocalRunner WSL
 │   │   ├── qdrant.ipc.ts              # Vector DB operations
-│   │   ├── yarn.ipc.ts                # Yarn engine
-│   │   └── validators.ts              # Zod schemas for IPC
+│   │   ├── yarn.ipc.ts                # YaRN context expansion
+│   │   ├── bookhunter.ipc.ts          # Book search + download
+│   │   ├── wsl.ipc.ts                 # WSL detection
+│   │   └── validators.ts              # Zod helpers (no ipcMain.handle)
 │   └── lib/
 │       ├── library/
 │       │   ├── import.ts               # Book import pipeline
@@ -369,10 +415,16 @@ bibliary/
 │       │   ├── ingest.ts               # Ingest coordinator
 │       │   └── embedding.ts            # Embedding generation
 │       ├── rag/index.ts                # RAG search pipeline
-│       ├── agent/                       # Tool-calling AI agent
-│       ├── resilience/                  # Watchdog, checkpoints, locks
-│       ├── forge/                       # Site generation pipeline
-│       └── endpoints/index.ts           # URL resolution (LM Studio, Qdrant)
+│       ├── agent/                       # Tool-calling AI agent (loop, tools, history)
+│       ├── resilience/                  # Watchdog, checkpoints, locks (10 files)
+│       ├── forge/                       # Fine-tuning wizard pipeline (8 files)
+│       ├── yarn/                        # YaRN engine + patcher (5 files)
+│       ├── bookhunter/                  # Book search (4 sources, 8 files)
+│       ├── llm/
+│       │   ├── vision-meta.ts          # Vision LLM for cover metadata extraction
+│       │   └── vision-ocr.ts           # Vision LLM for DJVU OCR
+│       ├── native/sharp-loader.ts      # Centralized sharp/image-to-PNG loader
+│       └── endpoints/index.ts          # URL resolution (LM Studio, Qdrant)
 ├── renderer/
 │   ├── index.html                       # App shell
 │   ├── router.js                        # Client-side routing
@@ -380,21 +432,31 @@ bibliary/
 │   ├── i18n.js                          # Internationalization (RU/EN)
 │   ├── styles.css                       # Global styles
 │   ├── library/
-│   │   ├── catalog.js                   # Book catalog table
-│   │   ├── import-pane.js              # Import UI
-│   │   ├── reader.js                   # Book reader (Markdown viewer)
+│   │   ├── catalog.js                   # Book catalog table (Quality, Year, Tags filter)
+│   │   ├── import-pane.js              # Import UI with log panel
+│   │   ├── reader.js                   # Book reader (Markdown + cover)
+│   │   ├── tag-cloud.js                # Tag cloud modal with search
+│   │   ├── evaluator.js                # Evaluator queue status panel
 │   │   ├── state.js                    # Library state management
 │   │   └── format.js                   # Display formatting helpers
-│   ├── components/                      # Shared UI components
+│   ├── components/
+│   │   ├── ui-dialog.js                # Alert/Confirm/Prompt (non-blocking)
+│   │   ├── context-slider.js           # YaRN slider (full/compact/embedded)
+│   │   └── welcome-wizard.js           # Onboarding wizard
 │   ├── chat.js                          # RAG chat interface
-│   ├── forge.js                         # Site generator UI
-│   └── dataset-v2.js                    # Dataset factory UI
-├── scripts/                             # Dev tools & E2E tests
-├── tests/                               # vitest test files
+│   ├── forge.js                         # Fine-tuning wizard UI
+│   └── dataset-v2.js                    # Crystallizer / Dataset factory UI
+├── scripts/                             # Dev tools & E2E live scripts (tsx)
+├── tests/                               # node --test unit/integration tests
+│   └── smoke/                           # Playwright Electron smoke E2E
 ├── docs/                                # Project documentation
+├── vendor/
+│   ├── djvulibre/win32-x64/            # Bundled djvutxt/ddjvu/djvused binaries
+│   └── 7zip/win32-x64/                 # Bundled 7z.exe + 7z.dll
 └── data/                                # Runtime data (gitignored)
     ├── library/{id}/book.md + original.* 
     ├── bibliary-cache.db                # SQLite metadata cache
-    ├── preferences.json                 # User settings
-    └── prompts/                         # LLM prompt templates
+    ├── preferences.json                 # User settings (55 keys)
+    ├── telemetry.jsonl                  # Structured event log
+    └── prompts/                         # User-overridable LLM prompt templates
 ```

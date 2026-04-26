@@ -19,6 +19,7 @@ import { parseBook, detectExt, type SupportedExt } from "../scanner/parsers/inde
 import { isOcrSupported } from "../scanner/ocr/index.js";
 import { extractBookImages } from "./image-extractors.js";
 import { computeFileSha256, bookIdFromSha } from "./sha-stream.js";
+import { extractMetadataFromCover } from "../llm/vision-meta.js";
 import {
   SUPPORTED_BOOK_EXTS,
   type BookCatalogMeta,
@@ -349,13 +350,26 @@ export async function convertBookToMarkdown(
      диск второй раз. Иначе считаем сами потоково (без OOM на 500MB книге). */
   const sha256 = opts.precomputedSha256 ?? (await computeFileSha256(absFilePath, opts.signal));
 
-  /* Stage 1 -- text + structure через существующий парсер. */
-  let parsed = await parseBook(absFilePath, { ocrEnabled: opts.ocrEnabled === true, signal: opts.signal });
+  /* Stage 1 -- text + structure через существующий парсер.
+     djvuOcrProvider включает vision-llm путь для DJVU (через локальную LM Studio
+     vision-модель — провайдер 'vision-llm' маршрутизирует в parsers/djvu.ts).
+     ocrLanguages — хинты для OS-OCR (Ukrainian, Russian и т.д.). */
+  let parsed = await parseBook(absFilePath, {
+    ocrEnabled: opts.ocrEnabled === true,
+    djvuOcrProvider: opts.djvuOcrProvider,
+    ocrLanguages: opts.ocrLanguages,
+    signal: opts.signal,
+  });
   /* OCR auto-fallback: если парсер вернул 0 секций, пробуем OCR независимо от
      пользовательской настройки — нет смысла помечать книгу как unsupported, если
      ОС умеет OCR. Применяется только к форматам, которые могут быть сканами. */
   if (parsed.sections.length === 0 && isOcrSupported() && (format === "pdf" || format === "djvu")) {
-    parsed = await parseBook(absFilePath, { ocrEnabled: true, ocrAccuracy: "accurate", ocrPdfDpi: 200, signal: opts.signal });
+    parsed = await parseBook(absFilePath, {
+      ocrEnabled: true, ocrAccuracy: "accurate", ocrPdfDpi: 200,
+      djvuOcrProvider: opts.djvuOcrProvider,
+      ocrLanguages: opts.ocrLanguages,
+      signal: opts.signal,
+    });
   }
 
   const effectiveSections = parsed.sections;
@@ -376,6 +390,50 @@ export async function convertBookToMarkdown(
   const allWarnings = [...(parsed.metadata.warnings ?? []), ...imgWarnings];
   const cover = images.find((i) => i.id === "img-cover") ?? null;
 
+  /* Stage 2.5 — Vision-meta enrichment через ЛОКАЛЬНУЮ LM Studio vision-модель.
+     Если включено и есть обложка, отправляем PNG в loaded multimodal-модель
+     и получаем title/author/year/language. Это критический источник истины
+     для PDF/DJVU без metadata. Никогда не throw — на любой ошибке degrade
+     gracefully и пишем warning. Если vision-модели нет — graceful skip с warning. */
+  let visionMeta: import("../llm/vision-meta.js").VisionMeta | null = null;
+  if (opts.visionMetaEnabled === true && cover && cover.buffer.length > 0) {
+    const t0 = Date.now();
+    opts.onVisionMetaEvent?.({ phase: "start", message: `Extracting metadata from cover (${cover.buffer.length} bytes, ${cover.mimeType})` });
+    const result = await extractMetadataFromCover(cover.buffer, {
+      modelKey: opts.visionModelKey,
+      mimeType: cover.mimeType,
+      signal: opts.signal,
+    });
+    if (result.ok && result.meta) {
+      visionMeta = result.meta;
+      allWarnings.push(...(result.warnings ?? []));
+      opts.onVisionMetaEvent?.({
+        phase: "success",
+        durationMs: Date.now() - t0,
+        meta: visionMeta,
+      });
+    } else {
+      const msg = `vision-meta failed: ${result.error ?? "unknown"}`;
+      allWarnings.push(msg);
+      opts.onVisionMetaEvent?.({ phase: "failed", message: msg, durationMs: Date.now() - t0 });
+    }
+  }
+
+  /* Resolve финальный title/author/year/publisher по приоритету:
+     1. visionMeta (если есть и confidence>0.5) — самое надёжное, модель видит обложку;
+     2. parser metadata (PDF info, EPUB OPF, FB2 title-info) — структурное;
+     3. filename — как fallback (parseFilename добавит на этапе import.ts). */
+  const useVision = visionMeta !== null && visionMeta.confidence >= 0.5;
+  const parsedTitle = parsed.metadata.title?.trim();
+  const filenameTitle = path.parse(originalFile).name;
+  const finalTitle = (useVision && visionMeta!.title) || parsedTitle || filenameTitle;
+  const finalAuthor = (useVision && visionMeta!.author) || parsed.metadata.author || undefined;
+  const finalYear = (useVision && visionMeta!.year) || parsed.metadata.year || undefined;
+  const finalPublisher = (useVision && visionMeta!.publisher) || parsed.metadata.publisher || undefined;
+  if (opts.visionMetaEnabled === true && cover && visionMeta && !useVision) {
+    allWarnings.push(`vision-meta incomplete/low-confidence (${visionMeta.confidence}); parser metadata retained where stronger`);
+  }
+
   const status: BookStatus = chapters.length === 0 ? "unsupported" : "imported";
 
   const meta: BookCatalogMeta = {
@@ -383,11 +441,11 @@ export async function convertBookToMarkdown(
     sha256,
     originalFile,
     originalFormat: format,
-    title: parsed.metadata.title?.trim() || path.parse(originalFile).name,
-    author: parsed.metadata.author,
-    year: parsed.metadata.year,
+    title: finalTitle,
+    author: finalAuthor,
+    year: finalYear,
     isbn: parsed.metadata.identifier,
-    publisher: parsed.metadata.publisher,
+    publisher: finalPublisher,
     wordCount: totalWords,
     chapterCount: chapters.length,
     status,

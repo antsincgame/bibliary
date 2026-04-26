@@ -47,7 +47,7 @@ export function renderPreview(root, deps) {
   }
   const header = el("div", { class: "lib-preview-header" }, [
     el("div", { class: "lib-preview-title" }, STATE.previewBook.fileName),
-    el("button", { class: "lib-preview-close", type: "button", "aria-label": "close",
+    el("button", { class: "lib-preview-close", type: "button", "aria-label": t("library.preview.close"),
       onclick: () => { STATE.previewBook = null; renderPreview(root, deps); deps.renderBooks(root.querySelector(".lib-list"), root); } }, "x"),
   ]);
   pane.appendChild(header);
@@ -89,7 +89,11 @@ export function renderPreview(root, deps) {
   for (const c of d.sampleChunks ?? []) {
     samples.appendChild(
       el("div", { class: "lib-sample" }, [
-        el("div", { class: "lib-sample-head" }, `${c.chapterTitle} - #${c.chunkIndex} - ${c.charCount} chars`),
+        el("div", { class: "lib-sample-head" }, t("library.preview.sampleHead", {
+          chapter: c.chapterTitle,
+          index: String(c.chunkIndex),
+          chars: String(c.charCount),
+        })),
         el("div", { class: "lib-sample-body" }, c.text),
       ])
     );

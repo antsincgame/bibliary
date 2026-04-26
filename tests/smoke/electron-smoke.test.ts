@@ -69,6 +69,7 @@ test("electron smoke: app launches, preload bridge works, IPC handlers respond",
       BIBLIARY_LIBRARY_DB: path.join(dataDir, "bibliary-cache.db"),
       BIBLIARY_LIBRARY_ROOT: path.join(dataDir, "library"),
       ELECTRON_USER_DATA: userData,
+      BIBLIARY_SMOKE_UI_HARNESS: "1",
     },
     timeout: 30_000,
   });
@@ -134,7 +135,56 @@ test("electron smoke: app launches, preload bridge works, IPC handlers respond",
       .waitFor({ state: "visible", timeout: 10_000 });
   }
 
-  /* Smoke #5: title app должен быть установлен. */
+  /* Smoke #5: real Library UI user flows with a mocked preload backend. */
+  await window.locator(".lib-import-pick-files").waitFor({ state: "visible", timeout: 10_000 });
+  await window.locator(".lib-import-pick-files").click();
+  await window.locator(".lib-import-status").filter({ hasText: /1/ }).waitFor({ timeout: 10_000 });
+  await window.locator(".lib-import-log-list").filter({ hasText: "smoke-book.txt" }).waitFor({ timeout: 10_000 });
+
+  await window.locator('.lib-tab[data-tab="catalog"]').click();
+  await window.locator(".lib-catalog-row").first().waitFor({ state: "visible", timeout: 10_000 });
+  assert.equal(await window.locator(".lib-catalog-row").count(), 2, "catalog should render two seeded rows");
+
+  await window.locator(".lib-catalog-search").fill("cybernetics");
+  assert.equal(await window.locator(".lib-catalog-row").count(), 1, "search should filter catalog rows");
+
+  await window.locator(".lib-catalog-search").fill("");
+  await window.locator(".lib-catalog-quality-slider").evaluate((node) => {
+    const input = node as HTMLInputElement;
+    input.value = "70";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  assert.equal(await window.locator(".lib-catalog-row").count(), 1, "quality slider should filter low-quality rows");
+  await window.locator(".lib-catalog-quality-slider").evaluate((node) => {
+    const input = node as HTMLInputElement;
+    input.value = "0";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+
+  await window.locator(".lib-catalog-cell-title").first().click();
+  await window.locator(".lib-reader-body").filter({ hasText: "Smoke reader body" }).waitFor({ timeout: 10_000 });
+  await window.locator(".lib-reader-back").click();
+  await window.locator(".lib-reader").waitFor({ state: "detached", timeout: 10_000 });
+
+  await window.evaluate(() => {
+    localStorage.setItem("bibliary_ui_mode", "pro");
+    document.body.dataset.uiMode = "pro";
+  });
+  await window.locator(".lib-catalog-search").fill("");
+  await window.locator(".lib-catalog-tbody .lib-catalog-cb").first().check();
+  await window.locator(".lib-catalog-actions .lib-btn-danger", { hasText: /Delete|Удалить/ }).click();
+  await window.locator(".ui-dialog .btn-danger").click();
+  await window.waitForFunction(() => document.querySelectorAll(".lib-catalog-row").length === 1, null, { timeout: 10_000 });
+
+  await window.locator(".lib-catalog-search").fill("");
+  await window.locator(".lib-catalog-toolbar .lib-btn", { hasText: /Tags|Теги/ }).click();
+  await window.locator(".tag-cloud-dialog").waitFor({ state: "visible", timeout: 10_000 });
+  await window.locator(".tag-cloud-search").fill("marketing");
+  await window.locator(".tag-cloud-pill", { hasText: "marketing" }).click();
+  await window.locator(".tag-cloud-dialog .btn-primary").click();
+  assert.equal(await window.locator(".lib-catalog-row").count(), 1, "tag cloud should apply AND-filter to catalog");
+
+  /* Smoke #6: title app должен быть установлен. */
   const title = await window.title();
   assert.ok(title.length > 0, "window.title() must be non-empty");
 });

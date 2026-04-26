@@ -1,8 +1,8 @@
 # Расширение контекста — Universal YaRN Slider
 
-> Phase 3.0 · v2.1.5 · «сокровище индустрии»
+> v3.1.0 · «сокровище индустрии»
 >
-> Внутреннее (исторические) название: Memory Forge. В UI начиная с v2.4 — **«Расширение контекста»** (RU) / **«Context Expansion»** (EN).
+> Внутреннее (историческое) название: Memory Forge. В UI начиная с v2.4 — **«Расширение контекста»** (RU) / **«Context Expansion»** (EN).
 
 Расширение контекста — это первая в индустрии «бытовая» абстракция над YaRN. Vibecoder двигает слайдер с пиктограммами «Чат / Документ / Книга / Кодекс / Библиотека» — Bibliary сам считает factor, проверяет VRAM, рекомендует KV-cache dtype, и атомарно патчит `config.json` модели в LM Studio. Без единой строки JSON, без формул, без открывания terminal.
 
@@ -187,15 +187,12 @@ const result = await revertRopeScaling("qwen/qwen3.6-35b-a3b");
 
 ## Тесты
 
-`scripts/test-yarn-engine.ts` — 30 тестов:
+Тесты YaRN engine интегрированы в основной unit-suite (`npm run test:fast`). Отдельного файла `scripts/test-yarn-engine.ts` нет — логика engine покрыта через integration тесты и используется в production pipeline без отдельного скрипта.
 
-- **engine** (16): getModelArch, listKnownModels, computeRopeScaling, snapFactor, isYarnNeeded, estimateKVCache (3 модели + границы), recommendKVDtype (3 сценария), recommend (3 сценария), TASK_PRESETS
-- **suggestions** (4): yarn-not-needed, kv-fit, official-supported, exceeds-max
-- **patcher** (6): apply на missing config, повторный apply, revert sentinel, apply на существующий, revert восстановление, apply на несуществующий dir
-
-Запуск:
+Проверить работу YaRN вручную:
 ```bash
-npx tsx scripts/test-yarn-engine.ts
+# Запустить приложение и перейти в Models route → Расширение контекста
+npm run electron:dev
 ```
 
 ## Wow-критерий релиза
@@ -211,9 +208,9 @@ Vibecoder, никогда не слышавший про YaRN, должен за
 
 Это приёмочный сценарий. Если хоть один шаг падает — релиз блокируется.
 
-## Что дальше
+## Статус roadmap
 
-- **Phase 3.1** — Hardware Profiler передаёт точный `vramGB` в slider, recommendation становится автоматическим
-- **Phase 3.2** — мастер дообучения, Step 3 использует тот же slider в режиме `embedded` для выбора `max_seq_length`
-- **Phase 3.3** — после fine-tune, новая модель регистрируется в `ProfileStore` и сразу появляется в «Расширении контекста»
-- **Live HF lookup** (опционально) — для незнакомых моделей подтягивать `config.json` с Hugging Face и обновлять БД на лету
+- **Phase 3.2** — мастер дообучения использует slider в режиме `embedded` для выбора `max_seq_length` ✅ **реализовано** (`mode: "embedded"` в `context-slider.js`, Step 2 Forge wizard)
+- **Hardware Profiler** — передача точного `vramGB` в slider для автоматического recommendation — **backlog** (нет в текущем roadmap)
+- **ProfileStore** — автоматическая регистрация новой модели после fine-tune — **backlog** (GGUF auto-import работает, но ProfileStore registration не реализована)
+- **Live HF lookup** — подтягивать `config.json` с Hugging Face для незнакомых моделей — **backlog**
