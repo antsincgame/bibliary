@@ -19,6 +19,7 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import { detectExt, type SupportedExt } from "../scanner/parsers/index.js";
 import { isArchive } from "./archive-extractor.js";
+import { shouldIncludeImportCandidate } from "./import-candidate-filter.js";
 
 export interface WalkOptions {
   /** Если true, архивы (zip/cbz/...) тоже yields для последующей распаковки. */
@@ -64,54 +65,62 @@ export async function* walkSupportedFiles(
   const includeArchives = opts.includeArchives === true;
   const maxDepth = opts.maxDepth ?? DEFAULT_MAX_DEPTH;
   const minBytes = opts.minFileBytes ?? DEFAULT_MIN_FILE_BYTES;
-  yield* walkDir(rootDir, supported, includeArchives, opts.signal, 0, maxDepth, minBytes);
-}
+  const signal = opts.signal;
+  const stack: Array<{ dir: string; depth: number }> = [{ dir: rootDir, depth: 0 }];
 
-async function* walkDir(
-  dir: string,
-  supported: ReadonlySet<SupportedExt>,
-  includeArchives: boolean,
-  signal: AbortSignal | undefined,
-  depth: number,
-  maxDepth: number,
-  minBytes: number,
-): AsyncGenerator<string> {
-  if (signal?.aborted) return;
-  if (depth > maxDepth) return;
-
-  let entries;
-  try {
-    entries = await fs.readdir(dir, { withFileTypes: true, encoding: "utf8" });
-  } catch {
-    return;
-  }
-
-  for (const entry of entries) {
+  while (stack.length > 0) {
     if (signal?.aborted) return;
-    const full = path.join(dir, entry.name);
+    const next = stack.pop();
+    if (!next) break;
+    if (next.depth > maxDepth) continue;
 
-    if (entry.isDirectory()) {
-      if (DIR_BLACKLIST.has(entry.name.toLowerCase())) continue;
-      yield* walkDir(full, supported, includeArchives, signal, depth + 1, maxDepth, minBytes);
+    let entries;
+    try {
+      entries = await fs.readdir(next.dir, { withFileTypes: true, encoding: "utf8" });
+    } catch {
       continue;
     }
-    if (!entry.isFile()) continue;
 
-    const lower = entry.name.toLowerCase();
-    if (BASENAME_BLACKLIST.has(lower)) continue;
+    for (let i = entries.length - 1; i >= 0; i--) {
+      if (signal?.aborted) return;
+      const entry = entries[i]!;
+      const full = path.join(next.dir, entry.name);
 
-    const ext = detectExt(entry.name);
-    const isBook = ext && supported.has(ext);
-    const isArch = !isBook && includeArchives && isArchive(full);
-    if (!isBook && !isArch) continue;
+      if (entry.isDirectory()) {
+        if (DIR_BLACKLIST.has(entry.name.toLowerCase())) continue;
+        stack.push({ dir: full, depth: next.depth + 1 });
+        continue;
+      }
+      if (!entry.isFile()) continue;
 
-    if (minBytes > 0) {
+      const lower = entry.name.toLowerCase();
+      if (BASENAME_BLACKLIST.has(lower)) continue;
+
+      const ext = detectExt(entry.name);
+      const isBook = Boolean(ext && supported.has(ext));
+      const isArch = !isBook && includeArchives && isArchive(full);
+      if (!isBook && !isArch) continue;
+
       try {
         const st = await fs.stat(full);
-        if (st.size < minBytes) continue;
-      } catch { continue; }
-    }
+        if (minBytes > 0 && st.size < minBytes) continue;
+        if (
+          ext &&
+          isBook &&
+          !shouldIncludeImportCandidate({
+            rootDir,
+            candidatePath: full,
+            ext,
+            sizeBytes: st.size,
+          })
+        ) {
+          continue;
+        }
+      } catch {
+        continue;
+      }
 
-    yield full;
+      yield full;
+    }
   }
 }

@@ -17,6 +17,7 @@
 
 import { promises as fs } from "fs";
 import * as os from "os";
+import { getPdfjsStandardFontDataUrl } from "../pdfjs-node.js";
 
 export type OcrAccuracy = "fast" | "accurate";
 
@@ -143,6 +144,8 @@ export async function* rasterisePdfPages(
     isEvalSupported: false,
     disableFontFace: true,
     useSystemFonts: false,
+    standardFontDataUrl: getPdfjsStandardFontDataUrl(),
+    verbosity: pdfjs.VerbosityLevel.ERRORS,
   });
   const doc = await loadingTask.promise;
 

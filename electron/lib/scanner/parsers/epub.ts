@@ -66,6 +66,11 @@ interface ManifestItem {
   mediaType: string;
 }
 
+function isHtmlLikeMediaType(mediaType: string): boolean {
+  const normalized = mediaType.trim().toLowerCase();
+  return normalized.includes("xhtml") || normalized === "text/html" || normalized === "application/html+xml";
+}
+
 /**
  * Жёсткий потолок RAM для EPUB (P1, симметрично PDF parser).
  * EPUB = ZIP, JSZip распаковывает ВЕСЬ архив в память. 250 MB EPUB
@@ -169,7 +174,7 @@ async function parseEpub(filePath: string): Promise<ParseResult> {
     /* Spine пустой — нестандартный EPUB. Fallback: собираем все xhtml/html
        items из manifest в порядке их объявления. */
     const fallbackIds = items
-      .filter((i) => i.mediaType.includes("xhtml") || i.mediaType === "text/html")
+      .filter((i) => isHtmlLikeMediaType(i.mediaType))
       .map((i) => i.id);
     if (fallbackIds.length > 0) {
       itemRefs = fallbackIds;
@@ -214,7 +219,7 @@ async function parseEpub(filePath: string): Promise<ParseResult> {
 
   for (const idref of itemRefs) {
     const item = itemById.get(idref);
-    if (!item || (!item.mediaType.includes("xhtml") && item.mediaType !== "text/html")) continue;
+    if (!item || !isHtmlLikeMediaType(item.mediaType)) continue;
     const file = zip.file(resolve(item.href));
     if (!file) {
       warnings.push(`epub: missing spine item ${item.href}`);

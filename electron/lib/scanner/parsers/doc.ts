@@ -1,6 +1,7 @@
 import { promises as fs } from "fs";
 import * as path from "path";
 import { cleanParagraph, type BookParser, type ParseResult, type BookSection } from "./types.js";
+import { pickBestBookTitle } from "../../library/title-heuristics.js";
 
 /**
  * Legacy .doc parser — delegates to mammoth (same as DOCX; mammoth handles
@@ -81,7 +82,7 @@ async function parseDoc(filePath: string): Promise<ParseResult> {
   const firstH1 = sections.find((s) => s.level === 1)?.title;
   const baseName = cleanDocTitle(path.basename(filePath, path.extname(filePath)));
   return {
-    metadata: { title: firstH1 || baseName, warnings },
+    metadata: { title: pickBestBookTitle(firstH1, baseName) || baseName, warnings },
     sections: sections.filter((s) => s.paragraphs.length > 0),
     rawCharCount: totalChars,
   };

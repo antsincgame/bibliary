@@ -15,6 +15,7 @@ import JSZip from "jszip";
 import { XMLParser } from "fast-xml-parser";
 import type { ImageRef } from "./types.js";
 import { getDjvuPageCount, runDdjvu } from "../scanner/parsers/djvu-cli.js";
+import { getPdfjsStandardFontDataUrl } from "../scanner/pdfjs-node.js";
 import { imageBufferToPng } from "../native/sharp-loader.js";
 
 const DEFAULT_MAX_IMAGES = 100;
@@ -307,6 +308,8 @@ export async function extractPdfImages(
       isEvalSupported: false,
       disableFontFace: true,
       useSystemFonts: false,
+      standardFontDataUrl: getPdfjsStandardFontDataUrl(),
+      verbosity: pdfjs.VerbosityLevel.ERRORS,
     });
     try {
       doc = await loadingTask.promise;

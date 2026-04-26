@@ -5,6 +5,7 @@ import { isOcrSupported, recognizeImageBuffer } from "../ocr/index.js";
 import { recognizeWithVisionLlm } from "../../llm/vision-ocr.js";
 import { getDjvuInstallHint, getDjvuPageCount, runDdjvu, runDjvutxt } from "./djvu-cli.js";
 import { imageBufferToPng } from "../../native/sharp-loader.js";
+import { pickBestBookTitle } from "../../library/title-heuristics.js";
 
 const MAX_DJVU_FILE_BYTES = 500 * 1024 * 1024;
 
@@ -169,7 +170,8 @@ function paragraphsToSections(paragraphs: Array<{ page: number; text: string }>)
 
 function guessTitleFromText(text: string): string | null {
   const firstLine = text.split("\n").find((l) => l.trim().length > 3);
-  return firstLine && firstLine.trim().length < 120 ? firstLine.trim() : null;
+  if (!firstLine || firstLine.trim().length >= 120) return null;
+  return pickBestBookTitle(firstLine) ?? null;
 }
 
 export const djvuParser: BookParser = { ext: "djvu", parse: parseDjvu };

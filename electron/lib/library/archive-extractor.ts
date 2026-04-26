@@ -19,6 +19,7 @@ import { randomUUID } from "crypto";
 import JSZip from "jszip";
 import { detectExt } from "../scanner/parsers/index.js";
 import { SUPPORTED_BOOK_EXTS } from "./types.js";
+import { shouldIncludeImportCandidate } from "./import-candidate-filter.js";
 const ARCHIVE_EXTS = new Set([".zip", ".cbz", ".rar", ".cbr", ".7z"]);
 const req = createRequire(path.join(process.cwd(), "package.json"));
 
@@ -265,6 +266,16 @@ async function extractZipLike(absPath: string, tempDir: string, warnings: string
       }
       const out_path = path.join(tempDir, safeName);
       await fs.writeFile(out_path, data);
+      if (
+        !shouldIncludeImportCandidate({
+          rootDir: tempDir,
+          candidatePath: out_path,
+          ext,
+          sizeBytes: data.byteLength,
+        })
+      ) {
+        continue;
+      }
       out.push({ absPath: out_path, entryName: entry.name, sourceArchive });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -353,6 +364,16 @@ async function collectExtractedBooks(
       const ext = detectExt(entry.name);
       if (!ext || !(SUPPORTED_BOOK_EXTS as ReadonlySet<string>).has(ext)) continue;
       const stat = await fs.stat(resolved);
+      if (
+        !shouldIncludeImportCandidate({
+          rootDir: tempDir,
+          candidatePath: resolved,
+          ext,
+          sizeBytes: stat.size,
+        })
+      ) {
+        continue;
+      }
       totalBytes += stat.size;
       if (out.length >= limits.maxFiles) {
         warnings.push(`archive-extractor: ${sourceArchive} has more than ${limits.maxFiles} extracted book files — truncated`);

@@ -3,6 +3,8 @@ import * as path from "path";
 import { cleanParagraph, looksLikeHeading, type BookParser, type ParseOptions, type ParseResult, type BookSection } from "./types.js";
 import { isOcrSupported, rasterisePdfPages, recognizeImageBuffer } from "../ocr/index.js";
 import { parsePdfInWorker, isWorkerPdfEnabled } from "./pdf-worker-host.js";
+import { getPdfjsStandardFontDataUrl } from "../pdfjs-node.js";
+import { isLowValueBookTitle, pickBestBookTitle } from "../../library/title-heuristics.js";
 
 /**
  * Жёсткие потолки памяти для PDF parser — защита от OOM на огромных книгах.
@@ -23,6 +25,82 @@ import { parsePdfInWorker, isWorkerPdfEnabled } from "./pdf-worker-host.js";
  */
 const MAX_PDF_FILE_BYTES = 200 * 1024 * 1024;
 const MAX_PDF_TEXT_CHARS = 50_000_000;
+
+function isLikelyPdfTitleNoise(line: string): boolean {
+  const normalized = line
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+  if (!normalized) return true;
+  if (normalized.includes("от авторов")) return true;
+  if (/^[a-zа-я0-9._-]+\.(jpg|jpeg|png|webp|tif|tiff|bmp)$/iu.test(normalized)) return true;
+  if (/^(стр|page)\s*\.?\s*\d+$/iu.test(normalized)) return true;
+  if (/^\(?\d{4}\)?$/u.test(normalized)) return true;
+  if (/^(isbn|удк|keywords?|ключевые слова|reviewers?|рецензенты)\b/iu.test(normalized)) return true;
+  if (/^(министерство|the ministry|санкт\s*[-–—]?\s*петербург|st\.?\s*[-–—]?\s*petersburg|издательство|publishing house|polytechnic|университет|university|институт|institute|higher school|faculty|монография|monograph|©)\b/iu.test(normalized)) {
+    return true;
+  }
+  return false;
+}
+
+function isLikelyPdfTitleLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (trimmed.length < 4 || trimmed.length > 100) return false;
+  if (isLikelyPdfTitleNoise(trimmed)) return false;
+  if (/^[A-ZА-ЯЁ]\.[A-ZА-ЯЁ][\p{L}. -]*$/u.test(trimmed)) return false;
+  if (/^[A-ZА-ЯЁ][a-zа-яё-]+(?:\s+[A-ZА-ЯЁ][a-zа-яё-]+){0,2}$/u.test(trimmed) && trimmed.split(/\s+/).length <= 3) {
+    return false;
+  }
+  return looksLikeHeading(trimmed) || /^[\p{L}\p{N}][\p{L}\p{N}\s()\-–—,.:/+]+$/u.test(trimmed);
+}
+
+function normalizePdfTitleBlock(lines: string[]): string {
+  return lines
+    .map((line) => line.replace(/\s*-\s*$/u, "").trim())
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function guessPdfTitleFromParagraphs(paragraphs: Array<{ page: number; text: string }>): string | null {
+  const scope = paragraphs
+    .filter((p) => p.page <= 2)
+    .slice(0, 60)
+    .map((p) => cleanParagraph(p.text))
+    .filter((line) => line.length > 0);
+
+  const blocks: string[][] = [];
+  let current: string[] = [];
+  for (const line of scope) {
+    if (isLikelyPdfTitleLine(line)) {
+      if (current.length >= 4) {
+        blocks.push(current);
+        current = [];
+      }
+      current.push(line);
+      continue;
+    }
+    if (current.length > 0) {
+      blocks.push(current);
+      current = [];
+    }
+  }
+  if (current.length > 0) blocks.push(current);
+
+  let best: { title: string; score: number } | null = null;
+  for (const block of blocks) {
+    const title = pickBestBookTitle(normalizePdfTitleBlock(block));
+    if (!title || isLowValueBookTitle(title)) continue;
+    if (isLikelyPdfTitleNoise(title)) continue;
+    if (title.split(/\s+/).length > 12) continue;
+    if (title.length > 90) continue;
+    const score = title.length + block.length * 24;
+    if (!best || score > best.score) {
+      best = { title, score };
+    }
+  }
+  return best?.title ?? null;
+}
 
 /**
  * PDF parser based on pdfjs-dist (legacy build).
@@ -97,6 +175,8 @@ export async function parsePdfMain(filePath: string, opts: ParseOptions = {}): P
     isEvalSupported: false,
     disableFontFace: true,
     useSystemFonts: false,
+    standardFontDataUrl: getPdfjsStandardFontDataUrl(),
+    verbosity: pdfjs.VerbosityLevel.ERRORS,
   });
 
   const warnings: string[] = [];
@@ -128,7 +208,6 @@ export async function parsePdfMain(filePath: string, opts: ParseOptions = {}): P
   }
   const meta = await doc.getMetadata().catch(() => null);
   const info = (meta?.info ?? {}) as Record<string, unknown>;
-  const title = (typeof info.Title === "string" && info.Title.trim()) || path.basename(filePath, path.extname(filePath));
   const author = typeof info.Author === "string" && info.Author.trim() ? String(info.Author) : undefined;
   const language = typeof info.Language === "string" ? String(info.Language) : undefined;
 
@@ -323,6 +402,13 @@ export async function parsePdfMain(filePath: string, opts: ParseOptions = {}): P
       current.paragraphs.push(text);
     }
   }
+
+  const contentTitle = guessPdfTitleFromParagraphs(allParagraphs);
+  const title = pickBestBookTitle(
+    typeof info.Title === "string" ? info.Title : undefined,
+    contentTitle,
+    path.basename(filePath, path.extname(filePath)),
+  ) || path.basename(filePath, path.extname(filePath));
 
   await doc.destroy();
 

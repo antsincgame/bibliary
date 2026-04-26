@@ -17,7 +17,7 @@ async function setupFixture(): Promise<string> {
   await writeFile(path.join(root, "archive.zip"), "PK\x03\x04");
   const sub = path.join(root, "nested", "deep");
   await mkdir(sub, { recursive: true });
-  await writeFile(path.join(sub, "c.txt"), "hello");
+  await writeFile(path.join(sub, "c.txt"), "hello world ".repeat(2000));
   await writeFile(path.join(sub, "d.unknown"), "skip me");
   return root;
 }
@@ -68,4 +68,28 @@ test("walkSupportedFiles: handles unreadable directory silently", async (t) => {
     out.push(file);
   }
   assert.deepEqual(out, []);
+});
+
+test("walkSupportedFiles: skips noisy pseudo-book paths inside corpus folders", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "bibliary-walker-noise-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+
+  await mkdir(path.join(root, "Forum_1426"), { recursive: true });
+  await writeFile(path.join(root, "Forum_1426", "lesson.pdf"), "x".repeat(20_000));
+
+  await mkdir(path.join(root, "Book A", "html"), { recursive: true });
+  await writeFile(path.join(root, "Book A", "html", "chapter01.html"), "x".repeat(80_000));
+
+  await mkdir(path.join(root, "Course", "assets"), { recursive: true });
+  await writeFile(path.join(root, "Course", "assets", "notes.pdf"), "x".repeat(20_000));
+
+  await writeFile(path.join(root, "valid-book.pdf"), "x".repeat(20_000));
+  await writeFile(path.join(root, "valid-book.txt"), "x".repeat(40_000));
+
+  const found: string[] = [];
+  for await (const file of walkSupportedFiles(root, SUPPORTED, { minFileBytes: 0 })) {
+    found.push(path.relative(root, file).replace(/\\/g, "/"));
+  }
+  found.sort();
+  assert.deepEqual(found, ["valid-book.pdf", "valid-book.txt"]);
 });

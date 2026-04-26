@@ -19,6 +19,7 @@ import { isOcrSupported } from "../scanner/ocr/index.js";
 import { extractBookImages } from "./image-extractors.js";
 import { computeFileSha256, bookIdFromSha } from "./sha-stream.js";
 import { extractMetadataFromCover } from "../llm/vision-meta.js";
+import { pickBestBookTitle } from "./title-heuristics.js";
 import {
   SUPPORTED_BOOK_EXTS,
   type BookCatalogMeta,
@@ -457,7 +458,11 @@ export async function convertBookToMarkdown(
   const useVision = visionMeta !== null && visionMeta.confidence >= 0.5;
   const parsedTitle = parsed.metadata.title?.trim();
   const filenameTitle = path.parse(originalFile).name;
-  const finalTitle = (useVision && visionMeta!.title) || parsedTitle || filenameTitle;
+  const finalTitle = pickBestBookTitle(
+    useVision ? visionMeta!.title : undefined,
+    parsedTitle,
+    filenameTitle,
+  ) ?? filenameTitle;
   const finalAuthor = (useVision && visionMeta!.author) || parsed.metadata.author || undefined;
   const finalYear = (useVision && visionMeta!.year) || parsed.metadata.year || undefined;
   const finalPublisher = (useVision && visionMeta!.publisher) || parsed.metadata.publisher || undefined;

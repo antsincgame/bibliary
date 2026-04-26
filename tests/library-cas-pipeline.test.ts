@@ -78,6 +78,25 @@ describe("Phase 1 gate: markdown has no Base64 Data URIs", () => {
   });
 });
 
+describe("title heuristics", () => {
+  it("prefers meaningful filename title over section-like metadata", async () => {
+    const { pickBestBookTitle, isLowValueBookTitle } = await import("../electron/lib/library/title-heuristics.js");
+
+    assert.equal(isLowValueBookTitle("Предисловие"), true);
+    assert.equal(isLowValueBookTitle("Contents"), true);
+    assert.equal(isLowValueBookTitle("Настоящее название книги"), false);
+
+    assert.equal(
+      pickBestBookTitle("Предисловие", "Настоящее название книги", "fallback"),
+      "Настоящее название книги",
+    );
+    assert.equal(
+      pickBestBookTitle("Contents", undefined, "Real File Title"),
+      "Real File Title",
+    );
+  });
+});
+
 // ── Phase 2 gate: illustrations.json shape ───────────────────────────────────
 
 describe("Phase 2 gate: illustrations.json shape", () => {
