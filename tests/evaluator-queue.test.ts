@@ -325,6 +325,37 @@ test("evaluator-queue handles 'no LLM loaded' gracefully", async (t) => {
   assert.equal(cached?.status, "failed");
 });
 
+test("evaluator-queue handles throw from pickEvaluatorModel without crashing the queue", async (t) => {
+  const env = await setupTestEnv();
+  t.after(env.cleanup);
+
+  const book = makeBookFile(env.libraryRoot, "eeeeeeeeeeeeeeee", "Book pickModel throw");
+  await writeBookMarkdown(env.libraryRoot, book.meta, book.mdPath);
+  upsertBook(book.meta, book.mdPath);
+
+  let llmCalled = false;
+  _setEvaluatorDepsForTests({
+    pickEvaluatorModel: async () => {
+      throw new Error("simulated pickEvaluatorModel crash");
+    },
+    evaluateBook: async () => {
+      llmCalled = true;
+      return makeFakeEvaluation(50);
+    },
+  });
+
+  const { events } = collectEvents();
+  enqueueBook(book.meta.id);
+  await waitForIdle();
+
+  assert.equal(llmCalled, false, "evaluateBook must not run when pickEvaluatorModel throws");
+  const failed = events.find((e) => e.type === "evaluator.failed");
+  assert.equal(failed?.error, "simulated pickEvaluatorModel crash");
+  const cached = getBookById(book.meta.id);
+  assert.equal(cached?.status, "failed");
+  assert.equal(getEvaluatorStatus().totalFailed, 1);
+});
+
 test("evaluator-queue continues after a single book fails (multi-book error recovery)", async (t) => {
   const env = await setupTestEnv();
   t.after(env.cleanup);

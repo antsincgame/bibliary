@@ -339,8 +339,21 @@ async function scoreModel(
  *
  * Это даёт жирную thinking-модель типа `qwen/qwen3.6-35b-a3b` (flagship +
  * thinking-heavy + 35b params = 1535 score), а не первую попавшуюся 4b.
+ *
+ * Контракт: не бросает наружу — при любой неожиданной ошибке (в т.ч. в scoreModel)
+ * возвращает null, чтобы evaluator-queue пометила книгу как «no LLM», а не ловила throw.
  */
 export async function pickEvaluatorModel(): Promise<string | null> {
+  try {
+    return await pickEvaluatorModelUnsafe();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[book-evaluator] pickEvaluatorModel:", msg);
+    return null;
+  }
+}
+
+async function pickEvaluatorModelUnsafe(): Promise<string | null> {
   const [loaded, downloaded] = await Promise.all([listLoaded(), listDownloaded()]);
   const loadedKeys = new Set(loaded.map((m) => m.modelKey));
 
@@ -392,8 +405,10 @@ export async function pickEvaluatorModel(): Promise<string | null> {
 /**
  * Главный entry-point: оценивает книгу по структурному суррогату.
  *
- * Никогда не throw -- возвращает EvaluationResult с warnings даже на ошибках
- * сети или пустом ответе модели. Это нужно для устойчивости evaluator-queue.
+ * Не бросает наружу: сбои LM (сеть, HTTP, таймаут после ретраев `chatWithPolicy`),
+ * пустой/битый ответ, ошибки repair — всё уходит в `warnings` и `evaluation: null`.
+ * Внешний try/catch ниже ловит всё, что выбрасывают `getModelProfile` / `callEvaluationModel`
+ * / вложенные пути, чтобы очередь не падала на одной книге.
  */
 export async function evaluateBook(
   surrogate: string,
@@ -427,6 +442,7 @@ export async function evaluateBook(
     raw = response.content ?? "";
     reasoningFromApi = response.reasoningContent;
   } catch (err) {
+    /* Не только «сеть»: сюда же попадают HTTP-ошибки, исчерпание ретраев, сбой профиля и т.д. */
     const msg = err instanceof Error ? err.message : String(err);
     warnings.push(`evaluator: LM Studio call failed: ${msg}`);
     return { evaluation: null, reasoning: null, raw, model, warnings };

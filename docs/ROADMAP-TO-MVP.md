@@ -57,6 +57,30 @@
 
 ---
 
+## Итерационный аудит — 2026-04-27 (сессия 2)
+
+| Проверено | Статус | Действие |
+|-----------|--------|----------|
+| `loadCatalog` молчаливая ошибка (**B-02 / P0.2**) | Закрыт | `showAlert(t("library.catalog.loadError"))` в catch |
+| `loadMoreCatalog` молчаливая ошибка | Закрыт | `showAlert(t("library.catalog.loadMoreError"))` + `renderCatalogTable(root)` |
+| `deleteBtn` частичный сбой без фидбэка (**Q-02**) | Закрыт | Счётчик ошибок + `showAlert` с деталями до 5 строк |
+| `reevaluateBtn` частичный сбой без фидбэка | Закрыт | Status-toast + `showAlert` с деталями |
+| `library.ipc.ts` — отсутствие валидации путей | Закрыт | `parseOrThrow(AbsoluteFilePathSchema / LibraryImportFilePathsSchema)` для import-folder, import-files, scan-folder |
+| `cancelImport` молчаливая ошибка (P2) | Закрыт | `showLibraryToast({ kind: "error", ... })` |
+| `pickFolder` / `pickFiles` диалог — молчаливая ошибка (P2) | Закрыт | `showLibraryToast({ kind: "error", ... })` в 3 местах (`importFromFolder`, `importFromFiles`, `scanFolderForDuplicates`) |
+
+---
+
+## Итерационный аудит — 2026-04-28
+
+| Проверено | Статус | Действие |
+|-----------|--------|----------|
+| P0 **race** в `evaluator-queue` (параллельные слоты) | Не подтверждён | Код-ревью: однопоточный event loop + `inQueue` / `inProgress` + атомарный `shift()`; классического P0-рейса в стиле C++ не обнаружено. Риск **недетерминированного порядка** остаётся отдельной темой (приоритизация/очередь), не data race. |
+| P0 **`evaluateBook` / offline LM Studio** | Смягчено | `pickEvaluatorModel` в [book-evaluator.ts](electron/lib/library/book-evaluator.ts) обёрнут в `try/catch` → `null` вместо throw; [evaluator-queue.ts](electron/lib/library/evaluator-queue.ts) и без того помечает книгу `failed` в `catch` при throw из инжектированного `pickEvaluatorModel`. Регресс: `tests/evaluator-queue.test.ts` (throw из `pickEvaluatorModel`). |
+| P0.1, P0.3 | Закрыты по аудиту | См. обновлённые разделы P0.1 / P0.3 ниже. |
+
+---
+
 ## Инвентарь технического долга
 
 Результат аудита кодовой базы v3.1.0. Сгруппирован по критичности.
@@ -65,8 +89,7 @@
 
 | ID | Описание | Файл | Симптом |
 |----|----------|------|---------|
-| **B-02** | `loadCatalog` в каталоге при ошибке IPC пишет только в `console.error` — пользователь видит пустую таблицу без объяснений | `renderer/library/catalog.js` | Молчаливый сбой: пользователь не понимает, пуста ли библиотека или произошла ошибка |
-| **B-03** | `evaluateBook()` может выбросить исключение, если `listLoaded()` / `listDownloaded()` падают при недоступном LM Studio — `evaluator-queue` перехватит, но standalone вызовы не защищены | `electron/lib/library/book-evaluator.ts` | Потенциальный crash при offline LM Studio в нестандартных call site'ах |
+*Ранее в P0 фигурировали race в очереди эвалюатора и throw из `pickEvaluatorModel` / LM Studio — по итогам [итерационного аудита 2026-04-28](#итерационный-аудит--2026-04-28) сняты с P0; оставшийся низкий риск: прямые вызовы `evaluateBook` вне очереди (см. `book-evaluator.ts`).*
 
 ### P1 — Качество и UX (следующий sprint)
 
@@ -106,35 +129,27 @@
 
 ## P0 — Критические задачи (ближайший спринт)
 
-### P0.1. Фикс race condition в evaluator-queue
+### P0.1. ~~Фикс race condition в evaluator-queue~~ — закрыт (аудит 2026-04-28)
 
-**Проблема:** `DEFAULT_SLOT_COUNT=2` означает, что оба слота стартуют параллельно. В тесте `"continues after single book fails"` первый вызов `evaluateBook` может достаться книге B, а не A — что инвертирует ожидаемые статусы. В продакшне это означает, что при нескольких одновременных книгах `failed` может достаться не той.
+**Было:** Тесты при двух слотах могли быть недетерминированы; гипотеза о P0-рейсе в prod.
 
-**Решение:** В тесте добавить `setEvaluatorSlots(1)` перед проверкой. В production-логике — инъекция ошибки по `bookId`, а не по shared counter.
+**Итог:** `setEvaluatorSlots(1)` в тесте стабилизировал сценарий. Код-ревью: при однопоточном Node/Electron **классического data race** по слотам в стиле shared-memory C++ не обнаружено. Отдельно остаётся **порядок** обработки при параллельных слотах (ожидаемо), не баг с порчей структур.
 
 **Файлы:** `tests/evaluator-queue.test.ts`, `electron/lib/library/evaluator-queue.ts`
 
-**Критерий:** `npm run test:fast` зелёный 3 прогона подряд.
+### P0.2. ~~Показывать ошибку пользователю при сбое loadCatalog~~ — закрыт (2026-04-27)
 
-### P0.2. Показывать ошибку пользователю при сбое loadCatalog
+**Сделано:** `loadCatalog` catch → `showAlert(t("library.catalog.loadError", { msg }))`. `loadMoreCatalog` аналогично. Bulk-delete и reevaluate также получили alert при частичных сбоях. Молчаливые ошибки диалогов (pickFolder/pickFiles/cancelImport) в `import-pane.js` — `showLibraryToast({ kind: "error" })`.
 
-**Проблема:** `loadCatalog()` при выброшенном исключении логирует только в `console.error`. Пользователь видит пустую таблицу — не понимает: пусто или сломано.
+**Файлы:** `renderer/library/catalog.js`, `renderer/library/import-pane.js`, `renderer/locales/*.js`
 
-**Решение:** В catch-блоке `loadCatalog` добавить `await showAlert(t("library.catalog.loadError", { msg }))` или вставить error-banner в таблицу.
+### P0.3. ~~Защитить pickEvaluatorModel / evaluateBook при недоступном LM Studio~~ — закрыт
 
-**Файлы:** `renderer/library/catalog.js`
+**Сделано:** `pickEvaluatorModel` в `book-evaluator.ts` публично обёрнут: внутренняя логика в `pickEvaluatorModelUnsafe`, снаружи `try/catch` → `null` + предупреждения вместо throw; при `null` `evaluateBook` возвращает `{ evaluation: null, warnings }`. Очередь (`evaluator-queue`) отдельно ловит throw из инжектируемого `pickEvaluatorModel` (тесты).
 
-**Критерий:** При искусственной ошибке IPC пользователь видит явное сообщение.
+**Файлы:** `electron/lib/library/book-evaluator.ts`, `tests/evaluator-queue.test.ts`
 
-### P0.3. Защитить evaluateBook от throw при недоступном LM Studio
-
-**Проблема:** `pickEvaluatorModel()` вызывает `listLoaded()` и `listDownloaded()` без try/catch. Если LM Studio недоступен — бросает. В `evaluateBook` этот вызов не обёрнут.
-
-**Решение:** Обернуть вызов `pickEvaluatorModel()` в `evaluateBook` в try/catch и вернуть `{ evaluation: null, warnings: ["evaluator: LM Studio unavailable"] }`.
-
-**Файлы:** `electron/lib/library/book-evaluator.ts`
-
-**Критерий:** `evaluateBook("...", {})` при offline LM Studio никогда не бросает.
+**Критерий:** `evaluateBook` не пробрасывает throw из селекции модели; очередь не падает при throw из DI `pickEvaluatorModel`.
 
 ---
 
@@ -247,7 +262,7 @@ publish:
 ## RC Checklist (следующий release)
 
 ```
-□ P0.1 + P0.2 + P0.3 закрыты
+□ P0.1, P0.2, P0.3 закрыты (см. итерационные аудиты 2026-04-27 / 2026-04-28)
 □ npm run lint                         (exit 0)
 □ npm run test:fast                    (все тесты 3 прогона подряд)
 □ npm run test:smoke                   (Electron E2E зелёный)

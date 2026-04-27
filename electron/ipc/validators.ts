@@ -7,7 +7,7 @@
  *   - Prevent Qdrant collection-name injection (URL path manipulation)
  *   - Prevent IPC payloads larger than expected (DoS via giant strings)
  *
- * Usage in an ipcMain.handle:
+ * Usage in an ipcMain.handle (см. `scanner.ipc.ts`, `qdrant.ipc.ts`, `library.ipc.ts`):
  *
  *   ipcMain.handle("scanner:start-ingest", async (_e, raw) => {
  *     const args = StartIngestArgsSchema.parse(raw); // throws on bad input
@@ -51,6 +51,13 @@ export const AbsoluteFilePathSchema = z
 export const AbsoluteFilePathArraySchema = z
   .array(AbsoluteFilePathSchema)
   .max(1000, "too many paths in one batch (max 1000)");
+
+/**
+ * `library:import-files` — те же правила путей, больший лимит чем у probe-files.
+ */
+export const LibraryImportFilePathsSchema = z
+  .array(AbsoluteFilePathSchema)
+  .max(5000, "too many paths in one batch (max 5000)");
 
 /**
  * Wraps `schema.parse(raw)` in a friendly error shape. Returns the

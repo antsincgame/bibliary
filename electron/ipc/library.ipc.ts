@@ -7,6 +7,9 @@
  *   - SQLite cache-db.ts -- индекс для UI, перестраиваемый из FS.
  *   - evaluator-queue.ts -- фоновый воркер LLM-оценки (один LLM-call за раз).
  *
+ * Пути с renderer: `parseOrThrow` + `AbsoluteFilePathSchema` / `LibraryImportFilePathsSchema`
+ * (`electron/ipc/validators.ts`) — как в `scanner.ipc.ts` / `qdrant.ipc.ts`.
+ *
  * Каналы (invoke) — см. также `preload.ts` → `api.library`:
  *   library:pick-folder | pick-files
  *   library:import-folder | import-files | cancel-import
@@ -69,6 +72,11 @@ import {
   subscribeEvaluator,
 } from "../lib/library/evaluator-queue.js";
 import { resolveLibraryRoot } from "../lib/library/paths.js";
+import {
+  AbsoluteFilePathSchema,
+  LibraryImportFilePathsSchema,
+  parseOrThrow,
+} from "./validators.js";
 import { scanFolder, type ScanReport, type ScanProgressEvent } from "../lib/library/scan-folder.js";
 import { unregisterFromNearDup, resetNearDupCache } from "../lib/library/near-dup-detector.js";
 import { resetRevisionDedupCache } from "../lib/library/revision-dedup.js";
@@ -326,7 +334,8 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
       warnings: string[];
       durationMs: number;
     }> => {
-      if (!args || typeof args.folder !== "string") throw new Error("folder required");
+      if (!args || typeof args !== "object") throw new Error("args required");
+      const folder = parseOrThrow(AbsoluteFilePathSchema, args.folder, "folder");
       const importId = randomUUID();
       const ctrl = new AbortController();
       activeImports.set(importId, ctrl);
@@ -336,9 +345,9 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
       const prefs = await readImportPrefs();
       await logger.write({
         importId, level: "info", category: "import.start",
-        message: `Importing folder ${args.folder}`,
+        message: `Importing folder ${folder}`,
         details: {
-          folder: args.folder, scanArchives: args.scanArchives === true, ocrEnabled: args.ocrEnabled === true, maxDepth: args.maxDepth, logFile,
+          folder, scanArchives: args.scanArchives === true, ocrEnabled: args.ocrEnabled === true, maxDepth: args.maxDepth, logFile,
           djvuOcrProvider: prefs.djvuOcrProvider, ocrLanguages: prefs.ocrLanguages,
           visionMetaEnabled: prefs.visionMetaEnabled, visionModelKey: prefs.visionModelKey,
         },
@@ -380,7 +389,7 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
           },
           signal: ctrl.signal,
         };
-        const result = await importFolderToLibrary(args.folder, opts);
+        const result = await importFolderToLibrary(folder, opts);
         if (ctrl.signal.aborted) endStatus = "cancelled";
         await logger.write({
           importId, level: "info", category: "import.complete",
@@ -419,9 +428,9 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
       failed: number;
       warnings: string[];
     }> => {
-      if (!args || !Array.isArray(args.paths) || args.paths.length === 0) {
-        throw new Error("paths required");
-      }
+      if (!args || typeof args !== "object") throw new Error("args required");
+      const paths = parseOrThrow(LibraryImportFilePathsSchema, args.paths, "paths");
+      if (paths.length === 0) throw new Error("paths required");
       const importId = randomUUID();
       const ctrl = new AbortController();
       activeImports.set(importId, ctrl);
@@ -430,9 +439,9 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
       const prefs = await readImportPrefs();
       await logger.write({
         importId, level: "info", category: "import.start",
-        message: `Importing ${args.paths.length} files`,
+        message: `Importing ${paths.length} files`,
         details: {
-          fileCount: args.paths.length, scanArchives: args.scanArchives === true, ocrEnabled: args.ocrEnabled === true, logFile,
+          fileCount: paths.length, scanArchives: args.scanArchives === true, ocrEnabled: args.ocrEnabled === true, logFile,
           djvuOcrProvider: prefs.djvuOcrProvider, ocrLanguages: prefs.ocrLanguages,
           visionMetaEnabled: prefs.visionMetaEnabled, visionModelKey: prefs.visionModelKey,
         },
@@ -451,9 +460,9 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
       let endStatus: "ok" | "failed" | "cancelled" = "ok";
       try {
         const aggregate = { total: 0, added: 0, duplicate: 0, skipped: 0, failed: 0, warnings: [] as string[] };
-        for (let i = 0; i < args.paths.length; i++) {
+        for (let i = 0; i < paths.length; i++) {
           if (ctrl.signal.aborted) break;
-          const p = args.paths[i];
+          const p = paths[i];
           try {
             const itemResults = await importFiles(p, {
               scanArchives: args.scanArchives === true,
@@ -476,7 +485,7 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
             }
             broadcastImportProgress(getMainWindow, importId, {
               phase: "processed",
-              discovered: args.paths.length,
+              discovered: paths.length,
               processed: i + 1,
               currentFile: p,
               outcome: itemResults[0]?.outcome ?? "failed",
@@ -484,7 +493,7 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
               existingBookId: itemResults[0]?.existingBookId,
               existingBookTitle: itemResults[0]?.existingBookTitle,
               index: i + 1,
-              total: args.paths.length,
+              total: paths.length,
             });
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
@@ -496,13 +505,13 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
                Теперь явно сигналим failed-файл, чтобы лог-панель показала причину. */
             broadcastImportProgress(getMainWindow, importId, {
               phase: "processed",
-              discovered: args.paths.length,
+              discovered: paths.length,
               processed: i + 1,
               currentFile: p,
               outcome: "failed",
               errorMessage: msg,
               index: i + 1,
-              total: args.paths.length,
+              total: paths.length,
             });
           }
         }
@@ -806,12 +815,13 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
   ipcMain.handle(
     "library:scan-folder",
     async (_e, args: { folder: string }): Promise<{ scanId: string }> => {
-      if (!args || typeof args.folder !== "string") throw new Error("folder required");
+      if (!args || typeof args !== "object") throw new Error("args required");
+      const folder = parseOrThrow(AbsoluteFilePathSchema, args.folder, "folder");
       const scanId = randomUUID();
       const ctrl = new AbortController();
       activeScans.set(scanId, ctrl);
 
-      scanFolder(args.folder, {
+      scanFolder(folder, {
         scanId,
         signal: ctrl.signal,
         onProgress: (evt: ScanProgressEvent) => {

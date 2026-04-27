@@ -57,7 +57,10 @@ export function buildImportPane(deps) {
     onclick: async () => {
       if (IMPORT_STATE.importId) {
         try { await window.api.library.cancelImport(IMPORT_STATE.importId); }
-        catch (_e) { console.warn("[import] cancelImport failed:", _e); }
+        catch (_e) {
+          console.warn("[import] cancelImport failed:", _e);
+          showLibraryToast({ kind: "error", message: t("library.import.cancelFailed") });
+        }
       }
     },
   }, t("library.import.btn.cancel"));
@@ -290,7 +293,11 @@ async function importFromFolder(deps) {
   if (IMPORT_STATE.busy) return;
   /** @type {string|null} */
   let folderPath = null;
-  try { folderPath = await window.api.library.pickFolder(); } catch (_e) { console.warn("[import] pickFolder failed:", _e); folderPath = null; }
+  try { folderPath = await window.api.library.pickFolder(); } catch (_e) {
+    console.warn("[import] pickFolder failed:", _e);
+    showLibraryToast({ kind: "error", message: t("library.import.pickFolderFailed") });
+    folderPath = null;
+  }
   if (!folderPath) return;
   await runImport(async () =>
     window.api.library.importFolder({
@@ -310,7 +317,11 @@ async function importFromFiles(deps) {
   try {
     const r = /** @type {any} */ (await window.api.library.pickFiles());
     paths = Array.isArray(r) ? r : (r?.paths ?? []);
-  } catch (_e) { console.warn("[import] pickFiles failed:", _e); paths = []; }
+  } catch (_e) {
+    console.warn("[import] pickFiles failed:", _e);
+    showLibraryToast({ kind: "error", message: t("library.import.pickFilesFailed") });
+    paths = [];
+  }
   if (paths.length === 0) return;
   await runImport(async () =>
     window.api.library.importFiles({
@@ -494,7 +505,10 @@ async function scanFolderForDuplicates(statusEl, reportContainer) {
   let folderPath = null;
   try {
     folderPath = await window.api.library.pickFolder();
-  } catch (_e) { console.warn("[scan] pickFolder failed:", _e); }
+  } catch (_e) {
+    console.warn("[scan] pickFolder failed:", _e);
+    showLibraryToast({ kind: "error", message: t("library.import.pickFolderFailed") });
+  }
   if (!folderPath) return;
 
   IMPORT_STATE.busy = true;

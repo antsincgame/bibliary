@@ -198,9 +198,9 @@ window.api.system.*                       → App info, hardware profiling, open
 
 | Проблема | Файл | Симптом |
 |----------|------|---------|
-| Race condition в evaluator-queue при `DEFAULT_SLOT_COUNT=2` | `electron/lib/library/evaluator-queue.ts` | Книга может получить `failed` недетерминированно |
 | `loadCatalog` ошибка IPC → только `console.error` | `renderer/library/catalog.js` | Пустая таблица без объяснений для пользователя |
-| `evaluateBook()` может выбросить при offline LM Studio | `electron/lib/library/book-evaluator.ts` | Потенциальный crash в standalone call sites |
+
+*По итогам **итерационного кода-ревью 2026-04-28** снято с P0: (1) гипотеза о data race в `evaluator-queue` при двух слотах — в однопоточной модели Node/Electron не подтверждена; недетерминизм в тестах снят через `setEvaluatorSlots(1)`. (2) Throw из выбора модели / `evaluateBook` при недоступном LM Studio — смягчено: `pickEvaluatorModel` в `book-evaluator.ts` обёрнут в `try/catch` → `null` и предсказуемый fail path; `evaluator-queue` ловит throw из `pickEvaluatorModel` в своём `catch`.*
 
 ### P1 — Качество и UX
 

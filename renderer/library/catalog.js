@@ -45,6 +45,11 @@ function compactError(value) {
   return value.replace(/\s+/g, " ").trim().slice(0, 96);
 }
 
+/** @param {unknown} err */
+function catalogErrMsg(err) {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export async function loadCatalog() {
   if (catalogLoadPromise) {
     await catalogLoadPromise;
@@ -62,6 +67,7 @@ export async function loadCatalog() {
       console.error("[library.catalog] load failed:", err);
       CATALOG.rows = [];
       CATALOG.total = 0;
+      await showAlert(t("library.catalog.loadError", { msg: compactError(catalogErrMsg(err)) }));
     } finally {
       CATALOG.loading = false;
       catalogLoadPromise = null;
@@ -70,7 +76,10 @@ export async function loadCatalog() {
   await catalogLoadPromise;
 }
 
-export async function loadMoreCatalog() {
+/**
+ * @param {HTMLElement | null} [root] When set, table + «Load more» label refresh after error.
+ */
+export async function loadMoreCatalog(root = null) {
   if (CATALOG.loading || CATALOG.rows.length >= CATALOG.total) return;
   CATALOG.loading = true;
   try {
@@ -83,6 +92,8 @@ export async function loadMoreCatalog() {
     CATALOG.total = res.total ?? CATALOG.total;
   } catch (err) {
     console.error("[library.catalog] loadMore failed:", err);
+    await showAlert(t("library.catalog.loadMoreError", { msg: compactError(catalogErrMsg(err)) }));
+    if (root) renderCatalogTable(root);
   } finally {
     CATALOG.loading = false;
   }
@@ -192,7 +203,7 @@ function updateLoadMoreButton(root) {
       onclick: async () => {
         btn.disabled = true;
         btn.textContent = "...";
-        await loadMoreCatalog();
+        await loadMoreCatalog(root);
         renderCatalogTable(root);
         btn.disabled = false;
       },
@@ -465,12 +476,27 @@ export function buildCatalogBottomBar(root, deps) {
         okText: t("library.catalog.btn.delete"),
         okVariant: "danger",
       }))) return;
+      const deleteErrors = /** @type {string[]} */ ([]);
+      let deleteOk = 0;
       for (const bookId of Array.from(CATALOG.selected)) {
-        try { await window.api.library.deleteBook(bookId, true); }
-        catch (e) { console.warn("[library.delete]", bookId, e); }
+        try {
+          await window.api.library.deleteBook(bookId, true);
+          deleteOk += 1;
+        } catch (e) {
+          console.warn("[library.delete]", bookId, e);
+          deleteErrors.push(`${bookId.slice(0, 8)}…: ${compactError(catalogErrMsg(e))}`);
+        }
       }
       CATALOG.selected.clear();
       await deps.renderCatalog(root);
+      if (deleteErrors.length > 0) {
+        const detail = deleteErrors.slice(0, 5).join("\n");
+        await showAlert(t("library.catalog.delete.partialFailed", {
+          ok: String(deleteOk),
+          fail: String(deleteErrors.length),
+          detail,
+        }));
+      }
     }),
   }, t("library.catalog.btn.delete"));
 
@@ -482,13 +508,32 @@ export function buildCatalogBottomBar(root, deps) {
       if (CATALOG.selected.size === 0) return;
       const ids = Array.from(CATALOG.selected);
       let queued = 0;
+      const reevalErrors = /** @type {string[]} */ ([]);
       for (const bookId of ids) {
         try {
           const r = /** @type {any} */ (await window.api.library.reevaluate(bookId));
           if (r?.ok) queued += 1;
-        } catch (e) { console.warn("[library.reevaluate]", bookId, e); }
+          else reevalErrors.push(`${bookId.slice(0, 8)}…: ${compactError(r?.reason || "not ok")}`);
+        } catch (e) {
+          console.warn("[library.reevaluate]", bookId, e);
+          reevalErrors.push(`${bookId.slice(0, 8)}…: ${compactError(catalogErrMsg(e))}`);
+        }
       }
-      setCatalogStatus(root, t("library.catalog.toast.reevaluated", { n: String(queued) }));
+      const failed = ids.length - queued;
+      if (failed > 0) {
+        setCatalogStatus(root, t("library.catalog.toast.reevaluatedWithErrors", {
+          ok: String(queued),
+          fail: String(failed),
+        }));
+        const detail = reevalErrors.slice(0, 5).join("\n");
+        await showAlert(t("library.catalog.reevaluate.partialFailed", {
+          ok: String(queued),
+          fail: String(failed),
+          detail,
+        }));
+      } else {
+        setCatalogStatus(root, t("library.catalog.toast.reevaluated", { n: String(queued) }));
+      }
       await deps.renderCatalog(root);
     }),
   }, t("library.catalog.btn.reevaluate"));
