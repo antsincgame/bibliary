@@ -17,6 +17,7 @@ import {
   pauseEvaluator,
   resumeEvaluator,
   setEvaluatorModel,
+  setEvaluatorSlots,
   subscribeEvaluator,
   type EvaluatorEvent,
 } from "../electron/lib/library/evaluator-queue.ts";
@@ -327,6 +328,9 @@ test("evaluator-queue handles 'no LLM loaded' gracefully", async (t) => {
 test("evaluator-queue continues after a single book fails (multi-book error recovery)", async (t) => {
   const env = await setupTestEnv();
   t.after(env.cleanup);
+
+  /* Single slot so first enqueued book is always evaluated first (count===1 throws for A). */
+  setEvaluatorSlots(1);
 
   const a = makeBookFile(env.libraryRoot, "1111111111111111", "Book 1 (fails)");
   const b = makeBookFile(env.libraryRoot, "2222222222222222", "Book 2 (ok)");

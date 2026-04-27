@@ -15,6 +15,7 @@ import {
   bootstrapLibrarySubsystem,
 } from "./ipc";
 import { disposeClient } from "./lmstudio-client";
+import { triggerAppShutdown } from "./lib/app-lifecycle.js";
 import {
   initResilienceLayer,
   coordinator,
@@ -220,6 +221,7 @@ if (!gotLock) {
 
   function teardownSubsystems(): void {
     const subsystems: [string, () => void][] = [
+      ["triggerAppShutdown", triggerAppShutdown],
       ["stopWatchdog", stopWatchdog],
       ["abortAllIngests", () => abortAllIngests("app-quit")],
       ["abortAllDatasetV2", () => abortAllDatasetV2("app-quit")],

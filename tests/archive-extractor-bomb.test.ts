@@ -26,6 +26,11 @@ async function makeSandbox(prefix: string): Promise<SandboxState> {
 }
 
 const MIN_TXT = "Chapter 1\n\nA tiny but valid book for archive tests.\n";
+/** Plain .txt inside zips must meet import-candidate MIN_TEXT_BYTES (10 KiB). */
+function txtForZipCandidate(base: string): string {
+  const need = 10240 - Buffer.byteLength(base, "utf8");
+  return need > 0 ? `${base}\n${"x".repeat(need)}` : base;
+}
 
 test("zip with N files >= max gets refused with explanatory warning", async (t) => {
   const sb = await makeSandbox("zip-too-many-files");
@@ -118,8 +123,8 @@ test("normal small zip with N supported books extracts all of them", async (t) =
   t.after(sb.cleanup);
 
   const zip = new JSZip();
-  zip.file("a.txt", MIN_TXT);
-  zip.file("b.txt", MIN_TXT + "different");
+  zip.file("a.txt", txtForZipCandidate(MIN_TXT));
+  zip.file("b.txt", txtForZipCandidate(MIN_TXT + "different"));
   zip.file("README.md", "non-book file ignored"); /* unsupported, должен skip */
   const buf = await zip.generateAsync({ type: "nodebuffer" });
   const archivePath = path.join(sb.dir, "normal.zip");

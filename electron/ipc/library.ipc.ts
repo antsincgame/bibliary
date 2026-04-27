@@ -7,27 +7,22 @@
  *   - SQLite cache-db.ts -- индекс для UI, перестраиваемый из FS.
  *   - evaluator-queue.ts -- фоновый воркер LLM-оценки (один LLM-call за раз).
  *
- * Каналы:
- *   library:pick-folder              -- открыть диалог выбора папки
- *   library:pick-files               -- открыть диалог выбора файлов (поддерживаемые форматы)
- *   library:import-folder            -- импорт папки {folder, scanArchives}
- *   library:import-files             -- импорт списка файлов
- *   library:cancel-import            -- abort активного импорта
- *   library:catalog                  -- query из cache-db с фильтрами
- *   library:get-book                 -- meta + path к book.md по id
- *   library:read-book-md             -- чтение содержимого book.md
- *   library:delete-book              -- удалить из FS + DB
- *   library:rebuild-cache            -- ребилд SQLite из FS
- *   library:evaluator-status         -- состояние очереди
- *   library:evaluator-pause          -- пауза
- *   library:evaluator-resume         -- продолжить
- *   library:evaluator-cancel-current -- прервать текущую задачу (книга остаётся imported)
- *   library:evaluator-reevaluate     -- сбросить status в imported и поставить в очередь
- *   library:evaluator-set-model      -- override модели
+ * Каналы (invoke) — см. также `preload.ts` → `api.library`:
+ *   library:pick-folder | pick-files
+ *   library:import-folder | import-files | cancel-import
+ *   library:import-log-snapshot
+ *   library:catalog | tag-stats | collection-by-{domain,author,year,sphere,tag}
+ *   library:get-book | read-book-md | delete-book | rebuild-cache
+ *   library:evaluator-status | evaluator-pause | evaluator-resume | evaluator-cancel-current
+ *   library:evaluator-reevaluate | reevaluate-all | evaluator-set-model | evaluator-prioritize
+ *   library:evaluator-set-slots | evaluator-get-slots
+ *   library:reparse-book
+ *   library:scan-folder | cancel-scan
  *
- * Push events:
- *   library:import-progress  -- {importId, stage, fileName, current, total, ...}
- *   library:evaluator-event  -- {type, bookId, ...} (см. EvaluatorEvent)
+ * Push events (main → renderer):
+ *   library:import-progress | library:import-log
+ *   library:evaluator-event
+ *   library:scan-progress | library:scan-report
  */
 
 import { ipcMain, dialog, type BrowserWindow } from "electron";
@@ -66,6 +61,7 @@ import {
   pauseEvaluator,
   resumeEvaluator,
   cancelCurrentEvaluation,
+  clearQueue,
   setEvaluatorModel,
   setEvaluatorSlots,
   getEvaluatorSlotCount,
@@ -134,6 +130,8 @@ export function abortAllLibrary(reason: string): void {
     ctrl.abort(reason);
     activeImports.delete(id);
   }
+  pauseEvaluator();
+  clearQueue();
   cancelCurrentEvaluation(reason);
 }
 

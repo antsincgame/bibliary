@@ -370,7 +370,8 @@ npm run electron:dev
 4. **Data directory confusion** — Dev mode uses `./data/`, portable uses `../data/` relative to exe, `BIBLIARY_DATA_DIR` env var overrides both
 5. **`marked` duplication** — The npm package `marked` may be redundant; the renderer uses `renderer/marked.umd.js` loaded via `<script>` tag
 6. **Нет CI/CD** — `.github/workflows/` пуста. Все проверки — ручные
-7. **`DEFAULT_SLOT_COUNT=2`** — evaluator-queue по умолчанию параллелен; race conditions в тестах возможны без `setEvaluatorSlots(1)`
+7. **`DEFAULT_SLOT_COUNT=2`** — evaluator-queue по умолчанию параллелен; тесты, где важен порядок двух книг, должны вызывать `setEvaluatorSlots(1)` (см. `tests/evaluator-queue.test.ts`)
+8. **ZIP + `.txt` в тестах** — `shouldIncludeImportCandidate` отсекает текст короче 10 KiB; фиктивные книги в `archive-extractor-bomb.test.ts` должны дополняться до лимита
 
 ---
 
@@ -398,7 +399,7 @@ bibliary/
 │   │   └── validators.ts              # Zod helpers (no ipcMain.handle)
 │   └── lib/
 │       ├── library/
-│       │   ├── import.ts               # Book import pipeline
+│       │   ├── import.ts               # Orchestrator + re-exports; import-book / import-composite-html
 │       │   ├── cache-db.ts             # SQLite cache (barrel re-export of 6 submodules)
 │       │   ├── book-evaluator.ts       # LLM-based quality evaluation
 │       │   ├── evaluator-queue.ts      # Evaluation job queue

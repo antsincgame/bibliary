@@ -1,0 +1,323 @@
+import { promises as fs } from "fs";
+import * as path from "path";
+import { detectExt } from "../scanner/parsers/index.js";
+import { convertBookToMarkdown, replaceFrontmatter, injectCasImageRefs } from "./md-converter.js";
+import { getLibraryRoot } from "./paths.js";
+import { upsertBook, getBookById, getKnownSha256s } from "./cache-db.js";
+import { SUPPORTED_BOOK_EXTS, type BookCatalogMeta, type SupportedBookFormat } from "./types.js";
+import { resolveHumanBookPaths } from "./storage-contract.js";
+import { computeFileSha256, bookIdFromSha } from "./sha-stream.js";
+import { putBlob, getBlobsRoot } from "./library-store.js";
+import { extractSphereFromImportPath } from "./path-sanitizer.js";
+import { processIllustrations } from "./illustration-worker.js";
+import { findNearDuplicate, registerForNearDup } from "./near-dup-detector.js";
+import {
+  computeRevisionScore,
+  findLatestRevisionMatch,
+  registerForRevisionDedup,
+  findIsbnMatch,
+  getFormatPriority,
+} from "./revision-dedup.js";
+import { parseFilename } from "./filename-parser.js";
+import type { ImportFolderOptions, ImportResult } from "./import-types.js";
+
+/** Импорт одной книги. Внутренний инвариант: caller гарантирует supported format. */
+export async function importBookFromFile(
+  absPath: string,
+  opts: Omit<ImportFolderOptions, "onProgress" | "scanArchives"> & { sourceArchive?: string } = {},
+): Promise<ImportResult> {
+  const warnings: string[] = [];
+  const ext = detectExt(absPath);
+  if (!ext || !(SUPPORTED_BOOK_EXTS as ReadonlySet<string>).has(ext)) {
+    return { outcome: "skipped", warnings: [`import: unsupported format ${path.extname(absPath)}`], sourceArchive: opts.sourceArchive };
+  }
+
+  /* SHA-256 потоково (см. sha-stream.ts) — считаем ДО парсинга. Парсинг
+     5–500 МБ книги стоит секунды CPU; SHA — миллисекунды чтения. Если файл
+     уже в каталоге, экономим всю парсинг-работу. */
+  let sha256: string;
+  try {
+    sha256 = await computeFileSha256(absPath, opts.signal);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { outcome: "failed", warnings, error: `sha-256 failed: ${msg}`, sourceArchive: opts.sourceArchive };
+  }
+
+  /* Дедуп по SHA-256 содержимого ДО парсинга — главная экономия CPU при
+     повторном импорте папки. */
+  const known = getKnownSha256s();
+  const dupId = known.get(sha256);
+  if (dupId) {
+    const existing = getBookById(dupId);
+    return {
+      outcome: "duplicate",
+      bookId: dupId,
+      meta: existing ?? undefined,
+      duplicateReason: "duplicate_sha",
+      existingBookId: dupId,
+      existingBookTitle: existing?.title,
+      warnings: [...warnings, `import: duplicate of ${dupId} (SHA-256 match, parse skipped)`],
+      sourceArchive: opts.sourceArchive,
+    };
+  }
+
+  /* Парсинг + Markdown — sha передаём как precomputed, чтобы не читать файл
+     второй раз. Pref'ы (djvuOcrProvider/ocrLanguages/visionMetaEnabled/visionModelKey)
+     пробрасываются из IPC слоя — без них локальный Vision LLM не работает на импорте. */
+  let convResult;
+  try {
+    convResult = await convertBookToMarkdown(absPath, {
+      ocrEnabled: opts.ocrEnabled === true,
+      signal: opts.signal,
+      precomputedSha256: sha256,
+      djvuOcrProvider: opts.djvuOcrProvider,
+      ocrLanguages: opts.ocrLanguages,
+      visionMetaEnabled: opts.visionMetaEnabled,
+      visionModelKey: opts.visionModelKey,
+      onVisionMetaEvent: opts.onVisionMetaEvent
+        ? (e) => opts.onVisionMetaEvent!({ ...e, bookFile: path.basename(absPath) })
+        : undefined,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return persistFailedImport(absPath, ext as SupportedBookFormat, sha256, msg, warnings, opts.sourceArchive, opts.importRoot);
+  }
+  /* Накопленные warnings — единый список. И в `ImportResult.warnings`
+     (transient, для UI), и в `finalMeta.warnings` (persistent, в
+     book.md frontmatter). Никаких mergedWarnings/дубликатов. */
+  warnings.push(...(convResult.meta.warnings ?? []));
+
+  /* Fallback enrichment from folder/filename when parser metadata is weak. */
+  const fnMeta = parseFilename(absPath);
+  if (fnMeta) {
+    const m = convResult.meta;
+    if (!m.author && fnMeta.author) m.author = fnMeta.author;
+    if (m.year == null && fnMeta.year) m.year = fnMeta.year;
+    if (fnMeta.title && (m.title === path.parse(absPath).name || m.originalFormat === "txt")) {
+      m.title = fnMeta.title;
+    }
+  }
+
+  /* Tier 1: ISBN-based dedup. Same ISBN = same book regardless of filename. */
+  const isbnHit = findIsbnMatch(convResult.meta.isbn);
+  if (isbnHit && isbnHit.bookId !== convResult.meta.id) {
+    const existingPri = getFormatPriority(isbnHit.format ?? "");
+    const candidatePri = getFormatPriority(convResult.meta.originalFormat);
+    if (candidatePri <= existingPri) {
+      return {
+        outcome: "duplicate",
+        bookId: isbnHit.bookId,
+        duplicateReason: "duplicate_isbn" as const,
+        existingBookId: isbnHit.bookId,
+        existingBookTitle: isbnHit.title,
+        warnings: [...warnings, `ISBN match: same book as ${isbnHit.bookId} (${isbnHit.title}), format priority ${candidatePri} <= ${existingPri}`],
+        sourceArchive: opts.sourceArchive,
+      };
+    }
+    warnings.push(`ISBN match: better format (${convResult.meta.originalFormat}) supersedes ${isbnHit.bookId} (${isbnHit.title})`);
+  }
+
+  /* Tier 2: Revision-level дедуп одной и той же книги с разными бинарниками. */
+  const latest = findLatestRevisionMatch(convResult.meta, absPath);
+  if (latest && latest.bookId !== convResult.meta.id) {
+    const candidateScore = computeRevisionScore(convResult.meta, absPath);
+    if (candidateScore < latest.score) {
+      const message = `older revision skipped: kept ${latest.bookId} (${latest.title})`;
+      return {
+        outcome: "duplicate",
+        bookId: latest.bookId,
+        duplicateReason: "duplicate_older_revision",
+        existingBookId: latest.bookId,
+        existingBookTitle: latest.title,
+        warnings: [...warnings, message],
+        sourceArchive: opts.sourceArchive,
+      };
+    }
+    if (candidateScore > latest.score) {
+      warnings.push(`newer revision detected: supersedes ${latest.bookId} (${latest.title})`);
+    } else {
+      warnings.push(`same revision score as ${latest.bookId}; keeping both variants`);
+    }
+  }
+
+  /* Save images to CAS (.blobs/) and set assetUrl on each ImageRef. */
+  const root = await getLibraryRoot();
+  for (const img of convResult.images) {
+    if (img.buffer.length > 0) {
+      try {
+        const ref = await putBlob(root, img.buffer, img.mimeType);
+        img.assetUrl = ref.assetUrl;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        warnings.push(`CAS putBlob failed for ${img.id}: ${msg}`);
+      }
+    }
+  }
+
+  /* Rebuild markdown with CAS asset URLs (no Base64). */
+  convResult.markdown = rebuildMarkdownAfterCas(convResult);
+
+  /* Human-readable path: {Sphere}/{Author_Title}/{Title}.md */
+  const importRoot = opts.importRoot;
+  const stored = await resolveHumanBookPaths(root, convResult.meta, absPath, importRoot);
+  const bookDir = stored.bookDir;
+  await fs.mkdir(bookDir, { recursive: true });
+
+  /* Copy original file. */
+  const originalDest = stored.originalPath;
+  try {
+    await fs.copyFile(absPath, originalDest);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { outcome: "failed", warnings, error: `copy-original failed: ${msg}`, sourceArchive: opts.sourceArchive };
+  }
+
+  /* Near-duplicate soft-warning. */
+  const nearDupId = findNearDuplicate(convResult.meta);
+  if (nearDupId && nearDupId !== convResult.meta.id) {
+    warnings.push(
+      `near-duplicate of ${nearDupId} (same title+author+chapters, different SHA)`,
+    );
+  }
+
+  /* Determine sphere from import root. */
+  const sphere = importRoot
+    ? extractSphereFromImportPath(absPath, importRoot)
+    : "unsorted";
+
+  const finalMeta: BookCatalogMeta = {
+    ...convResult.meta,
+    originalFile: stored.originalFile,
+    sourceArchive: opts.sourceArchive,
+    sphere,
+    warnings: warnings.length > 0 ? [...warnings] : undefined,
+  };
+
+  /* Write markdown with final meta. */
+  const mdPath = stored.mdPath;
+  const finalMd = rebuildMarkdownWithFinalMeta(convResult.markdown, finalMeta);
+  try {
+    await fs.writeFile(mdPath, finalMd, "utf-8");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { outcome: "failed", warnings, error: `write book.md failed: ${msg}`, sourceArchive: opts.sourceArchive };
+  }
+
+  /* Write meta.json manifest. */
+  try {
+    const metaJsonPath = path.join(bookDir, "meta.json");
+    await fs.writeFile(metaJsonPath, JSON.stringify(finalMeta, null, 2), "utf-8");
+  } catch {
+    warnings.push("meta.json write failed (non-critical)");
+  }
+
+  /* Write illustrations.json stub.
+     score/description are filled later by illustration-worker.ts (Semantic Triage). */
+  try {
+    const illustrationsPath = path.join(bookDir, "illustrations.json");
+    const illustrationData = convResult.images
+      .filter((img) => img.assetUrl)
+      .map((img) => ({
+        id: img.id,
+        sha256: img.assetUrl!.replace("bibliary-asset://sha256/", ""),
+        mimeType: img.mimeType,
+        bytes: img.buffer.length,
+        score: null,
+        description: null,
+        skipped: false,
+        caption: img.caption ?? null,
+      }));
+    await fs.writeFile(illustrationsPath, JSON.stringify(illustrationData, null, 2), "utf-8");
+  } catch {
+    warnings.push("illustrations.json write failed (non-critical)");
+  }
+
+  upsertBook(finalMeta, mdPath);
+  registerForNearDup(finalMeta, finalMeta.id);
+  registerForRevisionDedup(finalMeta);
+
+  if (convResult.images.length > 0) {
+    const blobsRoot = getBlobsRoot(root);
+    const { getAppShutdownSignal } = await import("../app-lifecycle.js");
+    const appSignal = getAppShutdownSignal();
+    const combinedAbort = new AbortController();
+    const abortCombined = () => combinedAbort.abort("shutdown");
+    if (opts.signal) opts.signal.addEventListener("abort", abortCombined, { once: true });
+    appSignal.addEventListener("abort", abortCombined, { once: true });
+    void processIllustrations(bookDir, blobsRoot, combinedAbort.signal).catch((err) => {
+      console.error("[import] illustration processing failed:", err instanceof Error ? err.message : String(err));
+    }).finally(() => {
+      if (opts.signal) opts.signal.removeEventListener("abort", abortCombined);
+      appSignal.removeEventListener("abort", abortCombined);
+    });
+  }
+
+  return { outcome: "added", bookId: finalMeta.id, meta: finalMeta, warnings, sourceArchive: opts.sourceArchive };
+}
+
+/** Заменяет frontmatter в готовом markdown на финальный (после копирования оригинала). */
+function rebuildMarkdownWithFinalMeta(markdown: string, finalMeta: BookCatalogMeta): string {
+  return replaceFrontmatter(markdown, finalMeta);
+}
+
+/** Rebuild markdown to inject CAS asset URLs into the image refs section. */
+function rebuildMarkdownAfterCas(conv: { meta: BookCatalogMeta; images: import("./types.js").ImageRef[]; markdown: string }): string {
+  return injectCasImageRefs(conv.markdown, conv.images, conv.meta);
+}
+
+async function persistFailedImport(
+  absPath: string,
+  format: SupportedBookFormat,
+  sha256: string,
+  error: string,
+  warnings: string[],
+  sourceArchive?: string,
+  importRoot?: string,
+): Promise<ImportResult> {
+  const failureWarning = `parser failed: ${error}`;
+  const metaWarnings = [...warnings, failureWarning];
+  const fnMeta = parseFilename(absPath);
+  const meta: BookCatalogMeta = {
+    id: bookIdFromSha(sha256),
+    sha256,
+    originalFile: `original.${format}`,
+    originalFormat: format,
+    sourceArchive,
+    sphere: importRoot ? extractSphereFromImportPath(absPath, importRoot) : "unsorted",
+    title: fnMeta?.title ?? path.parse(absPath).name,
+    author: fnMeta?.author,
+    year: fnMeta?.year,
+    wordCount: 0,
+    chapterCount: 0,
+    status: "failed",
+    warnings: metaWarnings,
+  };
+
+  try {
+    const root = await getLibraryRoot();
+    const stored = await resolveHumanBookPaths(root, meta, absPath, importRoot);
+    await fs.mkdir(stored.bookDir, { recursive: true });
+    await fs.copyFile(absPath, stored.originalPath);
+    const bodyTitle = meta.title.replace(/\r?\n/g, " ").trim() || path.parse(absPath).name;
+    const markdown = replaceFrontmatter("---\n---\n\n# Placeholder\n\nImport failed.\n", meta)
+      .replace("# Placeholder", `# ${bodyTitle}\n\nImport failed: ${error}`);
+    await fs.writeFile(stored.mdPath, markdown, "utf-8");
+    upsertBook(meta, stored.mdPath);
+    return {
+      outcome: "failed",
+      bookId: meta.id,
+      meta,
+      warnings: metaWarnings,
+      error,
+      sourceArchive,
+    };
+  } catch (persistErr) {
+    const persistMsg = persistErr instanceof Error ? persistErr.message : String(persistErr);
+    return {
+      outcome: "failed",
+      warnings: metaWarnings,
+      error: `${error}; fallback import failed: ${persistMsg}`,
+      sourceArchive,
+    };
+  }
+}

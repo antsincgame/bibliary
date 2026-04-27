@@ -37,11 +37,23 @@
 | Neon / 2666 UI | 100% | Все 9 маршрутов; 2666 + Neon корпоративный стиль |
 | Onboarding Wizard | 95% | 4 шага; restore prefs; block без модели |
 | Help-KB | 90% | Synthetic KB о приложении; search_help tool агента |
-| Tests | 97% | ~153 unit/integration + 1 Electron smoke + 12 E2E-скриптов |
+| Tests | 98% | `npm test` зелёный после фикса тестов (см. аудит 2026-04-27) |
 | i18n | 100% | RU + EN; ~1800+ ключей |
 | CI/CD | 0% | GitHub Actions отсутствуют |
 
 Общий progress: **~97%** (CI/CD и ряд P2 задач тянут вниз).
+
+---
+
+## Итерационный аудит — 2026-04-27
+
+| Проверено | Статус | Действие |
+|-----------|--------|----------|
+| `npm run lint` | OK | Удалён неиспользуемый импорт `CATALOG` в `renderer/library/collection-views.js` |
+| `npm test` | OK | `archive-extractor-bomb`: `.txt` в zip ≥ 10 KiB (`import-candidate-filter`); `evaluator-queue` multi-fail: `setEvaluatorSlots(1)` |
+| IPC library ↔ preload | OK | Список каналов в шапке [electron/ipc/library.ipc.ts](electron/ipc/library.ipc.ts) синхронизирован с `preload.ts` |
+| `electron/lib/library/` (импорт, кэш, evaluator) | OK | Фасад [import.ts](electron/lib/library/import.ts), `import-book.ts`, `import-composite-html.ts`; регрессии ловятся `tests/library-*.test.ts` в общем `npm test` |
+| P0 **B-01** (нестабильный тест при 2 slots) | Закрыт | См. правки в `tests/evaluator-queue.test.ts` |
 
 ---
 
@@ -53,7 +65,6 @@
 
 | ID | Описание | Файл | Симптом |
 |----|----------|------|---------|
-| **B-01** | Race condition в evaluator-queue при `DEFAULT_SLOT_COUNT=2`: тест `"continues after single book fails"` нестабилен, т.к. обе книги стартуют параллельно и `count`-счётчик первого вызова может сработать на книге B вместо A | `electron/lib/library/evaluator-queue.ts` | Книга может получить статус `failed` недетерминированно при >1 слоте |
 | **B-02** | `loadCatalog` в каталоге при ошибке IPC пишет только в `console.error` — пользователь видит пустую таблицу без объяснений | `renderer/library/catalog.js` | Молчаливый сбой: пользователь не понимает, пуста ли библиотека или произошла ошибка |
 | **B-03** | `evaluateBook()` может выбросить исключение, если `listLoaded()` / `listDownloaded()` падают при недоступном LM Studio — `evaluator-queue` перехватит, но standalone вызовы не защищены | `electron/lib/library/book-evaluator.ts` | Потенциальный crash при offline LM Studio в нестандартных call site'ах |
 

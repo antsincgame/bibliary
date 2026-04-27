@@ -6,7 +6,6 @@
  */
 import { el, clear } from "../dom.js";
 import { t } from "../i18n.js";
-import { CATALOG } from "./state.js";
 
 /** @typedef {{ label: string; count: number; bookIds: string[] }} CollectionGroup */
 
