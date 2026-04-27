@@ -211,14 +211,14 @@ async function runExtraction(
         vectors: { size: EMBEDDING_DIM, distance: "Cosine" },
       }),
     }).catch((e) => {
-      console.log(`[extraction] collection PUT skipped (may exist): ${e instanceof Error ? e.message : e}`);
+      console.warn(`[extraction] collection PUT skipped (may exist): ${e instanceof Error ? e.message : e}`);
     });
 
     for (let ci = range.from; ci < Math.min(range.to, totalChapters); ci++) {
       if (ctrl.signal.aborted) throw new Error("job aborted");
       const section = parsed.sections[ci];
       if (isNonContentSection(section)) {
-        console.log(`[extraction] ch${ci} "${section.title}" skipped as non-content section`);
+        console.warn(`[extraction] ch${ci} "${section.title}" skipped as non-content section`);
         emitWithJob({ stage: "chapter", phase: "skip", chapterIndex: ci, chapterTitle: section.title, reason: "non-content-section" });
         continue;
       }

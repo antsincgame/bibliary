@@ -652,6 +652,9 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
   ipcMain.handle(
     "library:rebuild-cache",
     async (): Promise<{ scanned: number; ingested: number; skipped: number; pruned: number; errors: string[] }> => {
+      if (!resolveLibraryRoot()) {
+        return { scanned: 0, ingested: 0, skipped: 0, pruned: 0, errors: ["library root not configured — set it in Settings first"] };
+      }
       const rebuilt = await rebuildFromFs();
       const pruned = await pruneMissing();
       /* После массовых mutations (rebuild + prune) singleton near-dup кэш
