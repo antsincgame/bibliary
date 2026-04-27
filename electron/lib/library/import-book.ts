@@ -74,6 +74,7 @@ export async function importBookFromFile(
       ocrLanguages: opts.ocrLanguages,
       visionMetaEnabled: opts.visionMetaEnabled,
       visionModelKey: opts.visionModelKey,
+      metadataOnlineLookup: opts.metadataOnlineLookup,
       onVisionMetaEvent: opts.onVisionMetaEvent
         ? (e) => opts.onVisionMetaEvent!({ ...e, bookFile: path.basename(absPath) })
         : undefined,

@@ -20,6 +20,9 @@ import { extractBookImages } from "./image-extractors.js";
 import { computeFileSha256, bookIdFromSha } from "./sha-stream.js";
 import { extractMetadataFromCover } from "../llm/vision-meta.js";
 import { pickBestBookTitle } from "./title-heuristics.js";
+import { extractIsbnsFromSections } from "./isbn-extractor.js";
+import { lookupIsbnOpenLibrary } from "../bookhunter/sources/openlibrary.js";
+import { lookupIsbnGoogleBooks } from "../bookhunter/sources/google-books-meta.js";
 import {
   SUPPORTED_BOOK_EXTS,
   type BookCatalogMeta,
@@ -422,11 +425,46 @@ export async function convertBookToMarkdown(
   const allWarnings = [...(parsed.metadata.warnings ?? []), ...imgWarnings];
   const cover = images.find((i) => i.id === "img-cover") ?? null;
 
-  /* Stage 2.5 — Vision-meta enrichment через ЛОКАЛЬНУЮ LM Studio vision-модель.
-     Если включено и есть обложка, отправляем PNG в loaded multimodal-модель
-     и получаем title/author/year/language. Это критический источник истины
-     для PDF/DJVU без metadata. Никогда не throw — на любой ошибке degrade
-     gracefully и пишем warning. Если vision-модели нет — graceful skip с warning. */
+  /* Stage 2.5 — ISBN extraction + Online metadata lookup.
+     Порядок: ISBN из текста → Open Library (быстрее, детальнее) → Google Books (fallback).
+     Не throws никогда — сетевые ошибки логируются в warnings.
+     Пропускается если metadataOnlineLookup !== true или у книги уже есть все ключевые поля. */
+  let isbnMeta: { title?: string; authors?: string[]; year?: number; publisher?: string; language?: string; isbn13?: string } | null = null;
+  let extractedIsbn: string | undefined;
+  if (opts.metadataOnlineLookup !== false && !opts.signal?.aborted) {
+    /* Extract ISBNs from parsed text (first 5 + last 3 pages equivalent). */
+    const isbns = extractIsbnsFromSections(parsed.sections);
+    /* Also check if parser already found an ISBN in metadata. */
+    const metaIsbn = typeof parsed.metadata.identifier === "string" ? parsed.metadata.identifier.replace(/[^\dX]/gi, "") : undefined;
+    const candidateIsbn = isbns[0] ?? (metaIsbn && metaIsbn.length === 13 ? metaIsbn : undefined);
+    if (candidateIsbn) {
+      extractedIsbn = candidateIsbn;
+      /* Hard timeout per lookup: enrichment should never block import for long. */
+      const ISBN_LOOKUP_TIMEOUT_MS = 8_000;
+      const withTimeout = <T>(p: Promise<T | null>): Promise<T | null> => {
+        const timer = new Promise<null>((res) => setTimeout(() => res(null), ISBN_LOOKUP_TIMEOUT_MS));
+        return Promise.race([p, timer]).catch(() => null);
+      };
+      /* Try Open Library first (free, no key needed, good for ru/uk books). */
+      const olResult = await withTimeout(lookupIsbnOpenLibrary(candidateIsbn, opts.signal));
+      if (olResult && (olResult.title || olResult.authors?.length)) {
+        isbnMeta = olResult;
+        allWarnings.push(`isbn-meta: Open Library (ISBN ${candidateIsbn})`);
+      } else {
+        /* Fallback: Google Books. */
+        const gbResult = await withTimeout(lookupIsbnGoogleBooks(candidateIsbn, opts.signal));
+        if (gbResult && (gbResult.title || gbResult.authors?.length)) {
+          isbnMeta = gbResult;
+          allWarnings.push(`isbn-meta: Google Books (ISBN ${candidateIsbn})`);
+        }
+      }
+    }
+  }
+
+  /* Stage 2.6 — Vision-meta enrichment через ЛОКАЛЬНУЮ LM Studio vision-модель.
+     Opt-in (visionMetaEnabled: false по умолчанию). Используется как ПОСЛЕДНИЙ
+     резерв только когда parsed metadata И isbn-meta не дали достаточно данных.
+     Никогда не throw — на любой ошибке degrade gracefully. */
   let visionMeta: import("../llm/vision-meta.js").VisionMeta | null = null;
   if (opts.visionMetaEnabled === true && cover && cover.buffer.length > 0) {
     const t0 = Date.now();
@@ -451,23 +489,42 @@ export async function convertBookToMarkdown(
     }
   }
 
-  /* Resolve финальный title/author/year/publisher по приоритету:
-     1. visionMeta (если есть и confidence>0.5) — самое надёжное, модель видит обложку;
-     2. parser metadata (PDF info, EPUB OPF, FB2 title-info) — структурное;
-     3. filename — как fallback (parseFilename добавит на этапе import.ts). */
-  const useVision = visionMeta !== null && visionMeta.confidence >= 0.5;
+  /* Resolve финальный title/author/year/publisher.
+     Приоритет (индустриальный стандарт — детерминированные источники первее LLM):
+       1. parsed metadata (PDF Info/XMP, EPUB OPF, FB2 title-info) — структурное, надёжно.
+       2. isbn-meta (Open Library / Google Books по ISBN) — верифицировано библиографически.
+       3. vision-meta (LM Studio multimodal, opt-in) — последний резерв.
+       4. filename — финальный fallback. */
   const parsedTitle = parsed.metadata.title?.trim();
   const filenameTitle = path.parse(originalFile).name;
+
+  const useVision = visionMeta !== null && visionMeta.confidence >= 0.5;
+  const useIsbn = isbnMeta !== null;
+
   const finalTitle = pickBestBookTitle(
-    useVision ? visionMeta!.title : undefined,
     parsedTitle,
+    useIsbn ? isbnMeta!.title : undefined,
+    useVision ? visionMeta!.title : undefined,
     filenameTitle,
   ) ?? filenameTitle;
-  const finalAuthor = (useVision && visionMeta!.author) || parsed.metadata.author || undefined;
-  const finalYear = (useVision && visionMeta!.year) || parsed.metadata.year || undefined;
-  const finalPublisher = (useVision && visionMeta!.publisher) || parsed.metadata.publisher || undefined;
+
+  const finalAuthor =
+    parsed.metadata.author
+    ?? (useIsbn ? isbnMeta!.authors?.[0] : undefined)
+    ?? (useVision ? visionMeta!.author ?? undefined : undefined);
+
+  const finalYear =
+    parsed.metadata.year
+    ?? (useIsbn ? isbnMeta!.year : undefined)
+    ?? (useVision ? visionMeta!.year ?? undefined : undefined);
+
+  const finalPublisher =
+    parsed.metadata.publisher
+    ?? (useIsbn ? isbnMeta!.publisher : undefined)
+    ?? (useVision ? visionMeta!.publisher ?? undefined : undefined);
+
   if (opts.visionMetaEnabled === true && cover && visionMeta && !useVision) {
-    allWarnings.push(`vision-meta incomplete/low-confidence (${visionMeta.confidence}); parser metadata retained where stronger`);
+    allWarnings.push(`vision-meta incomplete/low-confidence (${visionMeta.confidence}); structured metadata retained where stronger`);
   }
 
   const status: BookStatus = chapters.length === 0 ? "unsupported" : "imported";
@@ -480,7 +537,7 @@ export async function convertBookToMarkdown(
     title: finalTitle,
     author: finalAuthor,
     year: finalYear,
-    isbn: parsed.metadata.identifier,
+    isbn: parsed.metadata.identifier ?? extractedIsbn ?? isbnMeta?.isbn13,
     publisher: finalPublisher,
     wordCount: totalWords,
     chapterCount: chapters.length,

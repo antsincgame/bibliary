@@ -50,6 +50,8 @@ export interface ImportFolderOptions {
   ocrLanguages?: string[];
   /** Включить Vision LLM extraction метаданных из обложки (через LM Studio). */
   visionMetaEnabled?: boolean;
+  /** Включить онлайн lookup метаданных по ISBN (Open Library / Google Books). Default true. */
+  metadataOnlineLookup?: boolean;
   /** Override modelKey vision-модели в LM Studio. Пусто = автодетект. */
   visionModelKey?: string;
   /**

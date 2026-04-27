@@ -171,6 +171,13 @@ export interface ConvertOptions {
   visionModelKey?: string;
   /** Логгер для отчёта о прогрессе vision-meta вызова. */
   onVisionMetaEvent?: (event: { phase: "start" | "success" | "failed"; message?: string; durationMs?: number; meta?: unknown }) => void;
+  /**
+   * Включить онлайн-поиск метаданных по ISBN через Open Library и Google Books.
+   * Выполняется после извлечения ISBN из текста книги.
+   * Не влияет на vision-meta; оба механизма независимы.
+   * Default: true (пользователь может отключить в настройках).
+   */
+  metadataOnlineLookup?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

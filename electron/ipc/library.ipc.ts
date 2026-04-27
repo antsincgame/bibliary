@@ -104,6 +104,7 @@ async function readImportPrefs(): Promise<{
   ocrLanguages: string[];
   visionMetaEnabled: boolean;
   visionModelKey?: string;
+  metadataOnlineLookup: boolean;
 }> {
   try {
     const store = getPreferencesStore();
@@ -111,15 +112,17 @@ async function readImportPrefs(): Promise<{
     return {
       djvuOcrProvider: prefs.djvuOcrProvider,
       ocrLanguages: prefs.ocrLanguages ?? [],
-      visionMetaEnabled: prefs.visionMetaEnabled !== false,
+      visionMetaEnabled: prefs.visionMetaEnabled === true,
       visionModelKey: prefs.visionModelKey?.trim() || undefined,
+      metadataOnlineLookup: prefs.metadataOnlineLookup !== false,
     };
   } catch {
     return {
       djvuOcrProvider: "system",
       ocrLanguages: [],
-      visionMetaEnabled: true,
+      visionMetaEnabled: false,
       visionModelKey: undefined,
+      metadataOnlineLookup: true,
     };
   }
 }
@@ -362,6 +365,7 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
           ocrLanguages: prefs.ocrLanguages,
           visionMetaEnabled: prefs.visionMetaEnabled,
           visionModelKey: prefs.visionModelKey,
+          metadataOnlineLookup: prefs.metadataOnlineLookup,
           onProgress: (evt) => broadcastImportProgress(getMainWindow, importId, evt),
           onVisionMetaEvent: (e) => {
             const cat = e.phase === "start"
@@ -472,6 +476,7 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
               ocrLanguages: prefs.ocrLanguages,
               visionMetaEnabled: prefs.visionMetaEnabled,
               visionModelKey: prefs.visionModelKey,
+              metadataOnlineLookup: prefs.metadataOnlineLookup,
               onVisionMetaEvent,
             });
             for (const r of itemResults) {

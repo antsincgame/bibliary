@@ -85,8 +85,20 @@ export const PreferencesSchema = z.object({
   // -- Vision-meta (локальная LM Studio multimodal модель для извлечения метаданных из обложек) --
   /** Ручной override modelKey vision-модели. Пусто = автоматический поиск среди загруженных. */
   visionModelKey: z.string().default(""),
-  /** Включить vision-meta. Default true — если в LM Studio есть vision-модель, она будет использована. */
-  visionMetaEnabled: z.boolean().default(true),
+  /**
+   * Включить vision-meta (LLM-анализ обложки).
+   * Default false — используется как последний резерв после parsed metadata + ISBN lookup.
+   * Включайте только если у вас есть vision-capable модель в LM Studio и ISBN-lookup не помогает.
+   */
+  visionMetaEnabled: z.boolean().default(false),
+
+  // -- Metadata online lookup (ISBN → Open Library / Google Books) --
+  /**
+   * Включить онлайн-lookup метаданных по ISBN через Open Library и Google Books.
+   * Требует интернет. Выполняется после парсинга файла, до vision-meta.
+   * Default true.
+   */
+  metadataOnlineLookup: z.boolean().default(true),
 
   // -- Library UI --
   libraryGroupBy: z.enum(["none", "ext", "status", "folder"]).default("none"),
