@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    name: Lint · Tests · Compile
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      # Skip Electron binary download: not needed for lint/test/compile.
+      # The @electron/rebuild postinstall step will still succeed because
+      # better-sqlite3 has a prebuilt Windows binary for Node 22.
+      - name: Install dependencies
+        run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+      # After postinstall (which rebuilds better-sqlite3 for Electron ABI),
+      # we rebuild it back for Node ABI so unit tests can import it directly.
+      - name: Rebuild better-sqlite3 for Node
+        run: npm rebuild better-sqlite3
+
+      - name: Lint (tsc + eslint renderer + eslint electron)
+        run: npm run lint
+
+      - name: Unit tests
+        # test:fast skips the native rebuild; we already rebuilt for Node above.
+        run: npm run test:fast
+        # If test:fast still fails with ERR_DLOPEN_FAILED, use: npm test
+        # (npm test = test:rebuild-native + test:fast)
+
+      # Sanity check: full TypeScript emit succeeds (catches import mismatches
+      # that --noEmit in lint may not catch due to incremental cache).
+      - name: Compile Electron TypeScript
+        run: npx tsc -p tsconfig.electron.json
