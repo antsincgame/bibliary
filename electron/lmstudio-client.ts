@@ -159,11 +159,24 @@ interface DownloadedModelInfo {
   sizeBytes?: number;
 }
 
-interface LoadedModelInfo {
+/**
+ * Информация о загруженной в LM Studio модели. Поля `vision` и
+ * `trainedForToolUse` — эвристика по `modelKey` (LM Studio SDK не предоставляет
+ * флагов capabilities), используется в model-role-resolver для capability
+ * filtering ролей `vision_meta` / `vision_ocr` / `agent`.
+ *
+ * Эти поля optional — добавлены в v3.4 (Models page rebuild). Старые consumers
+ * без их использования продолжают работать без изменений.
+ */
+export interface LoadedModelInfo {
   identifier: string;
   modelKey: string;
   contextLength?: number;
   quantization?: string;
+  /** True если modelKey матчит vision-маркеры (qwen3-vl, llava, pixtral, ...). */
+  vision?: boolean;
+  /** True если модель эвристически выглядит как обученная под tool-calling. */
+  trainedForToolUse?: boolean;
 }
 
 let cachedClient: LMStudioClient | null = null;
@@ -495,6 +508,55 @@ export async function listDownloaded(): Promise<DownloadedModelInfo[]> {
   );
 }
 
+/**
+ * Маркеры моделей, которые тренировались с tool-calling в SFT/RL стадии.
+ * Это эвристика: реальный SDK-флаг отсутствует, поэтому ориентируемся
+ * на хорошо задокументированные семейства. Список консервативен —
+ * лучше пропустить менее проверенную модель, чем дать резолверу agent
+ * роль модели которая не умеет в tool-calling.
+ */
+const TOOL_USE_MARKERS: ReadonlyArray<string> = [
+  "qwen3",         /* Qwen3 series — explicit tool-use training */
+  "qwen2.5",       /* Qwen2.5-Instruct — strong tool-use */
+  "llama-3.1",     /* Llama 3.1 Instruct — tool-use baked in */
+  "llama-3.2",
+  "llama-3.3",
+  "mistral-7b-instruct-v0.3", /* Mistral v0.3+ supports tools */
+  "mistral-large",
+  "mixtral",
+  "hermes-3",      /* Nous Research Hermes 3 — tool-use focused */
+  "command-r",     /* Cohere Command R+ */
+  "phi-4",         /* Phi-4 series */
+  "deepseek-v3",
+  "deepseek-r1",
+];
+
+export function looksLikeToolUseModel(modelKey: string): boolean {
+  if (!modelKey) return false;
+  const lc = modelKey.toLowerCase();
+  return TOOL_USE_MARKERS.some((m) => lc.includes(m));
+}
+
+/**
+ * Легковесная inline-эвристика vision-моделей. Дублирует логику
+ * `looksLikeVisionModel` из `lib/llm/vision-meta.ts`, но без импорта чтобы
+ * избежать circular dependency: vision-meta.ts → lmstudio-client.ts (listLoaded)
+ * → vision-meta.ts. Список маркеров короче (только надёжно vision-only),
+ * полная эвристика (с env-override) остаётся в vision-meta.
+ */
+const VISION_MARKERS_INLINE: ReadonlyArray<string> = [
+  "qwen3.5", "-vl", "vision", "llava", "pixtral",
+  "minicpm-v", "molmo", "gemma-3", "gemma3",
+  "phi-3.5-vision", "phi-4-multimodal", "phi-vision",
+  "idefics", "cogvlm", "deepseek-vl", "olmocr",
+];
+
+function inlineLooksLikeVision(modelKey: string): boolean {
+  if (!modelKey) return false;
+  const lc = modelKey.toLowerCase();
+  return VISION_MARKERS_INLINE.some((m) => lc.includes(m));
+}
+
 export async function listLoaded(): Promise<LoadedModelInfo[]> {
   return withSdk(
     async (client) => {
@@ -502,11 +564,14 @@ export async function listLoaded(): Promise<LoadedModelInfo[]> {
       const infos: LoadedModelInfo[] = [];
       for (const handle of models) {
         const info = await handle.getModelInfo();
+        const modelKey = info.modelKey;
         infos.push({
           identifier: info.identifier,
-          modelKey: info.modelKey,
+          modelKey,
           contextLength: info.contextLength,
           quantization: info.quantization ? String(info.quantization) : undefined,
+          vision: inlineLooksLikeVision(modelKey),
+          trainedForToolUse: looksLikeToolUseModel(modelKey),
         });
       }
       return infos;

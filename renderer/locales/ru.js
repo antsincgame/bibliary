@@ -138,6 +138,7 @@ export default {
   "library.catalog.btn.reevaluateAll": "Переоценить все",
   "library.catalog.btn.delete": "Удалить",
   "library.catalog.btn.createChunks": "Создание чанков",
+  "library.catalog.btn.synthesize": "Синтез датасета",
   "library.catalog.btn.cancelBatch": "Отменить извлечение",
   "library.catalog.btn.tagCloud": "Теги",
   "library.catalog.synth.promptOutput": "Куда сохранить JSONL для коллекции «{coll}»?",

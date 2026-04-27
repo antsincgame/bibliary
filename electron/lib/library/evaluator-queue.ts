@@ -129,7 +129,7 @@ function ensureSlots(): void {
 ensureSlots();
 
 /** Сколько слотов сейчас выполняют работу. */
-function activeSlotCount(): number {
+export function activeSlotCount(): number {
   let n = 0;
   for (const s of slots) if (s.active) n += 1;
   return n;

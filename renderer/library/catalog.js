@@ -8,7 +8,7 @@ import { showAlert, showConfirm } from "../components/ui-dialog.js";
 import { CATALOG } from "./state.js";
 import { filterCatalog as filterCatalogPure, qualityClass, statusClass, QUALITY_PRESETS } from "./catalog-filter.js";
 import { fmtWords, fmtQuality } from "./format.js";
-import { guardAndCrystallize, cancelBatchExtraction } from "./batch-actions.js";
+import { guardAndCrystallize, cancelBatchExtraction, launchSynthesis } from "./batch-actions.js";
 import { openBook } from "./reader.js";
 import { openTagCloudModal } from "./tag-cloud.js";
 import { mountCollectionViews } from "./collection-views.js";
@@ -590,6 +590,11 @@ export function buildCatalogBottomBar(root, deps) {
     onclick: () => void guardAndCrystallize(root, deps),
   }, t("library.catalog.btn.createChunks"));
 
+  const synthBtn = el("button", {
+    type: "button", class: "lib-btn lib-btn-secondary",
+    onclick: () => void launchSynthesis(),
+  }, t("library.catalog.btn.synthesize"));
+
   const cancelBatchBtn = el("button", {
     type: "button", class: "lib-btn lib-btn-danger lib-btn-cancel-batch",
     style: "display:none",
@@ -601,7 +606,7 @@ export function buildCatalogBottomBar(root, deps) {
   return el("div", { class: "lib-catalog-bottombar" }, [
     summary,
     el("div", { class: "lib-catalog-bottom-actions" }, [
-      selectAllBtn, clearBtn, reevaluateBtn, reparseBtn, deleteBtn, chunksBtn, cancelBatchBtn,
+      selectAllBtn, clearBtn, reevaluateBtn, reparseBtn, deleteBtn, chunksBtn, synthBtn, cancelBatchBtn,
     ]),
     batchSummary,
   ]);

@@ -32,6 +32,7 @@ nsis:
 asar: true
 asarUnpack:
   - "node_modules/sharp/**/*"
+  - "node_modules/@img/**/*"
   - "node_modules/better-sqlite3/**/*.node"
   - "node_modules/7z-bin/**/*"
   - "node_modules/7zip-bin/**/*"

@@ -104,7 +104,14 @@ async function importArchiveSequential(absPath: string, opts: Omit<ImportFolderO
  *  поднимет таймаут в worker_thread, пока — abort через AbortController. */
 const PER_FILE_TIMEOUT_MS = 8 * 60 * 1000;
 
-/** Размер parser pool по умолчанию = cpus-1, минимум 1. ENV-override. */
+/**
+ * Размер parser pool по умолчанию = cpus-1, минимум 1, максимум 4.
+ *
+ * Жёсткий ceiling в 4 воркера предотвращает OOM при многочасовых сессиях импорта
+ * тяжёлых DJVU-книг (каждый воркер держит ~6–10 MB PNG-буферов + OCR-текст).
+ * На 8-ядерной машине cpus-1 = 7 воркеров приводит к heap fragmentation и краш после
+ * 4+ часов непрерывного импорта. ENV-override позволяет превысить ceiling для CI/batch.
+ */
 function resolveParserPoolSize(): number {
   const env = process.env.BIBLIARY_PARSER_POOL_SIZE?.trim();
   if (env) {
@@ -112,7 +119,8 @@ function resolveParserPoolSize(): number {
     if (Number.isInteger(n) && n >= 1) return n;
   }
   const cpus = typeof os.cpus === "function" ? os.cpus().length : 1;
-  return Math.max(1, cpus - 1);
+  const SAFE_POOL_CEILING = 4;
+  return Math.min(Math.max(1, cpus - 1), SAFE_POOL_CEILING);
 }
 
 /**

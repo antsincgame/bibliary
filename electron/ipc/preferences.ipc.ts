@@ -5,6 +5,9 @@ import { configureFileLockDefaults } from "../lib/resilience/index.js";
 import { invalidateEndpointsCache, getEndpoints } from "../lib/endpoints/index.js";
 import { setQdrantUrl } from "../lib/qdrant/http-client.js";
 import { refreshLmStudioClient } from "../lmstudio-client.js";
+import { syncMarkerEnvFromPrefs } from "../lib/library/marker-sidecar.js";
+import { restartScheduler as restartArenaScheduler } from "../lib/llm/arena/scheduler.js";
+import { modelRoleResolver } from "../lib/llm/model-role-resolver.js";
 
 /**
  * Apply preference values that affect already-running services. The
@@ -28,6 +31,17 @@ function applyRuntimeSideEffects(prefs: Preferences): void {
   invalidateEndpointsCache();
   void getEndpoints().then(({ qdrantUrl }) => setQdrantUrl(qdrantUrl));
   refreshLmStudioClient();
+  /* Sync Marker feature flag to ENV so marker-sidecar.ts can read it
+     synchronously without an async preferences store dependency. */
+  syncMarkerEnvFromPrefs(prefs.useMarkerExtractor);
+  /* Reactive arena scheduler restart: changes to arenaEnabled /
+     arenaCycleIntervalMs / arenaUseLlmJudge take effect immediately
+     without waiting for app restart. */
+  void restartArenaScheduler();
+  /* Role resolver caches resolved models for `modelRoleCacheTtlMs` —
+     invalidate now so changes to chatModel/agentModel/visionModelKey/
+     fallbacks/arena-judge-key are visible on next IPC call. */
+  modelRoleResolver.invalidate();
 }
 
 export function registerPreferencesIpc(): void {

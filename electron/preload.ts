@@ -322,6 +322,42 @@ contextBridge.exposeInMainWorld("api", {
     reset: (): Promise<Record<string, unknown>> => ipcRenderer.invoke("preferences:reset"),
   },
 
+  arena: {
+    /** Получить Elo по всем ролям + lastCycleAt + lastError. */
+    getRatings: (): Promise<{
+      roles: Record<string, Record<string, number>>;
+      chat: Record<string, number>;
+      lastCycleAt?: string;
+      lastError?: string;
+    }> => ipcRenderer.invoke("arena:get-ratings"),
+    /** Запустить cycle. opts.roles — подмножество ролей; opts.bypassLock — игнорировать GlobalLlmLock guard (только при ручном запуске с подтверждением). */
+    runCycle: (opts?: { roles?: string[]; bypassLock?: boolean }): Promise<unknown> =>
+      ipcRenderer.invoke("arena:run-cycle", opts ?? {}),
+    /** Обнулить Elo. */
+    resetRatings: (): Promise<unknown> => ipcRenderer.invoke("arena:reset-ratings"),
+    /** Текущая конфигурация arena (из preferences). */
+    getConfig: (): Promise<{
+      arenaEnabled: boolean;
+      arenaUseLlmJudge: boolean;
+      arenaAutoPromoteWinner: boolean;
+      arenaMatchPairsPerCycle: number;
+      arenaCycleIntervalMs: number;
+      arenaJudgeModelKey: string;
+    }> => ipcRenderer.invoke("arena:get-config"),
+    /** Частично обновить конфигурацию. */
+    setConfig: (partial: Record<string, unknown>): Promise<unknown> =>
+      ipcRenderer.invoke("arena:set-config", partial),
+    /** Состояние GlobalLlmLock — занят ли LM Studio импортом / evaluator. */
+    getLockStatus: (): Promise<{
+      busy: boolean;
+      reasons: string[];
+      skipCount: number;
+      lastSkippedAt: string | null;
+      lastSkipReasons: string[];
+      registeredProbes: string[];
+    }> => ipcRenderer.invoke("arena:get-lock-status"),
+  },
+
   chatHistory: {
     load: (): Promise<Array<{ role: "user" | "assistant" | "system"; content: string }>> =>
       ipcRenderer.invoke("chat-history:load"),
@@ -631,10 +667,10 @@ contextBridge.exposeInMainWorld("api", {
     reevaluateAll: (): Promise<{ queued: number }> =>
       smokeLibrary ? Promise.resolve({ queued: smokeLibrary.rows.length }) : ipcRenderer.invoke("library:reevaluate-all"),
     setEvaluatorModel: (modelKey: string | null): Promise<boolean> =>
-      ipcRenderer.invoke("library:evaluator-set-model", modelKey),
+      smokeLibrary ? Promise.resolve(true) : ipcRenderer.invoke("library:evaluator-set-model", modelKey),
     /* Phase 4: priority enqueue + runtime slot regulation. */
     evaluatorPrioritize: (bookIds: string[]): Promise<{ ok: boolean; queued: number }> =>
-      ipcRenderer.invoke("library:evaluator-prioritize", { bookIds }),
+      smokeLibrary ? Promise.resolve({ ok: true, queued: 0 }) : ipcRenderer.invoke("library:evaluator-prioritize", { bookIds }),
     evaluatorSetSlots: (n: number): Promise<{ ok: boolean; slots: number }> =>
       smokeLibrary ? Promise.resolve({ ok: true, slots: n }) : ipcRenderer.invoke("library:evaluator-set-slots", n),
     evaluatorGetSlots: (): Promise<number> =>

@@ -7,6 +7,10 @@
  *
  * Все extractors -- чистые CPU-задачи. Безопасно вызывать параллельно с
  * GPU-кристаллизацией (LM Studio).
+ *
+ * Feature flag BIBLIARY_USE_MARKER=1: для PDF и DJVU использует Marker sidecar
+ * через WSL (layout-aware extraction + Surya OCR). При отсутствии WSL/Marker
+ * автоматически откатывается на встроенный pdfjs/ddjvu extractor.
  */
 
 import { promises as fs } from "fs";
@@ -17,6 +21,7 @@ import type { ImageRef } from "./types.js";
 import { getDjvuPageCount, runDdjvu } from "../scanner/parsers/djvu-cli.js";
 import { getPdfjsStandardFontDataUrl } from "../scanner/pdfjs-node.js";
 import { imageBufferToPng } from "../native/sharp-loader.js";
+import { isMarkerAvailable, runMarkerOnPdf, runMarkerOnDjvu } from "./marker-sidecar.js";
 
 const DEFAULT_MAX_IMAGES = 100;
 const DEFAULT_MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -325,11 +330,36 @@ export async function extractFb2Images(
 /* ─────────────────────────── PDF (page gallery) ─────────────────────────── */
 
 /**
- * Универсальное извлечение визуального слоя PDF: рендерим первые N страниц
- * как PNG. Это не пытается достать raw XObject, зато гарантированно сохраняет
- * обложку, схемы, таблицы и сканы как иллюстрации в `book.md`.
+ * Универсальное извлечение визуального слоя PDF.
+ *
+ * Если BIBLIARY_USE_MARKER=1 и Marker доступен в WSL — использует Marker
+ * (layout-aware extraction: только реальные figures/таблицы/диаграммы).
+ * Fallback: рендерим первые N страниц как PNG через pdfjs + @napi-rs/canvas.
  */
 export async function extractPdfImages(
+  filePath: string,
+  opts?: { maxImageBytes?: number; maxImagesPerBook?: number; targetWidth?: number; signal?: AbortSignal },
+): Promise<{ images: ImageRef[]; warnings: string[] }> {
+  /* Marker fast-path: layout-aware extraction via WSL Python sidecar */
+  if (await isMarkerAvailable()) {
+    try {
+      const result = await runMarkerOnPdf(filePath, opts?.signal);
+      if (result.images.length > 0 || result.markdown.length > 0) {
+        return { images: result.images, warnings: result.warnings };
+      }
+      /* Marker produced nothing — fall through to pdfjs page-render */
+    } catch {
+      /* Non-fatal — fall through to pdfjs page-render */
+    }
+  }
+  return extractPdfImagesLegacy(filePath, opts);
+}
+
+/**
+ * Legacy PDF extractor: renders the first N pages as PNG via pdfjs + @napi-rs/canvas.
+ * Used as fallback when Marker is unavailable or returns empty output.
+ */
+async function extractPdfImagesLegacy(
   filePath: string,
   opts?: { maxImageBytes?: number; maxImagesPerBook?: number; targetWidth?: number; signal?: AbortSignal },
 ): Promise<{ images: ImageRef[]; warnings: string[] }> {
@@ -415,7 +445,37 @@ export async function extractPdfImages(
 
 /* ─────────────────────────── DJVU (page gallery) ─────────────────────────── */
 
+/**
+ * DJVU extractor.
+ *
+ * Если BIBLIARY_USE_MARKER=1 и Marker доступен в WSL — конвертирует DJVU в PDF
+ * через ddjvu, затем передаёт в Marker (layout-aware extraction).
+ * Fallback: рендерим первые N страниц через ddjvu → TIFF → sharp → PNG.
+ */
 export async function extractDjvuImages(
+  filePath: string,
+  opts?: { maxImageBytes?: number; maxImagesPerBook?: number; targetWidth?: number; signal?: AbortSignal; dpi?: number },
+): Promise<{ images: ImageRef[]; warnings: string[] }> {
+  /* Marker fast-path: DJVU → PDF → Marker layout extraction */
+  if (await isMarkerAvailable()) {
+    try {
+      const result = await runMarkerOnDjvu(filePath, opts?.signal);
+      if (result.images.length > 0 || result.markdown.length > 0) {
+        return { images: result.images, warnings: result.warnings };
+      }
+      /* Marker produced nothing — fall through to ddjvu page-render */
+    } catch {
+      /* Non-fatal — fall through to ddjvu page-render */
+    }
+  }
+  return extractDjvuImagesLegacy(filePath, opts);
+}
+
+/**
+ * Legacy DJVU extractor: renders the first N pages via ddjvu → TIFF → sharp → PNG.
+ * Used as fallback when Marker is unavailable or returns empty output.
+ */
+async function extractDjvuImagesLegacy(
   filePath: string,
   opts?: { maxImageBytes?: number; maxImagesPerBook?: number; targetWidth?: number; signal?: AbortSignal; dpi?: number },
 ): Promise<{ images: ImageRef[]; warnings: string[] }> {

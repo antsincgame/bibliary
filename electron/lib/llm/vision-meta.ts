@@ -27,7 +27,8 @@ import { getLmStudioUrl } from "../endpoints/index.js";
  * env `BIBLIARY_VISION_MODEL_MARKERS` (CSV).
  */
 const BUILTIN_VISION_MARKERS: ReadonlyArray<string> = [
-  "vl",            /* qwen2-vl, qwen2.5-vl, qwen3-vl, internvl */
+  "qwen3.5",       /* Qwen3.5 has native vision fusion (no -VL suffix needed) */
+  "-vl",           /* qwen3-vl, qwen2.5-vl, internvl (hyphen-bounded, avoids false matches like "eval") */
   "vision",        /* llama-3.2-vision, phi-3-vision */
   "llava",         /* llava-1.5/1.6/next */
   "pixtral",       /* mistral pixtral */
@@ -41,7 +42,42 @@ const BUILTIN_VISION_MARKERS: ReadonlyArray<string> = [
   "idefics",       /* HF idefics3 */
   "cogvlm",
   "deepseek-vl",
+  "olmocr",        /* AI2 OLMo-OCR (OCR-specialist, 2025+) */
 ];
+
+/**
+ * Priority prefixes for sorting vision model candidates.
+ * Models whose modelKey starts with a higher-priority prefix are tried first.
+ * Qwen3-VL leads: SOTA on OmniDocBench, OCRBench, DocVQA 2026.
+ */
+const VISION_FAMILY_PRIORITY: ReadonlyArray<string> = [
+  "qwen3.5",       /* Apr 2026 — native vision fusion, outperforms Qwen3-VL on OCR/Doc benchmarks */
+  "qwen3-vl",      /* 2025-2026 — strong OCR: 8B=896 OCRBench, 96.1% DocVQA */
+  "qwen2.5-vl",
+  "qwen2-vl",
+  "internvl3",     /* InternVL3: strong multilingual & CJK */
+  "internvl",      /* InternVL2 fallback */
+  "pixtral",       /* mistral, strong layouts */
+  "phi-4-multimodal",
+  "gemma3",
+  "gemma-3",
+  "minicpm-v",
+  "phi-3.5-vision",
+  "llava",
+  "molmo",
+  "vision",
+  "deepseek-vl",
+  "olmocr",
+  "cogvlm",
+  "idefics",
+  "-vl",           /* generic fallback for any *-vl model */
+];
+
+function visionFamilyPriority(modelKey: string): number {
+  const lc = modelKey.toLowerCase();
+  const idx = VISION_FAMILY_PRIORITY.findIndex((prefix) => lc.includes(prefix));
+  return idx === -1 ? VISION_FAMILY_PRIORITY.length : idx;
+}
 
 function getVisionMarkers(): string[] {
   const env = process.env.BIBLIARY_VISION_MODEL_MARKERS?.trim();
@@ -54,8 +90,11 @@ function getVisionMarkers(): string[] {
 /**
  * Совпадение модели с маркером vision-семейства. Регистро-нечувствительно,
  * проверка включения — `qwen3-vl-7b` матчит маркер `vl`.
+ *
+ * Экспортируется для lmstudio-client.ts (capability detection) и
+ * model-role-resolver.ts (vision_meta/vision_ocr role resolution).
  */
-function looksLikeVisionModel(modelKey: string): boolean {
+export function looksLikeVisionModel(modelKey: string): boolean {
   if (!modelKey) return false;
   const lc = modelKey.toLowerCase();
   return getVisionMarkers().some((m) => lc.includes(m));
@@ -177,11 +216,15 @@ export async function pickVisionModels(opts: PickVisionModelOptions = {}): Promi
     if (partial) add(partial.modelKey);
   }
 
-  /* Auto-detect: все loaded модели с vision-маркером. Если первая не поняла
-     язык обложки или вернула неполные title/author/year, caller попробует
-     следующую. Это не хардкод конкретных моделей — только capability эвристика. */
-  for (const model of loaded) {
-    if (looksLikeVisionModel(model.modelKey)) add(model.modelKey);
+  /* Auto-detect: все loaded модели с vision-маркером, отсортированные по
+     VISION_FAMILY_PRIORITY (qwen3-vl → qwen2.5-vl → internvl → ...).
+     Если первая не поняла язык обложки или вернула неполные title/author/year,
+     caller попробует следующую по приоритету. */
+  const detected = loaded
+    .filter((m) => looksLikeVisionModel(m.modelKey))
+    .sort((a, b) => visionFamilyPriority(a.modelKey) - visionFamilyPriority(b.modelKey));
+  for (const model of detected) {
+    add(model.modelKey);
   }
 
   return out;
@@ -378,7 +421,7 @@ export async function extractMetadataFromCover(
   if (candidates.length === 0) {
     return {
       ok: false,
-      error: "no vision-capable model loaded in LM Studio (load qwen3-vl, llava, pixtral, gemma-3, minicpm-v or similar; or set preferences.visionModelKey)",
+      error: "no vision-capable model loaded in LM Studio (recommended: qwen3-vl-4b or qwen3-vl-8b; also: qwen2.5-vl, pixtral, gemma-3, llava, minicpm-v — or set preferences.visionModelKey)",
     };
   }
 

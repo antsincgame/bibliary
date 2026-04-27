@@ -138,6 +138,7 @@ export default {
   "library.catalog.btn.reevaluateAll": "Re-evaluate all",
   "library.catalog.btn.delete": "Delete",
   "library.catalog.btn.createChunks": "Create chunks",
+  "library.catalog.btn.synthesize": "Synthesize",
   "library.catalog.btn.cancelBatch": "Cancel extraction",
   "library.catalog.btn.tagCloud": "Tags",
   "library.catalog.synth.promptOutput": "Where to save JSONL for collection '{coll}'?",

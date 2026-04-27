@@ -51,17 +51,45 @@ export function ensureSharpDllPath(): void {
   }
 }
 
+let sharpLoaded = false;
+
 export async function loadSharp(): Promise<SharpFactory> {
   ensureSharpDllPath();
   const mod = await import("sharp");
-  return mod.default as unknown as SharpFactory;
+  const sharpCtor = mod.default as unknown as SharpFactory & { simd?: (v: boolean) => boolean; cache?: (v: boolean | object) => object };
+  if (!sharpLoaded) {
+    sharpLoaded = true;
+    /* Disable ORC/Highway SIMD — prevents access violations in libvips
+       on Windows portable builds (orc_code_chunk_merge / GStreamer liborc bug).
+       Also disable file caching to avoid EBUSY/EPERM on Windows.
+       simd/cache are static methods on the Sharp constructor (mod.default). */
+    if (typeof sharpCtor.simd === "function") sharpCtor.simd(false);
+    if (typeof sharpCtor.cache === "function") sharpCtor.cache(false);
+  }
+  return sharpCtor;
+}
+
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+function isPngBuffer(buf: Buffer): boolean {
+  if (buf.length < 8) return false;
+  for (let i = 0; i < 8; i++) {
+    if (buf[i] !== PNG_MAGIC[i]) return false;
+  }
+  return true;
 }
 
 export async function imageBufferToPng(input: Buffer, width?: number): Promise<Buffer> {
   const sharp = await loadSharp();
-  const pipeline = sharp(input, { failOn: "none" });
+  const pipeline = sharp(input, { failOn: "truncated" });
+  let result: Buffer;
   if (typeof width === "number" && Number.isFinite(width) && width > 0) {
-    return pipeline.resize({ width, withoutEnlargement: true }).png().toBuffer();
+    result = await pipeline.resize({ width, withoutEnlargement: true }).png().toBuffer();
+  } else {
+    result = await pipeline.png().toBuffer();
   }
-  return pipeline.png().toBuffer();
+  if (!isPngBuffer(result)) {
+    throw new Error(`imageBufferToPng: output is not a valid PNG (got ${result.length} bytes, magic mismatch)`);
+  }
+  return result;
 }

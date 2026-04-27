@@ -70,7 +70,9 @@ import {
   getEvaluatorSlotCount,
   getEvaluatorStatus,
   subscribeEvaluator,
+  activeSlotCount as evaluatorActiveSlotCount,
 } from "../lib/library/evaluator-queue.js";
+import { globalLlmLock } from "../lib/llm/global-llm-lock.js";
 import { resolveLibraryRoot } from "../lib/library/paths.js";
 import {
   AbsoluteFilePathSchema,
@@ -196,11 +198,41 @@ export async function bootstrapLibrarySubsystem(getMainWindow: () => BrowserWind
     });
   }
   ensureImportLogBridge(getMainWindow);
+  registerLibraryLlmLockProbes();
   /* Bootstrap запускается лениво: первый вызов enqueueBook или runSlot
      запустит ensureEvaluatorBootstrap автоматически. Здесь kick-off чтобы
      bootstrap начался сразу при старте, а не только при первом импорте.
      Не await'им — не блокируем startup IPC регистрацию. */
   void ensureEvaluatorBootstrap();
+}
+
+let llmLockProbesRegistered = false;
+/**
+ * Регистрирует два probe в GlobalLlmLock — для library import и evaluator queue.
+ * Они нужны Arena scheduler'у чтобы НЕ запускать калибровку пока LM Studio
+ * занята массовым импортом или фоновым evaluator (защита от OOM, см.
+ * docs/MODEL-ROLES.md и electron/lib/llm/global-llm-lock.ts).
+ *
+ * Vision-meta inline вызывается внутри importBookFromFile, поэтому отдельного
+ * probe для vision не нужно — `library-import` его уже покрывает.
+ *
+ * Идемпотентно: повторный вызов не дублирует probes (registerProbe overwrites).
+ */
+function registerLibraryLlmLockProbes(): void {
+  if (llmLockProbesRegistered) return;
+  llmLockProbesRegistered = true;
+  globalLlmLock.registerProbe("library-import", () => {
+    const n = activeImports.size;
+    return n === 0
+      ? { busy: false }
+      : { busy: true, reason: `${n} active import(s) (vision-meta inline)` };
+  });
+  globalLlmLock.registerProbe("evaluator-queue", () => {
+    const n = evaluatorActiveSlotCount();
+    return n === 0
+      ? { busy: false }
+      : { busy: true, reason: `${n} evaluator slot(s) running` };
+  });
 }
 
 function broadcastImportProgress(getMainWindow: () => BrowserWindow | null, importId: string, evt: ProgressEvent): void {

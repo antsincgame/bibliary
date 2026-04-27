@@ -23,16 +23,29 @@ import {
   configureFileLockDefaults,
 } from "./lib/resilience";
 import { initPreferencesStore } from "./lib/preferences/store.js";
+import { syncMarkerEnvFromPrefs } from "./lib/library/marker-sidecar.js";
 import { registerForgePipeline } from "./lib/forge";
 import { initForgeStore } from "./lib/forge/state";
 import { registerExtractionPipeline } from "./lib/dataset-v2/coordinator-pipeline";
 import { startWatchdog, stopWatchdog, configureWatchdog } from "./lib/resilience/lmstudio-watchdog";
+import { startScheduler as startArenaScheduler, stopScheduler as stopArenaScheduler } from "./lib/llm/arena/scheduler.js";
+import { initArenaRatingsStore } from "./lib/llm/arena/ratings-store.js";
 import { SHUTDOWN_FLUSH_TIMEOUT_MS } from "./lib/resilience/constants";
 import { getWindowsParentExecutablePath, resolveAppDataDir } from "./lib/app-data-dir.js";
 import { closeCacheDb } from "./lib/library/cache-db.js";
 import { killAllSynthChildren } from "./ipc/dataset-v2.ipc.js";
 import { resolveBlobFromUrl, getBlobsRoot } from "./lib/library/library-store.js";
 import { resolveLibraryRoot } from "./lib/library/paths.js";
+
+/* Disable libvips ORC SIMD vector codegen — prevents access violations on Windows
+   portable builds (known orc_code_chunk_merge crash in GStreamer/liborc < 0.4.34).
+   Must be set before any `import('sharp')` resolves — placed here at module top. */
+process.env.VIPS_NOVECTOR = "1";
+
+/* Increase V8 heap limit for long-running import sessions (default ~1.5 GB
+   fragments after 4+ hours of Buffer-heavy DJVU processing).
+   Must be set before app initialises — commandLine flags are read at Electron startup. */
+app.commandLine.appendSwitch("js-flags", "--max-old-space-size=4096");
 
 process.on("unhandledRejection", (reason) => {
   console.error("[main] unhandledRejection:", reason);
@@ -184,6 +197,9 @@ if (!gotLock) {
       retries: prefs.lockRetries,
       stale: prefs.lockStaleMs,
     });
+    /* Sync Marker feature flag from preferences to ENV so marker-sidecar.ts
+       can read it synchronously without a preferences store dependency. */
+    syncMarkerEnvFromPrefs(prefs.useMarkerExtractor);
     /* Forge store must be initialised after resilience layer (uses
        checkpoint store) but before registerForgePipeline (registers it
        in coordinator). Keeping it in main.ts is what breaks the cycle
@@ -205,11 +221,20 @@ if (!gotLock) {
     applyCsp();
     registerAssetProtocol();
     startWatchdog(() => mainWindow);
+    /* Arena ratings store должен инициализироваться ДО registerAllIpcHandlers,
+       т.к. arena.ipc.ts читает file path при первом invoke. */
+    initArenaRatingsStore(dataDir);
     registerAllIpcHandlers(() => mainWindow);
     /* Library subsystem: подписывает evaluator-queue на broadcast в renderer
        и запускает bootstrap (re-queue всех imported книг с прошлого раза).
-       Не блокирует createWindow -- ошибка bootstrap не должна валить старт. */
+       Не блокирует createWindow -- ошибка bootstrap не должна валить старт.
+       Также регистрирует probes в GlobalLlmLock (library-import + evaluator-queue). */
     void bootstrapLibrarySubsystem(() => mainWindow);
+    /* Arena scheduler стартует ПОСЛЕ bootstrapLibrarySubsystem чтобы probes
+       были зарегистрированы до первого тика. Защита от OOM: scheduler перед
+       каждым cycle проверяет globalLlmLock.isBusy() — если LM Studio занят
+       массовым импортом или evaluator queue, тик пропускается. */
+    void startArenaScheduler();
     createWindow();
   });
 
@@ -223,6 +248,7 @@ if (!gotLock) {
     const subsystems: [string, () => void][] = [
       ["triggerAppShutdown", triggerAppShutdown],
       ["stopWatchdog", stopWatchdog],
+      ["stopArenaScheduler", stopArenaScheduler],
       ["abortAllIngests", () => abortAllIngests("app-quit")],
       ["abortAllDatasetV2", () => abortAllDatasetV2("app-quit")],
       ["killAllSynthChildren", killAllSynthChildren],

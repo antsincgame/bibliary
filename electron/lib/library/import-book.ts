@@ -21,6 +21,16 @@ import {
 import { parseFilename } from "./filename-parser.js";
 import type { ImportFolderOptions, ImportResult } from "./import-types.js";
 
+const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] as const;
+
+function hasPngMagic(buf: Buffer): boolean {
+  if (buf.length < 8) return false;
+  for (let i = 0; i < 8; i++) {
+    if (buf[i] !== PNG_MAGIC[i]) return false;
+  }
+  return true;
+}
+
 /** Импорт одной книги. Внутренний инвариант: caller гарантирует supported format. */
 export async function importBookFromFile(
   absPath: string,
@@ -141,17 +151,28 @@ export async function importBookFromFile(
     }
   }
 
-  /* Save images to CAS (.blobs/) and set assetUrl on each ImageRef. */
+  /* Save images to CAS (.blobs/) and set assetUrl on each ImageRef.
+     Skip blobs that are suspiciously small or fail a basic PNG-magic check —
+     this prevents broken-icon placeholders in the reader when libvips produces
+     a corrupt buffer (known sharp/ORC issue on Windows portable builds). */
   const root = await getLibraryRoot();
   for (const img of convResult.images) {
-    if (img.buffer.length > 0) {
-      try {
-        const ref = await putBlob(root, img.buffer, img.mimeType);
-        img.assetUrl = ref.assetUrl;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        warnings.push(`CAS putBlob failed for ${img.id}: ${msg}`);
-      }
+    if (img.buffer.length < 64) {
+      warnings.push(`CAS skipped ${img.id}: buffer too small (${img.buffer.length} bytes)`);
+      img.buffer = Buffer.alloc(0);
+      continue;
+    }
+    if (img.mimeType === "image/png" && !hasPngMagic(img.buffer)) {
+      warnings.push(`CAS skipped ${img.id}: PNG magic check failed (${img.buffer.length} bytes), image corrupt`);
+      img.buffer = Buffer.alloc(0);
+      continue;
+    }
+    try {
+      const ref = await putBlob(root, img.buffer, img.mimeType);
+      img.assetUrl = ref.assetUrl;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      warnings.push(`CAS putBlob failed for ${img.id}: ${msg}`);
     }
   }
 

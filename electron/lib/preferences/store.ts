@@ -100,6 +100,16 @@ export const PreferencesSchema = z.object({
    */
   metadataOnlineLookup: z.boolean().default(true),
 
+  // -- Marker sidecar (Phase 7: layout-aware PDF/DJVU extraction) --
+  /**
+   * Использовать Marker (WSL Python sidecar) для извлечения figures/таблиц
+   * из PDF и DJVU. Marker умеет layout detection, Surya OCR, Texify (LaTeX).
+   * Требует WSL2 + установленный marker-pdf (scripts/bootstrap-marker.ps1).
+   * ENV BIBLIARY_USE_MARKER=1 переопределяет это значение.
+   * Default false — встроенный pdfjs/ddjvu extractor.
+   */
+  useMarkerExtractor: z.boolean().default(false),
+
   // -- Library UI --
   libraryGroupBy: z.enum(["none", "ext", "status", "folder"]).default("none"),
 
@@ -114,7 +124,7 @@ export const PreferencesSchema = z.object({
   /** Persist chat history across app restarts via data/chat-history.json. */
   chatHistoryPersist: z.boolean().default(true),
 
-  // -- Selected models per role (Phase 3 onboarding wizard) --
+  // -- Selected models per role (Phase 3 onboarding wizard, extended in Models v3.4 role system) --
   /** Модель LM Studio для чата (modelKey). Пусто = первая загруженная. */
   chatModel: z.string().default(""),
   /** Модель LM Studio для агента (modelKey). Пусто = chatModel или первая загруженная. */
@@ -123,6 +133,63 @@ export const PreferencesSchema = z.object({
   extractorModel: z.string().default(""),
   /** Модель LM Studio для judge (Crystallizer). Пусто = extractorModel. */
   judgeModel: z.string().default(""),
+  /**
+   * Модель LM Studio для evaluator (book pre-flight). Пусто = pickEvaluatorModel
+   * выберет лучшую автоматически (curated tags + heuristics в book-evaluator.ts).
+   */
+  evaluatorModel: z.string().default(""),
+  /**
+   * Модель-судья для arena. Пусто → judgeModel → extractorModel → chatModel
+   * (cascade в model-role-resolver). Используется только если arenaUseLlmJudge=true.
+   */
+  arenaJudgeModelKey: z.string().default(""),
+
+  // -- Per-role fallback chains (CSV modelKey1,modelKey2,...) --
+  /**
+   * CSV резервных модельных ключей для каждой роли. Резолвер пытается их
+   * по порядку если основной *Model пуст или не загружен. Пусто = no fallback,
+   * сразу переход к arena Elo / built-in profile / first loaded.
+   */
+  chatModelFallbacks: z.string().default(""),
+  agentModelFallbacks: z.string().default(""),
+  extractorModelFallbacks: z.string().default(""),
+  judgeModelFallbacks: z.string().default(""),
+  evaluatorModelFallbacks: z.string().default(""),
+  visionModelFallbacks: z.string().default(""),
+
+  // -- Arena (shadow ELO calibration of role assignments) --
+  /**
+   * Включить фоновую arena: периодически парные сравнения загруженных моделей
+   * на golden prompts, обновление Elo в data/arena-ratings.json. Default false —
+   * фоновая нагрузка на LM Studio, юзер должен включить осознанно.
+   *
+   * GUARD: даже при arenaEnabled=true scheduler пропускает тик если
+   * globalLlmLock.isBusy() (массовый импорт / evaluator queue) — защита от OOM.
+   */
+  arenaEnabled: z.boolean().default(false),
+  /**
+   * Использовать LLM-судью (arenaJudgeModelKey) для определения победителя.
+   * Если false — winner = больший по длине ответа + меньшая latency (objective
+   * heuristic). Default false — экономит вызовы.
+   */
+  arenaUseLlmJudge: z.boolean().default(false),
+  /**
+   * Автоматически записывать modelKey победителя cycle в prefs.<role>Model.
+   * Default false — пользователь должен включить осознанно (риск что arena
+   * перепишет осознанный выбор юзера). UI должен требовать confirm.
+   */
+  arenaAutoPromoteWinner: z.boolean().default(false),
+  /** Сколько пар моделей сравнивать за один cycle. */
+  arenaMatchPairsPerCycle: z.number().int().min(1).max(20).default(3),
+  /** Период между cycle (мс). Default 1ч; min 1мин. */
+  arenaCycleIntervalMs: z.number().int().min(60_000).default(3_600_000),
+
+  // -- Model role resolver --
+  /**
+   * TTL кэша resolved role → modelKey в memory. 0 = no cache (всегда заново).
+   * Default 30 секунд — баланс между производительностью и реактивностью.
+   */
+  modelRoleCacheTtlMs: z.number().int().min(0).default(30_000),
 
   // -- Onboarding wizard (Phase 3) --
   /** True если пользователь прошёл/skip-нул welcome wizard. Заменяет legacy localStorage. */

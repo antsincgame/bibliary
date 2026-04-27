@@ -6,25 +6,20 @@ let cachedStandardFontDataUrl: string | null = null;
 /**
  * Returns the path to pdfjs-dist standard_fonts/ directory.
  *
- * Uses __dirname (anchored to this compiled file in dist-electron/lib/scanner/)
- * instead of process.cwd() which is unreliable in Electron portable / asar builds
- * where cwd may point to a temp directory that has no node_modules.
+ * Uses createRequire(__filename) so that Electron's ASAR transparent FS intercepts
+ * the module resolution from the correct context (this file's location inside the
+ * ASAR), rather than from process.cwd() (extraction temp root, no node_modules)
+ * or a manually-computed anchor that depends on directory depth assumptions.
  *
- * Layout inside asar:
- *   dist-electron/lib/scanner/pdfjs-node.js  ← __dirname
- *   dist-electron/lib/scanner/               ← __dirname
- *   dist-electron/lib/                       ← ../
- *   dist-electron/                           ← ../../
- *   <app-root>/                              ← ../../../  (has package.json + node_modules)
+ * createRequire(__filename) is the idiomatic way to resolve modules from inside
+ * an Electron ASAR build — the ASAR patch wraps Module._resolveFilename which
+ * createRequire uses internally.
  */
 export function getPdfjsStandardFontDataUrl(): string {
   if (cachedStandardFontDataUrl) return cachedStandardFontDataUrl;
 
-  /* Walk up from compiled file location to the app root. */
-  const appRoot = path.resolve(__dirname, "..", "..", "..");
-  const anchorPkg = path.join(appRoot, "package.json");
-
-  const req = createRequire(anchorPkg);
+  /* Anchor at this file — Electron ASAR FS intercepts resolve() calls. */
+  const req = createRequire(__filename);
   const pkgPath = req.resolve("pdfjs-dist/package.json");
   const fontsDir = path.join(path.dirname(pkgPath), "standard_fonts");
   cachedStandardFontDataUrl = fontsDir.endsWith(path.sep) ? fontsDir : `${fontsDir}${path.sep}`;

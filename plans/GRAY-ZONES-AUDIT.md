@@ -866,3 +866,240 @@ flowchart TD
     style G fill:#ffcccc
     style F fill:#ffcccc
 ```
+
+---
+
+## 19. АУДИТ IPC HANDLERS И CACHE-DB МОДУЛЕЙ (2026-04-27)
+
+### 19.1 `library:start-scan` — нет guaranteed cleanup activeScans entry (НИЗКАЯ)
+
+**Файл:** [`electron/ipc/library.ipc.ts:822-856`](electron/ipc/library.ipc.ts:822)
+
+```typescript
+scanFolder(args.folder, {
+  scanId,
+  signal: ctl.signal,
+  onProgress: (evt: ScanProgressEvent) => { /* ... */ },
+}).then((report: ScanReport) => {
+  activeScans.delete(scanId);
+  // ...
+}).catch((err: unknown) => {
+  activeScans.delete(scanId);
+  // ...
+});
+```
+
+**Проблема:** `.then()` и `.catch()` — но если `scanFolder` throw'ет sync (до return Promise), ни `.then()` ни `.catch()` не вызовутся. **Риск: низкий** — `scanFolder` async, всегда возвращает Promise.
+
+**НО:** Если `scanFolder` бросает исключение **после** `.then()` но **до** `.catch()` (например, в internal microtask), cleanup может пропустить. **Реальный риск: низкий.**
+
+**Рекомендация:**
+- Добавить `.finally(() => { activeScans.delete(scanId); })` для guaranteed cleanup
+
+---
+
+### 19.2 `upsertBook` FTS index — duplicate tags (СРЕДНЯЯ)
+
+**Файл:** [`electron/lib/library/cache-db-mutations.ts:53-97`](electron/lib/library/cache-db-mutations.ts:53)
+
+```typescript
+db.prepare(FTS_INSERT_SQL).run((meta.tags ?? []).join(" "), meta.id);
+```
+
+**Проблема:** Если `meta.tags = ["fiction", "fiction", "philosophy"]`, FTS index получает `"fiction fiction philosophy"` — дублирование токенов.
+
+**Риск:** Низкий — FTS search работает корректно (just higher weight для "fiction"). Но index size увеличивается unnecessarily.
+
+**Рекомендация:**
+- Добавить `const uniqueTags = [...new Set(meta.tags ?? [])]` перед `join`
+
+---
+
+### 19.3 `deleteBook` — orphaned files (СРЕДНЯЯ)
+
+**Файл:** [`electron/lib/library/cache-db-mutations.ts:107-115`](electron/lib/library/cache-db-mutations.ts:107)
+
+```typescript
+export function deleteBook(id: string): void {
+  const db = openCacheDb();
+  const txn = db.transaction(() => {
+    db.prepare("DELETE FROM books WHERE id = ?").run(id);
+    db.prepare("DELETE FROM book_tags WHERE book_id = ?").run(id);
+    db.prepare("DELETE FROM book_fts WHERE id = ?").run(id);
+  });
+  txn();
+}
+```
+
+**Проблема:** `deleteBook` удаляет DB records, но **не удаляет** файлы:
+- Blob files (sha256.{ext}) в library storage
+- Markdown files (mdPath)
+- Thumbnail images
+
+**Риск:** Средний — orphaned files accumulate при active library management.
+
+**Рекомендация:**
+- Добавить `deleteBlobFiles(id)` и `deleteMdFile(mdPath)` в transaction
+- Или return list of orphaned paths для cleanup
+
+---
+
+### 19.4 `stopWatchdog` — pending pollTimer не cleared (НИЗКАЯ)
+
+**Файл:** [`electron/lib/resilience/lmstudio-watchdog.ts:63-74`](electron/lib/resilience/lmstudio-watchdog.ts:63)
+
+```typescript
+export function stopWatchdog(): void {
+  isActive = false;
+  activeConfig = null;
+  getMainWindow = null;
+}
+```
+
+**Проблема:** `pollTimer` (setTimeout) может быть pending. При fire:
+1. `runPollCycle()` checks `if (!isActive) return;` — early exit
+2. **НО:** `poll()` уже scheduled и выполнится
+
+**Риск:** Низкий — `poll()` на 100ms, negligible. Но `checkLiveness` может throw если LMStudio shutdown.
+
+**Рекомендация:**
+- Добавить `if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }` в `stopWatchdog`
+
+---
+
+### 19.5 `openCacheDb` — нет guard для closed state (НИЗКАЯ)
+
+**Файл:** [`electron/lib/library/cache-db-connection.ts:24-42`](electron/lib/library/cache-db-connection.ts:24)
+
+```typescript
+export function openCacheDb(): Database.Database {
+  if (cachedDb && cachedDbPath === dbPath) return cachedDb;
+  // ...
+}
+```
+
+**Проблема:** После `closeCacheDb()` (вызывается в `before-quit`), `cachedDb = null`. Следующий `openCacheDb()` создаст новый connection. Но **старые references** к closed db могут использоваться.
+
+**Риск:** Низкий — `closeCacheDb` только при app shutdown. Но при testing/mocking — potential issue.
+
+**Рекомендация:**
+- Добавить `if (!cachedDb) throw new Error("cache-db closed")` для explicit error
+
+---
+
+## 20. ФИНАЛЬНАЯ СВОДНАЯ МАТРИЦА РИСКОВ (ОБНОВЛЁННАЯ)
+
+| Категория | Критических | Средних | Низких |
+|-----------|-------------|---------|--------|
+| Smoke harness | 0 | 1 | 2 |
+| Evaluator queue | 0 | 2 | 1 |
+| Import pipeline | 0 | 1 | 1 |
+| Cache-db | 0 | **2** | 1 |
+| Scan-folder | 0 | 0 | 3 |
+| Resilience | 0 | 1 | 2 |
+| IPC handlers | 0 | 0 | **3** |
+| Error handling | 0 | 1 | 3 |
+| Старые файлы | 0 | 0 | 2 |
+| **Итого** | **0** | **8** | **16** |
+
+**Вывод:** Критических проблем нет. Основные улучшения — hardening FTS index, orphaned files cleanup, и IPC scan lifecycle cleanup.
+
+---
+
+## 21. ФИНАЛЬНЫЙ ПЛАН ИСПРАВЛЕНИЙ (ПОЛНЫЙ С ОБНОВЛЕНИЯМИ)
+
+### Приоритет MEDIUM
+
+| # | Задача | Файлы | Описание |
+|---|--------|-------|----------|
+| M5 | Добавить gap detection в `streamBookIdsByStatus` | `electron/lib/library/cache-db-queries.ts` | Логировать empty batches при cursor-based pagination |
+| M6 | Добавить `inQueue.clear()` в `bootstrapEvaluatorQueue` | `electron/lib/library/evaluator-queue.ts` | Очистить inQueue перед Stage 2 |
+| M7 | Добавить try-finally для cleanup в `linkAbortSignal` | `electron/lib/library/import.ts` | Гарантировать cleanup при error |
+| M8 | Заменить `.{2,60}` на `[^:]{2,60}` в `extractMetadataHints` | `electron/lib/library/evaluator-queue.ts` | Устранить ReDoS risk |
+| M9 | Добавить abort check в Phase 3 scanFolder | `electron/lib/library/scan-folder.ts` | Добавить signal check каждые 500 итераций |
+| M10 | Добавить minimum interval в `scheduleNextPoll` | `electron/lib/resilience/lmstudio-watchdog.ts` | Избежать poll runaway при slow network |
+| M11 | Добавить `finally` cleanup в `library:start-scan` | `electron/ipc/library.ipc.ts` | Guaranteed activeScans.delete |
+| M12 | Deduplicate tags перед FTS insert | `electron/lib/library/cache-db-mutations.ts` | `[...new Set(tags)]` |
+| M13 | Добавить cleanup orphaned files в `deleteBook` | `electron/lib/library/cache-db-mutations.ts` | Delete blob + md files |
+
+### Приоритет LOW
+
+| # | Задача | Файлы | Описание |
+|---|--------|-------|----------|
+| L1 | Проверить актуальность docs/*.md | `docs/` | Убедиться что все API reference актуальны |
+| L2 | Убрать `q ?? {}` паттерн | `electron/preload.ts` | Явная обработка undefined |
+| L3 | Добавить type guard для smokeLibrary | `electron/preload.ts` | TypeScript strict mode check |
+| L4 | Добавить `clearTimeout` в `stopWatchdog` | `electron/lib/resilience/lmstudio-watchdog.ts` | Prevent pending poll |
+| L5 | Добавить guard в `openCacheDb` для closed state | `electron/lib/library/cache-db-connection.ts` | Throw if cachedDb null |
+| L6 | Добавить pipeline validation в `reportBatchStart` | `electron/lib/resilience/batch-coordinator.ts` | Check pipeline registered |
+
+---
+
+## 22. MERMAID — IPC scan lifecycle
+
+```mermaid
+sequenceDiagram
+    participant UI as Renderer
+    participant IPC as library.ipc.ts
+    participant SF as scanFolder
+    participant AS as activeScans Map
+    
+    UI->>IPC: library:start-scan(folder)
+    IPC->>IPC: scanId = randomUUID()
+    IPC->>AS: activeScans.set(scanId, ctl)
+    IPC->>SF: scanFolder(folder, signal, onProgress)
+    IPC-->>UI: {scanId}
+    
+    SF->>SF: Phase 1: Walk
+    SF->>onProgress: {scanId, phase: walking}
+    
+    SF->>SF: Phase 2: Metadata
+    SF->>onProgress: {scanId, phase: metadata}
+    
+    SF->>SF: Phase 3: Dedup (NO abort check!)
+    
+    alt scan cancelled
+        UI->>IPC: library:cancel-scan(scanId)
+        IPC->>AS: ctl.abort()
+        AS-->>SF: signal.aborted
+    end
+    
+    SF->>AS: activeScans.delete(scanId)
+    SF->>UI: library:scan-report(scanId, report)
+```
+
+---
+
+## 23. MERMAID — Watchdog poll runaway
+
+```mermaid
+graph TD
+    A[poll starts] --> B{checkLiveness}
+    B -->|slow network 5s| C[poll duration = 5000ms]
+    C --> D[wait = 3000 - 5000 = -2000]
+    D --> E[scheduleNextPoll 0ms]
+    E --> F[next poll immediate]
+    F --> B
+    
+    style E fill:#ffcccc
+    style F fill:#ffcccc
+```
+
+---
+
+## 24. MERMAID — FTS duplicate tags
+
+```mermaid
+graph LR
+    A[meta.tags] --> B{duplicates?}
+    B -->|yes| C["fiction, fiction, philosophy"]
+    B -->|no| D["fiction, philosophy"]
+    C --> E[FTS index: fiction fiction philosophy]
+    D --> F[FTS index: fiction philosophy]
+    E --> G[higher weight for fiction]
+    F --> G
+    E --> H[larger index size]
+    
+    style E fill:#ffcccc
+    style H fill:#ffcccc
+```

@@ -233,12 +233,17 @@ export async function launchSynthesis() {
       pairsPerConcept,
       includeReasoning,
     });
-    await showAlert(t("library.catalog.synth.done", {
-      pairs: String(res?.totalPairs ?? 0),
+    if (!res?.ok) {
+      await showAlert(t("library.catalog.synth.errSpawn", { err: res?.error ?? "unknown error" }));
+      return;
+    }
+    await showAlert(t("library.catalog.synth.started", {
+      pid: String(res.pid ?? "—"),
       out: outputPath,
+      log: res.logPath ?? "",
     }));
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    await showAlert(t("library.catalog.synth.failed", { error: msg }));
+    await showAlert(t("library.catalog.synth.errSpawn", { err: msg }));
   }
 }
