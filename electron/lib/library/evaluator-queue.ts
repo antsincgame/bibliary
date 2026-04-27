@@ -601,6 +601,9 @@ export function _resetEvaluatorForTests(): void {
   totalEvaluated = 0;
   totalFailed = 0;
   modelOverride = null;
+  /* Сбрасываем bootstrap single-flight — иначе следующий runSlot получит
+     старый resolved Promise и не перезапустит bootstrap в новом тесте. */
+  _bootstrapOnce = null;
   /* Сбрасываем slots: cancel текущие, очищаем массив, восстанавливаем дефолт. */
   for (const s of slots) {
     if (s.controller) s.controller.abort("test-reset");
