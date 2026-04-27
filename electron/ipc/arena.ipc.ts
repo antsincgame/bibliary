@@ -16,6 +16,7 @@ import { runArenaCycle, getChatRatings, type CycleOptions } from "../lib/llm/are
 import { getPreferencesStore, type Preferences } from "../lib/preferences/store.js";
 import { globalLlmLock } from "../lib/llm/global-llm-lock.js";
 import { modelRoleResolver, type ModelRole } from "../lib/llm/model-role-resolver.js";
+import { restartScheduler } from "../lib/llm/arena/scheduler.js";
 
 const VALID_ROLES: ReadonlyArray<ModelRole> = [
   "chat", "agent", "crystallizer", "judge",
@@ -104,6 +105,10 @@ export function registerArenaIpc(): void {
       }
     }
     await getPreferencesStore().set(filtered);
+    /* Применяем runtime-эффекты: scheduler реагирует на arenaEnabled / interval,
+       resolver инвалидирует кэш если сменился arenaJudgeModelKey. */
+    void restartScheduler();
+    modelRoleResolver.invalidate();
     const prefs = await getPreferencesStore().getAll();
     return pickArenaConfig(prefs);
   });
