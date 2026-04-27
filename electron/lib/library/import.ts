@@ -36,10 +36,12 @@ import {
   findIsbnMatch,
   getFormatPriority,
 } from "./revision-dedup.js";
-import { walkSupportedFiles } from "./file-walker.js";
+import { walkSupportedFiles, COMPOSITE_HTML_SENTINEL } from "./file-walker.js";
 import { runWithConcurrency } from "./async-pool.js";
 import { ArchiveTracker } from "./archive-tracker.js";
 import { parseFilename } from "./filename-parser.js";
+import { CrossFormatPreDedup } from "./cross-format-prededup.js";
+import { detectCompositeHtmlDir, assembleCompositeHtmlBook } from "./composite-html-detector.js";
 import * as os from "os";
 
 export interface ImportResult {
@@ -384,7 +386,8 @@ export async function importBookFromFile(
     warnings.push("meta.json write failed (non-critical)");
   }
 
-  /* Write illustrations.json stub (filled by Vision in Phase 2). */
+  /* Write illustrations.json stub.
+     score/description are filled later by illustration-worker.ts (Semantic Triage). */
   try {
     const illustrationsPath = path.join(bookDir, "illustrations.json");
     const illustrationData = convResult.images
@@ -394,7 +397,9 @@ export async function importBookFromFile(
         sha256: img.assetUrl!.replace("bibliary-asset://sha256/", ""),
         mimeType: img.mimeType,
         bytes: img.buffer.length,
-        role: img.id === "img-cover" ? "cover" : "illustration",
+        score: null,
+        description: null,
+        skipped: false,
         caption: img.caption ?? null,
       }));
     await fs.writeFile(illustrationsPath, JSON.stringify(illustrationData, null, 2), "utf-8");
@@ -406,12 +411,17 @@ export async function importBookFromFile(
   registerForNearDup(finalMeta, finalMeta.id);
   registerForRevisionDedup(finalMeta);
 
-  /* Fire-and-forget Vision OCR for illustrations.json enrichment.
-     Runs in background after successful import; does not block the import pipeline. */
   if (convResult.images.length > 0) {
     const blobsRoot = getBlobsRoot(root);
-    void processIllustrations(bookDir, blobsRoot, opts.signal).catch(() => {
-      /* Non-critical: background Vision OCR failed silently */
+    const { getAppShutdownSignal } = await import("../app-lifecycle.js");
+    const appSignal = getAppShutdownSignal();
+    const combinedAbort = new AbortController();
+    const abortCombined = () => combinedAbort.abort("shutdown");
+    if (opts.signal) opts.signal.addEventListener("abort", abortCombined, { once: true });
+    appSignal.addEventListener("abort", abortCombined, { once: true });
+    void processIllustrations(bookDir, blobsRoot, combinedAbort.signal).catch(() => {}).finally(() => {
+      if (opts.signal) opts.signal.removeEventListener("abort", abortCombined);
+      appSignal.removeEventListener("abort", abortCombined);
     });
   }
 
@@ -530,6 +540,8 @@ interface ImportTask {
   sourceArchive?: string;
   archiveTempDir?: string;
   extractWarnings?: string[];
+  /** When true, bookPath is an HTML directory assembled as a Composite HTML Book. */
+  isCompositeHtml?: boolean;
 }
 
 export async function importFolderToLibrary(folderPath: string, opts: ImportFolderOptions = {}): Promise<ImportFolderResult> {
@@ -578,6 +590,7 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
   const walkOpts: Parameters<typeof walkSupportedFiles>[2] = {
     includeArchives: opts.scanArchives === true,
     signal: opts.signal,
+    detectCompositeHtml: true,
   };
   if (typeof opts.maxDepth === "number" && Number.isFinite(opts.maxDepth) && opts.maxDepth >= 0) {
     walkOpts.maxDepth = Math.floor(opts.maxDepth);
@@ -587,6 +600,12 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
   /* Tracker управляет lifecycle temp-директорий распакованных архивов:
      cleanup срабатывает после обработки последней книги из архива. */
   const archiveTracker = new ArchiveTracker();
+
+  /* Cross-format pre-dedup: одна инстанция на всю сессию импорта папки.
+     Только прямые книжные файлы (не архивы) проверяются здесь.
+     Правило: Book.pdf + Book.djvu → один basename, побеждает epub>pdf>djvu.
+     Book v1.pdf + Book v2.pdf → разные basename → обе проходят. */
+  const crossFormatDedup = new CrossFormatPreDedup();
 
   /* Stage 1.5: expander. Архивы синхронно распаковывает, yields каждую
      книгу как отдельный ImportTask. Counter `discovered` нарастает по
@@ -601,7 +620,30 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
       if (opts.signal?.aborted) return;
       if (cap !== null && counters.discovered >= cap) break;
 
+      // Composite HTML Book sentinel — detect and yield as single virtual book task
+      if (filePath.startsWith(COMPOSITE_HTML_SENTINEL)) {
+        const dirPath = filePath.slice(COMPOSITE_HTML_SENTINEL.length);
+        const compositeBook = await detectCompositeHtmlDir(dirPath);
+        if (compositeBook && compositeBook.files.length >= 10) {
+          counters.discovered += 1;
+          emit("discovered");
+          yield { bookPath: dirPath, isCompositeHtml: true };
+        }
+        continue;
+      }
+
       if (!isArchive(filePath)) {
+        // Cross-format pre-dedup: skip if same basename already seen with better format
+        const decision = crossFormatDedup.check(filePath);
+        if (!decision.include) {
+          result.warnings.push(`cross-format dedup: skipped ${path.basename(filePath)} (kept ${path.basename(decision.supersededBy ?? "")})`);
+          counters.discovered += 1;
+          counters.processed += 1;
+          result.skipped += 1;
+          emit("discovered");
+          emit("processed", { currentFile: filePath, outcome: "skipped" });
+          continue;
+        }
         counters.discovered += 1;
         emit("discovered");
         yield { bookPath: filePath };
@@ -745,6 +787,11 @@ async function runImportTaskWithTimeout(
     localCtl.abort(new Error(timeoutMessage));
   }, timeoutMs);
   try {
+    // Composite HTML books are assembled from a directory, not a single file
+    if (task.isCompositeHtml) {
+      return [await importCompositeHtmlBook(task.bookPath, opts, localCtl.signal)];
+    }
+
     const result = await Promise.race([
       importBookFromFile(task.bookPath, {
         ocrEnabled: opts.ocrEnabled,
@@ -784,6 +831,131 @@ async function runImportTaskWithTimeout(
        (`archiveTempDir === undefined`) tracker делает no-op. */
     await tracker.finishOne(task.archiveTempDir);
   }
+}
+
+/**
+ * Import a Composite HTML Book (directory of HTML files assembled into one book).
+ * Reuses the same storage/dedup logic as importBookFromFile but uses
+ * assembleCompositeHtmlBook() instead of a file parser.
+ */
+async function importCompositeHtmlBook(
+  dirPath: string,
+  opts: ImportFolderOptions,
+  signal: AbortSignal,
+): Promise<ImportResult> {
+  const warnings: string[] = [];
+
+  const compositeBook = await detectCompositeHtmlDir(dirPath);
+  if (!compositeBook || compositeBook.files.length === 0) {
+    return { outcome: "skipped", warnings: [`composite-html: empty or undetected dir ${path.basename(dirPath)}`] };
+  }
+
+  if (signal.aborted) {
+    return { outcome: "skipped", warnings: ["composite-html: aborted"] };
+  }
+
+  let parsed;
+  try {
+    parsed = await assembleCompositeHtmlBook(compositeBook);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { outcome: "failed", warnings, error: `composite-html assemble failed: ${msg}` };
+  }
+
+  warnings.push(...(parsed.metadata.warnings ?? []));
+
+  // Build a synthetic SHA from directory path (no single file SHA)
+  const { createHash } = await import("crypto");
+  const syntheticSha = createHash("sha256").update(`composite-html:${dirPath}`).digest("hex");
+  const bookId = bookIdFromSha(syntheticSha);
+
+  // Check SHA dedup
+  const known = getKnownSha256s();
+  if (known.has(syntheticSha)) {
+    const dupId = known.get(syntheticSha)!;
+    const existing = getBookById(dupId);
+    return {
+      outcome: "duplicate",
+      bookId: dupId,
+      meta: existing ?? undefined,
+      duplicateReason: "duplicate_sha",
+      existingBookId: dupId,
+      existingBookTitle: existing?.title,
+      warnings: [...warnings, `composite-html: already imported as ${dupId}`],
+    };
+  }
+
+  const root = await getLibraryRoot();
+  const importRoot = opts.importRoot;
+  const sphere = importRoot ? extractSphereFromImportPath(dirPath, importRoot) : "unsorted";
+
+  const wordCount = parsed.sections.reduce(
+    (sum, s) => sum + s.paragraphs.reduce((ps, p) => ps + p.split(/\s+/).filter(Boolean).length, 0),
+    0,
+  );
+
+  const meta: import("./types.js").BookCatalogMeta = {
+    id: bookId,
+    sha256: syntheticSha,
+    originalFile: path.basename(dirPath),
+    originalFormat: "html" as import("./types.js").SupportedBookFormat,
+    sphere,
+    title: compositeBook.inferredTitle,
+    wordCount,
+    chapterCount: parsed.sections.length,
+    status: parsed.sections.length > 0 ? "imported" : "unsupported",
+    warnings: warnings.length > 0 ? [...warnings] : undefined,
+  };
+
+  // Build markdown
+  let markdown = `---\n`;
+  markdown += `id: "${bookId}"\n`;
+  markdown += `sha256: "${syntheticSha}"\n`;
+  markdown += `originalFile: "${path.basename(dirPath)}"\n`;
+  markdown += `originalFormat: html\n`;
+  markdown += `sphere: "${sphere}"\n`;
+  markdown += `title: "${compositeBook.inferredTitle.replace(/"/g, '\\"')}"\n`;
+  markdown += `wordCount: ${wordCount}\n`;
+  markdown += `chapterCount: ${parsed.sections.length}\n`;
+  markdown += `status: ${meta.status}\n`;
+  markdown += `---\n\n`;
+  markdown += `# ${compositeBook.inferredTitle}\n\n`;
+  for (const section of parsed.sections) {
+    const heading = "#".repeat(section.level + 1);
+    markdown += `${heading} ${section.title}\n\n`;
+    for (const p of section.paragraphs) {
+      markdown += `${p}\n\n`;
+    }
+  }
+
+  const stored = await resolveHumanBookPaths(root, meta, dirPath, importRoot);
+  await fs.mkdir(stored.bookDir, { recursive: true });
+
+  try {
+    await fs.writeFile(stored.mdPath, markdown, "utf-8");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { outcome: "failed", warnings, error: `composite-html: write book.md failed: ${msg}` };
+  }
+
+  try {
+    const metaJsonPath = path.join(stored.bookDir, "meta.json");
+    await fs.writeFile(metaJsonPath, JSON.stringify(meta, null, 2), "utf-8");
+  } catch {
+    warnings.push("meta.json write failed (non-critical)");
+  }
+
+  upsertBook(meta, stored.mdPath);
+  registerForNearDup(meta, bookId);
+  registerForRevisionDedup(meta);
+
+  warnings.push(`composite-html: assembled ${compositeBook.files.length} files from ${path.basename(dirPath)}`);
+
+  if (opts.onBookImported) {
+    opts.onBookImported(meta);
+  }
+
+  return { outcome: "added", bookId, meta, warnings };
 }
 
 /** Копирует abort из внешнего сигнала в локальный controller. Возвращает

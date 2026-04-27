@@ -30,7 +30,16 @@ export interface WalkOptions {
   maxDepth?: number;
   /** Minimum file size in bytes. Files smaller are skipped (not real books). Default 10240 (10 KB). */
   minFileBytes?: number;
+  /** If true, directories containing ≥ MIN_HTML_CLUSTER_SIZE HTML files are yielded
+   *  as special sentinel paths so the caller can create CompositeHtmlBook tasks. */
+  detectCompositeHtml?: boolean;
 }
+
+/**
+ * Minimum number of HTML files in a directory to be treated as a Composite HTML Book.
+ * Must match composite-html-detector.ts MIN_HTML_FILES_FOR_COMPOSITE.
+ */
+const MIN_HTML_CLUSTER_SIZE = 10;
 
 const DEFAULT_MAX_DEPTH = 16;
 const DEFAULT_MIN_FILE_BYTES = 10_240; // 10 KB — no real book is smaller
@@ -42,6 +51,17 @@ const DIR_BLACKLIST: ReadonlySet<string> = new Set([
   "build", "dist", "target", "out", "bin", "obj",
   "vendor",
   "BlackBox.AD",
+  // companion code & supplementary material — NOT book content
+  // IMPORTANT: "html", "htm", "docu" are intentionally excluded —
+  // they may contain Composite HTML Books (Perl nutshell, MSDN dumps, etc.)
+  "cd", "extras", "listings", "exercises",
+  "solutions", "tasks", "sym", "mod", "rsrc",
+  "supplement", "bonus",
+  // code / example / sample directories — always companion code, never a book
+  "code", "codes",
+  "examples", "example",
+  "samples", "sample",
+  "resources", "resource",
 ]);
 
 const BASENAME_BLACKLIST: ReadonlySet<string> = new Set([
@@ -54,7 +74,15 @@ const BASENAME_BLACKLIST: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Sentinel prefix prepended to directory paths yielded as Composite HTML Book candidates.
+ * Caller strips this prefix and calls detectCompositeHtmlDir() on the remaining path.
+ */
+export const COMPOSITE_HTML_SENTINEL = "composite-html:";
+
+/**
  * Async generator: yield абсолютные пути к каждому подходящему файлу.
+ * If detectCompositeHtml=true, also yields directories containing ≥ MIN_HTML_CLUSTER_SIZE
+ * HTML files as "composite-html:<absDir>" sentinel strings.
  * Прерывает обход (не throw) при `signal.aborted`.
  */
 export async function* walkSupportedFiles(
@@ -63,10 +91,13 @@ export async function* walkSupportedFiles(
   opts: WalkOptions = {},
 ): AsyncGenerator<string> {
   const includeArchives = opts.includeArchives === true;
+  const detectComposite = opts.detectCompositeHtml === true;
   const maxDepth = opts.maxDepth ?? DEFAULT_MAX_DEPTH;
   const minBytes = opts.minFileBytes ?? DEFAULT_MIN_FILE_BYTES;
   const signal = opts.signal;
   const stack: Array<{ dir: string; depth: number }> = [{ dir: rootDir, depth: 0 }];
+  /** Directories already yielded as composite candidates — don't recurse into them. */
+  const compositeDirs = new Set<string>();
 
   while (stack.length > 0) {
     if (signal?.aborted) return;
@@ -81,6 +112,24 @@ export async function* walkSupportedFiles(
       continue;
     }
 
+    // Count HTML files in this directory for composite detection
+    let htmlCount = 0;
+    if (detectComposite) {
+      for (const e of entries) {
+        if (e.isFile()) {
+          const l = e.name.toLowerCase();
+          if (l.endsWith(".html") || l.endsWith(".htm")) htmlCount++;
+        }
+      }
+    }
+
+    if (detectComposite && htmlCount >= MIN_HTML_CLUSTER_SIZE) {
+      // Yield this dir as a composite HTML book candidate and don't recurse into it
+      compositeDirs.add(next.dir);
+      yield `${COMPOSITE_HTML_SENTINEL}${next.dir}`;
+      continue;
+    }
+
     for (let i = entries.length - 1; i >= 0; i--) {
       if (signal?.aborted) return;
       const entry = entries[i]!;
@@ -88,6 +137,7 @@ export async function* walkSupportedFiles(
 
       if (entry.isDirectory()) {
         if (DIR_BLACKLIST.has(entry.name.toLowerCase())) continue;
+        if (compositeDirs.has(full)) continue;
         stack.push({ dir: full, depth: next.depth + 1 });
         continue;
       }

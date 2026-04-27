@@ -22,6 +22,10 @@ const DEFAULT_MAX_IMAGES = 100;
 const DEFAULT_MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const DEFAULT_RASTER_PAGE_LIMIT = 12;
 
+/** Step A of Semantic Vision Pipeline: minimum size thresholds for CAS-worthy images. */
+const MIN_IMAGE_BYTES = 15_360;     // 15 KB — rejects icons, spacers, 1-px dividers
+const MIN_IMAGE_DIMENSION = 150;    // px — reject thumbnails and decorative glyphs
+
 const IMAGE_MIME_BY_EXT: Record<string, string> = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
@@ -57,6 +61,27 @@ function makeCtx(opts?: { maxImageBytes?: number; maxImagesPerBook?: number }, w
 
 function pad3(n: number): string {
   return String(n).padStart(3, "0");
+}
+
+/**
+ * Step A: Pixel Guard.
+ * Returns false if the image should be discarded (too small / too few pixels).
+ * PDF/DJVU page renders are always full-page — skip this check for them.
+ */
+async function pixelGuard(buffer: Buffer): Promise<boolean> {
+  if (buffer.length < MIN_IMAGE_BYTES) return false;
+  try {
+    // sharp's full metadata API is available via direct import
+    const sharpMod = await import("sharp");
+    const sharpFn = sharpMod.default as unknown as (buf: Buffer) => { metadata(): Promise<{ width?: number; height?: number }> };
+    const meta = await sharpFn(buffer).metadata();
+    const w = meta.width ?? 0;
+    const h = meta.height ?? 0;
+    return w >= MIN_IMAGE_DIMENSION && h >= MIN_IMAGE_DIMENSION;
+  } catch {
+    // sharp unavailable or unparseable (e.g. SVG): accept by size alone
+    return buffer.length >= MIN_IMAGE_BYTES;
+  }
 }
 
 function rasterPageLimit(maxImagesPerBook: number | undefined): number {
@@ -133,6 +158,11 @@ export async function extractEpubImages(
         ctx.warnings.push(`epub: image ${href} oversized (${data.length} bytes), skipped`);
         continue;
       }
+      // Step A: Pixel Guard — skip icons and decorative images (covers exempt)
+      if (!isCover && !(await pixelGuard(data))) {
+        ctx.warnings.push(`epub: image ${href} failed pixel guard (<${MIN_IMAGE_BYTES}B or <${MIN_IMAGE_DIMENSION}px), skipped`);
+        continue;
+      }
 
       let imgId: string;
       if (isCover) {
@@ -196,6 +226,12 @@ export async function extractDocxImages(
         ctx.warnings.push(`docx: image ${name} oversized (${data.length} bytes), skipped`);
         continue;
       }
+      // First image = cover (exempt from pixel guard); rest need to pass
+      const wouldBeCover = images.length === 0;
+      if (!wouldBeCover && !(await pixelGuard(data))) {
+        ctx.warnings.push(`docx: image ${name} failed pixel guard, skipped`);
+        continue;
+      }
       imgCounter += 1;
       const imgId = imgCounter === 1 ? "img-cover" : `img-${pad3(imgCounter - 1)}`;
       images.push({ id: imgId, mimeType: mime, buffer: data });
@@ -257,6 +293,11 @@ export async function extractFb2Images(
         continue;
       }
       const isCover = coverHref !== null && id === coverHref;
+      // Step A: Pixel Guard — covers exempt, decorative/small rejected
+      if (!isCover && !(await pixelGuard(data))) {
+        ctx.warnings.push(`fb2: image ${id} failed pixel guard, skipped`);
+        continue;
+      }
       let imgId: string;
       if (isCover) {
         imgId = "img-cover";
