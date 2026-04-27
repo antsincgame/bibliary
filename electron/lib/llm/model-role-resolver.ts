@@ -12,14 +12,16 @@
  *   arena_judge     — судья в arena cycle (compare two answers)
  *
  * ЦЕПОЧКА РЕЗОЛВА (для каждой роли):
- *   1. preference: prefs[<role>Model] (явный выбор пользователя)
- *   2. fallback_list: первый загруженный из CSV prefs[<role>ModelFallbacks]
- *   3. arena_top_elo: топ-Elo из arena-ratings.json (если файл существует)
- *   4. profile_builtin: BIG/SMALL builtin profile (для crystallizer/judge)
- *   5. auto_detect: эвристика по capabilities (vision_*, agent через tool flag)
- *   6. fallback_any: первая загруженная модель (всегда что-то возвращает,
- *                     если хоть одна модель загружена)
- *   7. null: ни одной загруженной модели
+ *   1. preference:      prefs[<role>Model] (явный выбор пользователя)
+ *   2. fallback_list:   первый загруженный из CSV prefs[<role>ModelFallbacks]
+ *   3. cascade:         только для arena_judge → judge → crystallizer → chat
+ *                       (ищет первую загруженную из цепочки ролей)
+ *   4. arena_top_elo:   топ-Elo из arena-ratings.json (если файл существует)
+ *   5. profile_builtin: BIG builtin profile — только для crystallizer
+ *   6. auto_detect:     эвристика по capabilities (vision_*, agent через tool flag)
+ *   7. fallback_any:    первая загруженная модель (всегда что-то возвращает,
+ *                       если хоть одна модель загружена)
+ *   8. null:            ни одной загруженной модели
  *
  * CAPABILITY FILTERING:
  *   Для ролей vision_meta/vision_ocr из кандидатов отбрасываются модели без

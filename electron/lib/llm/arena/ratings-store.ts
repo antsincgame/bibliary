@@ -106,6 +106,25 @@ export async function resetRatings(): Promise<void> {
   await saveRatingsFile({ version: 1, roles: {} });
 }
 
+/**
+ * Записать последнюю ошибку цикла. Вызывается из run-cycle при
+ * неожиданном throw чтобы `lastError` не оставалось мёртвым полем.
+ * Graceful: если store не инициализирован — no-op (не кидает).
+ */
+export async function recordCycleError(message: string): Promise<void> {
+  const fp = resolvePath();
+  if (!fp) return;
+  try {
+    await withFileLock(fp, async () => {
+      const cur = await readRatingsFile();
+      cur.lastError = message;
+      await writeJsonAtomic(fp, cur);
+    });
+  } catch {
+    /* Не падаем при ошибке записи диагностики — это вспомогательная функция. */
+  }
+}
+
 /** Сброс пути для unit-тестов (позволяет переинициализировать с другим tmpDir). */
 export function _resetArenaRatingsStoreForTests(): void {
   filePath = null;

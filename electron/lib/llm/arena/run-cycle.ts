@@ -20,7 +20,7 @@
 import { chat, chatWithPolicy, listLoaded, type LoadedModelInfo } from "../../../lmstudio-client.js";
 import { getPreferencesStore, type Preferences } from "../../preferences/store.js";
 import { modelRoleResolver, getRolePrefKey, type ModelRole } from "../model-role-resolver.js";
-import { recordMatch, readRatingsFile, type ArenaRatingsFile } from "./ratings-store.js";
+import { recordMatch, readRatingsFile, recordCycleError, type ArenaRatingsFile } from "./ratings-store.js";
 import { getGoldenForRole, type GoldenPrompt } from "./golden-prompts.js";
 import { globalLlmLock } from "../global-llm-lock.js";
 
@@ -232,6 +232,16 @@ async function runCycleForRole(
  * Главная точка входа: запустить arena cycle для одной или всех ролей.
  */
 export async function runArenaCycle(opts: CycleOptions = {}): Promise<CycleReport> {
+  try {
+    return await runArenaCycleInner(opts);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    void recordCycleError(msg);
+    return { ok: false, message: `cycle threw: ${msg}` };
+  }
+}
+
+async function runArenaCycleInner(opts: CycleOptions): Promise<CycleReport> {
   const prefs = await getPreferencesStore().getAll();
   if (!prefs.arenaEnabled) {
     return { ok: true, message: "arena disabled" };

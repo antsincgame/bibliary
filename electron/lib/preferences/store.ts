@@ -179,8 +179,8 @@ export const PreferencesSchema = z.object({
    * перепишет осознанный выбор юзера). UI должен требовать confirm.
    */
   arenaAutoPromoteWinner: z.boolean().default(false),
-  /** Сколько пар моделей сравнивать за один cycle. */
-  arenaMatchPairsPerCycle: z.number().int().min(1).max(20).default(3),
+  /** Сколько пар моделей сравнивать за один cycle. Max 10 — run-cycle жёстко ограничивает cap=10. */
+  arenaMatchPairsPerCycle: z.number().int().min(1).max(10).default(3),
   /** Период между cycle (мс). Default 1ч; min 1мин. */
   arenaCycleIntervalMs: z.number().int().min(60_000).default(3_600_000),
 

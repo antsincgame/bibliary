@@ -331,10 +331,16 @@ contextBridge.exposeInMainWorld("api", {
       lastError?: string;
     }> => ipcRenderer.invoke("arena:get-ratings"),
     /** Запустить cycle. opts.roles — подмножество ролей; opts.bypassLock — игнорировать GlobalLlmLock guard (только при ручном запуске с подтверждением). */
-    runCycle: (opts?: { roles?: string[]; bypassLock?: boolean }): Promise<unknown> =>
-      ipcRenderer.invoke("arena:run-cycle", opts ?? {}),
-    /** Обнулить Elo. */
-    resetRatings: (): Promise<unknown> => ipcRenderer.invoke("arena:reset-ratings"),
+    runCycle: (opts?: { roles?: string[]; bypassLock?: boolean }): Promise<{
+      ok: boolean;
+      message: string;
+      skipped?: boolean;
+      skipReasons?: string[];
+      perRole?: Array<{ role: string; matches: number; results: string[]; ratings: Record<string, number>; skipped?: string }>;
+    }> => ipcRenderer.invoke("arena:run-cycle", opts ?? {}),
+    /** Обнулить Elo. Возвращает пустой ratings файл. */
+    resetRatings: (): Promise<{ version: number; roles: Record<string, Record<string, number>> }> =>
+      ipcRenderer.invoke("arena:reset-ratings"),
     /** Текущая конфигурация arena (из preferences). */
     getConfig: (): Promise<{
       arenaEnabled: boolean;
@@ -344,9 +350,15 @@ contextBridge.exposeInMainWorld("api", {
       arenaCycleIntervalMs: number;
       arenaJudgeModelKey: string;
     }> => ipcRenderer.invoke("arena:get-config"),
-    /** Частично обновить конфигурацию. */
-    setConfig: (partial: Record<string, unknown>): Promise<unknown> =>
-      ipcRenderer.invoke("arena:set-config", partial),
+    /** Частично обновить конфигурацию. Возвращает обновлённую конфигурацию. */
+    setConfig: (partial: Record<string, unknown>): Promise<{
+      arenaEnabled: boolean;
+      arenaUseLlmJudge: boolean;
+      arenaAutoPromoteWinner: boolean;
+      arenaMatchPairsPerCycle: number;
+      arenaCycleIntervalMs: number;
+      arenaJudgeModelKey: string;
+    }> => ipcRenderer.invoke("arena:set-config", partial),
     /** Состояние GlobalLlmLock — занят ли LM Studio импортом / evaluator. */
     getLockStatus: (): Promise<{
       busy: boolean;
