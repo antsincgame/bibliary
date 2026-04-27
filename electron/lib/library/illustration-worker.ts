@@ -169,7 +169,7 @@ export async function processIllustrations(
   onProgress?: (msg: string) => void,
 ): Promise<{ processed: number; skipped: number; errors: number }> {
   const illustrationsPath = path.join(bookDir, "illustrations.json");
-  const mdPath = path.join(bookDir, "book.md");
+  const mdPath = await findBookMdFile(bookDir);
   let entries: IllustrationEntry[];
 
   try {
@@ -192,12 +192,14 @@ export async function processIllustrations(
   let skipped = 0;
   let errors = 0;
 
-  // Read existing book.md for Step C enrichment
+  // Read existing .md for Step C enrichment
   let bookMd: string | null = null;
-  try {
-    bookMd = await fs.readFile(mdPath, "utf-8");
-  } catch {
-    // book.md may not exist yet — enrichment will be skipped
+  if (mdPath) {
+    try {
+      bookMd = await fs.readFile(mdPath, "utf-8");
+    } catch {
+      // .md may not exist yet — enrichment will be skipped
+    }
   }
 
   let mdModified = false;
@@ -268,8 +270,8 @@ export async function processIllustrations(
     errors++;
   }
 
-  // Step C: write enriched book.md
-  if (mdModified && bookMd) {
+  // Step C: write enriched .md
+  if (mdModified && bookMd && mdPath) {
     try {
       await fs.writeFile(mdPath, bookMd, "utf-8");
     } catch {
@@ -297,6 +299,17 @@ function enrichMarkdownAltText(markdown: string, imgId: string, description: str
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Find the .md book file inside bookDir. Human-readable layout names it {Title}.md, not book.md. */
+async function findBookMdFile(bookDir: string): Promise<string | null> {
+  try {
+    const entries = await fs.readdir(bookDir);
+    const md = entries.find((e) => e.endsWith(".md") && !e.startsWith("."));
+    return md ? path.join(bookDir, md) : null;
+  } catch {
+    return null;
+  }
 }
 
 async function findBlobFile(blobsRoot: string, sha256: string): Promise<string | null> {
