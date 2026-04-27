@@ -16,8 +16,21 @@ import { mountCollectionViews } from "./collection-views.js";
 /** @type {Promise<void> | null} */
 let catalogLoadPromise = null;
 
+const CATALOG_PAGE_SIZE = 100;
+
+/** @type {ReturnType<typeof setTimeout> | null} */
+let debounceTimer = null;
+
 function filterCatalog(rows) {
   return filterCatalogPure(rows, CATALOG.filters);
+}
+
+function debouncedRender(root, delayMs = 200) {
+  if (debounceTimer !== null) clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    debounceTimer = null;
+    renderCatalogTable(root);
+  }, delayMs);
 }
 
 function statusLabel(status) {
@@ -40,7 +53,7 @@ export async function loadCatalog() {
   CATALOG.loading = true;
   catalogLoadPromise = (async () => {
     try {
-      const res = await window.api.library.catalog({ limit: 20000 });
+      const res = await window.api.library.catalog({ limit: CATALOG_PAGE_SIZE, offset: 0 });
       CATALOG.rows = /** @type {import("./state.js").CatalogMeta[]} */ (res.rows || []);
       CATALOG.total = res.total ?? CATALOG.rows.length;
       CATALOG.libraryRoot = res.libraryRoot || "";
@@ -55,6 +68,24 @@ export async function loadCatalog() {
     }
   })();
   await catalogLoadPromise;
+}
+
+export async function loadMoreCatalog() {
+  if (CATALOG.loading || CATALOG.rows.length >= CATALOG.total) return;
+  CATALOG.loading = true;
+  try {
+    const res = await window.api.library.catalog({
+      limit: CATALOG_PAGE_SIZE,
+      offset: CATALOG.rows.length,
+    });
+    const newRows = /** @type {import("./state.js").CatalogMeta[]} */ (res.rows || []);
+    CATALOG.rows.push(...newRows);
+    CATALOG.total = res.total ?? CATALOG.total;
+  } catch (err) {
+    console.error("[library.catalog] loadMore failed:", err);
+  } finally {
+    CATALOG.loading = false;
+  }
 }
 
 export function renderCatalogTable(root) {
@@ -91,12 +122,14 @@ export function renderCatalogTable(root) {
       ? `${t("library.catalog.empty.title")} — ${t("library.catalog.empty.body")}`
       : t("library.catalog.empty.filtered");
     tbody.appendChild(el("tr", { class: "lib-catalog-empty-row" }, [
-      el("td", { colspan: "8", class: "lib-catalog-empty-cell" }, msg),
+      el("td", { colspan: "8", class: "lib-empty-cell" }, msg),
     ]));
+    updateLoadMoreButton(root);
     return;
   }
 
-  for (const row of filtered) {
+  const visible = filtered.slice(0, CATALOG_PAGE_SIZE * 2);
+  for (const row of visible) {
     const cb = el("input", { type: "checkbox", class: "lib-catalog-cb" });
     cb.checked = CATALOG.selected.has(row.id);
     cb.addEventListener("change", () => {
@@ -142,6 +175,32 @@ export function renderCatalogTable(root) {
     ]);
     tbody.appendChild(tr);
   }
+  updateLoadMoreButton(root);
+}
+
+function updateLoadMoreButton(root) {
+  let btn = root.querySelector(".lib-catalog-load-more");
+  const hasMore = CATALOG.rows.length < CATALOG.total;
+  if (!hasMore) {
+    if (btn) btn.remove();
+    return;
+  }
+  if (!btn) {
+    btn = el("button", {
+      type: "button",
+      class: "lib-btn lib-btn-ghost lib-catalog-load-more",
+      onclick: async () => {
+        btn.disabled = true;
+        btn.textContent = "...";
+        await loadMoreCatalog();
+        renderCatalogTable(root);
+        btn.disabled = false;
+      },
+    });
+    const tableWrap = root.querySelector(".lib-catalog-table-wrap");
+    if (tableWrap) tableWrap.appendChild(btn);
+  }
+  btn.textContent = t("library.catalog.btn.loadMore") || `\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0435\u0449\u0451 (${CATALOG.rows.length}/${CATALOG.total})`;
 }
 
 /** @param {HTMLElement} root */
@@ -180,7 +239,7 @@ export function buildCatalogToolbar(root) {
   });
   searchInput.addEventListener("input", () => {
     CATALOG.filters.search = /** @type {HTMLInputElement} */ (searchInput).value;
-    renderCatalogTable(root);
+    debouncedRender(root, 300);
   });
 
   const qualitySlider = /** @type {HTMLInputElement} */ (el("input", {
@@ -196,7 +255,7 @@ export function buildCatalogToolbar(root) {
     CATALOG.filters.quality = v;
     qualityVal.textContent = v > 0 ? `\u2265${v}` : t("library.catalog.filter.quality.any");
     syncPresetActive(presetWrap);
-    renderCatalogTable(root);
+    debouncedRender(root, 150);
   });
 
   const fictionCb = /** @type {HTMLInputElement} */ (el("input", {
@@ -496,7 +555,7 @@ export function buildCatalogBottomBar(root, deps) {
 
   return el("div", { class: "lib-catalog-bottombar" }, [
     summary,
-    el("div", { class: "lib-catalog-actions" }, [
+    el("div", { class: "lib-catalog-bottom-actions" }, [
       selectAllBtn, clearBtn, reevaluateBtn, reparseBtn, deleteBtn, chunksBtn, cancelBatchBtn,
     ]),
     batchSummary,

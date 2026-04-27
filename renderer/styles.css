@@ -6037,6 +6037,46 @@ details.forge-collapsible > .forge-collapsible-body {
 .lib-catalog-summary-sep      { color: var(--text-muted); opacity: 0.5; }
 .lib-catalog-bottom-actions   { display: flex; gap: 8px; flex-wrap: wrap; }
 
+/* ─── Collection Views (domain/author/year/sphere/tag groupings) ─── */
+.lib-collections             { margin-top: 16px; }
+.lib-collections-tabs        { display: flex; gap: 4px; margin-bottom: 12px; flex-wrap: wrap; }
+.lib-collections-tab         {
+  padding: 5px 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all var(--motion-fast) ease;
+}
+.lib-collections-tab:hover   { color: var(--cyan); border-color: var(--cyan); }
+.lib-collections-tab.active  { color: var(--gold); border-color: var(--gold); background: rgba(255,215,0,0.06); }
+.lib-collections-content     { min-height: 80px; }
+.lib-collections-loading     { color: var(--text-dim); padding: 24px 0; text-align: center; }
+.lib-collections-error       { color: var(--accent-red); padding: 16px 0; }
+.lib-collections-empty       { color: var(--text-dim); padding: 16px 0; font-style: italic; }
+.lib-collections-cloud       { display: flex; gap: 8px; flex-wrap: wrap; }
+.lib-collections-pill         {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(0,255,255,0.03);
+  cursor: pointer;
+  transition: all var(--motion-fast) ease;
+  font-size: 12px;
+}
+.lib-collections-pill:hover  { border-color: var(--cyan); background: rgba(0,255,255,0.08); }
+.lib-collections-pill-label  { color: var(--text-primary); }
+.lib-collections-pill-count  { color: var(--text-dim); font-size: 11px; }
+.lib-collections-reset       { margin-top: 12px; }
+
 .lib-btn-danger {
   background: transparent;
   color: var(--accent-red);

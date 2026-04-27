@@ -419,7 +419,9 @@ export async function importBookFromFile(
     const abortCombined = () => combinedAbort.abort("shutdown");
     if (opts.signal) opts.signal.addEventListener("abort", abortCombined, { once: true });
     appSignal.addEventListener("abort", abortCombined, { once: true });
-    void processIllustrations(bookDir, blobsRoot, combinedAbort.signal).catch(() => {}).finally(() => {
+    void processIllustrations(bookDir, blobsRoot, combinedAbort.signal).catch((err) => {
+      console.error("[import] illustration processing failed:", err instanceof Error ? err.message : String(err));
+    }).finally(() => {
       if (opts.signal) opts.signal.removeEventListener("abort", abortCombined);
       appSignal.removeEventListener("abort", abortCombined);
     });
@@ -624,7 +626,7 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
       if (filePath.startsWith(COMPOSITE_HTML_SENTINEL)) {
         const dirPath = filePath.slice(COMPOSITE_HTML_SENTINEL.length);
         const compositeBook = await detectCompositeHtmlDir(dirPath);
-        if (compositeBook && compositeBook.files.length >= 10) {
+        if (compositeBook && compositeBook.files.length > 0) {
           counters.discovered += 1;
           emit("discovered");
           yield { bookPath: dirPath, isCompositeHtml: true };
