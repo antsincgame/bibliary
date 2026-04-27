@@ -184,6 +184,27 @@ const smokeLibrary = process.env.BIBLIARY_SMOKE_UI_HARNESS === "1"
   ? createSmokeLibraryHarness()
   : null;
 
+if (smokeLibrary !== null) {
+  console.warn(
+    "%c[BIBLIARY SMOKE MODE]%c All library IPC returns FAKE data. " +
+      "Set BIBLIARY_SMOKE_UI_HARNESS= (empty) for production.",
+    "background:#d97706;color:#fff;padding:2px 6px;border-radius:3px;font-weight:bold;",
+    "color:#d97706;font-weight:bold;",
+  );
+  window.addEventListener("DOMContentLoaded", () => {
+    const banner = document.createElement("div");
+    banner.id = "bibliary-smoke-banner";
+    banner.style.cssText = [
+      "position:fixed", "top:0", "left:0", "right:0", "z-index:99999",
+      "background:#d97706", "color:#fff", "font-size:11px", "font-family:monospace",
+      "padding:3px 12px", "text-align:center", "pointer-events:none",
+      "letter-spacing:.03em",
+    ].join(";");
+    banner.textContent = "⚠ SMOKE MODE — library data is fake (BIBLIARY_SMOKE_UI_HARNESS=1)";
+    document.body.prepend(banner);
+  });
+}
+
 /* Servitor sweep 2026-04-22 (вторая волна, после god+sherlok аудита):
    Удалены 5 dead preload методов и соответствующие IPC handlers:
    - resilience.scanUnfinished + resilience:scan-unfinished
@@ -196,6 +217,8 @@ const smokeLibrary = process.env.BIBLIARY_SMOKE_UI_HARNESS === "1"
    resilience.onLmstudioOffline/Online (active в resilience-bar.js),
    все *.ipc.ts экспорты abortAll* для shutdown-hook. */
 contextBridge.exposeInMainWorld("api", {
+  /** True when BIBLIARY_SMOKE_UI_HARNESS=1 — all library IPC returns fake data. */
+  smokeMode: smokeLibrary !== null,
   getCollections: (): Promise<string[]> => ipcRenderer.invoke("qdrant:collections"),
 
   qdrant: {
@@ -572,15 +595,15 @@ contextBridge.exposeInMainWorld("api", {
         ? Promise.resolve([{ tag: "cybernetics", count: 1 }, { tag: "systems", count: 1 }, { tag: "marketing", count: 1 }])
         : ipcRenderer.invoke("library:tag-stats"),
     collectionByDomain: (): Promise<Array<{ label: string; count: number; bookIds: string[] }>> =>
-      ipcRenderer.invoke("library:collection-by-domain"),
+      smokeLibrary ? Promise.resolve([]) : ipcRenderer.invoke("library:collection-by-domain"),
     collectionByAuthor: (): Promise<Array<{ label: string; count: number; bookIds: string[] }>> =>
-      ipcRenderer.invoke("library:collection-by-author"),
+      smokeLibrary ? Promise.resolve([]) : ipcRenderer.invoke("library:collection-by-author"),
     collectionByYear: (): Promise<Array<{ label: string; count: number; bookIds: string[] }>> =>
-      ipcRenderer.invoke("library:collection-by-year"),
+      smokeLibrary ? Promise.resolve([]) : ipcRenderer.invoke("library:collection-by-year"),
     collectionBySphere: (): Promise<Array<{ label: string; count: number; bookIds: string[] }>> =>
-      ipcRenderer.invoke("library:collection-by-sphere"),
+      smokeLibrary ? Promise.resolve([]) : ipcRenderer.invoke("library:collection-by-sphere"),
     collectionByTag: (): Promise<Array<{ label: string; count: number; bookIds: string[] }>> =>
-      ipcRenderer.invoke("library:collection-by-tag"),
+      smokeLibrary ? Promise.resolve([]) : ipcRenderer.invoke("library:collection-by-tag"),
     getBook: (bookId: string): Promise<(LibraryBookMeta & { mdPath: string }) | null> =>
       smokeLibrary
         ? Promise.resolve((smokeLibrary.rows.find((row) => row.id === bookId) as LibraryBookMeta & { mdPath: string } | undefined) ?? null)

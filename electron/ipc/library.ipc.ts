@@ -58,7 +58,7 @@ import {
   type ProgressEvent,
 } from "../lib/library/import.js";
 import {
-  bootstrapEvaluatorQueue,
+  ensureEvaluatorBootstrap,
   enqueueBook,
   enqueuePriority,
   pauseEvaluator,
@@ -196,14 +196,11 @@ export async function bootstrapLibrarySubsystem(getMainWindow: () => BrowserWind
     });
   }
   ensureImportLogBridge(getMainWindow);
-  /* Bootstrap может потерпеть неудачу если cache-db ещё не инициализирована
-     (например, первый запуск без папки library). Не критично -- следующий
-     импорт сам поставит книги в очередь. */
-  try {
-    await bootstrapEvaluatorQueue();
-  } catch (err) {
-    console.warn("[library] bootstrapEvaluatorQueue failed:", err instanceof Error ? err.message : err);
-  }
+  /* Bootstrap запускается лениво: первый вызов enqueueBook или runSlot
+     запустит ensureEvaluatorBootstrap автоматически. Здесь kick-off чтобы
+     bootstrap начался сразу при старте, а не только при первом импорте.
+     Не await'им — не блокируем startup IPC регистрацию. */
+  void ensureEvaluatorBootstrap();
 }
 
 function broadcastImportProgress(getMainWindow: () => BrowserWindow | null, importId: string, evt: ProgressEvent): void {

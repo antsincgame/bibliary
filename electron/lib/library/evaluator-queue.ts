@@ -283,6 +283,28 @@ export function clearQueue(): void {
 const BOOTSTRAP_PAGE_SIZE = 500;
 
 /**
+ * Single-flight promise для lazy bootstrap.
+ * null = не стартовал ещё, Promise = уже запущен (или завершён).
+ * При ошибке сбрасывается в null, чтобы следующий вызов мог повторить попытку.
+ */
+let _bootstrapOnce: Promise<void> | null = null;
+
+/**
+ * Запускает bootstrap ровно один раз. Повторные вызовы возвращают тот же
+ * Promise. При ошибке даёт одну повторную попытку (сбрасывает _bootstrapOnce).
+ * Использовать вместо прямого вызова bootstrapEvaluatorQueue вне тестов.
+ */
+export function ensureEvaluatorBootstrap(): Promise<void> {
+  if (!_bootstrapOnce) {
+    _bootstrapOnce = bootstrapEvaluatorQueue().catch((err) => {
+      console.warn("[evaluator] bootstrap failed — will retry on next enqueue:", err instanceof Error ? err.message : err);
+      _bootstrapOnce = null;
+    }) as Promise<void>;
+  }
+  return _bootstrapOnce;
+}
+
+/**
  * Bootstrap при запуске приложения:
  *   1. Читает books WHERE status IN ('imported', 'evaluating') страницами
  *      по {@link BOOTSTRAP_PAGE_SIZE} -- никаких hardcoded limit'ов на
@@ -292,7 +314,7 @@ const BOOTSTRAP_PAGE_SIZE = 500;
  *   3. Все `imported` ставит в очередь — slots сами разберут.
  *
  * Идемпотентно: повторный вызов не задублирует (enqueueBook проверяет
- * `inQueue` set).
+ * `inQueue` set). Не вызывай напрямую — используй {@link ensureEvaluatorBootstrap}.
  */
 export async function bootstrapEvaluatorQueue(): Promise<void> {
   /* Stage 1: reset stuck `evaluating` строк. Cursor по id (не по offset) —
@@ -348,6 +370,9 @@ async function runSlot(idx: number): Promise<void> {
   if (idx >= slotCount) return;
   slot.active = true;
   try {
+    /* Дождаться bootstrap перед первым pull'ом из очереди — гарантирует что
+       все `imported` из DB уже загружены и stuck `evaluating` сброшены. */
+    await ensureEvaluatorBootstrap();
     while (true) {
       if (paused.value) break;
       if (idx >= slotCount) break; /* slot был уменьшен в runtime */
