@@ -19,7 +19,7 @@
 
 import { chat, chatWithPolicy, listLoaded, type LoadedModelInfo } from "../../../lmstudio-client.js";
 import { getPreferencesStore, type Preferences } from "../../preferences/store.js";
-import { modelRoleResolver, type ModelRole } from "../model-role-resolver.js";
+import { modelRoleResolver, getRolePrefKey, type ModelRole } from "../model-role-resolver.js";
 import { recordMatch, readRatingsFile, type ArenaRatingsFile } from "./ratings-store.js";
 import { getGoldenForRole, type GoldenPrompt } from "./golden-prompts.js";
 import { globalLlmLock } from "../global-llm-lock.js";
@@ -38,21 +38,6 @@ const CALIBRATABLE_ROLES: ModelRole[] = [
   "vision_meta",
 ];
 
-/**
- * Какой preferences ключ хранит выбор пользователя для роли — нужно для
- * arenaAutoPromoteWinner. Те же ключи что в model-role-resolver, но локально
- * чтобы не экспортировать private map оттуда.
- */
-const ROLE_TO_PREF_KEY: Record<ModelRole, keyof Preferences | null> = {
-  chat: "chatModel",
-  agent: "agentModel",
-  crystallizer: "extractorModel",
-  judge: "judgeModel",
-  vision_meta: "visionModelKey",
-  vision_ocr: "visionModelKey",
-  evaluator: "evaluatorModel",
-  arena_judge: "arenaJudgeModelKey",
-};
 
 export interface CycleOptions {
   /** Подмножество ролей для калибровки. Default = все CALIBRATABLE_ROLES. */
@@ -228,11 +213,9 @@ async function runCycleForRole(
     results.push(`${winKey} beat ${loseKey} (${winner})`);
 
     if (prefs.arenaAutoPromoteWinner) {
-      const prefKey = ROLE_TO_PREF_KEY[role];
-      if (prefKey) {
-        await getPreferencesStore().set({ [prefKey]: winKey } as Partial<Preferences>);
-        modelRoleResolver.invalidate(role);
-      }
+      const prefKey = getRolePrefKey(role);
+      await getPreferencesStore().set({ [prefKey]: winKey } as Partial<Preferences>);
+      modelRoleResolver.invalidate(role);
     }
   }
 

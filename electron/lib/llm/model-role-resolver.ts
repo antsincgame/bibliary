@@ -370,6 +370,14 @@ export interface RoleMeta {
   preferred: Capability[];
 }
 
+/**
+ * Вернуть preferences-ключ для роли (используется в arena auto-promote).
+ * Позволяет избежать дублирования между model-role-resolver и run-cycle.
+ */
+export function getRolePrefKey(role: ModelRole): string {
+  return ROLE_PREF_KEY[role];
+}
+
 export function listAllRoles(): RoleMeta[] {
   const roles: ModelRole[] = [
     "chat",
