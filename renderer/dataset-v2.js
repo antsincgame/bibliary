@@ -3,36 +3,32 @@ import { el, clear } from "./dom.js";
 import { t } from "./i18n.js";
 import { buildCollectionPicker } from "./components/collection-picker.js";
 import { buildModelSelect } from "./components/model-select.js";
-import { showAlert } from "./components/ui-dialog.js";
+import { showAlert, showConfirm } from "./components/ui-dialog.js";
 import { recordDataset } from "./datasets-history.js";
 
 /**
- * Создание датасета — простой UI для генерации обучающих примеров из принятых
- * концептов в Qdrant.
+ * Создание датасета — UI для генерации обучающих примеров через нейросеть.
  *
- * Два режима в одной странице:
- *   1) Быстрый шаблонный экспорт (секунды, без LLM) — большая жёлтая кнопка.
- *   2) LLM-синтез (минуты-часы, через выбранную модель LM Studio) —
- *      сворачиваемая секция «Сгенерировать через нейросеть».
+ * Только LLM-синтез (минуты-часы, через выбранную модель LM Studio).
+ * Шаблонный «быстрый экспорт» убран — он давал низкое качество.
  *
- * Готовый JSONL заливается прямо в облачные провайдеры (Together AI,
- * OpenAI, Fireworks, HuggingFace).
+ * Готовый JSONL заливается прямо в облачные провайдеры (Google Colab,
+ * HuggingFace, Together AI, OpenAI, Fireworks).
  */
 
 const STATE = {
   collection: "delta-knowledge",
   pairsPerConcept: 2,
   /** @type {"sharegpt" | "chatml"} */
-  format: "sharegpt",
+  format: "chatml",
   outputDir: "",
   busy: false,
-  /** @type {"idle" | "export" | "synth"} */
+  /** @type {"idle" | "synth"} */
   mode: "idle",
-  /** @type {null | {concepts: number; totalLines: number; trainLines: number; valLines: number; outputDir: string; format: string; files: string[]; byDomain: Record<string, number>; method?: string; model?: string; durationMs?: number; llmFailures?: number; schemaFailures?: number}} */
+  /** @type {null | {concepts: number; totalLines: number; trainLines: number; valLines: number; outputDir: string; format: string; files: string[]; byDomain: Record<string, number>; method?: string; model?: string; durationMs?: number; llmFailures?: number; schemaFailures?: number; rawSamples?: Array<{conceptId: string; reason: string; raw: string}>}} */
   result: null,
   /** @type {string | null} */
   lastError: null,
-  exportProgress: { conceptsRead: 0, linesEmitted: 0 },
   synthProgress: {
     phase: /** @type {"idle"|"scan"|"generate"|"write"|"done"|"error"} */ ("idle"),
     conceptsRead: 0,
@@ -46,10 +42,10 @@ const STATE = {
     currentEssence: null,
   },
   synth: {
-    open: false,
     /** @type {string | null} */
     currentJobId: null,
   },
+  showAdvanced: false,
 };
 
 const SYNTH_MODEL_HINTS = ["qwen3.6", "qwen3-coder", "qwen2.5", "mistral-small", "gemma-3"];
@@ -83,11 +79,24 @@ function mountCollectionPicker(root) {
   collectionPicker = buildCollectionPicker({
     id: "ds-collection",
     initialValue: STATE.collection,
+    autoLoad: true,
     onChange: (name) => {
       STATE.collection = String(name || "");
     },
     onCreate: async () => {
       await collectionPicker?.refresh();
+    },
+    onDelete: async (name) => {
+      if (!name) return;
+      try {
+        const api = /** @type {any} */ (window).api;
+        await api.qdrant.remove(name);
+        await collectionPicker?.refresh();
+      } catch (e) {
+        await showAlert(t("library.collection.delete.failed", {
+          err: e instanceof Error ? e.message : String(e),
+        }));
+      }
     },
     loadCollections: async () => {
       try {
@@ -177,19 +186,25 @@ function buildStep2() {
 function buildStep3() {
   const opts = [
     {
-      v: "sharegpt",
-      label: t("dataset.step3.sharegpt.label"),
-      providers: t("dataset.step3.sharegpt.providers"),
-    },
-    {
       v: "chatml",
       label: t("dataset.step3.chatml.label"),
       providers: t("dataset.step3.chatml.providers"),
+      recommended: true,
+    },
+    {
+      v: "sharegpt",
+      label: t("dataset.step3.sharegpt.label"),
+      providers: t("dataset.step3.sharegpt.providers"),
+      recommended: false,
     },
   ];
   const group = el("div", { class: "ds-radio-group ds-radio-group-2", role: "radiogroup" });
   for (const o of opts) {
     const isActive = STATE.format === o.v;
+    const labelEl = el("div", { class: "ds-radio-tile-label" }, [
+      o.label,
+      o.recommended ? el("span", { class: "ds-radio-tile-badge" }, t("dataset.step3.recommendedBadge")) : null,
+    ].filter(Boolean));
     const tile = el(
       "button",
       {
@@ -211,7 +226,7 @@ function buildStep3() {
         },
       },
       [
-        el("div", { class: "ds-radio-tile-label" }, o.label),
+        labelEl,
         el("div", { class: "ds-radio-tile-hint" }, o.providers),
       ],
     );
@@ -224,6 +239,7 @@ function buildStep3() {
       el("h3", { class: "ds-card-title" }, t("dataset.step3.title")),
       el("p", { class: "ds-card-hint" }, t("dataset.step3.hint")),
       group,
+      el("p", { class: "ds-card-note" }, t("dataset.step3.colabNote")),
     ]),
   ]);
 }
@@ -274,95 +290,86 @@ function buildStep4(root) {
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
-/* Primary action — fast template export                                       */
+/* Primary action — LLM synthesis (the only way)                                */
 /* ────────────────────────────────────────────────────────────────────────── */
 
 function buildPrimaryAction(root) {
-  const btn = el(
+  const startBtn = el(
     "button",
     {
       class: "ds-primary-btn",
       type: "button",
-      id: "ds-create",
-      onclick: () => onCreateDataset(root),
-    },
-    t("dataset.create.btn"),
-  );
-  const hint = el("p", { class: "ds-primary-hint" }, t("dataset.create.hint"));
-  return el("div", { class: "ds-primary-row" }, [btn, hint]);
-}
-
-/* ────────────────────────────────────────────────────────────────────────── */
-/* Synth section — LLM-driven dataset generation                                */
-/* ────────────────────────────────────────────────────────────────────────── */
-
-function buildSynthSection(root) {
-  const detail = el(
-    "details",
-    {
-      class: "ds-synth",
-      open: STATE.synth.open ? "" : null,
-      ontoggle: () => {
-        STATE.synth.open = /** @type {HTMLDetailsElement} */ (detail).open;
-      },
-    },
-    [
-      el("summary", { class: "ds-synth-summary" }, [
-        el("span", { class: "ds-synth-summary-icon" }, "✦"),
-        el("span", { class: "ds-synth-summary-label" }, t("dataset.synth.summary")),
-      ]),
-      el("p", { class: "ds-synth-hint" }, t("dataset.synth.hint")),
-      el("div", { class: "ds-synth-body", id: "ds-synth-body" }),
-    ],
-  );
-  setTimeout(() => renderSynthBody(root), 0);
-  return detail;
-}
-
-function renderSynthBody(root) {
-  const body = root.querySelector("#ds-synth-body");
-  if (!body) return;
-  clear(body);
-
-  const modelRow = buildModelSelect({
-    role: "extractor",
-    label: t("dataset.synth.model.label"),
-    hints: SYNTH_MODEL_HINTS,
-    wrapClass: "cv-row",
-    labelClass: "cv-label",
-    selectClass: "cv-select",
-  });
-  synthModelSelect = modelRow;
-
-  const startBtn = el(
-    "button",
-    {
-      class: "ds-synth-btn",
-      type: "button",
       id: "ds-synth-start",
-      disabled: STATE.busy ? "true" : null,
       onclick: () => onSynthStart(root),
     },
     t("dataset.synth.btn.start"),
   );
-
   const stopBtn = el(
     "button",
     {
-      class: "cv-btn",
+      class: "ds-stop-btn",
       type: "button",
       id: "ds-synth-stop",
-      disabled: STATE.busy && STATE.mode === "synth" ? null : "true",
+      disabled: "true",
       onclick: () => onSynthStop(root),
     },
     t("dataset.synth.btn.stop"),
   );
+  const hint = el("p", { class: "ds-primary-hint" }, t("dataset.synth.hint"));
 
-  body.append(
+  const advanced = buildAdvancedModelRow(root);
+
+  return el("div", { class: "ds-primary-row" }, [
+    el("div", { class: "ds-primary-buttons" }, [startBtn, stopBtn]),
+    hint,
+    advanced,
+  ]);
+}
+
+function buildAdvancedModelRow(root) {
+  const summary = el(
+    "summary",
+    { class: "ds-advanced-summary" },
+    t("dataset.synth.modelOptional.summary"),
+  );
+  const slot = el("div", { class: "ds-advanced-body", id: "ds-advanced-body" });
+  const wrap = el("details", {
+    class: "ds-advanced",
+    open: STATE.showAdvanced ? "" : null,
+    ontoggle: () => {
+      const w = root.querySelector(".ds-advanced");
+      if (w instanceof HTMLDetailsElement) STATE.showAdvanced = w.open;
+    },
+  }, [summary, slot]);
+
+  setTimeout(() => mountAdvancedBody(root), 0);
+  return wrap;
+}
+
+function mountAdvancedBody(root) {
+  const slot = root.querySelector("#ds-advanced-body");
+  if (!slot) return;
+  clear(slot);
+
+  const modelRow = buildModelSelect({
+    role: "extractor",
+    label: t("dataset.synth.modelOptional.label"),
+    hints: SYNTH_MODEL_HINTS,
+    wrapClass: "cv-row",
+    labelClass: "cv-label ds-advanced-label",
+    selectClass: "cv-select ds-advanced-select",
+  });
+  synthModelSelect = modelRow;
+
+  slot.append(
     modelRow.wrap,
-    el("div", { class: "ds-synth-controls" }, [startBtn, stopBtn]),
+    el("p", { class: "ds-advanced-hint" }, t("dataset.synth.modelOptional.hint")),
   );
 }
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Synthesis actions                                                            */
+/* ────────────────────────────────────────────────────────────────────────── */
 
 async function onSynthStart(root) {
   if (STATE.busy) return;
@@ -439,6 +446,7 @@ async function onSynthStart(root) {
 
 async function onSynthStop(root) {
   if (!STATE.synth.currentJobId) return;
+  if (!(await showConfirm(t("dataset.synth.confirm.stop")))) return;
   try {
     await window.api.datasetV2.cancel(STATE.synth.currentJobId);
   } catch (e) {
@@ -450,10 +458,8 @@ async function onSynthStop(root) {
 function toggleSynthButtons(root, busy) {
   const start = root.querySelector("#ds-synth-start");
   const stop = root.querySelector("#ds-synth-stop");
-  const create = root.querySelector("#ds-create");
   if (start) start.disabled = busy;
   if (stop) stop.disabled = !busy;
-  if (create) create.disabled = busy;
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -479,9 +485,10 @@ function renderProgress(root) {
       el(
         "p",
         { class: "ds-progress-line" },
-        t("dataset.synth.progress.line")
-          .replace("{read}", String(p.conceptsRead))
-          .replace("{paired}", String(p.paired)),
+        t("dataset.synth.progress.line", {
+          read: String(p.conceptsRead),
+          paired: String(p.paired),
+        }),
       ),
     ];
     if (p.skippedLlmFail + p.skippedSchemaFail > 0) {
@@ -489,9 +496,10 @@ function renderProgress(root) {
         el(
           "p",
           { class: "ds-progress-line ds-progress-warn-line" },
-          t("dataset.synth.progress.skipped")
-            .replace("{llm}", String(p.skippedLlmFail))
-            .replace("{schema}", String(p.skippedSchemaFail)),
+          t("dataset.synth.progress.skipped", {
+            llm: String(p.skippedLlmFail),
+            schema: String(p.skippedSchemaFail),
+          }),
         ),
       );
     }
@@ -516,25 +524,6 @@ function renderProgress(root) {
     return;
   }
 
-  if (STATE.busy) {
-    wrap.appendChild(
-      el("div", { class: "ds-progress-card ds-progress-running" }, [
-        el("div", { class: "ds-progress-spinner" }),
-        el("div", { class: "ds-progress-body" }, [
-          el("h4", { class: "ds-progress-title" }, t("dataset.progress.running.title")),
-          el(
-            "p",
-            { class: "ds-progress-line" },
-            t("dataset.progress.running.line")
-              .replace("{concepts}", String(STATE.exportProgress.conceptsRead))
-              .replace("{lines}", String(STATE.exportProgress.linesEmitted)),
-          ),
-        ]),
-      ]),
-    );
-    return;
-  }
-
   if (STATE.lastError) {
     wrap.appendChild(
       el("div", { class: "ds-progress-card ds-progress-error" }, [
@@ -550,7 +539,6 @@ function renderProgress(root) {
 
   if (STATE.result) {
     const r = STATE.result;
-    const isSynth = r.method === "llm-synth";
     const filesList = el(
       "ul",
       { class: "ds-result-files" },
@@ -589,31 +577,40 @@ function renderProgress(root) {
       el(
         "p",
         { class: "ds-progress-line" },
-        t("dataset.result.summary")
-          .replace("{train}", String(r.trainLines))
-          .replace("{val}", String(r.valLines))
-          .replace("{concepts}", String(r.concepts)),
+        t("dataset.result.summary", {
+          train: String(r.trainLines),
+          val: String(r.valLines),
+          concepts: String(r.concepts),
+        }),
       ),
     ];
-    if (isSynth) {
-      const minutes = ((r.durationMs ?? 0) / 60000).toFixed(1);
+    const minutes = ((r.durationMs ?? 0) / 60000).toFixed(1);
+    lines.push(
+      el(
+        "p",
+        { class: "ds-progress-line ds-fast-note" },
+        t("dataset.result.synthExplain", {
+          model: String(r.model ?? ""),
+          minutes,
+        }),
+      ),
+    );
+
+    /* Если были schema-сбои — показать кнопку «Подробнее» с raw-сэмплами */
+    if (r.schemaFailures && r.schemaFailures > 0) {
       lines.push(
         el(
           "p",
-          { class: "ds-progress-line ds-fast-note" },
-          t("dataset.result.synthExplain")
-            .replace("{model}", String(r.model ?? ""))
-            .replace("{minutes}", minutes),
+          { class: "ds-progress-line ds-progress-warn-line" },
+          t("dataset.result.schemaSkippedHint", {
+            n: String(r.schemaFailures),
+          }),
         ),
       );
-    } else {
-      lines.push(
-        el(
-          "p",
-          { class: "ds-progress-line ds-fast-note" },
-          t("dataset.result.fastExplain"),
-        ),
-      );
+      const samples = r.rawSamples || [];
+      if (samples.length > 0) {
+        lines.push(buildRawSamplesDetails(samples));
+      }
     }
 
     wrap.appendChild(
@@ -653,6 +650,27 @@ function renderProgress(root) {
   }
 }
 
+/**
+ * Раскрывающийся блок с сырыми ответами LLM, которые не прошли парсинг.
+ * @param {Array<{conceptId: string; reason: string; raw: string}>} samples
+ */
+function buildRawSamplesDetails(samples) {
+  return el("details", { class: "ds-raw-samples" }, [
+    el("summary", { class: "ds-raw-samples-summary" },
+      t("dataset.result.rawSamples.summary", { n: String(samples.length) })),
+    el("p", { class: "ds-raw-samples-hint" },
+      t("dataset.result.rawSamples.hint")),
+    el("div", { class: "ds-raw-samples-list" },
+      samples.map((s, idx) => el("div", { class: "ds-raw-sample" }, [
+        el("div", { class: "ds-raw-sample-header" },
+          `#${idx + 1} · ${s.conceptId.slice(0, 8)}… · ${s.reason}`),
+        el("pre", { class: "ds-raw-sample-body" },
+          s.raw.slice(0, 800) + (s.raw.length > 800 ? " …" : "")),
+      ])),
+    ),
+  ]);
+}
+
 function phaseToLabel(phase) {
   switch (phase) {
     case "scan":
@@ -669,99 +687,30 @@ function phaseToLabel(phase) {
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
-/* Action: fast export                                                         */
-/* ────────────────────────────────────────────────────────────────────────── */
-
-async function onCreateDataset(root) {
-  if (STATE.busy) return;
-  if (!STATE.collection) {
-    await showAlert(t("dataset.alert.noCollection"));
-    return;
-  }
-  if (!STATE.outputDir) {
-    await showAlert(t("dataset.alert.noFolder"));
-    return;
-  }
-  STATE.busy = true;
-  STATE.mode = "export";
-  STATE.result = null;
-  STATE.lastError = null;
-  STATE.exportProgress = { conceptsRead: 0, linesEmitted: 0 };
-  renderProgress(root);
-  const btn = root.querySelector("#ds-create");
-  if (btn) btn.disabled = true;
-
-  try {
-    const res = await window.api.datasetV2.exportDataset({
-      collection: STATE.collection,
-      outputDir: STATE.outputDir,
-      format: STATE.format,
-      pairsPerConcept: STATE.pairsPerConcept,
-    });
-    if (!res.ok || !res.stats) {
-      STATE.lastError = res.error || t("dataset.alert.unknownError");
-    } else {
-      STATE.result = res.stats;
-      recordDataset({
-        outputDir: res.stats.outputDir,
-        collection: STATE.collection,
-        format: res.stats.format,
-        method: "template",
-        concepts: res.stats.concepts,
-        totalLines: res.stats.totalLines,
-        trainLines: res.stats.trainLines,
-        valLines: res.stats.valLines,
-        createdAt: new Date().toISOString(),
-      });
-    }
-  } catch (e) {
-    STATE.lastError = e instanceof Error ? e.message : String(e);
-  } finally {
-    STATE.busy = false;
-    STATE.mode = "idle";
-    if (btn) btn.disabled = false;
-    renderProgress(root);
-  }
-}
-
-/* ────────────────────────────────────────────────────────────────────────── */
 /* Event handler                                                                */
 /* ────────────────────────────────────────────────────────────────────────── */
 
 function handleEvent(root, payload) {
   const stage = String(payload.stage ?? "");
-
-  if (stage === "export") {
-    if (String(payload.phase) === "progress") {
-      STATE.exportProgress = {
-        conceptsRead: Number(payload.conceptsRead ?? STATE.exportProgress.conceptsRead),
-        linesEmitted: Number(payload.linesEmitted ?? STATE.exportProgress.linesEmitted),
-      };
-      renderProgress(root);
-    }
-    return;
+  if (stage !== "synth") return;
+  if (payload.jobId && !STATE.synth.currentJobId) {
+    STATE.synth.currentJobId = String(payload.jobId);
   }
-
-  if (stage === "synth") {
-    if (payload.jobId && !STATE.synth.currentJobId) {
-      STATE.synth.currentJobId = String(payload.jobId);
-    }
-    const phase = String(payload.phase ?? "");
-    if (phase === "progress" || phase === "start") {
-      STATE.synthProgress = {
-        phase: /** @type {any} */ (String(payload.phase ?? STATE.synthProgress.phase)),
-        conceptsRead: Number(payload.conceptsRead ?? STATE.synthProgress.conceptsRead),
-        paired: Number(payload.paired ?? STATE.synthProgress.paired),
-        skippedEmpty: Number(payload.skippedEmpty ?? STATE.synthProgress.skippedEmpty),
-        skippedLlmFail: Number(payload.skippedLlmFail ?? STATE.synthProgress.skippedLlmFail),
-        skippedSchemaFail: Number(
-          payload.skippedSchemaFail ?? STATE.synthProgress.skippedSchemaFail,
-        ),
-        currentDomain: payload.currentDomain ? String(payload.currentDomain) : null,
-        currentEssence: payload.currentEssence ? String(payload.currentEssence) : null,
-      };
-      renderProgress(root);
-    }
+  const phase = String(payload.phase ?? "");
+  if (phase === "progress" || phase === "start") {
+    STATE.synthProgress = {
+      phase: /** @type {any} */ (String(payload.phase ?? STATE.synthProgress.phase)),
+      conceptsRead: Number(payload.conceptsRead ?? STATE.synthProgress.conceptsRead),
+      paired: Number(payload.paired ?? STATE.synthProgress.paired),
+      skippedEmpty: Number(payload.skippedEmpty ?? STATE.synthProgress.skippedEmpty),
+      skippedLlmFail: Number(payload.skippedLlmFail ?? STATE.synthProgress.skippedLlmFail),
+      skippedSchemaFail: Number(
+        payload.skippedSchemaFail ?? STATE.synthProgress.skippedSchemaFail,
+      ),
+      currentDomain: payload.currentDomain ? String(payload.currentDomain) : null,
+      currentEssence: payload.currentEssence ? String(payload.currentEssence) : null,
+    };
+    renderProgress(root);
   }
 }
 
@@ -789,7 +738,7 @@ export function mountCrystal(root) {
   const hero = el("header", { class: "ds-hero" }, [
     el("h1", { class: "ds-hero-title" }, t("dataset.hero.title")),
     el("p", { class: "ds-hero-sub" }, t("dataset.hero.sub")),
-    el("p", { class: "ds-hero-note" }, t("dataset.hero.fastNote")),
+    el("p", { class: "ds-hero-note" }, t("dataset.hero.synthNote")),
   ]);
 
   const steps = el("div", { class: "ds-steps" }, [
@@ -801,9 +750,8 @@ export function mountCrystal(root) {
 
   const action = buildPrimaryAction(root);
   const progress = buildProgress();
-  const synth = buildSynthSection(root);
 
-  root.append(hero, steps, action, progress, synth);
+  root.append(hero, steps, action, progress);
   renderProgress(root);
 
   if (unsub) unsub();

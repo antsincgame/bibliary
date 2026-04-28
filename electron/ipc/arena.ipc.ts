@@ -10,7 +10,16 @@ import { globalLlmLock } from "../lib/llm/global-llm-lock.js";
 import { modelRoleResolver, type ModelRole } from "../lib/llm/model-role-resolver.js";
 import { restartScheduler } from "../lib/llm/arena/scheduler.js";
 
-const VALID_ROLES: readonly string[] = ["crystallizer", "judge", "vision_meta", "vision_ocr", "evaluator"];
+const VALID_ROLES: readonly string[] = [
+  "crystallizer",
+  "judge",
+  "vision_meta",
+  "vision_ocr",
+  "evaluator",
+  "ukrainian_specialist",
+  "lang_detector",
+  "translator",
+];
 
 const ARENA_CONFIG_KEYS = [
   "arenaEnabled",

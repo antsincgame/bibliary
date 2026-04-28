@@ -4260,6 +4260,16 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   background: rgba(255, 215, 0, 0.10);
   box-shadow: var(--glow-gold-soft);
 }
+.coll-picker-btn-delete {
+  color: #ff6e6e;
+  border-color: rgba(255, 110, 110, 0.40);
+  font-size: 18px;
+  font-weight: 700;
+}
+.coll-picker-btn-delete:hover {
+  background: rgba(255, 110, 110, 0.10);
+  box-shadow: 0 0 8px rgba(255, 110, 110, 0.30);
+}
 .coll-picker-btn-dash {
   font-size: 14px;
   color: var(--text-dim);
@@ -6323,5 +6333,175 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   .ds-card-num { width: 28px; height: 28px; font-size: 14px; }
   .ds-list-grid { grid-template-columns: 1fr; }
   .ds-list { border-right: none; border-bottom: 1px solid var(--border); max-height: 50vh; }
+}
+
+/* ─── Dataset v2: новые элементы (только синтез, бейджи, raw samples) ─────── */
+
+.ds-radio-tile-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: rgba(255, 215, 0, 0.18);
+  color: var(--gold);
+  border: 1px solid rgba(255, 215, 0, 0.45);
+  border-radius: 3px;
+  vertical-align: middle;
+}
+
+.ds-card-note {
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  background: rgba(0, 200, 255, 0.06);
+  border-left: 3px solid var(--cyan);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  border-radius: 3px;
+}
+
+.ds-primary-buttons {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ds-stop-btn {
+  padding: 12px 20px;
+  background: transparent;
+  color: #ff8a8a;
+  border: 1px solid rgba(255, 110, 110, 0.40);
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+.ds-stop-btn:hover:not(:disabled) {
+  background: rgba(255, 110, 110, 0.10);
+  box-shadow: 0 0 8px rgba(255, 110, 110, 0.30);
+}
+.ds-stop-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.ds-advanced-label { font-size: 12px; }
+.ds-advanced-select { font-size: 12px; }
+
+.ds-raw-samples {
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.20);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.ds-raw-samples-summary {
+  cursor: pointer;
+  color: var(--cyan);
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+.ds-raw-samples-hint {
+  margin: 8px 0 10px;
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+.ds-raw-samples-list { display: flex; flex-direction: column; gap: 8px; }
+.ds-raw-sample {
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.30);
+}
+.ds-raw-sample-header {
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--gold-warm);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+}
+.ds-raw-sample-body {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+}
+
+/* ─── Library Search: прогресс по источникам + таблица ────────────────────── */
+
+.lib-search-progress-head {
+  margin: 12px 0;
+}
+.lib-search-progress-pills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.lib-search-source-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.20);
+}
+.lib-search-source-name { color: var(--text-dim); }
+.lib-search-source-status { font-weight: 600; }
+.lib-search-source-pending { border-color: rgba(120, 120, 120, 0.40); }
+.lib-search-source-pending .lib-search-source-status { color: var(--text-dim); }
+.lib-search-source-ok { border-color: rgba(0, 200, 120, 0.40); background: rgba(0, 200, 120, 0.06); }
+.lib-search-source-ok .lib-search-source-status { color: #4cd97f; }
+.lib-search-source-empty { border-color: rgba(180, 180, 180, 0.30); }
+.lib-search-source-empty .lib-search-source-status { color: var(--text-dim); }
+.lib-search-source-error { border-color: rgba(255, 110, 110, 0.45); background: rgba(255, 110, 110, 0.06); }
+.lib-search-source-error .lib-search-source-status { color: #ff8a8a; }
+.lib-search-progress-note {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.lib-search-summary {
+  padding: 8px 12px;
+  margin: 8px 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: rgba(0, 200, 255, 0.04);
+  border-left: 3px solid var(--cyan);
+  border-radius: 3px;
+}
+
+.lib-search-table-wrap {
+  overflow-x: auto;
+  margin-top: 12px;
+}
+.lib-search-table .lib-search-title {
+  font-weight: 600;
+  color: var(--text);
+}
+.lib-search-table .lib-search-desc {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+.lib-search-table .lib-td-actions {
+  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
 }
 

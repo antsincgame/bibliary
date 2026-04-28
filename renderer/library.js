@@ -96,7 +96,6 @@ function buildLibraryTopBar(root) {
       }
     },
   });
-  void picker.refresh();
 
   /* Quick-jump: создать датасет из выбранной коллекции прямо отсюда. Кладём
      имя коллекции в sessionStorage и переключаем sidebar на Crystal — там

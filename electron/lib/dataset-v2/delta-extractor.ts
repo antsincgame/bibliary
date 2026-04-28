@@ -152,12 +152,35 @@ function isMetaNoiseDelta(data: {
     /\b(оглавление|содержание|краткое содержание|библиограф|рекламн|аннотац|об авторах|об авторе)\b/i.test(text);
 }
 
-function buildPrompt(
+/**
+ * Hard-cap на размер ВХОДНОГО prompt. Считаем: 1 token ≈ 3.5 chars (mix RU/EN).
+ * Большинство практических LLM имеют контекст ≥ 8k tokens; держим запас под
+ * выход модели (4k tokens) и safety margin → ~24 000 chars входа.
+ *
+ * Если итоговый prompt превышает лимит — режем chunk.text (это самая объёмная
+ * часть). Срез детерминированный, по символам, без потери начала чанка.
+ *
+ * Превышение редкое: возникает только когда в prefs выставлен агрессивный
+ * chunkSafeLimit (до 20000 слов = ~80k tokens). Этот guard не ломает обычный
+ * сценарий, а защищает от деградации контекста при экстремальных настройках.
+ */
+const DEFAULT_PROMPT_CHARS_HARD_CAP = 24_000;
+
+export interface BuildPromptResult {
+  prompt: string;
+  /** True, если CHUNK_TEXT был обрезан под cap. */
+  truncated: boolean;
+  /** Сколько символов исходного chunk.text реально вошло в prompt. */
+  chunkCharsUsed: number;
+}
+
+export function buildPromptWithGuard(
   template: string,
   chunk: SemanticChunk,
   thesis: string,
   memory: ChapterMemory,
-): string {
+  maxChars: number = DEFAULT_PROMPT_CHARS_HARD_CAP,
+): BuildPromptResult {
   const domains = Array.from(ALLOWED_DOMAINS).sort().join(", ");
   const memoryBlock = memory.ledEssences.length > 0
     ? `Already extracted from earlier chunks in this chapter:\n${memory.ledEssences.map((e) => `- ${e}`).join("\n")}\nDo NOT repeat these.`
@@ -166,12 +189,36 @@ function buildPrompt(
     ? `Context from end of previous chunk:\n"${chunk.overlapText.trim()}"\n(For continuity only — extract from the new chunk below.)`
     : "";
 
-  return template
+  const skeleton = template
     .replace("{{BREADCRUMB}}", chunk.breadcrumb)
     .replace("{{CHAPTER_THESIS}}", thesis)
     .replace("{{OVERLAP_CONTEXT}}", overlapBlock || memoryBlock)
-    .replace("{{ALLOWED_DOMAINS}}", domains)
-    .replace("{{CHUNK_TEXT}}", chunk.text);
+    .replace("{{ALLOWED_DOMAINS}}", domains);
+
+  const overhead = skeleton.length - "{{CHUNK_TEXT}}".length;
+  const availableForChunk = Math.max(2_000, maxChars - overhead);
+
+  let chunkText = chunk.text;
+  let truncated = false;
+  if (chunkText.length > availableForChunk) {
+    chunkText = chunkText.slice(0, availableForChunk) +
+      "\n\n[…отрезано: текст чанка превышал безопасный размер контекста LLM]";
+    truncated = true;
+  }
+  return {
+    prompt: skeleton.replace("{{CHUNK_TEXT}}", chunkText),
+    truncated,
+    chunkCharsUsed: chunkText.length,
+  };
+}
+
+function buildPrompt(
+  template: string,
+  chunk: SemanticChunk,
+  thesis: string,
+  memory: ChapterMemory,
+): string {
+  return buildPromptWithGuard(template, chunk, thesis, memory).prompt;
 }
 
 async function tryOneAttempt(
@@ -245,11 +292,17 @@ async function extractOneChunk(
   template: string,
   cb: DeltaExtractCallbacks,
 ): Promise<ChunkResult> {
-  const prompt = buildPrompt(template, chunk, thesis, memory);
+  const built = buildPromptWithGuard(template, chunk, thesis, memory);
+  const prompt = built.prompt;
   const t0 = Date.now();
   cb.onEvent?.({ type: "delta.chunk.start", chunkPart: chunk.partN, chunkTotal: chunk.partTotal, chapterTitle: chunk.chapterTitle });
 
   const warnings: string[] = [];
+  if (built.truncated) {
+    const msg = `chunk-text truncated to ${built.chunkCharsUsed} chars (was ${chunk.text.length}) — long-context guard`;
+    warnings.push(msg);
+    console.warn(`[delta] chunk ${chunk.partN}: ${msg}`);
+  }
 
   console.log(`[delta] chunk ${chunk.partN}/${chunk.partTotal} "${chunk.chapterTitle}" (${chunk.text.split(/\s+/).length} words)`);
   const first = await tryOneAttempt(prompt, cb, { temperature: 0.3, maxTokens: MAX_TOKENS }, chunk.partN);

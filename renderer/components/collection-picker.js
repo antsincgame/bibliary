@@ -22,9 +22,11 @@ import { showAlert, showConfirm, showPrompt } from "./ui-dialog.js";
  * @property {string} [initialValue]                      Pre-selected collection name.
  * @property {(name: string) => void} onChange            Fired when user selects an existing collection.
  * @property {(name: string) => void | Promise<void>} [onCreate]  Fired AFTER successful collection creation. If absent -- "+" hidden.
+ * @property {(name: string) => void | Promise<void>} [onDelete]  Fired AFTER user confirms deletion. If absent -- "−" hidden.
  * @property {() => Promise<string[]>} loadCollections    Async loader. Returns list of collection names.
  * @property {(name: string) => Promise<{ ok: boolean, error?: string }>} [createCollection]
  *           Async creator. If absent and onCreate present -- only triggers prompt without backend call.
+ * @property {boolean} [autoLoad]                         If true -- list is loaded immediately on mount.
  */
 
 /**
@@ -79,6 +81,23 @@ export function buildCollectionPicker(opts) {
       void handleCreate();
     });
     root.appendChild(createBtn);
+  }
+
+  if (opts.onDelete) {
+    const deleteBtn = el(
+      "button",
+      {
+        type: "button",
+        class: "coll-picker-btn coll-picker-btn-delete",
+        title: t("library.collection.delete.title"),
+        "aria-label": t("library.collection.delete.title"),
+      },
+      "\u2212"
+    );
+    deleteBtn.addEventListener("click", () => {
+      void handleDelete();
+    });
+    root.appendChild(deleteBtn);
   }
 
   /* Открыть Qdrant Dashboard в системном браузере. Полезно когда автоматическое
@@ -167,6 +186,23 @@ export function buildCollectionPicker(opts) {
     select.value = name;
     opts.onChange(name);
     await opts.onCreate(name);
+  }
+
+  async function handleDelete() {
+    if (!opts.onDelete) return;
+    const name = select.value;
+    if (!name) {
+      await showAlert(t("library.collection.delete.empty"));
+      return;
+    }
+    const ok = await showConfirm(t("library.collection.delete.confirm", { name }));
+    if (!ok) return;
+    await opts.onDelete(name);
+    await refresh();
+  }
+
+  if (opts.autoLoad !== false) {
+    setTimeout(() => { void refresh(); }, 0);
   }
 
   return {

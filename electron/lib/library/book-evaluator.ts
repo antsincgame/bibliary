@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Book Evaluator — "Chief Epistemologist" Pre-flight Quality Assessment.
  *
  * Принимает Structural Surrogate (≈4K слов) + идентификатор LLM, возвращает
@@ -477,7 +477,7 @@ export async function evaluateBook(
   const reasoning = parsed.reasoning;
 
   if (parsed.json === null) {
-    const repaired = await repairEvaluationJson(model, surrogate, raw, reasoning, opts.signal);
+    const repaired = await repairEvaluationJson(model, raw, reasoning, opts.signal);
     warnings.push(...repaired.warnings);
     if (repaired.evaluation) return { ...repaired, warnings };
     return { evaluation: null, reasoning: repaired.reasoning ?? reasoning, raw: repaired.raw || raw, model, warnings };
@@ -485,7 +485,7 @@ export async function evaluateBook(
 
   let validation = evaluationSchema.safeParse(parsed.json);
   if (!validation.success) {
-    const repaired = await repairEvaluationJson(model, surrogate, raw, reasoning, opts.signal);
+    const repaired = await repairEvaluationJson(model, raw, reasoning, opts.signal);
     warnings.push(`evaluator: JSON schema mismatch before repair: ${validation.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
     warnings.push(...repaired.warnings);
     if (repaired.evaluation) return { ...repaired, warnings };
@@ -502,7 +502,6 @@ export async function evaluateBook(
 
 async function repairEvaluationJson(
   model: string,
-  surrogate: string,
   badRaw: string,
   priorReasoning: string | null,
   signal: AbortSignal | undefined,
@@ -524,11 +523,10 @@ async function repairEvaluationJson(
           {
             role: "user",
             content:
-              "The previous answer was not valid JSON for the required schema. " +
-              "Re-evaluate the same book and return ONLY one strict JSON object. " +
-              "Use concrete values, not schema placeholders like string/number/boolean.\n\n" +
-              `Previous invalid answer:\n${badRaw.slice(0, 4000)}\n\n` +
-              `Structural Surrogate:\n${surrogate}`,
+              "Your previous answer was not valid JSON for the required schema. " +
+              "DO NOT re-evaluate the book — just fix the JSON of your previous answer. " +
+              "Output ONLY one strict JSON object with concrete values (no schema placeholders like string/number/boolean, no markdown, no prose).\n\n" +
+              `Previous invalid answer to fix:\n${badRaw.slice(0, 4000)}`,
           },
         ],
         sampling: {

@@ -183,6 +183,7 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
           chunkerOptions: args.chunkerOptions,
           upsertBatch: prefs.ingestUpsertBatch,
           maxBookChars: prefs.maxBookChars,
+          translateNonRussian: prefs.translateNonRussianBooks,
           parseOptions: {
             ocrEnabled: ocrWanted && isOcrSupported(),
             ocrLanguages: prefs.ocrLanguages,

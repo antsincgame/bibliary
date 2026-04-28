@@ -58,16 +58,31 @@ export function registerBookhunterIpc(getMainWindow: () => BrowserWindow | null)
       args: { query: string; sources?: BookCandidate["sourceTag"][]; language?: string; perSourceLimit?: number }
     ): Promise<BookCandidate[]> => {
       if (!args || typeof args.query !== "string" || args.query.trim().length === 0) return [];
+      const win = getMainWindow();
       try {
         const prefs = await getPreferencesStore().getAll();
-        return await aggregateSearch({
-          query: args.query.trim(),
-          sources: args.sources,
-          language: args.language,
-          perSourceLimit: args.perSourceLimit ?? prefs.searchPerSourceLimit,
-        });
+        return await aggregateSearch(
+          {
+            query: args.query.trim(),
+            sources: args.sources,
+            language: args.language,
+            perSourceLimit: args.perSourceLimit ?? prefs.searchPerSourceLimit,
+          },
+          (ev) => {
+            if (win && !win.isDestroyed()) {
+              win.webContents.send("bookhunter:search-progress", ev);
+            }
+          },
+        );
       } catch (e) {
         console.error("[bookhunter:search]", e instanceof Error ? e.message : e);
+        if (win && !win.isDestroyed()) {
+          win.webContents.send("bookhunter:search-progress", {
+            phase: "done",
+            total: 0,
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
         return [];
       }
     }

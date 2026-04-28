@@ -53,7 +53,7 @@ export const PreferencesSchema = z.object({
   watchdogLivenessTimeoutMs: z.number().int().min(500).max(15_000).default(3_000),
 
   // -- BookHunter --
-  searchPerSourceLimit: z.number().int().min(1).max(50).default(6),
+  searchPerSourceLimit: z.number().int().min(1).max(50).default(20),
   downloadMaxRetries: z.number().int().min(1).max(10).default(3),
 
   // -- Qdrant --
@@ -126,6 +126,21 @@ export const PreferencesSchema = z.object({
   judgeModelFallbacks: z.string().default(""),
   evaluatorModelFallbacks: z.string().default(""),
   visionModelFallbacks: z.string().default(""),
+
+  // -- Language-specialist roles --
+  /** Модель, которая хорошо работает с украинским (Aya, Llama-3-uk, Qwen-uk и т.п.). Пусто = не используется. */
+  ukrainianSpecialistModel: z.string().default(""),
+  ukrainianSpecialistModelFallbacks: z.string().default(""),
+  /** Малая модель для определения языка текста (ISO-639-1). Пусто = не используется. */
+  langDetectorModel: z.string().default(""),
+  langDetectorModelFallbacks: z.string().default(""),
+  /** Модель-переводчик: укр/любой → русский или английский. Пусто = не используется. */
+  translatorModel: z.string().default(""),
+  translatorModelFallbacks: z.string().default(""),
+  /** Целевой язык переводчика: "ru" (default) или "en". */
+  translatorTargetLang: z.enum(["ru", "en"]).default("ru"),
+  /** Авто-переводить книги на украинском (и схожих языках) при ingest. */
+  translateNonRussianBooks: z.boolean().default(true),
 
   // -- Arena (shadow model calibration) --
   arenaEnabled: z.boolean().default(false),

@@ -13,7 +13,14 @@ const REFRESH_MS = 8000;
 const TOAST_TTL_MS = 5000;
 
 /** Роли, отображаемые на странице моделей. */
-const PIPELINE_ROLES = ["crystallizer", "evaluator", "judge"];
+const PIPELINE_ROLES = [
+  "crystallizer",
+  "evaluator",
+  "judge",
+  "translator",
+  "ukrainian_specialist",
+  "lang_detector",
+];
 
 let pageRoot = null;
 let refreshTimer = null;
@@ -267,9 +274,12 @@ function renderLoadFromDisk(downloaded, loaded) {
 // ---------------------------------------------------------------------------
 
 const ROLE_META = {
-  crystallizer: { labelKey: "models.role.crystallizer.label", helpKey: "models.role.crystallizer.help" },
-  evaluator:    { labelKey: "models.role.evaluator.label",    helpKey: "models.role.evaluator.help" },
-  judge:        { labelKey: "models.role.judge.label",        helpKey: "models.role.judge.help" },
+  crystallizer:         { labelKey: "models.role.crystallizer.label",         helpKey: "models.role.crystallizer.help" },
+  evaluator:            { labelKey: "models.role.evaluator.label",            helpKey: "models.role.evaluator.help" },
+  judge:                { labelKey: "models.role.judge.label",                helpKey: "models.role.judge.help" },
+  translator:           { labelKey: "models.role.translator.label",           helpKey: "models.role.translator.help" },
+  ukrainian_specialist: { labelKey: "models.role.ukrainian_specialist.label", helpKey: "models.role.ukrainian_specialist.help" },
+  lang_detector:        { labelKey: "models.role.lang_detector.label",        helpKey: "models.role.lang_detector.help" },
 };
 
 /**

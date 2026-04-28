@@ -384,6 +384,25 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.on("bookhunter:download-progress", l);
       return () => ipcRenderer.removeListener("bookhunter:download-progress", l);
     },
+    onSearchProgress: (
+      cb: (payload: {
+        phase: "start" | "source-done" | "done";
+        source?: string;
+        count?: number;
+        error?: string;
+        total?: number;
+      }) => void,
+    ): (() => void) => {
+      const l = (_e: unknown, p: {
+        phase: "start" | "source-done" | "done";
+        source?: string;
+        count?: number;
+        error?: string;
+        total?: number;
+      }) => cb(p);
+      ipcRenderer.on("bookhunter:search-progress", l);
+      return () => ipcRenderer.removeListener("bookhunter:search-progress", l);
+    },
   },
 
   datasetV2: {
@@ -452,6 +471,7 @@ contextBridge.exposeInMainWorld("api", {
         llmFailures: number;
         schemaFailures: number;
         emptyPayloadSkips: number;
+        rawSamples?: Array<{ conceptId: string; reason: string; raw: string }>;
         model: string;
         durationMs: number;
       };

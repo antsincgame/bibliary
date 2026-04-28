@@ -1,9 +1,38 @@
 import { parseBook } from "./parsers/index.js";
-import type { ParseOptions } from "./parsers/types.js";
+import type { ParseOptions, ParseResult } from "./parsers/types.js";
 import { chunkBook, type BookChunk, type ChunkerOptions } from "./chunker.js";
 import { ScannerStateStore } from "./state.js";
 import { DEFAULT_EMBED_MODEL, EMBEDDING_DIM, EMBED_MAX_INPUT_CHARS } from "./embedding.js";
 import { embedPassage } from "../embedder/shared.js";
+import { translateBookSections } from "../llm/translator.js";
+
+const NON_RUSSIAN_BUT_TRANSLATABLE = /^(uk|be|kk|ky|tg)/i;
+
+async function maybeTranslateNonRussian(
+  parsed: ParseResult,
+  signal: AbortSignal | undefined,
+): Promise<void> {
+  const lang = parsed.metadata.language?.trim() ?? "";
+  if (!lang || !NON_RUSSIAN_BUT_TRANSLATABLE.test(lang)) return;
+
+  try {
+    const r = await translateBookSections(parsed.sections, {
+      sourceLang: lang.slice(0, 2),
+      targetLang: "ru",
+      signal,
+    });
+    parsed.metadata.warnings.push(
+      `translated to ru: ${r.totalParagraphs} paragraphs, ${r.llmCalls} llm-calls, model=${r.modelKey}` +
+      (r.fallbackUsed > 0 ? `, fallback=${r.fallbackUsed}` : ""),
+    );
+    parsed.metadata.language = "ru";
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    parsed.metadata.warnings.push(
+      `translation skipped (${lang} → ru): ${msg}. Original text used; configure translator role for full coverage.`,
+    );
+  }
+}
 
 /**
  * Phase 2.6 — Book Ingest pipeline.
@@ -53,6 +82,13 @@ export interface IngestOptions {
   upsertBatch?: number;
   /** Опции, передаваемые в parseBook (OCR флаги, языки, accuracy). */
   parseOptions?: ParseOptions;
+  /**
+   * Если true — книги на не-русском языке (uk и подобные) переводятся в
+   * русский ДО chunking через роль `translator`. Если роль не настроена —
+   * warning, идём дальше с оригиналом. Default: false (поведение не меняется
+   * для существующих вызовов).
+   */
+  translateNonRussian?: boolean;
   onProgress?: (p: IngestProgress) => void;
 }
 
@@ -169,6 +205,16 @@ export async function ingestBook(filePath: string, opts: IngestOptions): Promise
   if (parsed.rawCharCount > maxChars) {
     parsed.metadata.warnings.push(`book truncated: rawCharCount=${parsed.rawCharCount} > maxBookChars=${maxChars}`);
   }
+
+  /* Translation gate: книги на украинском (или другом неподдерживаемом
+     для большинства моделей языке) переводятся ДО chunking — RAG получит
+     чистый русский. Оригинал не сохраняется (по требованию пользователя:
+     приоритет русскому переводу). Если translator-роль не настроена —
+     warning, продолжаем с оригиналом. */
+  if (opts.translateNonRussian) {
+    await maybeTranslateNonRussian(parsed, opts.signal);
+  }
+
   const bookTitle = parsed.metadata.title;
 
   emit({ phase: "chunk", bookSourcePath: filePath, bookTitle });

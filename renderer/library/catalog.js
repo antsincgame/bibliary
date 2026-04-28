@@ -118,30 +118,6 @@ export function renderCatalogTable(root) {
   });
   const selEl = root.querySelector(".lib-catalog-summary-selected");
   if (selEl) selEl.textContent = t("library.catalog.summary.selected", { n: String(CATALOG.selected.size) });
-  const libPathEl = root.querySelector(".lib-catalog-path-library");
-  if (libPathEl) {
-    if (CATALOG.libraryRoot) {
-      libPathEl.textContent = t("library.catalog.summary.root", { path: CATALOG.libraryRoot });
-      libPathEl.hidden = false;
-    } else {
-      libPathEl.textContent = "";
-      libPathEl.hidden = true;
-    }
-  }
-  const dbPathEl = root.querySelector(".lib-catalog-path-db");
-  if (dbPathEl) {
-    if (CATALOG.dbPath) {
-      dbPathEl.textContent = t("library.catalog.summary.db", { path: CATALOG.dbPath });
-      dbPathEl.hidden = false;
-    } else {
-      dbPathEl.textContent = "";
-      dbPathEl.hidden = true;
-    }
-  }
-  const pathsDetails = root.querySelector(".lib-catalog-dock-paths");
-  if (pathsDetails instanceof HTMLDetailsElement) {
-    pathsDetails.hidden = !CATALOG.libraryRoot && !CATALOG.dbPath;
-  }
   const capEl = root.querySelector(".lib-catalog-summary-cap");
   if (capEl) capEl.textContent = CATALOG.rows.length < CATALOG.total
     ? t("library.catalog.summary.partial", {
@@ -338,15 +314,6 @@ export function buildCatalogBottomBar(root, deps) {
     el("span", { class: "lib-catalog-summary-cap" }, ""),
   ]);
 
-  const pathsInner = el("div", { class: "lib-catalog-dock-paths-inner" }, [
-    el("div", { class: "lib-catalog-path-line lib-catalog-path-library", hidden: true }, ""),
-    el("div", { class: "lib-catalog-path-line lib-catalog-path-db", hidden: true }, ""),
-  ]);
-  const pathsBlock = el("details", { class: "lib-catalog-dock-paths" }, [
-    el("summary", { class: "lib-catalog-dock-paths-summary" }, t("library.catalog.summary.pathsToggle")),
-    pathsInner,
-  ]);
-
   const selectAllBtn = el("button", {
     type: "button", class: "lib-btn lib-btn-ghost",
     title: t("library.catalog.tooltip.selectAll"),
@@ -516,7 +483,6 @@ export function buildCatalogBottomBar(root, deps) {
 
   return el("div", { class: "lib-catalog-bottombar" }, [
     metaRow,
-    pathsBlock,
     el("div", { class: "lib-catalog-bottom-actions" }, [
       selectAllBtn, clearBtn, reevaluateBtn, reparseBtn, deleteBtn, chunksBtn,
     ]),

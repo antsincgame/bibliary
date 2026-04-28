@@ -25,6 +25,7 @@ const CALIBRATABLE_ROLES: ModelRole[] = [
   "crystallizer",
   "evaluator",
   "vision_meta",
+  "translator",
 ];
 
 interface RunCycleDeps {

@@ -30,6 +30,42 @@ function getYearFromArxivDate(s: string): number | undefined {
   return Number(m[1]);
 }
 
+/**
+ * Снять LaTeX-разметку из строки, чтобы пользователь не видел
+ * `$_{c}(2930)$` или `\\bar{B}^{0}` в карточках поиска.
+ *
+ * Стратегия: для inline `$...$` оставляем содержимое, но без обвязки `$`
+ * и без управляющих команд. Грубая, но работает для заголовков arXiv.
+ */
+function stripLatex(input: string): string {
+  if (!input) return input;
+  let s = input;
+  /* убираем \begin{...} \end{...} */
+  s = s.replace(/\\(?:begin|end)\{[^}]*\}/g, " ");
+  /* раскрываем $...$ — внутри убираем обёртки и слэш-команды */
+  s = s.replace(/\$([^$]+)\$/g, (_m, body) => {
+    let inner = String(body);
+    /* \mathrm{X} \mathbf{X} \text{X} \mathcal{X} → X */
+    inner = inner.replace(/\\(?:mathrm|mathbf|mathcal|mathit|mathsf|text|operatorname)\s*\{([^}]*)\}/g, "$1");
+    /* \frac{a}{b} → a/b */
+    inner = inner.replace(/\\frac\s*\{([^}]*)\}\s*\{([^}]*)\}/g, "$1/$2");
+    /* убираем оставшиеся слэш-команды без аргумента (\to, \alpha, \bar и т.п.) */
+    inner = inner.replace(/\\[a-zA-Z]+\*?/g, " ");
+    /* раскрываем простые подстроки: ^{...} → ..., _{...} → ... */
+    inner = inner.replace(/[\^_]\{([^{}]*)\}/g, "$1");
+    /* одиночные ^x, _x → x */
+    inner = inner.replace(/[\^_]([\w+\-])/g, "$1");
+    /* убираем оставшиеся фигурные скобки */
+    inner = inner.replace(/[{}]/g, " ");
+    return inner;
+  });
+  /* schwa за пределами $...$: убрать остаточные \cmd */
+  s = s.replace(/\\[a-zA-Z]+\*?/g, " ");
+  s = s.replace(/[{}]/g, " ");
+  s = s.replace(/\s+/g, " ").trim();
+  return s;
+}
+
 async function search(opts: SearchOptions): Promise<BookCandidate[]> {
   const params = new URLSearchParams();
   params.set("search_query", `all:${opts.query}`);
@@ -52,10 +88,15 @@ async function search(opts: SearchOptions): Promise<BookCandidate[]> {
   return entries.map((entry) => {
     const idUrl = String(entry.id ?? "");
     const arxivId = idUrl.replace(/^https?:\/\/arxiv\.org\/abs\//, "").replace(/v\d+$/, "");
-    const title = String(entry.title ?? "").replace(/\s+/g, " ").trim();
+    const rawTitle = String(entry.title ?? "").replace(/\s+/g, " ").trim();
+    const title = stripLatex(rawTitle);
     const authorsNode = asArray(entry.author) as Array<Record<string, unknown>>;
     const authors = authorsNode.map((a) => String(a.name ?? "")).filter(Boolean);
     const published = String(entry.published ?? "");
+
+    const rawSummary = typeof entry.summary === "string"
+      ? entry.summary.replace(/\s+/g, " ")
+      : "";
 
     return {
       id: arxivId,
@@ -69,7 +110,7 @@ async function search(opts: SearchOptions): Promise<BookCandidate[]> {
       ],
       license: "open-access" as const,
       webPageUrl: idUrl,
-      description: typeof entry.summary === "string" ? entry.summary.replace(/\s+/g, " ").slice(0, 500) : undefined,
+      description: rawSummary ? stripLatex(rawSummary).slice(0, 500) : undefined,
     };
   });
 }

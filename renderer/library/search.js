@@ -1,6 +1,10 @@
 // @ts-check
 /**
  * Search tab (BookHunter): search for books online, download & ingest.
+ *
+ * UI унифицирован с каталогом: таблица с колонками
+ * (название, автор, год, источник, лицензия, форматы, действия).
+ * Прогресс поиска по источникам — видимый, в шапке.
  */
 import { el, clear } from "../dom.js";
 import { t } from "../i18n.js";
@@ -8,10 +12,54 @@ import { showAlert } from "../components/ui-dialog.js";
 import { STATE, SEARCH_STATE, DOWNLOAD_STATE, DOWNLOAD_BY_ID } from "./state.js";
 import { formatBytes, cssEscape, makeDownloadId } from "./format.js";
 
+/** Локальное состояние прогресса поиска (только для UI). */
+const PROGRESS = {
+  /** @type {boolean} */
+  active: false,
+  /** @type {Array<{tag: string, count: number, error?: string, done: boolean}>} */
+  sources: [],
+  /** @type {number | null} */
+  total: null,
+};
+
+const SOURCE_LABELS = {
+  gutendex: "Project Gutenberg",
+  archive: "Internet Archive",
+  openlibrary: "Open Library",
+  arxiv: "arXiv (статьи)",
+};
+
+let unsubSearchProgress = null;
+
 export function renderSearch(root) {
   const wrap = root.querySelector(".lib-search");
   if (!wrap) return;
   clear(wrap);
+
+  /* Подписка на прогресс делается один раз */
+  if (!unsubSearchProgress) {
+    unsubSearchProgress = window.api.bookhunter.onSearchProgress((ev) => {
+      if (ev.phase === "start") {
+        PROGRESS.active = true;
+        PROGRESS.sources = [];
+        PROGRESS.total = typeof ev.total === "number" ? ev.total : null;
+      } else if (ev.phase === "source-done") {
+        PROGRESS.sources.push({
+          tag: String(ev.source ?? "?"),
+          count: Number(ev.count ?? 0),
+          error: ev.error,
+          done: true,
+        });
+      } else if (ev.phase === "done") {
+        PROGRESS.active = false;
+      }
+      /* Перерисовать только шапку прогресса, чтобы не дёргать всю страницу */
+      const head = root.querySelector(".lib-search-progress-head");
+      if (head) {
+        head.replaceWith(buildSearchProgressHead());
+      }
+    });
+  }
 
   const bar = el("div", { class: "lib-search-bar" }, [
     el("input", {
@@ -23,12 +71,14 @@ export function renderSearch(root) {
       class: "lib-btn lib-btn-primary", type: "button",
       disabled: SEARCH_STATE.searching ? "true" : undefined,
       onclick: () => doSearch(root),
-    }, SEARCH_STATE.searching ? "..." : t("library.search.btn")),
+    }, SEARCH_STATE.searching ? t("library.search.btn.searching") : t("library.search.btn")),
   ]);
   wrap.appendChild(bar);
 
-  /* Баннер с подсказкой по источникам (где ищем + как добавить новые).
-     Используется и когда результатов ещё нет, и над списком — для напоминания. */
+  /* Видимый прогресс по источникам */
+  wrap.appendChild(buildSearchProgressHead());
+
+  /* Подсказка по источникам (где ищем + как добавить новые) */
   const sourcesHint = el("div", { class: "lib-search-sources" }, [
     el("div", { class: "lib-search-sources-row" }, [
       el("strong", { class: "lib-search-sources-title" }, t("library.search.sources.title") + ": "),
@@ -56,39 +106,114 @@ export function renderSearch(root) {
     return;
   }
 
-  const list = el("div", { class: "lib-search-results" });
-  for (const r of SEARCH_STATE.results) {
-    list.appendChild(buildSearchCard(r, root));
+  /* Сводка: сколько нашли + подсказка про релевантность */
+  if (SEARCH_STATE.results.length > 0) {
+    wrap.appendChild(el("div", { class: "lib-search-summary" },
+      t("library.search.summary", { n: String(SEARCH_STATE.results.length) }),
+    ));
   }
-  wrap.appendChild(list);
+
+  /* Таблица результатов — унифицирована с каталогом */
+  const table = buildResultsTable(root);
+  wrap.appendChild(table);
 }
 
-function buildSearchCard(candidate, root) {
+function buildSearchProgressHead() {
+  const head = el("div", { class: "lib-search-progress-head" });
+
+  if (!PROGRESS.active && PROGRESS.sources.length === 0) {
+    return head;
+  }
+
+  const items = ["gutendex", "archive", "openlibrary", "arxiv"].map((tag) => {
+    const found = PROGRESS.sources.find((s) => s.tag === tag);
+    const label = SOURCE_LABELS[/** @type {keyof typeof SOURCE_LABELS} */ (tag)] || tag;
+    let status = "…";
+    let cls = "lib-search-source-pending";
+    if (found) {
+      if (found.error) {
+        status = "✕";
+        cls = "lib-search-source-error";
+      } else {
+        status = `✓ ${found.count}`;
+        cls = found.count > 0 ? "lib-search-source-ok" : "lib-search-source-empty";
+      }
+    } else if (!PROGRESS.active) {
+      return null;
+    }
+    return el("span", {
+      class: `lib-search-source-pill ${cls}`,
+      title: found?.error || label,
+    }, [
+      el("span", { class: "lib-search-source-name" }, label),
+      el("span", { class: "lib-search-source-status" }, status),
+    ]);
+  }).filter(Boolean);
+
+  if (items.length > 0) {
+    head.appendChild(el("div", { class: "lib-search-progress-pills" }, items));
+  }
+
+  if (PROGRESS.active) {
+    head.appendChild(el("div", { class: "lib-search-progress-note" },
+      t("library.search.progress.searching"),
+    ));
+  }
+
+  return head;
+}
+
+function buildResultsTable(root) {
+  const wrapper = el("div", { class: "lib-catalog-table-wrap lib-search-table-wrap" });
+
+  const thead = el("thead", {}, el("tr", {}, [
+    el("th", { class: "lib-th lib-th-title" }, t("library.search.col.title")),
+    el("th", { class: "lib-th" }, t("library.search.col.authors")),
+    el("th", { class: "lib-th lib-th-num" }, t("library.search.col.year")),
+    el("th", { class: "lib-th" }, t("library.search.col.source")),
+    el("th", { class: "lib-th" }, t("library.search.col.license")),
+    el("th", { class: "lib-th" }, t("library.search.col.formats")),
+    el("th", { class: "lib-th lib-th-actions" }, t("library.search.col.actions")),
+  ]));
+
+  const tbody = el("tbody", {});
+  for (const r of SEARCH_STATE.results) {
+    tbody.appendChild(buildResultRow(r, root));
+  }
+
+  const table = el("table", { class: "lib-catalog-table lib-search-table" }, [thead, tbody]);
+  wrapper.appendChild(table);
+  return wrapper;
+}
+
+function buildResultRow(candidate, root) {
   const fmts = (candidate.formats || []).map((f) => f.format || f).join(", ");
   const dlState = DOWNLOAD_STATE.get(candidate.id);
 
-  const actionsWrap = el("div", { class: "lib-search-actions" });
-  const card = el("div", { class: "lib-search-card", "data-candidate-id": candidate.id }, [
-    el("div", { class: "lib-search-title" }, candidate.title),
-    el("div", { class: "lib-search-meta" }, [
-      candidate.authors?.join(", ") || "--",
-      candidate.year ? ` - ${candidate.year}` : "",
-      ` - ${candidate.sourceTag}`,
-      ` - ${candidate.license}`,
-      fmts ? ` - ${fmts}` : "",
-    ].join("")),
-    candidate.description ? el("div", { class: "lib-search-desc" }, candidate.description.slice(0, 200)) : null,
-    actionsWrap,
+  const actionsCell = el("td", { class: "lib-td lib-td-actions" });
+  const tr = el("tr", { class: "lib-search-row", "data-candidate-id": candidate.id }, [
+    el("td", { class: "lib-td lib-td-title" }, [
+      el("div", { class: "lib-search-title" }, candidate.title || "—"),
+      candidate.description
+        ? el("div", { class: "lib-search-desc" }, candidate.description.slice(0, 200))
+        : null,
+    ]),
+    el("td", { class: "lib-td" }, candidate.authors?.join(", ") || "—"),
+    el("td", { class: "lib-td lib-td-num" }, candidate.year ? String(candidate.year) : "—"),
+    el("td", { class: "lib-td" }, SOURCE_LABELS[candidate.sourceTag] || candidate.sourceTag),
+    el("td", { class: "lib-td" }, candidate.license),
+    el("td", { class: "lib-td" }, fmts || "—"),
+    actionsCell,
   ]);
 
-  refreshSearchCardActions(card, candidate, root, dlState);
-  return card;
+  refreshSearchRowActions(tr, candidate, root, dlState);
+  return tr;
 }
 
-function refreshSearchCardActions(card, candidate, root, dlState) {
-  const actionsWrap = card.querySelector(".lib-search-actions");
-  if (!actionsWrap) return;
-  clear(actionsWrap);
+function refreshSearchRowActions(tr, candidate, root, dlState) {
+  const actionsCell = tr.querySelector(".lib-td-actions");
+  if (!actionsCell) return;
+  clear(actionsCell);
 
   if (dlState && (dlState.status === "downloading" || dlState.status === "ingesting")) {
     const pct = dlState.total ? Math.min(100, Math.floor((dlState.downloaded / dlState.total) * 100)) : null;
@@ -97,7 +222,7 @@ function refreshSearchCardActions(card, candidate, root, dlState) {
       : pct !== null
         ? `${pct}% (${formatBytes(dlState.downloaded)}/${formatBytes(dlState.total)})`
         : `${formatBytes(dlState.downloaded)}`;
-    actionsWrap.appendChild(
+    actionsCell.appendChild(
       el("div", { class: "lib-search-progress", role: "status", "aria-live": "polite" }, [
         el("div", { class: "lib-search-progress-bar" }, [
           el("div", { class: "lib-search-progress-fill", style: `width: ${pct ?? 50}%` }),
@@ -105,7 +230,7 @@ function refreshSearchCardActions(card, candidate, root, dlState) {
         el("div", { class: "lib-search-progress-label" }, label),
       ])
     );
-    actionsWrap.appendChild(
+    actionsCell.appendChild(
       el("button", {
         class: "lib-btn lib-btn-small", type: "button",
         onclick: async () => {
@@ -123,17 +248,17 @@ function refreshSearchCardActions(card, candidate, root, dlState) {
   }
 
   if (dlState?.status === "done") {
-    actionsWrap.appendChild(el("button", {
+    actionsCell.appendChild(el("button", {
       class: "lib-btn lib-btn-accent lib-btn-small", type: "button", disabled: "true",
     }, dlState.message || t("library.search.status.done")));
   } else if (dlState?.status === "error" || dlState?.status === "cancelled") {
-    actionsWrap.appendChild(el("div", { class: "lib-search-error-inline" }, dlState.message || dlState.status));
-    actionsWrap.appendChild(el("button", {
+    actionsCell.appendChild(el("div", { class: "lib-search-error-inline" }, dlState.message || dlState.status));
+    actionsCell.appendChild(el("button", {
       class: "lib-btn lib-btn-accent lib-btn-small", type: "button",
       onclick: () => startCardDownload(candidate, root),
     }, t("library.search.btn.retry")));
   } else {
-    actionsWrap.appendChild(el("button", {
+    actionsCell.appendChild(el("button", {
       class: "lib-btn lib-btn-accent lib-btn-small", type: "button",
       onclick: () => startCardDownload(candidate, root),
     }, t("library.search.btn.downloadIngest")));
@@ -141,9 +266,7 @@ function refreshSearchCardActions(card, candidate, root, dlState) {
 
   if (candidate.webPageUrl) {
     /* В Electron <a target="_blank"> по умолчанию открывает пустое окно
-       (BrowserWindow без navigation handler) — пользователь видит белый
-       экран. Гарантированно открываем во внешнем браузере через preload IPC
-       (system.openExternal → shell.openExternal). */
+       — гарантированно открываем во внешнем браузере через preload IPC. */
     const link = el("button", {
       class: "lib-btn lib-btn-small lib-search-link",
       type: "button",
@@ -162,7 +285,7 @@ function refreshSearchCardActions(card, candidate, root, dlState) {
         }
       },
     }, t("library.search.btn.openPage"));
-    actionsWrap.appendChild(link);
+    actionsCell.appendChild(link);
   }
 }
 
@@ -174,7 +297,7 @@ async function startCardDownload(candidate, root) {
   const initial = { downloadId, downloaded: 0, total: null, status: "downloading" };
   DOWNLOAD_STATE.set(candidate.id, initial);
   DOWNLOAD_BY_ID.set(downloadId, candidate.id);
-  rerenderCard(candidate.id, root);
+  rerenderRow(candidate.id, root);
   try {
     const res = await window.api.bookhunter.downloadAndIngest({
       candidate, collection: STATE.collection, downloadId,
@@ -194,7 +317,7 @@ async function startCardDownload(candidate, root) {
     });
   } finally {
     DOWNLOAD_BY_ID.delete(downloadId);
-    rerenderCard(candidate.id, root);
+    rerenderRow(candidate.id, root);
   }
 }
 
@@ -202,15 +325,15 @@ function updateDownloadStatus(candidateId, status, message, root) {
   const cur = DOWNLOAD_STATE.get(candidateId);
   if (!cur) return;
   DOWNLOAD_STATE.set(candidateId, { ...cur, status, message });
-  rerenderCard(candidateId, root);
+  rerenderRow(candidateId, root);
 }
 
-function rerenderCard(candidateId, root) {
-  const card = root.querySelector(`.lib-search-card[data-candidate-id="${cssEscape(candidateId)}"]`);
-  if (!card) return;
+function rerenderRow(candidateId, root) {
+  const tr = root.querySelector(`.lib-search-row[data-candidate-id="${cssEscape(candidateId)}"]`);
+  if (!tr) return;
   const candidate = SEARCH_STATE.results.find((r) => r.id === candidateId);
   if (!candidate) return;
-  refreshSearchCardActions(card, candidate, root, DOWNLOAD_STATE.get(candidateId));
+  refreshSearchRowActions(tr, candidate, root, DOWNLOAD_STATE.get(candidateId));
 }
 
 async function doSearch(root) {
@@ -219,13 +342,19 @@ async function doSearch(root) {
   SEARCH_STATE.searching = true;
   SEARCH_STATE.results = [];
   SEARCH_STATE.error = "";
+  PROGRESS.active = true;
+  PROGRESS.sources = [];
   renderSearch(root);
   try {
-    SEARCH_STATE.results = await window.api.bookhunter.search({ query: q, perSourceLimit: 6 });
+    /* perSourceLimit берём из preferences (Settings → Поиск). Если значение
+       не передавать — backend сам подхватит prefs. Так настройка реально
+       влияет на поиск. */
+    SEARCH_STATE.results = await window.api.bookhunter.search({ query: q });
   } catch (e) {
     SEARCH_STATE.error = e instanceof Error ? e.message : String(e);
   } finally {
     SEARCH_STATE.searching = false;
+    PROGRESS.active = false;
     renderSearch(root);
   }
 }
@@ -248,6 +377,6 @@ export function subscribeDownloadProgress(root) {
       total: p.total,
       status: reachedEnd ? "ingesting" : "downloading",
     });
-    rerenderCard(candidateId, root);
+    rerenderRow(candidateId, root);
   });
 }

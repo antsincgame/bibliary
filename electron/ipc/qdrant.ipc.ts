@@ -195,7 +195,13 @@ export function registerQdrantIpc(): void {
     "qdrant:search",
     async (
       _e,
-      args: { collection: string; vector?: number[]; query?: string; limit?: number }
+      args: {
+        collection: string;
+        vector?: number[];
+        query?: string;
+        limit?: number;
+        scoreThreshold?: number;
+      }
     ): Promise<Array<{ id: string; score: number; payload: Record<string, unknown> }>> => {
       if (!args || !args.collection) return [];
       try {
@@ -206,6 +212,10 @@ export function registerQdrantIpc(): void {
         }
         if (!vector) return [];
         const prefs = await getPreferencesStore().getAll();
+        /* score_threshold: clamp to [0, 1]. Without it поиск «размывается» при
+           росте коллекции — даже плохие совпадения проходят. */
+        const rawThreshold = args.scoreThreshold ?? prefs.ragScoreThreshold;
+        const scoreThreshold = Math.max(0, Math.min(1, rawThreshold));
         const data = await fetchQdrantJson<{
           result: Array<{ id: string | number; score: number; payload: Record<string, unknown> }>;
         }>(`${QDRANT_URL}/collections/${encodeURIComponent(args.collection)}/points/search`, {
@@ -215,6 +225,7 @@ export function registerQdrantIpc(): void {
             vector,
             limit: args.limit ?? prefs.qdrantSearchLimit,
             with_payload: true,
+            score_threshold: scoreThreshold,
           }),
           timeoutMs: prefs.qdrantTimeoutMs,
         });

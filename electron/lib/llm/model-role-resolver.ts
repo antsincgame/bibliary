@@ -33,7 +33,10 @@ export type ModelRole =
   | "judge"
   | "vision_meta"
   | "vision_ocr"
-  | "evaluator";
+  | "evaluator"
+  | "ukrainian_specialist"
+  | "lang_detector"
+  | "translator";
 
 export type Capability = "vision";
 
@@ -60,6 +63,9 @@ const ROLE_REQUIRED_CAPS: Record<ModelRole, Capability[]> = {
   vision_meta: ["vision"],
   vision_ocr: ["vision"],
   evaluator: [],
+  ukrainian_specialist: [],
+  lang_detector: [],
+  translator: [],
 };
 
 /**
@@ -72,6 +78,9 @@ const ROLE_PREFERRED_CAPS: Record<ModelRole, Capability[]> = {
   vision_meta: ["vision"],
   vision_ocr: ["vision"],
   evaluator: [],
+  ukrainian_specialist: [],
+  lang_detector: [],
+  translator: [],
 };
 
 /**
@@ -83,6 +92,9 @@ const ROLE_PREF_KEY: Record<ModelRole, string> = {
   vision_meta: "visionModelKey",
   vision_ocr: "visionModelKey",
   evaluator: "evaluatorModel",
+  ukrainian_specialist: "ukrainianSpecialistModel",
+  lang_detector: "langDetectorModel",
+  translator: "translatorModel",
 };
 
 /** CSV ключ для fallback chain. null = нет fallback chain. */
@@ -92,6 +104,9 @@ const ROLE_FALLBACKS_PREF_KEY: Record<ModelRole, string | null> = {
   vision_meta: "visionModelFallbacks",
   vision_ocr: "visionModelFallbacks",
   evaluator: "evaluatorModelFallbacks",
+  ukrainian_specialist: "ukrainianSpecialistModelFallbacks",
+  lang_detector: "langDetectorModelFallbacks",
+  translator: "translatorModelFallbacks",
 };
 
 interface CacheEntry {
@@ -268,6 +283,9 @@ export function listAllRoles(): RoleMeta[] {
     "vision_meta",
     "vision_ocr",
     "evaluator",
+    "ukrainian_specialist",
+    "lang_detector",
+    "translator",
   ];
   return roles.map((r) => ({
     role: r,

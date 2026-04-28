@@ -18,7 +18,7 @@
  * События для UI идут через onProgress({phase, conceptsRead, paired, skipped}).
  */
 
-import { promises as fs } from "fs";
+import { promises as fs, createWriteStream, type WriteStream } from "fs";
 import * as path from "path";
 import { z } from "zod";
 import { chatWithPolicy } from "../../lmstudio-client.js";
@@ -29,9 +29,6 @@ import {
   type ShareGPTLine,
   type DatasetFormat,
   shareGptToChatML,
-  shareGptLinesToJsonl,
-  chatMLLinesToJsonl,
-  splitLines,
 } from "./format.js";
 
 const SYNTH_SYSTEM_PROMPT = `Ты — опытный методист, готовящий датасет для дообучения языковой модели.
@@ -146,6 +143,12 @@ export interface SynthProgress {
   currentEssence?: string;
 }
 
+export interface SynthRawSample {
+  conceptId: string;
+  reason: string;
+  raw: string;
+}
+
 export interface SynthStats {
   concepts: number;
   byDomain: Record<string, number>;
@@ -160,6 +163,61 @@ export interface SynthStats {
   emptyPayloadSkips: number;
   model: string;
   durationMs: number;
+  /** Последние N сырых ответов LLM, не прошедших парсинг — для отладки в UI. */
+  rawSamples: SynthRawSample[];
+}
+
+const MAX_RAW_SAMPLES = 5;
+const MAX_RAW_SAMPLE_CHARS = 2000;
+
+/**
+ * Детерминированный split: для одной и той же пары seed+conceptId+pairIdx
+ * всегда возвращает один и тот же bucket. Это даёт воспроизводимость без
+ * необходимости держать ВСЕ строки в памяти. Хэш — FNV-1a 32-bit с
+ * подмешиванием seed: даёт почти равномерное распределение в [0, 1).
+ */
+export function splitBucket(
+  seed: number,
+  conceptId: string,
+  pairIdx: number,
+  trainRatio: number,
+): "train" | "val" {
+  /* xmur3 — short, well-tested 32-bit hash (Mulberry32 family). */
+  const key = `${seed >>> 0}|${conceptId}|${pairIdx}`;
+  let h = 1779033703 ^ key.length;
+  for (let i = 0; i < key.length; i++) {
+    h = Math.imul(h ^ key.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  h = Math.imul(h ^ (h >>> 16), 2246822507);
+  h = Math.imul(h ^ (h >>> 13), 3266489909);
+  h ^= h >>> 16;
+  const r = (h >>> 0) / 4294967296;
+  return r < trainRatio ? "train" : "val";
+}
+
+/** Stream-обёртка с promise-friendly drain и сериализацией одной строки. */
+class JsonlAppender {
+  private stream: WriteStream;
+  public count = 0;
+
+  constructor(filePath: string) {
+    this.stream = createWriteStream(filePath, { encoding: "utf-8", flags: "w" });
+  }
+
+  async writeLine(obj: unknown): Promise<void> {
+    const line = JSON.stringify(obj) + "\n";
+    if (!this.stream.write(line)) {
+      await new Promise<void>((resolve) => this.stream.once("drain", resolve));
+    }
+    this.count++;
+  }
+
+  async close(): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      this.stream.end((err?: Error | null) => (err ? reject(err) : resolve()));
+    });
+  }
 }
 
 /**
@@ -178,12 +236,36 @@ export async function synthesizeDataset(
   await fs.mkdir(opts.outputDir, { recursive: true });
 
   const profile = await getModelProfile(opts.model);
-  const allShareGpt: ShareGPTLine[] = [];
   const byDomain: Record<string, number> = {};
+  const rawSamples: SynthRawSample[] = [];
   let conceptsRead = 0;
   let llmFailures = 0;
   let schemaFailures = 0;
   let emptyPayloadSkips = 0;
+  let totalPaired = 0;
+
+  const trainPath = path.join(opts.outputDir, "train.jsonl");
+  const valPath = path.join(opts.outputDir, "val.jsonl");
+  const trainAppender = new JsonlAppender(trainPath);
+  const valAppender = new JsonlAppender(valPath);
+
+  async function appendLine(line: ShareGPTLine, bucket: "train" | "val"): Promise<void> {
+    const target = bucket === "train" ? trainAppender : valAppender;
+    if (opts.format === "sharegpt") {
+      await target.writeLine(line);
+    } else {
+      await target.writeLine(shareGptToChatML(line));
+    }
+  }
+
+  function pushRawSample(conceptId: string, reason: string, raw: string): void {
+    if (rawSamples.length >= MAX_RAW_SAMPLES) return;
+    rawSamples.push({
+      conceptId,
+      reason,
+      raw: (raw || "").slice(0, MAX_RAW_SAMPLE_CHARS),
+    });
+  }
 
   const systemFilled = SYNTH_SYSTEM_PROMPT.replace(/\{\{N\}\}/g, String(pairsN));
 
@@ -193,7 +275,7 @@ export async function synthesizeDataset(
       phase: "generate",
       conceptsRead,
       conceptsTotal: null,
-      paired: allShareGpt.length,
+      paired: totalPaired,
       skippedEmpty: emptyPayloadSkips,
       skippedLlmFail: llmFailures,
       skippedSchemaFail: schemaFailures,
@@ -203,6 +285,7 @@ export async function synthesizeDataset(
 
   emit({ phase: "scan" });
 
+  try {
   for await (const concept of iterAcceptedConcepts(opts.collection, {
     limit: opts.limit,
     signal: opts.signal,
@@ -243,9 +326,9 @@ export async function synthesizeDataset(
       raw = resp.content ?? "";
     } catch (err) {
       llmFailures++;
-      console.warn(
-        `[synth] LLM error on concept ${concept.id}: ${err instanceof Error ? err.message : err}`,
-      );
+      const reason = err instanceof Error ? err.message : String(err);
+      console.warn(`[synth] LLM error on concept ${concept.id}: ${reason}`);
+      pushRawSample(concept.id, `llm: ${reason.slice(0, 200)}`, "");
       emit({});
       continue;
     }
@@ -254,26 +337,40 @@ export async function synthesizeDataset(
     const validated = SynthResponseSchema.safeParse(parsed);
     if (!validated.success) {
       schemaFailures++;
-      console.warn(
-        `[synth] schema fail on concept ${concept.id}: ${validated.error.issues
-          .slice(0, 2)
-          .map((i) => i.message)
-          .join("; ")}`,
-      );
+      const issues = validated.error.issues.slice(0, 3).map((i) => {
+        const path = i.path.length > 0 ? i.path.join(".") + ": " : "";
+        return path + i.message;
+      });
+      const reason = parsed === null ? "JSON parse failed" : `schema: ${issues.join("; ")}`;
+      console.warn(`[synth] schema fail on concept ${concept.id}: ${reason}`);
+      pushRawSample(concept.id, reason, raw);
       emit({});
       continue;
     }
 
     byDomain[concept.domain] = (byDomain[concept.domain] ?? 0) + 1;
 
-    validated.data.pairs.slice(0, pairsN).forEach((pair, idx) => {
-      allShareGpt.push(pairToShareGPT(concept, pair, idx));
-    });
+    const pairs = validated.data.pairs.slice(0, pairsN);
+    for (let idx = 0; idx < pairs.length; idx++) {
+      const line = pairToShareGPT(concept, pairs[idx]!, idx);
+      const bucket = splitBucket(seed, concept.id, idx, trainRatio);
+      await appendLine(line, bucket);
+      totalPaired++;
+    }
 
     emit({});
   }
+  } finally {
+    await trainAppender.close();
+    await valAppender.close();
+  }
 
-  if (allShareGpt.length === 0) {
+  const trainLines = trainAppender.count;
+  const valLines = valAppender.count;
+
+  if (totalPaired === 0) {
+    try { await fs.unlink(trainPath); } catch { /* ignore */ }
+    try { await fs.unlink(valPath); } catch { /* ignore */ }
     throw new Error(
       `LLM-синтез не дал ни одной валидной Q/A пары для коллекции "${opts.collection}". ` +
         `Возможные причины: коллекция пуста, LM Studio недоступен, выбрана модель без поддержки JSON, либо все ответы не прошли schema-валидацию.`,
@@ -282,41 +379,11 @@ export async function synthesizeDataset(
 
   emit({ phase: "write" });
 
-  const split = splitLines(allShareGpt, { trainRatio, evalRatio: 0, seed });
-  const files: string[] = [];
-
-  if (opts.format === "sharegpt") {
-    await fs.writeFile(
-      path.join(opts.outputDir, "train.jsonl"),
-      shareGptLinesToJsonl(split.train),
-      "utf-8",
-    );
-    files.push("train.jsonl");
-    if (split.val.length > 0) {
-      await fs.writeFile(
-        path.join(opts.outputDir, "val.jsonl"),
-        shareGptLinesToJsonl(split.val),
-        "utf-8",
-      );
-      files.push("val.jsonl");
-    }
+  const files: string[] = ["train.jsonl"];
+  if (valLines === 0) {
+    try { await fs.unlink(valPath); } catch { /* ignore */ }
   } else {
-    const trainCm = split.train.map(shareGptToChatML);
-    const valCm = split.val.map(shareGptToChatML);
-    await fs.writeFile(
-      path.join(opts.outputDir, "train.jsonl"),
-      chatMLLinesToJsonl(trainCm),
-      "utf-8",
-    );
-    files.push("train.jsonl");
-    if (valCm.length > 0) {
-      await fs.writeFile(
-        path.join(opts.outputDir, "val.jsonl"),
-        chatMLLinesToJsonl(valCm),
-        "utf-8",
-      );
-      files.push("val.jsonl");
-    }
+    files.push("val.jsonl");
   }
 
   const meta = {
@@ -329,13 +396,14 @@ export async function synthesizeDataset(
     seed,
     trainRatio,
     concepts: conceptsRead,
-    totalLines: allShareGpt.length,
-    trainLines: split.train.length,
-    valLines: split.val.length,
+    totalLines: totalPaired,
+    trainLines,
+    valLines,
     byDomain,
     llmFailures,
     schemaFailures,
     emptyPayloadSkips,
+    rawSamples,
     durationMs: Date.now() - t0,
   };
   await fs.writeFile(
@@ -357,15 +425,16 @@ export async function synthesizeDataset(
   return {
     concepts: conceptsRead,
     byDomain,
-    totalLines: allShareGpt.length,
-    trainLines: split.train.length,
-    valLines: split.val.length,
+    totalLines: totalPaired,
+    trainLines,
+    valLines,
     outputDir: opts.outputDir,
     format: opts.format,
     files,
     llmFailures,
     schemaFailures,
     emptyPayloadSkips,
+    rawSamples,
     model: opts.model,
     durationMs: Date.now() - t0,
   };

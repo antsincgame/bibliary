@@ -59,6 +59,9 @@ test("[model-role-resolver] listAllRoles exposes stable UI metadata for all role
     "vision_meta",
     "vision_ocr",
     "evaluator",
+    "ukrainian_specialist",
+    "lang_detector",
+    "translator",
   ]);
   for (const meta of metas) {
     assert.equal(typeof meta.prefKey, "string");

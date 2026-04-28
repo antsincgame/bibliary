@@ -48,17 +48,42 @@ function rank(c: BookCandidate): number {
   return license * 10 + fmtRank * 3 + search + yearBonus;
 }
 
-export async function aggregateSearch(opts: SearchOptions): Promise<BookCandidate[]> {
-  const enabled = (opts.sources ?? ["gutendex", "archive", "openlibrary", "arxiv"])
-    .map((tag) => ALL_SOURCES[tag])
-    .filter(Boolean);
+export interface SearchProgressEvent {
+  phase: "start" | "source-done" | "done";
+  source?: BookCandidate["sourceTag"];
+  count?: number;
+  error?: string;
+  total?: number;
+}
 
-  const results = await Promise.allSettled(enabled.map((src) => src.search(opts)));
+export async function aggregateSearch(
+  opts: SearchOptions,
+  onProgress?: (ev: SearchProgressEvent) => void,
+): Promise<BookCandidate[]> {
+  const enabledTags = (opts.sources ?? ["gutendex", "archive", "openlibrary", "arxiv"]) as Array<BookCandidate["sourceTag"]>;
+  const enabled = enabledTags
+    .map((tag) => ({ tag, src: ALL_SOURCES[tag] }))
+    .filter((x) => Boolean(x.src));
+
+  onProgress?.({ phase: "start", total: enabled.length });
+
+  /* Стартуем все запросы параллельно, но по мере завершения каждого
+     — уведомляем UI. Используем Promise.allSettled через .then на
+     каждом промисе, чтобы не ждать самого медленного для первого тика. */
   const merged: BookCandidate[] = [];
-  for (const r of results) {
-    if (r.status === "fulfilled") merged.push(...r.value);
-    else console.warn("[bookhunter] source failed:", r.reason);
-  }
+  await Promise.all(
+    enabled.map(async ({ tag, src }) => {
+      try {
+        const found = await src.search(opts);
+        merged.push(...found);
+        onProgress?.({ phase: "source-done", source: tag, count: found.length });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[bookhunter] source ${tag} failed:`, msg);
+        onProgress?.({ phase: "source-done", source: tag, count: 0, error: msg });
+      }
+    }),
+  );
 
   /* License whitelist */
   const allowed = merged.filter((c) => ALLOWED_LICENSES.has(c.license));
@@ -76,5 +101,7 @@ export async function aggregateSearch(opts: SearchOptions): Promise<BookCandidat
     if (rank(c) > rank(cur)) seen.set(k, c);
   }
 
-  return Array.from(seen.values()).sort((a, b) => rank(b) - rank(a));
+  const out = Array.from(seen.values()).sort((a, b) => rank(b) - rank(a));
+  onProgress?.({ phase: "done", total: out.length });
+  return out;
 }
