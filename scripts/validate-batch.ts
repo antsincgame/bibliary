@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
+import { ALLOWED_DOMAINS } from "../electron/crystallizer-constants.js";
 
-const ALLOWED_DOMAINS = new Set(["ui", "web", "mobile", "ux", "perf", "arch", "copy", "seo", "research"]);
 const SOURCE_PATH = "data/finetune/source-chunks.json";
 
 interface SourceChunk {

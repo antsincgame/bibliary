@@ -1,5 +1,5 @@
 import { mountChat } from "./chat.js";
-import { mountModels } from "./models/models-page.js";
+import { mountModels, unmountModels } from "./models/models-page.js";
 import { mountDocs } from "./docs.js";
 import { mountForge, isForgeBusy } from "./forge.js";
 import { mountLibrary, isLibraryBusy } from "./library.js";
@@ -28,6 +28,10 @@ function mountRoute(name) {
   else if (name === "docs") mountDocs(document.getElementById("docs-root"));
   else if (name === "settings") mountSettings(document.getElementById("settings-root"));
   mounted.add(name);
+}
+
+function unmountRoute(name) {
+  if (name === "models") unmountModels();
 }
 
 function showRoute(name) {
@@ -73,6 +77,7 @@ function setupLanguageToggle() {
       if (!canRemount(name)) continue;
       const root = document.getElementById(`${name}-root`);
       if (root) {
+        unmountRoute(name);
         delete root.dataset.mounted;
         root.innerHTML = "";
       }

@@ -24,6 +24,14 @@ import { recordMatch, readRatingsFile, recordCycleError, type ArenaRatingsFile }
 import { getGoldenForRole, type GoldenPrompt } from "./golden-prompts.js";
 import { globalLlmLock } from "../global-llm-lock.js";
 
+const MAX_JUDGE_CONTEXT_CHARS = 4_000;
+const MODEL_RUN_MAX_TOKENS = 512;
+const MODEL_RUN_TOP_K = 20;
+const JUDGE_MAX_TOKENS = 8;
+const JUDGE_TOP_K = 5;
+const OBJECTIVE_MIN_ANSWER_CHARS = 20;
+export const ARENA_MATCH_PAIRS_PER_CYCLE_MAX = 10;
+
 /**
  * Какие роли поддерживаются arena (есть golden и есть смысл сравнивать).
  * Vision_ocr использует тот же golden что vision_meta — для unique cycle
@@ -38,6 +46,48 @@ const CALIBRATABLE_ROLES: ModelRole[] = [
   "vision_meta",
 ];
 
+interface RunCycleDeps {
+  chat: typeof chat;
+  chatWithPolicy: typeof chatWithPolicy;
+  listLoaded: typeof listLoaded;
+  getPrefs: () => Promise<Preferences>;
+  setPrefs: (partial: Partial<Preferences>) => Promise<Preferences>;
+  resolveRole: typeof modelRoleResolver.resolve;
+  invalidateRole: typeof modelRoleResolver.invalidate;
+  recordMatch: typeof recordMatch;
+  readRatingsFile: typeof readRatingsFile;
+  recordCycleError: typeof recordCycleError;
+  getGoldenForRole: typeof getGoldenForRole;
+  getLockStatus: typeof globalLlmLock.isBusy;
+  recordLockSkip: typeof globalLlmLock.recordSkip;
+}
+
+const defaultDeps: RunCycleDeps = {
+  chat,
+  chatWithPolicy,
+  listLoaded,
+  getPrefs: async () => getPreferencesStore().getAll(),
+  setPrefs: async (partial) => getPreferencesStore().set(partial),
+  resolveRole: (role) => modelRoleResolver.resolve(role),
+  invalidateRole: (role) => modelRoleResolver.invalidate(role),
+  recordMatch,
+  readRatingsFile,
+  recordCycleError,
+  getGoldenForRole,
+  getLockStatus: () => globalLlmLock.isBusy(),
+  recordLockSkip: (reasons) => globalLlmLock.recordSkip(reasons),
+};
+
+let deps: RunCycleDeps = defaultDeps;
+
+export function _setRunCycleDepsForTests(overrides: Partial<RunCycleDeps>): void {
+  deps = { ...defaultDeps, ...overrides };
+}
+
+export function _resetRunCycleDepsForTests(): void {
+  deps = defaultDeps;
+}
+
 
 export interface CycleOptions {
   /** Подмножество ролей для калибровки. Default = все CALIBRATABLE_ROLES. */
@@ -47,6 +97,8 @@ export interface CycleOptions {
   /** Если true — обходит globalLlmLock guard. Default false. Используется
    *  только когда юзер явно нажимает "Run cycle now" в UI и подтверждает. */
   bypassLock?: boolean;
+  /** Manual user-triggered cycle runs even when background arena is disabled. */
+  manual?: boolean;
 }
 
 export interface CycleRoleResult {
@@ -96,7 +148,7 @@ async function runOneModel(
           { type: "image_url", image_url: { url: g.imageUrl } },
         ]
       : g.user;
-  const r = await chat({
+  const r = await deps.chat({
     model: modelKey,
     messages: [
       { role: "system", content: g.system },
@@ -107,7 +159,7 @@ async function runOneModel(
          Полноценный vision-cycle будет в Фазе 7. */
       { role: "user", content: typeof userContent === "string" ? userContent : g.user },
     ],
-    sampling: { temperature: 0.3, top_p: 0.9, max_tokens: 512, top_k: 20, min_p: 0, presence_penalty: 0 },
+    sampling: { temperature: 0.3, top_p: 0.9, max_tokens: MODEL_RUN_MAX_TOKENS, top_k: MODEL_RUN_TOP_K, min_p: 0, presence_penalty: 0 },
     signal,
   });
   return { text: r.content, ms: Date.now() - t0 };
@@ -123,22 +175,22 @@ async function decideWinner(
   signal: AbortSignal,
 ): Promise<"A" | "B"> {
   if (prefs.arenaUseLlmJudge) {
-    const judge = await modelRoleResolver.resolve("arena_judge");
+    const judge = await deps.resolveRole("arena_judge");
     if (judge) {
       try {
         const prompt =
           `Question: ${g.user}\n` +
-          `Assistant A (model ${a}):\n${ra.text.slice(0, 4000)}\n\n` +
-          `Assistant B (model ${b}):\n${rb.text.slice(0, 4000)}\n\n` +
+          `Assistant A (model ${a}):\n${ra.text.slice(0, MAX_JUDGE_CONTEXT_CHARS)}\n\n` +
+          `Assistant B (model ${b}):\n${rb.text.slice(0, MAX_JUDGE_CONTEXT_CHARS)}\n\n` +
           `Which answer is more accurate and helpful? Reply with exactly one character: A or B.`;
-        const jresp = await chatWithPolicy(
+        const jresp = await deps.chatWithPolicy(
           {
             model: judge.modelKey,
             messages: [
               { role: "system", content: "You are a fair evaluator. Output only A or B." },
               { role: "user", content: prompt },
             ],
-            sampling: { temperature: 0, top_p: 0.5, max_tokens: 8, top_k: 5, min_p: 0, presence_penalty: 0 },
+            sampling: { temperature: 0, top_p: 0.5, max_tokens: JUDGE_MAX_TOKENS, top_k: JUDGE_TOP_K, min_p: 0, presence_penalty: 0 },
           },
           { externalSignal: signal },
         );
@@ -153,8 +205,8 @@ async function decideWinner(
      Один пустой → побеждает другой. Оба пустые → быстрее. */
   const la = ra.text.replace(/\s+/g, " ").length;
   const lb = rb.text.replace(/\s+/g, " ").length;
-  const okA = la > 20;
-  const okB = lb > 20;
+  const okA = la > OBJECTIVE_MIN_ANSWER_CHARS;
+  const okB = lb > OBJECTIVE_MIN_ANSWER_CHARS;
   if (okA && okB) return ra.ms <= rb.ms ? "A" : "B";
   if (okA) return "A";
   if (okB) return "B";
@@ -167,7 +219,7 @@ async function runCycleForRole(
   loaded: LoadedModelInfo[],
   signal: AbortSignal,
 ): Promise<CycleRoleResult> {
-  const golden = getGoldenForRole(role);
+  const golden = deps.getGoldenForRole(role);
   if (!golden) {
     return { role, matches: 0, results: [], ratings: {}, skipped: "no golden prompt" };
   }
@@ -183,7 +235,7 @@ async function runCycleForRole(
     };
   }
 
-  const pairs = Math.min(prefs.arenaMatchPairsPerCycle, 10);
+  const pairs = Math.min(prefs.arenaMatchPairsPerCycle, ARENA_MATCH_PAIRS_PER_CYCLE_MAX);
   const keys = eligible.map((m) => m.modelKey);
   const results: string[] = [];
 
@@ -209,22 +261,43 @@ async function runCycleForRole(
     const winner = await decideWinner(prefs, golden, a, b, ra, rb, signal);
     const winKey = winner === "A" ? a : b;
     const loseKey = winner === "A" ? b : a;
-    await recordMatch(role, winKey, loseKey);
+    await deps.recordMatch(role, winKey, loseKey);
     results.push(`${winKey} beat ${loseKey} (${winner})`);
+  }
 
-    if (prefs.arenaAutoPromoteWinner) {
+  const ratings = await deps.readRatingsFile();
+  const roleRatings = ratings.roles[role] ?? {};
+
+  /* Auto-promote: ОДНОКРАТНО после всех матчей, по топ-Elo среди участников
+     текущего cycle. Старая логика записывала prefs[<role>Model] после КАЖДОГО
+     матча — на промежуточных раундах в prefs могла оказаться слабая модель.
+     Сейчас выбираем итогового лидера по агрегированному Elo. */
+  if (prefs.arenaAutoPromoteWinner && results.length > 0) {
+    let topKey: string | null = null;
+    let topElo = -Infinity;
+    for (const k of keys) {
+      const e = roleRatings[k];
+      if (typeof e === "number" && e > topElo) {
+        topElo = e;
+        topKey = k;
+      }
+    }
+    if (topKey) {
       const prefKey = getRolePrefKey(role);
-      await getPreferencesStore().set({ [prefKey]: winKey } as Partial<Preferences>);
-      modelRoleResolver.invalidate(role);
+      const cur = (prefs as Record<string, unknown>)[prefKey];
+      if (cur !== topKey) {
+        await deps.setPrefs({ [prefKey]: topKey } as Partial<Preferences>);
+        deps.invalidateRole(role);
+        results.push(`auto-promoted ${topKey} (Elo ${Math.round(topElo)})`);
+      }
     }
   }
 
-  const ratings = await readRatingsFile();
   return {
     role,
     matches: results.length,
     results,
-    ratings: ratings.roles[role] ?? {},
+    ratings: roleRatings,
   };
 }
 
@@ -236,25 +309,25 @@ export async function runArenaCycle(opts: CycleOptions = {}): Promise<CycleRepor
     return await runArenaCycleInner(opts);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    void recordCycleError(msg);
+    void deps.recordCycleError(msg);
     return { ok: false, message: `cycle threw: ${msg}` };
   }
 }
 
 async function runArenaCycleInner(opts: CycleOptions): Promise<CycleReport> {
-  const prefs = await getPreferencesStore().getAll();
-  if (!prefs.arenaEnabled) {
+  const prefs = await deps.getPrefs();
+  if (!prefs.arenaEnabled && !opts.manual) {
     return { ok: true, message: "arena disabled" };
   }
 
   /* GUARD: проверяем GlobalLlmLock — если LM Studio занят (импорт/evaluator),
      скипаем cycle. Это критично для предотвращения OOM (см. global-llm-lock.ts). */
   if (!opts.bypassLock) {
-    const lock = globalLlmLock.isBusy();
+    const lock = deps.getLockStatus();
     if (lock.busy) {
-      globalLlmLock.recordSkip(lock.reasons);
+      deps.recordLockSkip(lock.reasons);
       return {
-        ok: true,
+        ok: false,
         message: `cycle skipped — LM Studio busy: ${lock.reasons.join(", ")}`,
         skipped: true,
         skipReasons: lock.reasons,
@@ -262,7 +335,7 @@ async function runArenaCycleInner(opts: CycleOptions): Promise<CycleReport> {
     }
   }
 
-  const loaded = await listLoaded();
+  const loaded = await deps.listLoaded();
   if (loaded.length < 2) {
     return { ok: false, message: "need at least 2 loaded LLM models" };
   }

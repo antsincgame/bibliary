@@ -12,7 +12,10 @@ import { test, describe, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  listAllRoles,
   modelRoleResolver,
+  peekRoleCaps,
+  resolveCrystallizerModelKey,
   _setResolverDepsForTests,
   _resetResolverForTests,
   type ModelRole,
@@ -62,6 +65,28 @@ beforeEach(() => {
   modelRoleResolver.invalidate();
 });
 
+test("[model-role-resolver] listAllRoles exposes stable UI metadata for all roles", () => {
+  const metas = listAllRoles();
+  assert.deepEqual(metas.map((m) => m.role), [
+    "chat",
+    "agent",
+    "crystallizer",
+    "judge",
+    "vision_meta",
+    "vision_ocr",
+    "evaluator",
+    "arena_judge",
+  ]);
+  for (const meta of metas) {
+    assert.equal(typeof meta.prefKey, "string");
+    assert.ok(meta.prefKey.length > 0, `${meta.role} must expose a prefKey`);
+    assert.ok(Array.isArray(meta.required), `${meta.role} required caps must be an array`);
+    assert.ok(Array.isArray(meta.preferred), `${meta.role} preferred caps must be an array`);
+  }
+  assert.equal(metas.find((m) => m.role === "vision_meta")?.required.includes("vision"), true);
+  assert.equal(metas.find((m) => m.role === "agent")?.preferred.includes("tool"), true);
+});
+
 /* ── preference (step 1) ────────────────────────────────────────────── */
 
 describe("[model-role-resolver] preference source", () => {
@@ -89,6 +114,29 @@ describe("[model-role-resolver] preference source", () => {
     // falls through to auto_detect or fallback_any
     assert.notEqual(r!.source, "preference");
     assert.equal(r!.usedFallback, true);
+  });
+
+  test("resolves explicit preferences for judge, evaluator, crystallizer, and vision_ocr", async () => {
+    const cases: Array<{ role: ModelRole; pref: Partial<Preferences>; modelKey: string; caps?: Partial<LoadedModelInfo> }> = [
+      { role: "judge", pref: { judgeModel: "judge/main" }, modelKey: "judge/main" },
+      { role: "evaluator", pref: { evaluatorModel: "eval/main" }, modelKey: "eval/main" },
+      { role: "crystallizer", pref: { extractorModel: "extract/main" }, modelKey: "extract/main" },
+      { role: "vision_ocr", pref: { visionModelKey: "vision/main" }, modelKey: "vision/main", caps: { vision: true } },
+    ];
+
+    for (const item of cases) {
+      _resetResolverForTests();
+      modelRoleResolver.invalidate();
+      _setResolverDepsForTests({
+        listLoaded: async () => [makeModel(item.modelKey, item.caps)],
+        getPrefs: async () => makePrefs(item.pref),
+        readRatings: async () => makeRatings({}),
+      });
+      const resolved = await modelRoleResolver.resolve(item.role);
+      assert.ok(resolved !== null, `${item.role} should resolve`);
+      assert.equal(resolved!.modelKey, item.modelKey);
+      assert.equal(resolved!.source, "preference");
+    }
   });
 });
 
@@ -122,6 +170,28 @@ describe("[model-role-resolver] fallback_list source", () => {
     assert.ok(r !== null);
     assert.equal(r!.modelKey, "only/model");
     assert.equal(r!.source, "fallback_list");
+  });
+
+  test("uses role-specific fallback lists for judge, evaluator, and vision_ocr", async () => {
+    const cases: Array<{ role: ModelRole; pref: Partial<Preferences>; modelKey: string; caps?: Partial<LoadedModelInfo> }> = [
+      { role: "judge", pref: { judgeModelFallbacks: "ghost,judge/fallback" }, modelKey: "judge/fallback" },
+      { role: "evaluator", pref: { evaluatorModelFallbacks: "ghost,eval/fallback" }, modelKey: "eval/fallback" },
+      { role: "vision_ocr", pref: { visionModelFallbacks: "ghost,vision/fallback" }, modelKey: "vision/fallback", caps: { vision: true } },
+    ];
+
+    for (const item of cases) {
+      _resetResolverForTests();
+      modelRoleResolver.invalidate();
+      _setResolverDepsForTests({
+        listLoaded: async () => [makeModel(item.modelKey, item.caps)],
+        getPrefs: async () => makePrefs(item.pref),
+        readRatings: async () => makeRatings({}),
+      });
+      const resolved = await modelRoleResolver.resolve(item.role);
+      assert.ok(resolved !== null, `${item.role} should resolve`);
+      assert.equal(resolved!.modelKey, item.modelKey);
+      assert.equal(resolved!.source, "fallback_list");
+    }
   });
 });
 
@@ -197,6 +267,19 @@ describe("[model-role-resolver] profile_builtin source", () => {
     assert.ok(r !== null);
     // chat should reach fallback_any, not profile_builtin
     assert.notEqual(r!.source, "profile_builtin");
+  });
+
+  test("resolveCrystallizerModelKey delegates to crystallizer role", async () => {
+    const extractor = "extractor/preferred";
+    _setResolverDepsForTests({
+      listLoaded: async () => [makeModel(extractor)],
+      getPrefs: async () => makePrefs({ extractorModel: extractor }),
+      readRatings: async () => makeRatings({}),
+    });
+    const r = await resolveCrystallizerModelKey();
+    assert.ok(r !== null);
+    assert.equal(r!.modelKey, extractor);
+    assert.equal(r!.source, "preference");
   });
 });
 
@@ -289,6 +372,20 @@ describe("[model-role-resolver] vision role capability filtering", () => {
     assert.equal(r!.modelKey, visionModel.modelKey);
     assert.notEqual(r!.source, "preference");
   });
+
+  test("vision_ocr shares the vision capability requirement", async () => {
+    assert.deepEqual(peekRoleCaps("vision_ocr"), ["vision"]);
+    const textOnly = makeModel("text/only", { vision: false });
+    const visionModel = makeModel("qwen/vl-ocr", { vision: true });
+    _setResolverDepsForTests({
+      listLoaded: async () => [textOnly, visionModel],
+      getPrefs: async () => makePrefs({}),
+      readRatings: async () => makeRatings({}),
+    });
+    const r = await modelRoleResolver.resolve("vision_ocr");
+    assert.ok(r !== null);
+    assert.equal(r!.modelKey, visionModel.modelKey);
+  });
 });
 
 /* ── arena_judge cascade ────────────────────────────────────────────── */
@@ -309,6 +406,25 @@ describe("[model-role-resolver] arena_judge cascade", () => {
     const r = await modelRoleResolver.resolve("arena_judge");
     assert.ok(r !== null, "arena_judge should cascade to chat");
     assert.equal(r!.modelKey, chatModel.modelKey);
+    assert.equal(r!.usedFallback, true);
+  });
+
+  test("arena_judge cascade prefers judge before crystallizer and chat", async () => {
+    const judge = makeModel("judge/preferred");
+    const extractor = makeModel("extract/preferred");
+    const chat = makeModel("chat/preferred");
+    _setResolverDepsForTests({
+      listLoaded: async () => [chat, extractor, judge],
+      getPrefs: async () => makePrefs({
+        judgeModel: judge.modelKey,
+        extractorModel: extractor.modelKey,
+        chatModel: chat.modelKey,
+      }),
+      readRatings: async () => makeRatings({}),
+    });
+    const r = await modelRoleResolver.resolve("arena_judge");
+    assert.ok(r !== null);
+    assert.equal(r!.modelKey, judge.modelKey);
     assert.equal(r!.usedFallback, true);
   });
 });

@@ -1,0 +1,46 @@
+import { ipcMain } from "electron";
+
+import {
+  listAllRoles,
+  modelRoleResolver,
+  type ModelRole,
+  type ResolvedModel,
+  type RoleMeta,
+} from "../lib/llm/model-role-resolver.js";
+
+export interface RoleSnapshotEntry extends RoleMeta {
+  resolved: ResolvedModel | null;
+}
+
+const VALID_ROLES = new Set<ModelRole>(listAllRoles().map((meta) => meta.role));
+
+function sanitizeRolesArg(input: unknown): ModelRole[] | undefined {
+  if (!Array.isArray(input)) return undefined;
+  const valid = input.filter((x): x is ModelRole => typeof x === "string" && VALID_ROLES.has(x as ModelRole));
+  return valid.length > 0 ? valid : undefined;
+}
+
+export async function getRoleSnapshot(roles?: ModelRole[]): Promise<RoleSnapshotEntry[]> {
+  const requested = roles && roles.length > 0 ? new Set<ModelRole>(roles) : null;
+  const metas = listAllRoles().filter((meta) => !requested || requested.has(meta.role));
+  const entries: RoleSnapshotEntry[] = [];
+  for (const meta of metas) {
+    let resolved: ResolvedModel | null = null;
+    try {
+      resolved = await modelRoleResolver.resolve(meta.role);
+    } catch {
+      resolved = null;
+    }
+    entries.push({ ...meta, resolved });
+  }
+  return entries;
+}
+
+export function registerModelRolesIpc(): void {
+  ipcMain.handle("model-roles:list", async (_e, payload: unknown): Promise<RoleSnapshotEntry[]> => {
+    const roles = payload && typeof payload === "object"
+      ? sanitizeRolesArg((payload as Record<string, unknown>).roles)
+      : undefined;
+    return getRoleSnapshot(roles);
+  });
+}

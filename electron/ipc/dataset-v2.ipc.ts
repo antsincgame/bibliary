@@ -37,6 +37,7 @@ import {
 import { getModelProfile } from "../lib/dataset-v2/model-profile.js";
 import { buildDeltaKnowledgeResponseFormat } from "../lib/dataset-v2/json-schemas.js";
 import { ALLOWED_DOMAINS } from "../crystallizer-constants.js";
+import { globalLlmLock } from "../lib/llm/global-llm-lock.js";
 
 const DEFAULT_COLLECTION = "delta-knowledge";
 
@@ -76,6 +77,7 @@ const activeJobs = new Map<string, AbortController>();
  * чисто, помечая оставшиеся как `aborted`.
  */
 const activeBatches = new Map<string, AbortController>();
+let unregisterDatasetLlmProbe: (() => void) | null = null;
 
 /** Track spawned synth child processes so we can kill them on app quit. */
 const activeSynthChildren = new Set<import("child_process").ChildProcess>();
@@ -331,6 +333,13 @@ async function runExtraction(
 }
 
 export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null): void {
+  if (!unregisterDatasetLlmProbe) {
+    unregisterDatasetLlmProbe = globalLlmLock.registerProbe("dataset-v2", () => {
+      const active = activeJobs.size + activeBatches.size;
+      return { busy: active > 0, reason: `${active} extraction job(s)` };
+    });
+  }
+
   const broadcast = (event: Record<string, unknown>): void => {
     const win = getMainWindow();
     if (win && !win.isDestroyed()) {

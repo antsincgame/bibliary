@@ -23,6 +23,7 @@ import { registerAgentIpc, abortAllAgents } from "./agent.ipc.js";
 import { registerPreferencesIpc } from "./preferences.ipc.js";
 import { registerChatHistoryIpc } from "./chat-history.ipc.js";
 import { registerArenaIpc } from "./arena.ipc.js";
+import { registerModelRolesIpc } from "./model-roles.ipc.js";
 import {
   registerLibraryIpc,
   abortAllLibrary,
@@ -59,5 +60,6 @@ export function registerAllIpcHandlers(getMainWindow: () => BrowserWindow | null
   registerPreferencesIpc();
   registerChatHistoryIpc();
   registerArenaIpc();
+  registerModelRolesIpc();
   registerLibraryIpc(getMainWindow);
 }

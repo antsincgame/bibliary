@@ -47,10 +47,21 @@ type Candidate = {
 };
 
 async function probeServices(): Promise<void> {
-  const lm = await fetch(`${HTTP_URL}/v1/models`);
-  if (!lm.ok) throw new Error(`LM Studio HTTP ${lm.status}`);
-  const qd = await fetch(`${QDRANT_URL}/collections`);
-  if (!qd.ok) throw new Error(`Qdrant HTTP ${qd.status}`);
+  try {
+    const lm = await fetch(`${HTTP_URL}/v1/models`);
+    if (!lm.ok) throw new Error(`LM Studio HTTP ${lm.status}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`LM Studio unavailable at ${HTTP_URL}: ${message}`);
+  }
+
+  try {
+    const qd = await fetch(`${QDRANT_URL}/collections`);
+    if (!qd.ok) throw new Error(`Qdrant HTTP ${qd.status}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Qdrant unavailable at ${QDRANT_URL}: ${message}`);
+  }
 }
 
 async function collectBooks(): Promise<BookFile[]> {

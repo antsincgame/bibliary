@@ -3,6 +3,9 @@ import { el, clear } from "../dom.js";
 import { t } from "../i18n.js";
 import { showAlert, showConfirm } from "../components/ui-dialog.js";
 
+const DEFAULT_PROFILE_CONTEXT_LENGTH = 32768;
+const DEFAULT_PROFILE_TTL_SEC = 600;
+
 /**
  * Editable profiles panel — встраивается в Models route.
  * Список профилей (BIG/SMALL + custom), кнопки Add/Edit/Delete.
@@ -146,8 +149,8 @@ function openProfileEditor(existing, onSaved) {
     sizeGB: 4,
     minVramGB: 6,
     capabilities: ["tool"],
-    ttlSec: 600,
-    defaultContextLength: 32768,
+    ttlSec: DEFAULT_PROFILE_TTL_SEC,
+    defaultContextLength: DEFAULT_PROFILE_CONTEXT_LENGTH,
     builtin: false,
   };
 
@@ -216,8 +219,8 @@ function openProfileEditor(existing, onSaved) {
         sizeGB: Number(inputs.sizeGB.value) || 0,
         minVramGB: Number(inputs.minVramGB.value) || 0,
         capabilities: cap.value.split(",").map((s) => s.trim()).filter(Boolean),
-        ttlSec: Number(inputs.ttlSec.value) || 600,
-        defaultContextLength: Number(inputs.defaultContextLength.value) || 32768,
+        ttlSec: Number(inputs.ttlSec.value) || DEFAULT_PROFILE_TTL_SEC,
+        defaultContextLength: Number(inputs.defaultContextLength.value) || DEFAULT_PROFILE_CONTEXT_LENGTH,
         builtin: seed.builtin || false,
       };
       await window.api.profile.upsert(payload);

@@ -1,5 +1,412 @@
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&family=Cinzel:wght@400;600;700&family=Montserrat:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap');
 
+/* ===== Models Roles/Arena rebuild: scoped 2666 + Neon MVP ===== */
+#route-models {
+  --models-acid-cyan: #00ffe5;
+  --models-hot-magenta: #ff006e;
+  --models-toxic-lime: #c6ff00;
+  --models-blood-red: #ff0040;
+  --models-gold: #ffd700;
+  --models-surface: rgba(15, 15, 24, 0.92);
+  --models-surface-hi: rgba(22, 22, 42, 0.86);
+  --models-border: rgba(0, 255, 229, 0.16);
+}
+
+#route-models .scanline-overlay {
+  pointer-events: none;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  height: 2px;
+  margin-bottom: -2px;
+  background: rgba(0, 255, 229, 0.12);
+  box-shadow: 0 0 18px rgba(0, 255, 229, 0.2);
+  animation: models-scanline 4s linear infinite;
+}
+
+#route-models .hud-card {
+  position: relative;
+  border-radius: 0;
+  border-color: var(--models-border);
+  background:
+    linear-gradient(145deg, rgba(10, 10, 18, 0.96), var(--models-surface)),
+    radial-gradient(circle at top right, rgba(0, 255, 229, 0.06), transparent 42%);
+  box-shadow: 0 0 0 1px rgba(0, 255, 229, 0.04), 0 18px 50px rgba(0, 0, 0, 0.24);
+  overflow: hidden;
+}
+
+#route-models .hud-card::before,
+#route-models .hud-card::after {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  pointer-events: none;
+}
+
+#route-models .hud-card::before {
+  left: 0;
+  top: 0;
+  border-left: 2px solid var(--models-acid-cyan);
+  border-top: 2px solid var(--models-acid-cyan);
+}
+
+#route-models .hud-card::after {
+  right: 0;
+  bottom: 0;
+  border-right: 2px solid var(--models-acid-cyan);
+  border-bottom: 2px solid var(--models-acid-cyan);
+}
+
+#route-models .hud-card > .card-title:first-child::before,
+#route-models .hud-card > .card-title:first-child::after,
+#route-models .roles-card-head::before,
+#route-models .roles-card-head::after {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  pointer-events: none;
+}
+
+#route-models .hud-card > .card-title:first-child::before,
+#route-models .roles-card-head::before {
+  right: 0;
+  top: 0;
+  border-right: 2px solid var(--models-hot-magenta);
+  border-top: 2px solid var(--models-hot-magenta);
+}
+
+#route-models .hud-card > .card-title:first-child::after,
+#route-models .roles-card-head::after {
+  left: 0;
+  bottom: 0;
+  border-left: 2px solid var(--models-hot-magenta);
+  border-bottom: 2px solid var(--models-hot-magenta);
+}
+
+#route-models .models-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+#route-models .models-disclosure {
+  margin-top: 16px;
+}
+
+#route-models .models-disclosure-summary {
+  cursor: pointer;
+  list-style: none;
+  border: 1px solid rgba(0, 255, 229, 0.18);
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--models-acid-cyan);
+  padding: 12px 14px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+#route-models .models-disclosure-summary::-webkit-details-marker {
+  display: none;
+}
+
+#route-models .summary-prefix {
+  color: var(--models-hot-magenta);
+  margin-right: 10px;
+}
+
+#route-models .models-disclosure-body {
+  display: grid;
+  gap: 16px;
+  padding-top: 16px;
+}
+
+#route-models .roles-card-head,
+#route-models .arena-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+#route-models .roles-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+#route-models .role-row {
+  display: grid;
+  grid-template-columns: 54px minmax(210px, 1fr) minmax(190px, 0.85fr) minmax(260px, 0.9fr);
+  gap: 14px;
+  align-items: center;
+  border: 1px solid rgba(0, 255, 229, 0.12);
+  background: linear-gradient(90deg, rgba(0, 255, 229, 0.035), rgba(0, 0, 0, 0.16));
+  padding: 12px;
+  transition: border-color var(--motion-fast), box-shadow var(--motion-fast), transform var(--motion-fast);
+}
+
+#route-models .role-row:hover {
+  border-color: rgba(0, 255, 229, 0.42);
+  box-shadow: 0 0 18px rgba(0, 255, 229, 0.12);
+  transform: translateY(-1px);
+}
+
+#route-models .role-mark {
+  display: grid;
+  place-items: center;
+  height: 42px;
+  border: 1px solid rgba(0, 255, 229, 0.28);
+  color: var(--models-acid-cyan);
+  font-family: var(--font-mono);
+  letter-spacing: 0.16em;
+}
+
+#route-models .role-title-line,
+#route-models .role-caps,
+#route-models .role-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+#route-models .role-title {
+  color: var(--text-primary);
+  font-family: var(--font-heading);
+  font-size: 15px;
+}
+
+#route-models .role-help,
+#route-models .role-current-label,
+#route-models .muted {
+  color: var(--text-secondary);
+}
+
+#route-models .role-current-model {
+  display: block;
+  max-width: 100%;
+  margin: 4px 0 6px;
+  color: var(--models-toxic-lime);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#route-models .source-badge,
+#route-models .role-cap,
+#route-models .elo-badge {
+  border: 1px solid rgba(0, 255, 229, 0.2);
+  background: rgba(0, 0, 0, 0.26);
+  color: var(--models-acid-cyan);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 3px 7px;
+  text-transform: uppercase;
+}
+
+#route-models .source-pref,
+#route-models .source-auto,
+#route-models .role-cap-required {
+  border-color: rgba(198, 255, 0, 0.34);
+  color: var(--models-toxic-lime);
+}
+
+#route-models .source-elo,
+#route-models .elo-top {
+  border-color: rgba(255, 215, 0, 0.42);
+  color: var(--models-gold);
+}
+
+#route-models .source-fallback {
+  border-color: rgba(255, 214, 0, 0.34);
+  color: #ffd600;
+}
+
+#route-models .source-none,
+#route-models .role-cap-muted {
+  border-color: rgba(138, 138, 168, 0.24);
+  color: var(--text-dim);
+}
+
+#route-models .gold-glow {
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.18);
+}
+
+#route-models .arena-rating-row:hover .elo-top {
+  animation: models-pulse-glow 1.8s ease-in-out infinite;
+}
+
+#route-models .role-select,
+#route-models .fallback-input,
+#route-models .arena-number input {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid rgba(0, 255, 229, 0.2);
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.34);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  padding: 8px 10px;
+}
+
+#route-models .cyber-button {
+  position: relative;
+  min-height: 36px;
+  border: 1px solid var(--models-acid-cyan);
+  border-radius: 0;
+  background: transparent;
+  color: var(--models-acid-cyan);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  overflow: hidden;
+  padding: 9px 13px;
+  text-transform: uppercase;
+}
+
+#route-models .cyber-button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.16), transparent);
+  transform: translateX(-120%);
+  transition: transform var(--motion-normal);
+}
+
+#route-models .cyber-button:hover::before {
+  transform: translateX(120%);
+}
+
+#route-models .cyber-button-primary {
+  border-color: var(--models-hot-magenta);
+  background: rgba(255, 0, 110, 0.14);
+  color: #fff;
+}
+
+#route-models .cyber-button-danger {
+  border-color: var(--models-blood-red);
+  color: var(--models-blood-red);
+}
+
+#route-models .cyber-button:disabled,
+#route-models select:disabled,
+#route-models input:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+#route-models .calibration-progress {
+  margin-top: 14px;
+  border: 1px solid rgba(0, 255, 229, 0.18);
+  background: rgba(0, 0, 0, 0.32);
+  padding: 12px;
+}
+
+#route-models .calibration-head {
+  display: flex;
+  justify-content: space-between;
+  color: var(--models-acid-cyan);
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+}
+
+#route-models .calibration-status {
+  color: var(--models-toxic-lime);
+}
+
+#route-models .calibration-progress.is-calibrating .calibration-status {
+  animation: models-glitch-flicker 1.2s steps(2, end) infinite;
+  color: var(--models-hot-magenta);
+}
+
+#route-models .calibration-bar {
+  height: 4px;
+  margin: 10px 0;
+  background: rgba(0, 255, 229, 0.08);
+}
+
+#route-models .calibration-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--models-hot-magenta), var(--models-acid-cyan), var(--models-gold));
+  transition: width var(--motion-normal);
+}
+
+#route-models .calibration-log {
+  max-height: 130px;
+  overflow: auto;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+#route-models .calibration-ok { color: var(--models-toxic-lime); }
+#route-models .calibration-err { color: var(--models-blood-red); }
+
+#route-models .arena-config,
+#route-models .arena-ratings,
+#route-models .fallback-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+#route-models .arena-toggle,
+#route-models .arena-number,
+#route-models .fallback-row,
+#route-models .arena-rating-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.35fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  border: 1px solid rgba(0, 255, 229, 0.1);
+  background: rgba(0, 0, 0, 0.18);
+  padding: 10px;
+}
+
+#route-models .arena-rating-models {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#route-models .arena-lock {
+  margin-top: 12px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+@keyframes models-scanline {
+  0% { transform: translateY(-18px); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: translateY(92vh); opacity: 0; }
+}
+
+@keyframes models-glitch-flicker {
+  0%, 100% { transform: translateX(0); opacity: 1; }
+  33% { transform: translateX(1px); opacity: 0.72; }
+  66% { transform: translateX(-1px); opacity: 1; }
+}
+
+@keyframes models-pulse-glow {
+  0%, 100% { box-shadow: 0 0 10px rgba(255, 215, 0, 0.16); }
+  50% { box-shadow: 0 0 24px rgba(255, 215, 0, 0.38); }
+}
+
+@media (max-width: 1120px) {
+  #route-models .models-grid-2,
+  #route-models .role-row,
+  #route-models .arena-toggle,
+  #route-models .arena-number,
+  #route-models .fallback-row,
+  #route-models .arena-rating-row {
+    grid-template-columns: 1fr;
+  }
+}
 :root {
   /* Phase 5.0 -- Neon design tokens v2 */
 

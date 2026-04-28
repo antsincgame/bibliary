@@ -1,4 +1,4 @@
-import { ipcMain } from "electron";
+import { BrowserWindow, ipcMain } from "electron";
 import { getPreferencesStore, DEFAULTS, type Preferences } from "../lib/preferences/store.js";
 import { configureWatchdog } from "../lib/resilience/lmstudio-watchdog.js";
 import { configureFileLockDefaults } from "../lib/resilience/index.js";
@@ -45,6 +45,14 @@ function applyRuntimeSideEffects(prefs: Preferences): void {
 }
 
 export function registerPreferencesIpc(): void {
+  function broadcastChanged(prefs: Preferences): void {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send("preferences:changed", prefs);
+      }
+    }
+  }
+
   ipcMain.handle("preferences:get-all", async (): Promise<Preferences> => {
     return getPreferencesStore().getAll();
   });
@@ -57,12 +65,14 @@ export function registerPreferencesIpc(): void {
     if (!partial || typeof partial !== "object") throw new Error("Invalid preferences payload");
     const next = await getPreferencesStore().set(partial);
     applyRuntimeSideEffects(next);
+    broadcastChanged(next);
     return next;
   });
 
   ipcMain.handle("preferences:reset", async (): Promise<Preferences> => {
     const next = await getPreferencesStore().reset();
     applyRuntimeSideEffects(next);
+    broadcastChanged(next);
     return next;
   });
 }

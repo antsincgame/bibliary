@@ -25,12 +25,13 @@ function envRoots(): string[] {
 }
 
 export function getSourceRootsFromArgv(argv: string[], fallbackLibraryDir?: string): string[] {
-  const raw = [
-    ...argValues(argv, "--source-dir"),
-    ...envRoots(),
-    path.join(os.homedir(), "Downloads"),
-    fallbackLibraryDir ?? path.join(process.cwd(), "data", "library"),
-  ];
+  const explicitRoots = [...argValues(argv, "--source-dir"), ...envRoots()];
+  const raw = explicitRoots.length
+    ? explicitRoots
+    : [
+        path.join(os.homedir(), "Downloads"),
+        fallbackLibraryDir ?? path.join(process.cwd(), "data", "library"),
+      ];
 
   const seen = new Set<string>();
   const roots: string[] = [];

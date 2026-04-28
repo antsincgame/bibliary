@@ -25,6 +25,11 @@ interface LoadedModelInfo {
   identifier: string;
   modelKey: string;
   contextLength?: number;
+  quantization?: string;
+  /** Vision capability (определяется эвристикой по имени в lmstudio-client). */
+  vision?: boolean;
+  /** Tool-use trained capability (qwen, llama-3+, mistral, и т.д.). */
+  trainedForToolUse?: boolean;
 }
 
 interface ProfileSpec {
@@ -320,6 +325,22 @@ contextBridge.exposeInMainWorld("api", {
     set: (partial: Record<string, unknown>): Promise<Record<string, unknown>> =>
       ipcRenderer.invoke("preferences:set", partial),
     reset: (): Promise<Record<string, unknown>> => ipcRenderer.invoke("preferences:reset"),
+    onChanged: (callback: (prefs: Record<string, unknown>) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, prefs: Record<string, unknown>) => callback(prefs);
+      ipcRenderer.on("preferences:changed", listener);
+      return () => ipcRenderer.removeListener("preferences:changed", listener);
+    },
+  },
+
+  modelRoles: {
+    list: (roles?: string[]): Promise<Array<{
+      role: string;
+      prefKey: string;
+      fallbackKey: string | null;
+      required: string[];
+      preferred: string[];
+      resolved: { modelKey: string; source: string; usedFallback?: boolean } | null;
+    }>> => ipcRenderer.invoke("model-roles:list", roles ? { roles } : {}),
   },
 
   arena: {
@@ -330,8 +351,8 @@ contextBridge.exposeInMainWorld("api", {
       lastCycleAt?: string;
       lastError?: string;
     }> => ipcRenderer.invoke("arena:get-ratings"),
-    /** Запустить cycle. opts.roles — подмножество ролей; opts.bypassLock — игнорировать GlobalLlmLock guard (только при ручном запуске с подтверждением). */
-    runCycle: (opts?: { roles?: string[]; bypassLock?: boolean }): Promise<{
+    /** Запустить cycle. opts.roles — подмножество ролей; opts.manual — ручной запуск даже при выключенном background arena. */
+    runCycle: (opts?: { roles?: string[]; bypassLock?: boolean; manual?: boolean }): Promise<{
       ok: boolean;
       message: string;
       skipped?: boolean;

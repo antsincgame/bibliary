@@ -259,3 +259,102 @@ describe("[arena-scheduler] GlobalLlmLock guard on tick", () => {
     assert.equal(cyclesCalled, 1, "cycle should run when lock is idle");
   });
 });
+
+/* ── re-entrancy guard (RACE-2) ─────────────────────────────────────── */
+
+describe("[arena-scheduler] re-entrancy guard", () => {
+  test("second tick is skipped while previous cycle is still in progress", async () => {
+    let cyclesStarted = 0;
+    let resolveFirst: (() => void) | null = null;
+    const firstFinished = new Promise<void>((resolve) => { resolveFirst = resolve; });
+
+    _setSchedulerDepsForTests({
+      getPrefs: makePrefs(true, 60_000),
+      /* Симулируем долгий cycle: первый вызов «висит» пока не resolved
+         внешним кодом. Второй вызов вообще не должен случиться (guard). */
+      runCycle: async () => {
+        cyclesStarted++;
+        if (cyclesStarted === 1) await firstFinished;
+        return { ok: true, message: "ran" } as never;
+      },
+      setIntervalFn: fakeTimers.setInterval as never,
+      clearIntervalFn: fakeTimers.clearInterval as never,
+    });
+    await startScheduler();
+
+    fakeTimers.tickAll();          // первый тик — стартует «долгий» cycle
+    await Promise.resolve();       // даём cycleInFlight=true выставиться
+    fakeTimers.tickAll();          // второй тик — должен быть отброшен guard'ом
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(cyclesStarted, 1, "second cycle must NOT start while first in progress");
+    const status = globalLlmLock.getStatus();
+    assert.ok(status.skipCount >= 1, "skipCount should reflect guarded tick");
+
+    /* Завершаем первый cycle и убеждаемся что guard сбросился. */
+    resolveFirst!();
+    await firstFinished;
+    await Promise.resolve();
+    await Promise.resolve();
+
+    fakeTimers.tickAll();          // третий тик — guard свободен, должно стартануть
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(cyclesStarted, 2, "after first cycle finished, next tick must run");
+  });
+
+  test("scheduler registers arena-cycle probe in globalLlmLock", async () => {
+    _setSchedulerDepsForTests({
+      getPrefs: makePrefs(true, 60_000),
+      runCycle: noopCycle(),
+      setIntervalFn: fakeTimers.setInterval as never,
+      clearIntervalFn: fakeTimers.clearInterval as never,
+    });
+    await startScheduler();
+    const status = globalLlmLock.getStatus();
+    assert.ok(
+      status.registeredProbes.includes("arena-cycle"),
+      "arena-cycle probe must be registered while scheduler is running",
+    );
+
+    stopScheduler();
+    const after = globalLlmLock.getStatus();
+    assert.ok(
+      !after.registeredProbes.includes("arena-cycle"),
+      "arena-cycle probe must be unregistered after stopScheduler",
+    );
+  });
+
+  test("stopScheduler aborts in-flight cycle via signal", async () => {
+    let receivedSignal: AbortSignal | null = null;
+    let resolveCycle: (() => void) | null = null;
+    const cycleHang = new Promise<void>((r) => { resolveCycle = r; });
+
+    _setSchedulerDepsForTests({
+      getPrefs: makePrefs(true, 60_000),
+      runCycle: async (opts) => {
+        receivedSignal = opts?.signal ?? null;
+        await cycleHang;
+        return { ok: true, message: "ran" } as never;
+      },
+      setIntervalFn: fakeTimers.setInterval as never,
+      clearIntervalFn: fakeTimers.clearInterval as never,
+    });
+    await startScheduler();
+
+    fakeTimers.tickAll();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.ok(receivedSignal, "scheduler must pass an AbortSignal to runCycle");
+    assert.equal(receivedSignal!.aborted, false, "signal not aborted yet");
+
+    stopScheduler();
+    assert.equal(receivedSignal!.aborted, true, "signal must be aborted after stopScheduler");
+
+    resolveCycle!();
+    await cycleHang;
+  });
+});
