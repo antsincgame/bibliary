@@ -97,6 +97,8 @@ test("withModelFallback: predicate отбраковывает все — null", 
   assert.equal(r.modelKey, null);
   assert.equal(r.attempts.length, 2);
   assert.ok(r.attempts.every((a) => a.rejectedByPredicate));
+  assert.equal(r.attempts[0]!.result, 0);
+  assert.equal(r.attempts[1]!.result, 0);
 });
 
 test("withModelFallback: пустой override и нет prefs/loaded → пустой результат", async () => {

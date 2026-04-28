@@ -28,6 +28,7 @@ import { embedPassage } from "../lib/embedder/shared.js";
 import { chatWithPolicy, PROFILE } from "../lmstudio-client.js";
 import { getPreferencesStore } from "../lib/preferences/store.js";
 import { resolveCrystallizerModelKey } from "../lib/llm/model-role-resolver.js";
+import { filterOrderedCandidatesAgainstLoaded } from "../lib/llm/with-model-fallback.js";
 import { coordinator } from "../lib/resilience/batch-coordinator.js";
 import { runBatchExtraction } from "../lib/library/batch-runner.js";
 import {
@@ -41,6 +42,18 @@ import { ALLOWED_DOMAINS } from "../crystallizer-constants.js";
 import { globalLlmLock } from "../lib/llm/global-llm-lock.js";
 
 const DEFAULT_COLLECTION = "delta-knowledge";
+
+/** Primary + CSV fallbacks, deduped (prefs order preserved). */
+function buildDeltaExtractorModelChain(primary: string, fallbackCsv: string): string[] {
+  const out: string[] = [];
+  const add = (s: string): void => {
+    const t = s.trim();
+    if (t && !out.includes(t)) out.push(t);
+  };
+  add(primary);
+  for (const p of fallbackCsv.split(",").map((x) => x.trim()).filter(Boolean)) add(p);
+  return out;
+}
 
 interface StartExtractionArgs {
   bookSourcePath: string;
@@ -268,6 +281,9 @@ async function runExtraction(
       if (ctrl.signal.aborted) throw new Error("job aborted");
 
       /* Step 3 — delta extraction (AURA filter + essence/cipher per chunk) */
+      const rawDeltaChain = buildDeltaExtractorModelChain(extractModel, prefs.extractorModelFallbacks ?? "");
+      const extractModelChain = await filterOrderedCandidatesAgainstLoaded("crystallizer", rawDeltaChain);
+      const useDeltaCrossModel = extractModelChain.length > 1;
       const deltaRes = await extractDeltaKnowledge({
         chunks,
         chapterThesis: thesis,
@@ -277,6 +293,12 @@ async function runExtraction(
           llm,
           onEvent: (e: DeltaExtractEvent) => emitWithJob({ stage: "delta", chapterIndex: ci, ...e }),
         },
+        ...(useDeltaCrossModel
+          ? {
+              extractModelChain,
+              getLlmForModel: (mk: string) => makeLlm(mk, ctrl.signal),
+            }
+          : {}),
       });
       warnings.push(...deltaRes.warnings);
 

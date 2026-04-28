@@ -15,6 +15,7 @@ import { DeltaKnowledgeSchema, type ChapterMemory, type DeltaKnowledge, type Sem
 import { ALLOWED_DOMAINS } from "../../crystallizer-constants.js";
 import { isAbortError } from "../resilience/lm-request-policy.js";
 import { extractJsonFromReasoning, extractJsonObjectFromReasoning } from "./reasoning-decoder.js";
+import { withModelFallback } from "../llm/with-model-fallback.js";
 
 export type LlmCallResult = string | { content: string; reasoningContent?: string };
 
@@ -223,16 +224,16 @@ function buildPrompt(
 
 async function tryOneAttempt(
   prompt: string,
-  cb: DeltaExtractCallbacks,
+  llm: DeltaExtractCallbacks["llm"],
   params: { temperature: number; maxTokens: number },
-  chunkPart: number,
+  _chunkPart: number,
 ): Promise<
   | { ok: true; raw: string; parsed: unknown }
   | { ok: false; raw: string; reason: string }
 > {
   let lm: { content: string; reasoningContent?: string };
   try {
-    lm = normalizeLlm(await cb.llm({
+    lm = normalizeLlm(await llm({
       messages: [{ role: "user", content: prompt }],
       temperature: params.temperature,
       maxTokens: params.maxTokens,
@@ -285,17 +286,18 @@ interface ChunkResult {
 const MAX_TOKENS = 4096;
 const RETRY_TEMPERATURE = 0.15;
 
-async function extractOneChunk(
+async function extractOneChunkWithLlm(
   chunk: SemanticChunk,
   thesis: string,
   memory: ChapterMemory,
   template: string,
-  cb: DeltaExtractCallbacks,
+  llm: DeltaExtractCallbacks["llm"],
+  onEvent?: DeltaExtractCallbacks["onEvent"],
 ): Promise<ChunkResult> {
   const built = buildPromptWithGuard(template, chunk, thesis, memory);
   const prompt = built.prompt;
   const t0 = Date.now();
-  cb.onEvent?.({ type: "delta.chunk.start", chunkPart: chunk.partN, chunkTotal: chunk.partTotal, chapterTitle: chunk.chapterTitle });
+  onEvent?.({ type: "delta.chunk.start", chunkPart: chunk.partN, chunkTotal: chunk.partTotal, chapterTitle: chunk.chapterTitle });
 
   const warnings: string[] = [];
   if (built.truncated) {
@@ -305,20 +307,20 @@ async function extractOneChunk(
   }
 
   console.log(`[delta] chunk ${chunk.partN}/${chunk.partTotal} "${chunk.chapterTitle}" (${chunk.text.split(/\s+/).length} words)`);
-  const first = await tryOneAttempt(prompt, cb, { temperature: 0.3, maxTokens: MAX_TOKENS }, chunk.partN);
+  const first = await tryOneAttempt(prompt, llm, { temperature: 0.3, maxTokens: MAX_TOKENS }, chunk.partN);
   let success = first.ok ? first : null;
 
   if (!first.ok) {
     console.log(`[delta] chunk ${chunk.partN} attempt-1 FAILED: ${first.reason}`);
-    cb.onEvent?.({ type: "delta.retry", chunkPart: chunk.partN, attempt: 2, reason: first.reason });
+    onEvent?.({ type: "delta.retry", chunkPart: chunk.partN, attempt: 2, reason: first.reason });
     warnings.push(`attempt-1: ${first.reason}`);
-    const second = await tryOneAttempt(prompt, cb, { temperature: RETRY_TEMPERATURE, maxTokens: MAX_TOKENS * 2 }, chunk.partN);
+    const second = await tryOneAttempt(prompt, llm, { temperature: RETRY_TEMPERATURE, maxTokens: MAX_TOKENS * 2 }, chunk.partN);
     if (second.ok) success = second;
     else {
       console.log(`[delta] chunk ${chunk.partN} attempt-2 FAILED: ${second.reason}`);
       warnings.push(`attempt-2: ${second.reason}`);
-      cb.onEvent?.({ type: "delta.chunk.error", chunkPart: chunk.partN, error: second.reason });
-      cb.onEvent?.({ type: "delta.chunk.done", chunkPart: chunk.partN, chunkTotal: chunk.partTotal, accepted: false, durationMs: Date.now() - t0 });
+      onEvent?.({ type: "delta.chunk.error", chunkPart: chunk.partN, error: second.reason });
+      onEvent?.({ type: "delta.chunk.done", chunkPart: chunk.partN, chunkTotal: chunk.partTotal, accepted: false, durationMs: Date.now() - t0 });
       return { chunk, delta: null, raw: second.raw || first.raw, warnings };
     }
   }
@@ -326,8 +328,8 @@ async function extractOneChunk(
   const parsed = success!.parsed;
 
   if (parsed === null || parsed === undefined) {
-    cb.onEvent?.({ type: "delta.chunk.skip", chunkPart: chunk.partN, reason: "aura-filter-null" });
-    cb.onEvent?.({ type: "delta.chunk.done", chunkPart: chunk.partN, chunkTotal: chunk.partTotal, accepted: false, durationMs: Date.now() - t0 });
+    onEvent?.({ type: "delta.chunk.skip", chunkPart: chunk.partN, reason: "aura-filter-null" });
+    onEvent?.({ type: "delta.chunk.done", chunkPart: chunk.partN, chunkTotal: chunk.partTotal, accepted: false, durationMs: Date.now() - t0 });
     return { chunk, delta: null, raw: success!.raw, warnings };
   }
 
@@ -336,24 +338,24 @@ async function extractOneChunk(
     const issues = validated.error.issues.map((i) => `${i.path.join(".")}:${i.message}`).join("; ");
     console.log(`[delta] chunk ${chunk.partN} ZOD FAIL: ${issues}`);
     warnings.push(`zod: ${issues}`);
-    cb.onEvent?.({ type: "delta.chunk.skip", chunkPart: chunk.partN, reason: `zod-fail: ${issues}` });
-    cb.onEvent?.({ type: "delta.chunk.done", chunkPart: chunk.partN, chunkTotal: chunk.partTotal, accepted: false, durationMs: Date.now() - t0 });
+    onEvent?.({ type: "delta.chunk.skip", chunkPart: chunk.partN, reason: `zod-fail: ${issues}` });
+    onEvent?.({ type: "delta.chunk.done", chunkPart: chunk.partN, chunkTotal: chunk.partTotal, accepted: false, durationMs: Date.now() - t0 });
     return { chunk, delta: null, raw: success!.raw, warnings };
   }
 
   if (!ALLOWED_DOMAINS.has(validated.data.domain)) {
     console.log(`[delta] chunk ${chunk.partN} UNKNOWN DOMAIN: "${validated.data.domain}"`);
     warnings.push(`unknown-domain: ${validated.data.domain}`);
-    cb.onEvent?.({ type: "delta.chunk.skip", chunkPart: chunk.partN, reason: "unknown-domain" });
-    cb.onEvent?.({ type: "delta.chunk.done", chunkPart: chunk.partN, chunkTotal: chunk.partTotal, accepted: false, durationMs: Date.now() - t0 });
+    onEvent?.({ type: "delta.chunk.skip", chunkPart: chunk.partN, reason: "unknown-domain" });
+    onEvent?.({ type: "delta.chunk.done", chunkPart: chunk.partN, chunkTotal: chunk.partTotal, accepted: false, durationMs: Date.now() - t0 });
     return { chunk, delta: null, raw: success!.raw, warnings };
   }
 
   if (isMetaNoiseDelta(validated.data)) {
     console.log(`[delta] chunk ${chunk.partN} META NOISE: "${validated.data.essence.slice(0, 80)}…"`);
     warnings.push("meta-noise");
-    cb.onEvent?.({ type: "delta.chunk.skip", chunkPart: chunk.partN, reason: "meta-noise" });
-    cb.onEvent?.({ type: "delta.chunk.done", chunkPart: chunk.partN, chunkTotal: chunk.partTotal, accepted: false, durationMs: Date.now() - t0 });
+    onEvent?.({ type: "delta.chunk.skip", chunkPart: chunk.partN, reason: "meta-noise" });
+    onEvent?.({ type: "delta.chunk.done", chunkPart: chunk.partN, chunkTotal: chunk.partTotal, accepted: false, durationMs: Date.now() - t0 });
     return { chunk, delta: null, raw: success!.raw, warnings };
   }
 
@@ -367,8 +369,18 @@ async function extractOneChunk(
   };
 
   console.log(`[delta] chunk ${chunk.partN} ✓ ACCEPTED domain="${delta.domain}" essence="${delta.essence.slice(0, 60)}…"`);
-  cb.onEvent?.({ type: "delta.chunk.done", chunkPart: chunk.partN, chunkTotal: chunk.partTotal, accepted: true, durationMs: Date.now() - t0 });
+  onEvent?.({ type: "delta.chunk.done", chunkPart: chunk.partN, chunkTotal: chunk.partTotal, accepted: true, durationMs: Date.now() - t0 });
   return { chunk, delta, raw: success!.raw, warnings };
+}
+
+async function extractOneChunk(
+  chunk: SemanticChunk,
+  thesis: string,
+  memory: ChapterMemory,
+  template: string,
+  cb: DeltaExtractCallbacks,
+): Promise<ChunkResult> {
+  return extractOneChunkWithLlm(chunk, thesis, memory, template, cb.llm, cb.onEvent);
 }
 
 function updateMemory(memory: ChapterMemory, delta: DeltaKnowledge | null): ChapterMemory {
@@ -385,6 +397,13 @@ export interface DeltaExtractArgs {
   promptsDir?: string | null;
   callbacks: DeltaExtractCallbacks;
   signal?: AbortSignal;
+  /**
+   * Упорядоченные ключи моделей для cross-model fallback (после same-model
+   * double-temperature). Требует `getLlmForModel`; при длине ≤1 не используется.
+   */
+  extractModelChain?: string[];
+  /** LLM для конкретного ключа из `extractModelChain` (delta extraction). */
+  getLlmForModel?: (modelKey: string) => DeltaExtractCallbacks["llm"];
 }
 
 export interface DeltaExtractResult {
@@ -407,9 +426,65 @@ export async function extractDeltaKnowledge(args: DeltaExtractArgs): Promise<Del
   const accepted: DeltaKnowledge[] = [];
   const allWarnings: string[] = [];
 
+  const useCrossModel =
+    Array.isArray(args.extractModelChain) &&
+    args.extractModelChain.length > 1 &&
+    typeof args.getLlmForModel === "function";
+
   for (const chunk of args.chunks) {
     if (args.signal?.aborted) throw new Error("aborted: delta extraction cancelled");
-    const result = await extractOneChunk(chunk, args.chapterThesis, memory, template, args.callbacks);
+    let result: ChunkResult;
+    if (useCrossModel) {
+      const chain = args.extractModelChain!;
+      const getLlm = args.getLlmForModel!;
+      const fb = await withModelFallback<ChunkResult>({
+        role: "crystallizer",
+        models: chain,
+        signal: args.signal,
+        task: async (modelKey) =>
+          extractOneChunkWithLlm(
+            chunk,
+            args.chapterThesis,
+            memory,
+            template,
+            getLlm(modelKey),
+            args.callbacks.onEvent,
+          ),
+        isAcceptable: (r) => r.delta !== null,
+      });
+      if (fb.modelKey && fb.result) {
+        const extra: string[] = [];
+        if (fb.attempts.length > 1) {
+          extra.push(
+            `cross-model-fallback: accepted with "${fb.modelKey}" after ${fb.attempts.length - 1} prior model(s)`,
+          );
+        }
+        result = { ...fb.result, warnings: [...fb.result.warnings, ...extra] };
+      } else {
+        const last = [...fb.attempts].reverse().find((a) => a.result !== undefined);
+        const base: ChunkResult = last?.result ?? {
+          chunk,
+          delta: null,
+          raw: "",
+          warnings: [],
+        };
+        const notes = fb.attempts.map((a) => {
+          if (a.error) return `model "${a.modelKey}": ${a.error}`;
+          if (a.rejectedByPredicate) return `model "${a.modelKey}": no accepted delta after same-model retries`;
+          return "";
+        }).filter(Boolean);
+        result = {
+          ...base,
+          warnings: [
+            ...base.warnings,
+            ...(fb.attempts.length > 1 ? [`cross-model-fallback: exhausted ${fb.attempts.length} model(s)`] : []),
+            ...notes,
+          ],
+        };
+      }
+    } else {
+      result = await extractOneChunk(chunk, args.chapterThesis, memory, template, args.callbacks);
+    }
     perChunk.push(result);
     if (result.delta) accepted.push(result.delta);
     allWarnings.push(...result.warnings.map((w) => `chunk-${chunk.partN}: ${w}`));

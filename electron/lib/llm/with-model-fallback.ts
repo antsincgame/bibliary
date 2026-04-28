@@ -108,6 +108,35 @@ async function buildCandidates(role: ModelRole, prefs: Preferences, override?: s
     return candidates;
   }
 
+  /* Если ни один кандидат не загружен — добавим первую загруженную модель,
+     удовлетворяющую capability. Лучше что-то, чем ничего. */
+  return filterOrderedCandidatesAgainstLoadedSync(role, candidates, loaded);
+}
+
+/**
+ * Упорядоченный список ключей → только загруженные в LM Studio и с нужными caps.
+ * Если пересечение пустое — одна auto-модель с ролью (как в buildCandidates).
+ * При ошибке listLoaded возвращает кандидатов как есть.
+ */
+export async function filterOrderedCandidatesAgainstLoaded(
+  role: ModelRole,
+  orderedCandidates: string[],
+): Promise<string[]> {
+  if (orderedCandidates.length === 0) return [];
+  let loaded: import("../../lmstudio-client.js").LoadedModelInfo[] = [];
+  try {
+    loaded = await listLoaded();
+  } catch {
+    return [...orderedCandidates];
+  }
+  return filterOrderedCandidatesAgainstLoadedSync(role, orderedCandidates, loaded);
+}
+
+function filterOrderedCandidatesAgainstLoadedSync(
+  role: ModelRole,
+  orderedCandidates: string[],
+  loaded: import("../../lmstudio-client.js").LoadedModelInfo[],
+): string[] {
   const requiredCaps = ROLE_REQUIRED_CAPS_INTERNAL[role] ?? [];
   const ok = (key: string): boolean => {
     const m = loaded.find((x) => x.modelKey === key);
@@ -115,13 +144,10 @@ async function buildCandidates(role: ModelRole, prefs: Preferences, override?: s
     for (const cap of requiredCaps) if (cap === "vision" && !m.vision) return false;
     return true;
   };
-
-  /* Если ни один кандидат не загружен — добавим первую загруженную модель,
-     удовлетворяющую capability. Лучше что-то, чем ничего. */
-  const filtered = candidates.filter(ok);
+  const filtered = orderedCandidates.filter(ok);
   if (filtered.length === 0) {
     const auto = loaded.find((m) => requiredCaps.every((c) => c !== "vision" || m.vision));
-    if (auto) filtered.push(auto.modelKey);
+    if (auto) return [auto.modelKey];
   }
   return filtered;
 }
@@ -173,8 +199,10 @@ export async function withModelFallback<T>(opts: FallbackOptions<T>): Promise<Fa
         modelKey,
         ok: accepted,
         durationMs,
-        result: accepted ? result : undefined,
-        rejectedByPredicate: !accepted,
+        /* Всегда сохраняем результат — потребителям нужен последний ChunkResult
+           даже при rejectedByPredicate (например delta-extractor). */
+        result,
+        rejectedByPredicate: opts.isAcceptable ? !accepted : false,
       };
       attempts.push(attempt);
       opts.onAttempt?.(attempt);
