@@ -315,6 +315,8 @@ export default {
   "library.import.log.clear": "Очистить",
   "library.import.log.copy": "Скопировать",
   "library.import.log.copyFailed": "Не удалось скопировать лог: {msg}",
+  "library.extraction.deltaChain": "Извлечение — порядок моделей delta (fallback): {chain}",
+  "library.extraction.deltaChainSingle": "Извлечение — delta LLM: {model} (одна модель или нет доп. загруженных fallback)",
   "nav.crystal": "Создание датасета",
   "nav.crystal.title": "Создание датасета — готовый файл для обучения нейросети в облаке",
   "nav.datasets": "Датасеты",

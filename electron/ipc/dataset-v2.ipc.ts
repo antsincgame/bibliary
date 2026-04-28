@@ -208,6 +208,19 @@ async function runExtraction(
   emitWithJob({ stage: "config", phase: "info", extractModel, targetCollection });
 
   const prefs = await getPreferencesStore().getAll();
+  const rawDeltaChain = buildDeltaExtractorModelChain(extractModel, prefs.extractorModelFallbacks ?? "");
+  const extractionDeltaModelChain = await filterOrderedCandidatesAgainstLoaded("crystallizer", rawDeltaChain);
+  emitWithJob({
+    stage: "config",
+    phase: "delta-models",
+    extractModel,
+    extractModelChain: extractionDeltaModelChain,
+    rawDeltaChain,
+    deltaCrossModel: extractionDeltaModelChain.length > 1,
+  });
+  console.log(
+    `[extraction] delta model chain (${extractionDeltaModelChain.length}): ${extractionDeltaModelChain.join(" → ")}`,
+  );
 
   try {
     emitWithJob({ stage: "parse", phase: "start", bookSourcePath: args.bookSourcePath });
@@ -281,9 +294,7 @@ async function runExtraction(
       if (ctrl.signal.aborted) throw new Error("job aborted");
 
       /* Step 3 — delta extraction (AURA filter + essence/cipher per chunk) */
-      const rawDeltaChain = buildDeltaExtractorModelChain(extractModel, prefs.extractorModelFallbacks ?? "");
-      const extractModelChain = await filterOrderedCandidatesAgainstLoaded("crystallizer", rawDeltaChain);
-      const useDeltaCrossModel = extractModelChain.length > 1;
+      const useDeltaCrossModel = extractionDeltaModelChain.length > 1;
       const deltaRes = await extractDeltaKnowledge({
         chunks,
         chapterThesis: thesis,
@@ -295,7 +306,7 @@ async function runExtraction(
         },
         ...(useDeltaCrossModel
           ? {
-              extractModelChain,
+              extractModelChain: extractionDeltaModelChain,
               getLlmForModel: (mk: string) => makeLlm(mk, ctrl.signal),
             }
           : {}),

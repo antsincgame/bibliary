@@ -256,6 +256,21 @@ function pushLogEntry(entry) {
   if (entryPassesFilter(entry)) appendLogRow(entry);
 }
 
+/**
+ * Запись в панель лога Import без main-process IPC (dataset-v2 extraction и т.п.).
+ * @param {{level: string, category: string, ts?: string, message: string, file?: string, details?: any}} entry
+ */
+export function pushImportPaneLog(entry) {
+  pushLogEntry({
+    level: entry.level,
+    category: entry.category,
+    ts: entry.ts ?? new Date().toISOString(),
+    message: entry.message,
+    file: entry.file,
+    details: entry.details,
+  });
+}
+
 /** @param {{level: string}} entry */
 function entryPassesFilter(entry) {
   const want = LOG_LEVEL_PRIORITY[/** @type {keyof typeof LOG_LEVEL_PRIORITY} */ (LOG_FILTER_LEVEL)] ?? 1;

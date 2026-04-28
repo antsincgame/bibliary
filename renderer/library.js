@@ -20,7 +20,7 @@ import { buildCollectionPicker } from "./components/collection-picker.js";
 import { STATE, CATALOG } from "./library/state.js";
 import { loadPrefs } from "./library/browse.js";
 import { buildCatalogPane, renderCatalog, renderCatalogTable, highlightCatalogBookRow } from "./library/catalog.js";
-import { buildImportPane, renderImport } from "./library/import-pane.js";
+import { buildImportPane, renderImport, pushImportPaneLog } from "./library/import-pane.js";
 import { mountCollectionViews } from "./library/collection-views.js";
 import { refreshEvaluatorState } from "./library/evaluator.js";
 import { applyBatchEvent } from "./library/batch-actions.js";
@@ -186,6 +186,25 @@ export async function mountLibrary(root) {
 
   CATALOG.unsubBatch = window.api.datasetV2.onEvent((ev) => {
     applyBatchEvent(root, ev, catalogDeps);
+    if (ev && ev.stage === "config" && ev.phase === "delta-models") {
+      const chainArr = Array.isArray(ev.extractModelChain) ? ev.extractModelChain : [];
+      const chainText = chainArr.join(" → ");
+      const cross = Boolean(ev.deltaCrossModel);
+      const msg = cross
+        ? t("library.extraction.deltaChain", { chain: chainText })
+        : t("library.extraction.deltaChainSingle", { model: String(ev.extractModel ?? chainArr[0] ?? "") });
+      pushImportPaneLog({
+        level: "info",
+        category: "extraction.delta-models",
+        message: msg,
+        details: {
+          extractModel: ev.extractModel,
+          extractModelChain: chainArr,
+          rawDeltaChain: ev.rawDeltaChain,
+          deltaCrossModel: ev.deltaCrossModel,
+        },
+      });
+    }
   });
 
   void renderCatalog(root);

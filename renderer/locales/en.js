@@ -315,6 +315,8 @@ export default {
   "library.import.log.clear": "Clear",
   "library.import.log.copy": "Copy",
   "library.import.log.copyFailed": "Failed to copy log: {msg}",
+  "library.extraction.deltaChain": "Extraction — delta LLM fallback order: {chain}",
+  "library.extraction.deltaChainSingle": "Extraction — delta LLM: {model} (single model or no extra loaded fallbacks)",
   "nav.crystal": "Dataset Builder",
   "nav.crystal.title": "Dataset Builder — ready file for cloud fine-tuning",
   "nav.datasets": "Datasets",
