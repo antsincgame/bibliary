@@ -12,6 +12,18 @@
 
 const DEFAULT_LMS_URL = "http://localhost:1234";
 
+/**
+ * Весовые категории моделей. Оценка по числовому маркеру в имени
+ * («3b» / «9b» / «27b» / …). Если маркера нет — модель попадает в `unknown`.
+ *
+ *   XS  ≤ 1B      —  тестовые крошки (qwen3-0.6b)
+ *   S   1-5B      —  бытовые роли (extractor / translator / lang-detect)
+ *   M   5-12B     —  стандарт качества (judge / evaluator / code-summary)
+ *   L   12-30B    —  тяжёлая генерация / vision-meta
+ *   XL  30B+      —  full-power (только когда железо позволяет)
+ */
+export type WeightClass = "xs" | "s" | "m" | "l" | "xl" | "unknown";
+
 export interface OlympicsOptions {
   /** Адрес LM Studio. По умолчанию http://localhost:1234. */
   lmsUrl?: string;
@@ -23,6 +35,11 @@ export interface OlympicsOptions {
   maxModels?: number;
   /** Таймаут на одну дисциплину для одной модели. Default 90 сек. */
   perDisciplineTimeoutMs?: number;
+  /**
+   * Фильтр по весовой категории. По умолчанию `"s"` — самый безопасный
+   * для слабого железа. Передай `["s", "m"]` чтобы прогнать обе категории.
+   */
+  weightClasses?: WeightClass[];
   /** Прогресс-каллбэк. */
   onProgress?: (e: OlympicsEvent) => void;
   /** Abort. */
@@ -38,12 +55,15 @@ export type OlympicsEvent =
 
 export interface OlympicsModelResult {
   model: string;
+  weightClass: WeightClass;
   score: number;
   durationMs: number;
   ok: boolean;
   tokens: number;
   sample: string;
   error?: string;
+  /** Pareto-метрика: score за единицу времени. score=1 за 5s → efficiency=200. */
+  efficiency: number;
 }
 
 export interface OlympicsMatchResult {
@@ -62,7 +82,13 @@ export interface OlympicsDisciplineResult {
   description: string;
   perModel: OlympicsModelResult[];
   matches: OlympicsMatchResult[];
+  /** Кто набрал больше всего score. */
   champion: string | null;
+  /**
+   * ОПТИМАЛЬНАЯ модель = best efficiency среди тех, кто набрал не менее 70%
+   * от score чемпиона. Это «не сильнейшая, а та, что нужна на практике».
+   */
+  optimum: string | null;
 }
 
 export interface OlympicsMedalRow {
@@ -78,10 +104,17 @@ export interface OlympicsReport {
   generatedAt: string;
   lmsUrl: string;
   models: string[];
+  /** Карта model → весовая категория (для UI и анализа). */
+  modelWeightClass: Record<string, WeightClass>;
   disciplines: OlympicsDisciplineResult[];
   medals: OlympicsMedalRow[];
-  /** Авто-рекомендации: ключ — pref-name (extractorModel/judgeModel/...), значение — modelKey. */
+  /**
+   * Авто-рекомендации: ключ — pref-name (extractorModel/judgeModel/...),
+   * значение — modelKey. По умолчанию это OPTIMUM, а не CHAMPION.
+   */
   recommendations: Record<string, string>;
+  /** Pure-CHAMPION-рекомендации (победившие по score любой ценой). */
+  recommendationsByScore: Record<string, string>;
   totalDurationMs: number;
 }
 
@@ -264,26 +297,64 @@ async function lmsChat(
 
 /* ─── Core ───────────────────────────────────────────────────────────── */
 
-export function pickModelsForOlympics(all: string[], explicit?: string[], maxModels = 4): string[] {
+/**
+ * Классифицирует модель по «весовой категории» на основе количества
+ * параметров, выведенного из имени. Без guess-работы: если маркера нет —
+ * вернёт `unknown`, а вызывающий должен решить, что с этим делать.
+ */
+export function classifyWeight(modelKey: string): WeightClass {
+  const lower = modelKey.toLowerCase();
+  /* match: 0.6b / 3b / 7b / 9b / 27b / 30b / 35b — десятичная или целая. */
+  const m = lower.match(/(\d+(?:\.\d+)?)\s*b\b/);
+  if (!m) return "unknown";
+  const n = Number(m[1]);
+  if (!Number.isFinite(n) || n <= 0) return "unknown";
+  if (n <= 1.5) return "xs";
+  if (n <= 5)   return "s";
+  if (n <= 12)  return "m";
+  if (n <= 30)  return "l";
+  return "xl";
+}
+
+export function pickModelsForOlympics(
+  all: string[],
+  explicit?: string[],
+  maxModels = 4,
+  weightClasses?: WeightClass[],
+): string[] {
   const eligible = all.filter((m) => !/embed/i.test(m));
   if (explicit && explicit.length > 0) return eligible.filter((m) => explicit.includes(m));
 
+  /* Default = только S — безопасно даже на слабом железе. */
+  const wantClasses = new Set<WeightClass>(weightClasses ?? ["s"]);
+
+  const filtered = eligible.filter((m) => wantClasses.has(classifyWeight(m)));
+  if (filtered.length === 0) {
+    /* Fallback: если в нужном классе нет моделей, добираем из ближайшего. */
+    return pickModelsForOlympics(all, undefined, maxModels, ["xs", "s", "m"]);
+  }
+
+  /* Внутри класса — приоритет по семейству и качеству. */
   const score = (m: string): number => {
     const lower = m.toLowerCase();
     let s = 0;
-    if (/0\.6b|3b|4b|7b/.test(lower)) s += 5;
-    if (lower.includes("qwen")) s += 1;
+    if (lower.includes("qwen3")) s += 3;
+    else if (lower.includes("qwen")) s += 2;
     if (lower.includes("gemma")) s += 1;
     if (lower.includes("ministral") || lower.includes("mistral")) s += 1;
-    if (lower.includes("coder")) s -= 2;
-    if (lower.includes("abliterated")) s -= 5;
+    if (lower.includes("instruct") || lower.includes("-it")) s += 2;
+    if (lower.includes("coder")) s -= 1; /* код-специалист: не идёт на translator */
+    if (lower.includes("abliterated")) s -= 5; /* uncensored — не для еverydays */
     return s;
   };
-  const ranked = [...eligible].sort((a, b) => score(b) - score(a));
+  const ranked = [...filtered].sort((a, b) => score(b) - score(a));
+
+  /* Семейная диверсификация: чтобы в категории не оказалось 4 разных
+     qwen3 одинаковой массы. */
   const picked: string[] = [];
   const families = new Set<string>();
   for (const m of ranked) {
-    const fam = m.split(/[\/\-_]/)[0]!.toLowerCase();
+    const fam = m.toLowerCase().split(/[\/\-_]/)[0]!;
     if (families.has(fam) && picked.length >= 2) continue;
     families.add(fam);
     picked.push(m);
@@ -313,10 +384,22 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
     throw new Error(`LM Studio офлайн (${lmsUrl}): ${e instanceof Error ? e.message : e}`);
   }
 
-  const models = pickModelsForOlympics(allModels, opts.models, opts.maxModels);
+  const models = pickModelsForOlympics(
+    allModels,
+    opts.models,
+    opts.maxModels,
+    opts.weightClasses,
+  );
   if (models.length < 2) {
-    throw new Error(`Нужно минимум 2 модели. Найдено: ${models.length}. Доступно: ${allModels.join(", ")}`);
+    const wc = (opts.weightClasses ?? ["s"]).join(",");
+    throw new Error(
+      `Нужно минимум 2 модели в весовых классах [${wc}]. Найдено: ${models.length}. ` +
+      `Доступно в LM Studio: ${allModels.join(", ")}. ` +
+      `Загрузи 2+ моделей нужного класса (см. classifyWeight).`,
+    );
   }
+  const modelWeightClass: Record<string, WeightClass> = {};
+  for (const m of models) modelWeightClass[m] = classifyWeight(m);
 
   const disciplines = opts.disciplines
     ? OLYMPICS_DISCIPLINES.filter((d) => opts.disciplines!.includes(d.id) || opts.disciplines!.includes(d.role))
@@ -340,10 +423,17 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
         signal: opts.signal,
       });
       const s = r.ok ? d.score(r.content) : 0;
+      const efficiency = r.durationMs > 0 ? (s * 1000) / r.durationMs : 0;
       perModel.push({
-        model: m, score: s, durationMs: r.durationMs, ok: r.ok,
-        tokens: r.totalTokens, sample: r.content.slice(0, 240).replace(/\s+/g, " "),
+        model: m,
+        weightClass: classifyWeight(m),
+        score: s,
+        durationMs: r.durationMs,
+        ok: r.ok,
+        tokens: r.totalTokens,
+        sample: r.content.slice(0, 240).replace(/\s+/g, " "),
         error: r.error,
+        efficiency,
       });
       opts.onProgress?.({ type: "olympics.model.done", discipline: d.id, model: m, score: s, durationMs: r.durationMs, ok: r.ok, error: r.error });
     }
@@ -368,7 +458,18 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
     });
     const champion = sorted[0] && sorted[0].score > 0 ? sorted[0].model : null;
 
-    results.push({ discipline: d.id, role: d.role, description: d.description, perModel, matches, champion });
+    /* Optimum: лучший efficiency среди тех, кто набрал ≥70% от score чемпиона.
+       Это и есть «оптимальный для бабушек» — почти как чемпион, но в N раз
+       быстрее. Если score чемпиона = 0 (все провалились) — optimum = null. */
+    const championScore = sorted[0]?.score ?? 0;
+    let optimum: string | null = null;
+    if (championScore > 0) {
+      const acceptable = perModel.filter((p) => p.ok && p.score >= championScore * 0.7);
+      const byEff = [...acceptable].sort((a, b) => b.efficiency - a.efficiency);
+      optimum = byEff[0]?.model ?? null;
+    }
+
+    results.push({ discipline: d.id, role: d.role, description: d.description, perModel, matches, champion, optimum });
     opts.onProgress?.({ type: "olympics.discipline.done", discipline: d.id, champion });
   }
 
@@ -401,12 +502,16 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
       return b.totalScore - a.totalScore;
     });
 
-  /* Авто-рекомендации: чемпион → prefs. */
+  /* Авто-рекомендации:
+       primary  → optimum (score/время) — это и есть «бабушкин выбор»
+       byScore  → champion (max score)  — для тех, кто хочет «лучшее любой ценой» */
   const recommendations: Record<string, string> = {};
+  const recommendationsByScore: Record<string, string> = {};
   for (const r of results) {
-    if (!r.champion) continue;
     const prefKey = roleToPrefKey(r.role);
-    if (prefKey) recommendations[prefKey] = r.champion;
+    if (!prefKey) continue;
+    if (r.optimum)  recommendations[prefKey]        = r.optimum;
+    if (r.champion) recommendationsByScore[prefKey] = r.champion;
   }
 
   const totalDurationMs = Date.now() - t0;
@@ -416,9 +521,11 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
     generatedAt: new Date().toISOString(),
     lmsUrl,
     models,
+    modelWeightClass,
     disciplines: results,
     medals,
     recommendations,
+    recommendationsByScore,
     totalDurationMs,
   };
 }

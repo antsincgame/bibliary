@@ -5,10 +5,23 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Запуск раз в неделю — ловим расхождения с upstream (npm packages, Node).
+  schedule:
+    - cron: '0 5 * * 1'  # Monday 05:00 UTC
+  workflow_dispatch: {}
+
+# Отменяем дублирующиеся runs для одного и того же PR/ветки.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  ci:
-    name: Lint · Tests · Compile
+  # ─────────────────────────────────────────────────────────────────
+  # Главный job: на windows-latest, поскольку production билды
+  # портативные .exe собираются именно там.
+  # ─────────────────────────────────────────────────────────────────
+  ci-windows:
+    name: Win · Lint · Tests · Compile
     runs-on: windows-latest
 
     steps:
@@ -19,29 +32,73 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
-      # Skip Electron binary download: not needed for lint/test/compile.
-      # The @electron/rebuild postinstall step will still succeed because
-      # better-sqlite3 has a prebuilt Windows binary for Node 22.
+      # Не скачиваем Electron binary в CI: для lint/test/compile он не нужен.
+      # better-sqlite3 имеет prebuilt Windows binary для Node 22.
       - name: Install dependencies
         run: npm ci
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
-      # After postinstall (which rebuilds better-sqlite3 for Electron ABI),
-      # we rebuild it back for Node ABI so unit tests can import it directly.
+      # postinstall пересобирает better-sqlite3 под Electron ABI;
+      # для node:test возвращаем под Node ABI.
       - name: Rebuild better-sqlite3 for Node
         run: npm rebuild better-sqlite3
 
-      - name: Lint (tsc + eslint renderer + eslint electron)
+      - name: Lint (tsc + eslint)
         run: npm run lint
 
-      - name: Unit tests
-        # test:fast skips the native rebuild; we already rebuilt for Node above.
+      - name: Unit tests (Node test runner)
         run: npm run test:fast
-        # If test:fast still fails with ERR_DLOPEN_FAILED, use: npm test
-        # (npm test = test:rebuild-native + test:fast)
 
-      # Sanity check: full TypeScript emit succeeds (catches import mismatches
-      # that --noEmit in lint may not catch due to incremental cache).
+      # Sanity-check: полный TypeScript emit без noEmit-кэша.
       - name: Compile Electron TypeScript
         run: npx tsc -p tsconfig.electron.json
+
+      # Артефакты: сохраняем компиляцию + любые отчёты из release/
+      - name: Upload compile artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-electron-${{ github.run_id }}
+          path: |
+            dist-electron/
+            release/*.json
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ─────────────────────────────────────────────────────────────────
+  # Кросс-платформенная проверка: убедиться, что core-логика
+  # (без Electron native) работает на Linux. Дешёвая страховка
+  # против Windows-only кода (неэскейпленные пути, regex \\, etc.)
+  # ─────────────────────────────────────────────────────────────────
+  ci-linux:
+    name: Linux · Lint · Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      # На Linux нет 7zip / djvulibre wrappers — те тесты, что их требуют,
+      # должны помечаться как skip-on-linux. Сейчас почти все unit-тесты
+      # самостоятельные и не зависят от platform-binaries.
+      - name: Install dependencies
+        run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+      - name: Rebuild better-sqlite3 for Node
+        run: npm rebuild better-sqlite3 || echo "rebuild skipped"
+
+      - name: Lint
+        run: npm run lint
+
+      # Запускаем только тесты, которые надёжно работают кросс-платформенно.
+      # Если какие-то тесты Win-only — добавляй маркер и фильтр.
+      - name: Unit tests
+        run: npm run test:fast
+        continue-on-error: false

@@ -1,0 +1,63 @@
+name: Release · Portable Build
+
+# Запуск:
+#   1. Вручную через "Run workflow" в Actions UI
+#   2. Автоматически при пуше тега вида v0.2.4
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: 'Имя тега для release (например v0.2.5). Пустое — без публикации release.'
+        required: false
+        default: ''
+
+jobs:
+  build-portable:
+    name: Build portable .exe (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Полная история нужна для генерации changelog по тегам.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile + portable build
+        run: npm run electron:build-portable
+        env:
+          # На случай если @electron/rebuild для better-sqlite3 захочет
+          # тянуть бинарь из мирор сети.
+          ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
+
+      - name: Upload portable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bibliary-portable-${{ github.sha }}
+          path: |
+            release/dist-portable/**
+            !release/dist-portable/**/.gitkeep
+          retention-days: 30
+
+      # Если запущено по тегу — публикуем GitHub Release
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release/dist-portable/Bibliary*.exe
+            release/dist-portable/data/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

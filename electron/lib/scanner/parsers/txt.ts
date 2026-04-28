@@ -2,7 +2,52 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import { cleanParagraph, looksLikeHeading, type BookParser, type ParseResult, type BookSection } from "./types.js";
 
-const BOM = "\uFEFF";
+const UTF8_BOM = "\uFEFF";
+
+/**
+ * Декодирует buffer в строку с авто-детектом кодировки по BOM:
+ *   - UTF-16 LE  (FF FE)
+ *   - UTF-16 BE  (FE FF)
+ *   - UTF-8      (EF BB BF) — снимает BOM
+ *   - default    UTF-8
+ *
+ * Если ни одной BOM нет — пробует UTF-8. Если результат содержит много
+ * NUL-байтов (признак неправильно декодированного UTF-16 без BOM) —
+ * фоллбэчится в UTF-16 LE (наиболее частый Windows-вариант).
+ */
+export function decodeTextAuto(buf: Buffer): { text: string; encoding: string; warnings: string[] } {
+  const warnings: string[] = [];
+  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) {
+    return { text: buf.subarray(2).toString("utf16le"), encoding: "utf-16le", warnings };
+  }
+  if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) {
+    /* UTF-16 BE: Node не имеет нативного `utf16be`, делаем byte-swap. */
+    const swapped = Buffer.allocUnsafe(buf.length - 2);
+    for (let i = 2; i + 1 < buf.length; i += 2) {
+      swapped[i - 2] = buf[i + 1]!;
+      swapped[i - 1] = buf[i]!;
+    }
+    return { text: swapped.toString("utf16le"), encoding: "utf-16be", warnings };
+  }
+  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
+    return { text: buf.subarray(3).toString("utf8"), encoding: "utf-8-bom", warnings };
+  }
+
+  const utf8 = buf.toString("utf8");
+  /* Эвристика: если в результате ≥10% NUL-байтов или replacement chars (\uFFFD)
+     то это, вероятно, UTF-16 без BOM или один из 8-битных кодов. */
+  if (buf.length >= 16) {
+    const sampleEnd = Math.min(buf.length, 4096);
+    let nulBytes = 0;
+    for (let i = 0; i < sampleEnd; i++) if (buf[i] === 0) nulBytes++;
+    if (nulBytes / sampleEnd > 0.1) {
+      warnings.push("auto-detected utf-16le (no BOM, but lots of NUL bytes)");
+      return { text: buf.toString("utf16le"), encoding: "utf-16le-noBOM", warnings };
+    }
+  }
+  if (utf8.startsWith(UTF8_BOM)) return { text: utf8.slice(1), encoding: "utf-8-bom", warnings };
+  return { text: utf8, encoding: "utf-8", warnings };
+}
 
 /**
  * Эвристический TXT-парсер: разбивает по двойным переводам строк на параграфы,
@@ -11,10 +56,12 @@ const BOM = "\uFEFF";
  */
 async function parseTxt(filePath: string): Promise<ParseResult> {
   const buf = await fs.readFile(filePath);
-  let text = buf.toString("utf8");
-  if (text.startsWith(BOM)) text = text.slice(1);
-
-  const warnings: string[] = [];
+  const decoded = decodeTextAuto(buf);
+  const text = decoded.text;
+  const warnings: string[] = [...decoded.warnings];
+  if (decoded.encoding !== "utf-8") {
+    warnings.push(`detected encoding: ${decoded.encoding}`);
+  }
   if (text.length === 0) {
     warnings.push("empty file");
   }

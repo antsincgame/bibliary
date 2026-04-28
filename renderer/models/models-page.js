@@ -401,7 +401,6 @@ function buildLayout() {
 // ---------------------------------------------------------------------------
 
 let olympicsBusy = false;
-let lastOlympicsReport = null;
 
 function buildOlympicsCard() {
   return el("section", { class: "mp-card mp-card-compact mp-olympics-card" }, [
@@ -459,7 +458,6 @@ async function runOlympicsAndShow() {
 
   try {
     const report = await window.api.arena.runOlympics({});
-    lastOlympicsReport = report;
     if (progressEl) progressEl.textContent = t("models.olympics.done", { ms: ((report.totalDurationMs ?? 0) / 1000).toFixed(1) });
     renderOlympicsReport(report);
     showToast(t("models.olympics.success"), "success");
@@ -528,21 +526,43 @@ function renderOlympicsReport(report) {
   root.appendChild(disciplines);
 
   const recs = report.recommendations ?? {};
+  const byScore = report.recommendationsByScore ?? {};
   const recsKeys = Object.keys(recs);
-  if (recsKeys.length === 0) {
+  const byScoreKeys = Object.keys(byScore);
+  if (recsKeys.length === 0 && byScoreKeys.length === 0) {
     root.appendChild(el("div", { class: "mp-olympics-no-recs" }, t("models.olympics.no_recommendations")));
     return;
   }
 
+  /* Две колонки: ОПТИМУМ (бабушкин выбор) и ЧЕМПИОН (максимальное качество). */
   const recsBox = el("div", { class: "mp-olympics-recs" }, [
     el("h3", {}, t("models.olympics.recommendations")),
-    el("p", { class: "mp-card-sub" }, t("models.olympics.recommendations_hint")),
-    ...recsKeys.map((k) => el("div", { class: "mp-olympics-rec-row" }, `${k}: ${recs[k]}`)),
-    el("button", {
-      class: "btn btn-primary",
-      type: "button",
-      onclick: () => void applyRecommendations(recs),
-    }, t("models.olympics.apply")),
+    el("p", { class: "mp-card-sub" }, t("models.olympics.recommendations_hint_v2")),
+
+    el("div", { class: "mp-olympics-recs-cols" }, [
+      el("div", { class: "mp-olympics-recs-col" }, [
+        el("div", { class: "mp-olympics-recs-col-title" }, t("models.olympics.optimum.title")),
+        el("div", { class: "mp-olympics-recs-col-sub" }, t("models.olympics.optimum.sub")),
+        ...recsKeys.map((k) => el("div", { class: "mp-olympics-rec-row" }, `${k}: ${recs[k]}`)),
+        el("button", {
+          class: "btn btn-primary",
+          type: "button",
+          disabled: recsKeys.length === 0,
+          onclick: () => void applyRecommendations(recs),
+        }, t("models.olympics.apply.optimum")),
+      ]),
+      el("div", { class: "mp-olympics-recs-col" }, [
+        el("div", { class: "mp-olympics-recs-col-title" }, t("models.olympics.champion.title")),
+        el("div", { class: "mp-olympics-recs-col-sub" }, t("models.olympics.champion.sub")),
+        ...byScoreKeys.map((k) => el("div", { class: "mp-olympics-rec-row" }, `${k}: ${byScore[k]}`)),
+        el("button", {
+          class: "btn btn-ghost",
+          type: "button",
+          disabled: byScoreKeys.length === 0,
+          onclick: () => void applyRecommendations(byScore),
+        }, t("models.olympics.apply.champion")),
+      ]),
+    ]),
   ]);
   root.appendChild(recsBox);
 }

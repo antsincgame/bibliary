@@ -6525,3 +6525,10 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
 .mp-olympics-rec-row { font-family: var(--font-mono, monospace); font-size: 12px; padding: 2px 0; }
 .mp-olympics-no-recs { font-size: 12px; color: var(--text-secondary); font-style: italic; }
 .mp-error { color: var(--accent-error, #f87171); font-size: 12px; padding: 8px; }
+
+/* ── Olympics: champion vs optimum two-column ── */
+.mp-olympics-recs-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
+.mp-olympics-recs-col { background: rgba(0,0,0,0.15); border: 1px solid var(--border, #2a2a2a); border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.mp-olympics-recs-col:first-child { border-color: rgba(56, 142, 60, 0.4); background: rgba(56, 142, 60, 0.06); }
+.mp-olympics-recs-col-title { font-weight: 600; font-size: 13px; }
+.mp-olympics-recs-col-sub { font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
