@@ -3,15 +3,15 @@
  * Catalog tab: table, toolbar, bottom-bar, inline-toast.
  */
 import { el, clear } from "../dom.js";
-import { t } from "../i18n.js";
+import { t, getLocale } from "../i18n.js";
 import { showAlert, showConfirm } from "../components/ui-dialog.js";
 import { CATALOG } from "./state.js";
-import { filterCatalog as filterCatalogPure, qualityClass, statusClass, QUALITY_PRESETS } from "./catalog-filter.js";
+import { filterCatalog as filterCatalogPure, qualityClass, statusClass } from "./catalog-filter.js";
 import { fmtWords, fmtQuality } from "./format.js";
-import { guardAndCrystallize, cancelBatchExtraction, launchSynthesis } from "./batch-actions.js";
+import { guardAndCrystallize } from "./batch-actions.js";
 import { openBook } from "./reader.js";
 import { openTagCloudModal } from "./tag-cloud.js";
-import { mountCollectionViews } from "./collection-views.js";
+import { displayBookTitle, displayBookAuthor, bookTitleTooltip } from "./display-meta.js";
 
 /** @type {Promise<void> | null} */
 let catalogLoadPromise = null;
@@ -58,7 +58,11 @@ export async function loadCatalog() {
   CATALOG.loading = true;
   catalogLoadPromise = (async () => {
     try {
-      const res = await window.api.library.catalog({ limit: CATALOG_PAGE_SIZE, offset: 0 });
+      const res = await window.api.library.catalog({
+        limit: CATALOG_PAGE_SIZE,
+        offset: 0,
+        displayLocale: getLocale() === "ru" ? "ru" : "en",
+      });
       CATALOG.rows = /** @type {import("./state.js").CatalogMeta[]} */ (res.rows || []);
       CATALOG.total = res.total ?? CATALOG.rows.length;
       CATALOG.libraryRoot = res.libraryRoot || "";
@@ -86,6 +90,7 @@ export async function loadMoreCatalog(root = null) {
     const res = await window.api.library.catalog({
       limit: CATALOG_PAGE_SIZE,
       offset: CATALOG.rows.length,
+      displayLocale: getLocale() === "ru" ? "ru" : "en",
     });
     const newRows = /** @type {import("./state.js").CatalogMeta[]} */ (res.rows || []);
     CATALOG.rows.push(...newRows);
@@ -113,13 +118,30 @@ export function renderCatalogTable(root) {
   });
   const selEl = root.querySelector(".lib-catalog-summary-selected");
   if (selEl) selEl.textContent = t("library.catalog.summary.selected", { n: String(CATALOG.selected.size) });
-  const rootEl = root.querySelector(".lib-catalog-summary-root");
-  if (rootEl) rootEl.textContent = CATALOG.libraryRoot || CATALOG.dbPath
-    ? [
-        CATALOG.libraryRoot ? t("library.catalog.summary.root", { path: CATALOG.libraryRoot }) : "",
-        CATALOG.dbPath ? t("library.catalog.summary.db", { path: CATALOG.dbPath }) : "",
-      ].filter(Boolean).join(" | ")
-    : "";
+  const libPathEl = root.querySelector(".lib-catalog-path-library");
+  if (libPathEl) {
+    if (CATALOG.libraryRoot) {
+      libPathEl.textContent = t("library.catalog.summary.root", { path: CATALOG.libraryRoot });
+      libPathEl.hidden = false;
+    } else {
+      libPathEl.textContent = "";
+      libPathEl.hidden = true;
+    }
+  }
+  const dbPathEl = root.querySelector(".lib-catalog-path-db");
+  if (dbPathEl) {
+    if (CATALOG.dbPath) {
+      dbPathEl.textContent = t("library.catalog.summary.db", { path: CATALOG.dbPath });
+      dbPathEl.hidden = false;
+    } else {
+      dbPathEl.textContent = "";
+      dbPathEl.hidden = true;
+    }
+  }
+  const pathsDetails = root.querySelector(".lib-catalog-dock-paths");
+  if (pathsDetails instanceof HTMLDetailsElement) {
+    pathsDetails.hidden = !CATALOG.libraryRoot && !CATALOG.dbPath;
+  }
   const capEl = root.querySelector(".lib-catalog-summary-cap");
   if (capEl) capEl.textContent = CATALOG.rows.length < CATALOG.total
     ? t("library.catalog.summary.partial", {
@@ -150,20 +172,17 @@ export function renderCatalogTable(root) {
       if (sEl) sEl.textContent = t("library.catalog.summary.selected", { n: String(CATALOG.selected.size) });
     });
     const q = typeof row.qualityScore === "number" ? row.qualityScore : null;
-    /* Title cell: предпочитаем titleEn (после оценки) или original title (после vision-meta).
-       Fallback на id только если оба пусты — этого почти не бывает после vision enrichment. */
-    const displayTitle = row.titleEn || row.title || row.id;
+    /* Title / author: locale-aware зеркала (display-meta). */
+    const displayTitle = displayBookTitle(row);
     const titleCell = el("td", {
       class: "lib-catalog-cell-title lib-catalog-cell-clickable",
-      title: row.title && row.titleEn && row.title !== row.titleEn
-        ? `${row.titleEn} (orig: ${row.title})`
-        : displayTitle,
+      title: bookTitleTooltip(row),
       onclick: () => {
         const pane = root.closest(".lib-pane-catalog") || root;
         openBook(row.id, pane);
       },
     }, displayTitle);
-    const displayAuthor = row.authorEn || row.author || "";
+    const displayAuthor = displayBookAuthor(row);
     const statusText = statusLabel(row.status);
     const errorText = compactError(row.lastError);
     const statusCell = el("td", {
@@ -265,153 +284,24 @@ export function buildCatalogToolbar(root) {
     const v = Number(qualitySlider.value);
     CATALOG.filters.quality = v;
     qualityVal.textContent = v > 0 ? `\u2265${v}` : t("library.catalog.filter.quality.any");
-    syncPresetActive(presetWrap);
     debouncedRender(root, 150);
   });
-
-  const fictionCb = /** @type {HTMLInputElement} */ (el("input", {
-    type: "checkbox", class: "lib-catalog-fiction-cb",
-    checked: CATALOG.filters.hideFiction ? "checked" : undefined,
-  }));
-  fictionCb.addEventListener("change", () => {
-    CATALOG.filters.hideFiction = fictionCb.checked;
-    renderCatalogTable(root);
-  });
-
-  const presetWrap = el("div", { class: "lib-catalog-presets" });
-  for (const p of QUALITY_PRESETS) {
-    const label = t(p.labelKey);
-    const btn = el("button", {
-      type: "button",
-      class: "lib-btn lib-btn-ghost lib-catalog-preset",
-      "data-quality": String(p.minQuality),
-      "data-fiction": p.hideFiction ? "1" : "0",
-      title: label,
-      "aria-label": label,
-      onclick: () => {
-        CATALOG.filters.quality = p.minQuality;
-        CATALOG.filters.hideFiction = p.hideFiction;
-        qualitySlider.value = String(p.minQuality);
-        qualityVal.textContent = p.minQuality > 0
-          ? `\u2265${p.minQuality}`
-          : t("library.catalog.filter.quality.any");
-        fictionCb.checked = p.hideFiction;
-        syncPresetActive(presetWrap);
-        renderCatalogTable(root);
-      },
-    }, label);
-    presetWrap.appendChild(btn);
-  }
-  syncPresetActive(presetWrap);
-
-  const refreshBtn = el("button", {
-    type: "button", class: "lib-btn lib-btn-ghost",
-    onclick: (ev) => void withButtonBusy(ev, async () => {
-      await renderCatalog(root);
-    }),
-  }, t("library.catalog.btn.refresh"));
-
-  const rebuildBtn = el("button", {
-    type: "button", class: "lib-btn lib-btn-ghost",
-    onclick: (ev) => void withButtonBusy(ev, async () => {
-      try {
-        const res = await window.api.library.rebuildCache();
-        await showAlert(t("library.catalog.rebuild.done", {
-          scanned: String(res.scanned),
-          ingested: String(res.ingested),
-          pruned: String(res.pruned),
-        }));
-      } catch (e) {
-        await showAlert(t("library.catalog.rebuild.failed", {
-          error: e instanceof Error ? e.message : String(e),
-        }));
-      }
-      void renderCatalog(root);
-    }),
-  }, t("library.catalog.btn.rebuild"));
-
-  const reevaluateAllBtn = el("button", {
-    type: "button", class: "lib-btn lib-btn-ghost",
-    onclick: (ev) => void withButtonBusy(ev, async () => {
-      try {
-        const res = await window.api.library.reevaluateAll();
-        await showAlert(t("library.catalog.toast.reevaluateAll", { n: String(res.queued) }));
-      } catch (e) {
-        await showAlert(e instanceof Error ? e.message : String(e));
-      }
-      void renderCatalog(root);
-    }),
-  }, t("library.catalog.btn.reevaluateAll"));
 
   const tagCloudBtn = el("button", {
     type: "button", class: "lib-btn lib-btn-ghost",
     onclick: () => void openTagCloudModal({ root, renderCatalogTable }),
   }, t("library.catalog.btn.tagCloud"));
 
-  let collectionsVisible = false;
-  const collectionsBtn = el("button", {
-    type: "button", class: "lib-btn lib-btn-ghost",
-    onclick: () => {
-      collectionsVisible = !collectionsVisible;
-      const panel = root.querySelector(".lib-collections");
-      if (panel) {
-        panel.remove();
-        collectionsVisible = false;
-      } else {
-        const body = root.querySelector(".lib-catalog-body");
-        if (body) {
-          mountCollectionViews(/** @type {HTMLElement} */ (body), (bookIds) => {
-            if (bookIds.length === 0) {
-              CATALOG.filters.filterBookIds = null;
-            } else {
-              CATALOG.filters.filterBookIds = new Set(bookIds);
-            }
-            renderCatalogTable(root);
-          });
-        }
-      }
-    },
-  }, t("library.catalog.btn.collections") || "Коллекции");
-
-  const fictionLabel = el("label", {
-    class: "lib-catalog-fiction-label",
-    title: t("library.catalog.filter.hideFiction"),
-    "data-mode-min": "advanced",
-  }, [
-    fictionCb,
-    el("span", { class: "lib-catalog-fiction-text" }, t("library.catalog.filter.hideFiction")),
-  ]);
-
-  for (const btn of presetWrap.querySelectorAll(".lib-catalog-preset")) {
-    const q = Number(/** @type {HTMLElement} */ (btn).dataset.quality);
-    if (q > 0) /** @type {HTMLElement} */ (btn).dataset.modeMin = "advanced";
-  }
-
-  refreshBtn.dataset.modeMin = "advanced";
-  rebuildBtn.dataset.modeMin = "pro";
-  reevaluateAllBtn.dataset.modeMin = "pro";
-
   return el("div", { class: "lib-catalog-toolbar lib-catalog-toolbar-compact" }, [
     searchInput,
     tagCloudBtn,
-    collectionsBtn,
     el("div", { class: "lib-catalog-quality-wrap" }, [
       el("label", { class: "lib-catalog-quality-label" }, t("library.catalog.filter.quality.label")),
       qualitySlider, qualityVal,
     ]),
-    fictionLabel,
-    presetWrap,
-    refreshBtn, rebuildBtn, reevaluateAllBtn,
   ]);
 }
 
-function syncPresetActive(presetWrap) {
-  presetWrap.querySelectorAll(".lib-catalog-preset").forEach((btn) => {
-    const q = Number(/** @type {HTMLElement} */ (btn).dataset.quality);
-    const f = /** @type {HTMLElement} */ (btn).dataset.fiction === "1";
-    btn.classList.toggle("lib-catalog-preset-active", q === CATALOG.filters.quality && f === CATALOG.filters.hideFiction);
-  });
-}
 
 export function buildCatalogTable() {
   const thead = el("thead", {}, [
@@ -439,17 +329,25 @@ export function buildCatalogTable() {
  * @param {(root: HTMLElement) => void} deps.renderCatalogTable
  */
 export function buildCatalogBottomBar(root, deps) {
-  const summary = el("div", { class: "lib-catalog-summary" }, [
+  const metaRow = el("div", { class: "lib-catalog-dock-meta" }, [
     el("span", { class: "lib-catalog-summary-shown" }, t("library.catalog.summary.shown", { shown: "0", total: "0" })),
     el("span", { class: "lib-catalog-summary-sep" }, "\u00b7"),
     el("span", { class: "lib-catalog-summary-selected" }, t("library.catalog.summary.selected", { n: "0" })),
-    el("span", { class: "lib-catalog-summary-sep" }, "\u00b7"),
-    el("span", { class: "lib-catalog-summary-root" }, ""),
     el("span", { class: "lib-catalog-summary-cap" }, ""),
+  ]);
+
+  const pathsInner = el("div", { class: "lib-catalog-dock-paths-inner" }, [
+    el("div", { class: "lib-catalog-path-line lib-catalog-path-library", hidden: true }, ""),
+    el("div", { class: "lib-catalog-path-line lib-catalog-path-db", hidden: true }, ""),
+  ]);
+  const pathsBlock = el("details", { class: "lib-catalog-dock-paths" }, [
+    el("summary", { class: "lib-catalog-dock-paths-summary" }, t("library.catalog.summary.pathsToggle")),
+    pathsInner,
   ]);
 
   const selectAllBtn = el("button", {
     type: "button", class: "lib-btn lib-btn-ghost",
+    title: t("library.catalog.tooltip.selectAll"),
     onclick: () => {
       const filtered = filterCatalog(CATALOG.rows);
       for (const r of filtered) CATALOG.selected.add(r.id);
@@ -459,6 +357,7 @@ export function buildCatalogBottomBar(root, deps) {
 
   const clearBtn = el("button", {
     type: "button", class: "lib-btn lib-btn-ghost",
+    title: t("library.catalog.tooltip.clearSelection"),
     onclick: () => {
       CATALOG.selected.clear();
       deps.renderCatalogTable(root);
@@ -587,26 +486,17 @@ export function buildCatalogBottomBar(root, deps) {
 
   const chunksBtn = el("button", {
     type: "button", class: "lib-btn lib-btn-primary",
+    title: t("library.catalog.tooltip.createChunks"),
     onclick: () => void guardAndCrystallize(root, deps),
   }, t("library.catalog.btn.createChunks"));
-
-  const synthBtn = el("button", {
-    type: "button", class: "lib-btn lib-btn-secondary",
-    onclick: () => void launchSynthesis(),
-  }, t("library.catalog.btn.synthesize"));
-
-  const cancelBatchBtn = el("button", {
-    type: "button", class: "lib-btn lib-btn-danger lib-btn-cancel-batch",
-    style: "display:none",
-    onclick: () => void cancelBatchExtraction(),
-  }, t("library.catalog.btn.cancelBatch"));
 
   const batchSummary = el("span", { class: "lib-catalog-batch-summary" }, "");
 
   return el("div", { class: "lib-catalog-bottombar" }, [
-    summary,
+    metaRow,
+    pathsBlock,
     el("div", { class: "lib-catalog-bottom-actions" }, [
-      selectAllBtn, clearBtn, reevaluateBtn, reparseBtn, deleteBtn, chunksBtn, synthBtn, cancelBatchBtn,
+      selectAllBtn, clearBtn, reevaluateBtn, reparseBtn, deleteBtn, chunksBtn,
     ]),
     batchSummary,
   ]);

@@ -6,9 +6,6 @@ import {
   abortAllIngests,
   abortAllDatasetV2,
   abortAllBookhunter,
-  abortAllAgents,
-  abortAllForgeLocal,
-  abortAllForgeEval,
   abortAllLibrary,
   activeLibraryImportCount,
   flushLibraryImports,
@@ -24,16 +21,14 @@ import {
 } from "./lib/resilience";
 import { initPreferencesStore } from "./lib/preferences/store.js";
 import { syncMarkerEnvFromPrefs } from "./lib/library/marker-sidecar.js";
-import { registerForgePipeline } from "./lib/forge";
-import { initForgeStore } from "./lib/forge/state";
 import { registerExtractionPipeline } from "./lib/dataset-v2/coordinator-pipeline";
 import { startWatchdog, stopWatchdog, configureWatchdog } from "./lib/resilience/lmstudio-watchdog";
-import { startScheduler as startArenaScheduler, stopScheduler as stopArenaScheduler } from "./lib/llm/arena/scheduler.js";
-import { initArenaRatingsStore } from "./lib/llm/arena/ratings-store.js";
 import { SHUTDOWN_FLUSH_TIMEOUT_MS } from "./lib/resilience/constants";
 import { getWindowsParentExecutablePath, resolveAppDataDir } from "./lib/app-data-dir.js";
 import { closeCacheDb } from "./lib/library/cache-db.js";
 import { killAllSynthChildren } from "./ipc/dataset-v2.ipc.js";
+import { initArenaRatingsStore } from "./lib/llm/arena/ratings-store.js";
+import { startScheduler, stopScheduler } from "./lib/llm/arena/scheduler.js";
 import { resolveBlobFromUrl, getBlobsRoot } from "./lib/library/library-store.js";
 import { resolveLibraryRoot } from "./lib/library/paths.js";
 
@@ -172,7 +167,7 @@ if (!gotLock) {
     /* Allow tests / portable installs to point at a custom data directory.
        Default остаётся `data/` рядом с приложением -- это не меняет
        поведение для обычного пользователя, но даёт smoke-тесту полную
-       изоляцию (свой preferences.json, свой forge state, своя SQLite). */
+       изоляцию (свой preferences.json, своя SQLite). */
     const dataDir = resolveAppDataDir({
       env: process.env,
       isPackaged: app.isPackaged,
@@ -200,11 +195,7 @@ if (!gotLock) {
     /* Sync Marker feature flag from preferences to ENV so marker-sidecar.ts
        can read it synchronously without a preferences store dependency. */
     syncMarkerEnvFromPrefs(prefs.useMarkerExtractor);
-    /* Forge store must be initialised after resilience layer (uses
-       checkpoint store) but before registerForgePipeline (registers it
-       in coordinator). Keeping it in main.ts is what breaks the cycle
-       resilience/bootstrap <-> forge/state. */
-    initForgeStore(dataDir);
+    initArenaRatingsStore(dataDir);
     /* Resolve endpoints from preferences once and propagate the result
        into the live QDRANT_URL binding. Without this, modules that
        import { QDRANT_URL } at module-init read the env-only value. */
@@ -213,28 +204,15 @@ if (!gotLock) {
     const endpoints = await getEndpoints();
     setQdrantUrl(endpoints.qdrantUrl);
 
-    registerForgePipeline();
-    /* Crystallizer (extraction) is now first-class in coordinator: when
-       LM Studio goes offline the watchdog pauses it (= aborts in-flight
-       LLM calls) symmetrically with dataset/forge. */
+    /* Crystallizer (extraction) is first-class in coordinator: when
+       LM Studio goes offline the watchdog pauses it (aborts in-flight LLM calls). */
     registerExtractionPipeline();
     applyCsp();
     registerAssetProtocol();
     startWatchdog(() => mainWindow);
-    /* Arena ratings store должен инициализироваться ДО registerAllIpcHandlers,
-       т.к. arena.ipc.ts читает file path при первом invoke. */
-    initArenaRatingsStore(dataDir);
     registerAllIpcHandlers(() => mainWindow);
-    /* Library subsystem: подписывает evaluator-queue на broadcast в renderer
-       и запускает bootstrap (re-queue всех imported книг с прошлого раза).
-       Не блокирует createWindow -- ошибка bootstrap не должна валить старт.
-       Также регистрирует probes в GlobalLlmLock (library-import + evaluator-queue). */
+    void startScheduler();
     void bootstrapLibrarySubsystem(() => mainWindow);
-    /* Arena scheduler стартует ПОСЛЕ bootstrapLibrarySubsystem чтобы probes
-       были зарегистрированы до первого тика. Защита от OOM: scheduler перед
-       каждым cycle проверяет globalLlmLock.isBusy() — если LM Studio занят
-       массовым импортом или evaluator queue, тик пропускается. */
-    void startArenaScheduler();
     createWindow();
   });
 
@@ -248,14 +226,11 @@ if (!gotLock) {
     const subsystems: [string, () => void][] = [
       ["triggerAppShutdown", triggerAppShutdown],
       ["stopWatchdog", stopWatchdog],
-      ["stopArenaScheduler", stopArenaScheduler],
+      ["stopArenaScheduler", stopScheduler],
       ["abortAllIngests", () => abortAllIngests("app-quit")],
       ["abortAllDatasetV2", () => abortAllDatasetV2("app-quit")],
       ["killAllSynthChildren", killAllSynthChildren],
       ["abortAllBookhunter", () => abortAllBookhunter("app-quit")],
-      ["abortAllAgents", () => abortAllAgents("app-quit")],
-      ["abortAllForgeLocal", () => abortAllForgeLocal("app-quit")],
-      ["abortAllForgeEval", () => abortAllForgeEval("app-quit")],
       ["abortAllLibrary", () => abortAllLibrary("app-quit")],
       ["disposeClient", disposeClient],
       ["closeCacheDb", closeCacheDb],
@@ -277,9 +252,9 @@ if (!gotLock) {
     }, FORCE_EXIT_MS);
     forceTimer.unref();
 
-    /* CRITICAL: даже если coordinator пуст (нет extraction/forge), может идти
-       library import — fs.writeFile / copyFile / cache-db upsert. Если выйти
-       прямо сейчас, book.md останется полу-битым, SHA-кэш не сохранится.
+    /* CRITICAL: даже если coordinator пуст, может идти library import —
+       fs.writeFile / copyFile / cache-db upsert. Если выйти прямо сейчас,
+       book.md останется полу-битым, SHA-кэш не сохранится.
        Дожидаемся abort + завершения активных импортов до закрытия БД. */
     const activeImports = activeLibraryImportCount();
     const idle = !coordinator.isAnyActive() && activeImports === 0;

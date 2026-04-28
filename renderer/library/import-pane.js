@@ -50,6 +50,26 @@ export function buildImportPane(deps) {
     onclick: () => importFromFiles(deps),
   }, t("library.import.btn.pickFiles"));
 
+  const pauseBtn = el("button", {
+    type: "button",
+    class: "lib-btn lib-import-pause",
+    style: "display:none",
+    onclick: async () => {
+      const isPaused = pauseBtn.dataset.paused === "1";
+      try {
+        if (isPaused) {
+          await window.api.library.evaluatorResume();
+          pauseBtn.dataset.paused = "0";
+          pauseBtn.textContent = t("library.import.btn.pause");
+        } else {
+          await window.api.library.evaluatorPause();
+          pauseBtn.dataset.paused = "1";
+          pauseBtn.textContent = t("library.import.btn.resume");
+        }
+      } catch (_e) { console.warn("[import] pause/resume failed:", _e); }
+    },
+  }, t("library.import.btn.pause"));
+
   const cancelBtn = el("button", {
     type: "button",
     class: "lib-btn lib-import-cancel",
@@ -105,7 +125,7 @@ export function buildImportPane(deps) {
 
   const body = el("div", { class: "lib-import-body" }, [
     dropzone,
-    el("div", { class: "lib-import-actions" }, [pickFolderBtn, pickFilesBtn, scanBtn, cancelBtn]),
+    el("div", { class: "lib-import-actions" }, [pickFolderBtn, pickFilesBtn, scanBtn, pauseBtn, cancelBtn]),
     opts,
     status,
     logPanel,
@@ -341,8 +361,10 @@ async function runImport(invoke, deps) {
   if (!root) return;
   const status = root.querySelector(".lib-import-status");
   const cancelBtn = /** @type {HTMLElement|null} */ (root.querySelector(".lib-import-cancel"));
+  const pauseBtn = /** @type {HTMLElement|null} */ (root.querySelector(".lib-import-pause"));
   IMPORT_STATE.busy = true;
   if (cancelBtn) cancelBtn.style.display = "";
+  if (pauseBtn) { pauseBtn.style.display = ""; pauseBtn.dataset.paused = "0"; pauseBtn.textContent = t("library.import.btn.pause"); }
   if (status) status.textContent = t("library.import.progress.starting");
   let unsubscribeProgress = null;
   try {
@@ -399,6 +421,8 @@ async function runImport(invoke, deps) {
     IMPORT_STATE.busy = false;
     IMPORT_STATE.importId = null;
     if (cancelBtn) cancelBtn.style.display = "none";
+    if (pauseBtn) { pauseBtn.style.display = "none"; pauseBtn.dataset.paused = "0"; }
+    try { await window.api.library.evaluatorResume(); } catch (_e) { /* resume on cleanup is best-effort */ }
   }
 }
 

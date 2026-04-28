@@ -112,10 +112,14 @@ ${"More body. ".repeat(50)}
 function fakeEvaluation(quality: number): EvaluationResult {
   return {
     evaluation: {
+      title_ru: "Фейк",
+      author_ru: "Автор",
       title_en: "Fake",
       author_en: "Author",
+      year: 2024,
       domain: "test",
-      tags: ["a"],
+      tags: ["a", "b", "c", "d", "e", "f", "g", "h"],
+      tags_ru: ["а", "б", "в", "г", "д", "е", "ё", "ж"],
       is_fiction_or_water: false,
       conceptual_density: 70,
       originality: 60,

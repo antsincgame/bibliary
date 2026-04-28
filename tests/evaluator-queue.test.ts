@@ -111,11 +111,14 @@ ${"Dolor sit amet body text. ".repeat(50)}
 function makeFakeEvaluation(qualityScore: number, isFiction = false): EvaluationResult {
   return {
     evaluation: {
+      title_ru: "Фальшивое название",
+      author_ru: "Тестовый автор",
       title_en: "Fake Title",
       author_en: "Test Author",
       year: 2024,
       domain: "test domain",
       tags: ["a", "b", "c", "d", "e", "f", "g", "h"],
+      tags_ru: ["а", "б", "в", "г", "д", "е", "ё", "ж"],
       is_fiction_or_water: isFiction,
       conceptual_density: 70,
       originality: 60,
@@ -195,6 +198,7 @@ test("evaluator-queue happy path: two books processed sequentially", async (t) =
   const updatedMd = await readFile(a.mdPath, "utf-8");
   assert.match(updatedMd, /status: evaluated/);
   assert.match(updatedMd, /qualityScore: 80/);
+  assert.match(updatedMd, /titleRu:/);
   assert.match(updatedMd, /Evaluator Reasoning/);
   assert.match(updatedMd, /synthetic chain of thought/);
 });

@@ -28,20 +28,6 @@
 /** @type {ReadonlyArray<SettingsSection>} */
 export const SECTIONS = Object.freeze([
   {
-    id: "chat",
-    titleKey: "settings.section.chat",
-    descriptionKey: "settings.section.chat.desc",
-    icon: "CHAT",
-    mode: "simple",
-    fields: [
-      { key: "ragTopK", type: "int", min: 1, max: 100, labelKey: "settings.ragTopK" },
-      { key: "ragScoreThreshold", type: "float", min: 0, max: 1, step: 0.05, labelKey: "settings.ragScoreThreshold" },
-      { key: "chatTemperature", type: "float", min: 0, max: 2, step: 0.1, labelKey: "settings.chatTemperature" },
-      { key: "chatTopP", type: "float", min: 0, max: 1, step: 0.05, labelKey: "settings.chatTopP" },
-      { key: "chatMaxTokens", type: "int", min: 256, max: 131072, labelKey: "settings.chatMaxTokens" },
-    ],
-  },
-  {
     id: "ingest",
     titleKey: "settings.section.ingest",
     descriptionKey: "settings.section.ingest.desc",
@@ -94,19 +80,6 @@ export const SECTIONS = Object.freeze([
       { key: "healthPollIntervalMs", type: "int", min: 1000, max: 60000, labelKey: "settings.healthPollIntervalMs" },
       { key: "healthFailThreshold", type: "int", min: 1, max: 20, labelKey: "settings.healthFailThreshold" },
       { key: "watchdogLivenessTimeoutMs", type: "int", min: 500, max: 15000, labelKey: "settings.watchdogLivenessTimeoutMs" },
-    ],
-  },
-  {
-    id: "forge",
-    titleKey: "settings.section.forge",
-    descriptionKey: "settings.section.forge.desc",
-    icon: "NET",
-    mode: "pro",
-    fields: [
-      { key: "forgeHeartbeatMs", type: "int", min: 60000, max: 7200000, labelKey: "settings.forgeHeartbeatMs" },
-      { key: "forgeMaxWallMs", type: "int", min: 3600000, max: 172800000, labelKey: "settings.forgeMaxWallMs" },
-      { key: "downloadMaxRetries", type: "int", min: 1, max: 10, labelKey: "settings.downloadMaxRetries" },
-      { key: "qdrantTimeoutMs", type: "int", min: 1000, max: 60000, labelKey: "settings.qdrantTimeoutMs" },
     ],
   },
   {

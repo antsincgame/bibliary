@@ -16,6 +16,8 @@
  * @typedef {object} CatalogMeta
  * @property {string} id
  * @property {string} title
+ * @property {string} [titleRu]
+ * @property {string} [authorRu]
  * @property {string} [titleEn]
  * @property {string} [author]
  * @property {string} [authorEn]
@@ -27,6 +29,7 @@
  * @property {string} [lastError]
  * @property {string} status
  * @property {string[]} [tags]
+ * @property {string[]} [tagsRu]
  */
 
 /** @typedef {{ downloadId: string, downloaded: number, total: number | null, status: "downloading"|"ingesting"|"done"|"error"|"cancelled", message?: string }} DownloadState */

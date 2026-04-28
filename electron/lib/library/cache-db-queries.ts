@@ -5,6 +5,33 @@ import { type BookRow, rowToMeta, type CatalogQuery, type QueryResult, type Revi
 const DEFAULT_CATALOG_LIMIT = 500;
 const MAX_CATALOG_LIMIT = 20_000;
 
+function loadTagPairsForBookIds(
+  db: ReturnType<typeof openCacheDb>,
+  ids: string[],
+): { enByBook: Map<string, string[]>; ruByBook: Map<string, string[]> } {
+  const enByBook = new Map<string, string[]>();
+  const ruByBook = new Map<string, string[]>();
+  if (ids.length === 0) return { enByBook, ruByBook };
+  const ph = ids.map(() => "?").join(",");
+  const enRows = db
+    .prepare(`SELECT book_id, tag FROM book_tags WHERE book_id IN (${ph})`)
+    .all(...ids) as Array<{ book_id: string; tag: string }>;
+  for (const tr of enRows) {
+    const arr = enByBook.get(tr.book_id) ?? [];
+    arr.push(tr.tag);
+    enByBook.set(tr.book_id, arr);
+  }
+  const ruRows = db
+    .prepare(`SELECT book_id, tag FROM book_tags_ru WHERE book_id IN (${ph})`)
+    .all(...ids) as Array<{ book_id: string; tag: string }>;
+  for (const tr of ruRows) {
+    const arr = ruByBook.get(tr.book_id) ?? [];
+    arr.push(tr.tag);
+    ruByBook.set(tr.book_id, arr);
+  }
+  return { enByBook, ruByBook };
+}
+
 function buildWhere(q: CatalogQuery): { sql: string; params: unknown[] } {
   const where: string[] = [];
   const params: unknown[] = [];
@@ -31,18 +58,26 @@ function buildWhere(q: CatalogQuery): { sql: string; params: unknown[] } {
   return { sql: where.length === 0 ? "" : `WHERE ${where.join(" AND ")}`, params };
 }
 
+function titleOrderExpr(q: CatalogQuery): string {
+  if (q.displayLocale === "ru") {
+    return "COALESCE(books.title_ru, books.title, books.title_en)";
+  }
+  return "COALESCE(books.title_en, books.title, books.title_ru)";
+}
+
 function buildOrderBy(q: CatalogQuery): string {
   const dir = (q.orderDir ?? "desc").toUpperCase() === "ASC" ? "ASC" : "DESC";
+  const titleKey = titleOrderExpr(q);
   switch (q.orderBy) {
     case "title":
-      return `ORDER BY COALESCE(books.title_en, books.title) ${dir}`;
+      return `ORDER BY ${titleKey} ${dir}`;
     case "words":
       return `ORDER BY books.word_count ${dir}`;
     case "evaluated":
-      return `ORDER BY COALESCE(books.evaluated_at, '') ${dir}, books.title`;
+      return `ORDER BY COALESCE(books.evaluated_at, '') ${dir}, ${titleKey}`;
     case "quality":
     default:
-      return `ORDER BY books.quality_score ${dir} NULLS LAST, COALESCE(books.title_en, books.title)`;
+      return `ORDER BY books.quality_score ${dir} NULLS LAST, ${titleKey}`;
   }
 }
 
@@ -79,20 +114,11 @@ export function query(q: CatalogQuery = {}): QueryResult {
   const rows = db.prepare(dataSql).all(...allParams, limit, offset) as BookRow[];
 
   const ids = rows.map((r) => r.id);
-  const tagMap = new Map<string, string[]>();
-  if (ids.length > 0) {
-    const placeholders = ids.map(() => "?").join(",");
-    const tagRows = db
-      .prepare(`SELECT book_id, tag FROM book_tags WHERE book_id IN (${placeholders})`)
-      .all(...ids) as Array<{ book_id: string; tag: string }>;
-    for (const tr of tagRows) {
-      const arr = tagMap.get(tr.book_id) ?? [];
-      arr.push(tr.tag);
-      tagMap.set(tr.book_id, arr);
-    }
-  }
+  const { enByBook, ruByBook } = loadTagPairsForBookIds(db, ids);
 
-  const result = rows.map((r) => rowToMeta(r, tagMap.get(r.id) ?? []));
+  const result = rows.map((r) =>
+    rowToMeta(r, enByBook.get(r.id) ?? [], ruByBook.get(r.id) ?? []),
+  );
   return { rows: result, total };
 }
 
@@ -100,8 +126,8 @@ export function getBookById(id: string): (BookCatalogMeta & { mdPath: string }) 
   const db = openCacheDb();
   const row = db.prepare("SELECT * FROM books WHERE id = ?").get(id) as BookRow | undefined;
   if (!row) return null;
-  const tags = (db.prepare("SELECT tag FROM book_tags WHERE book_id = ?").all(id) as Array<{ tag: string }>).map((t) => t.tag);
-  return rowToMeta(row, tags);
+  const { enByBook, ruByBook } = loadTagPairsForBookIds(db, [id]);
+  return rowToMeta(row, enByBook.get(id) ?? [], ruByBook.get(id) ?? []);
 }
 
 export function streamBookIdsByStatus(
@@ -136,12 +162,11 @@ export function getBooksByIds(ids: string[]): (BookCatalogMeta & { mdPath: strin
     .all(...ids) as BookRow[];
   const byId = new Map<string, BookRow>(rows.map((r) => [r.id, r]));
   const out: (BookCatalogMeta & { mdPath: string })[] = [];
-  const tagStmt = db.prepare("SELECT tag FROM book_tags WHERE book_id = ?");
+  const { enByBook, ruByBook } = loadTagPairsForBookIds(db, ids);
   for (const id of ids) {
     const row = byId.get(id);
     if (!row) continue;
-    const tags = (tagStmt.all(id) as Array<{ tag: string }>).map((t) => t.tag);
-    out.push(rowToMeta(row, tags));
+    out.push(rowToMeta(row, enByBook.get(id) ?? [], ruByBook.get(id) ?? []));
   }
   return out;
 }
@@ -172,12 +197,13 @@ export function listBooksForRevisionDedup(): RevisionDedupBook[] {
   }));
 }
 
-/** Aggregate tag counts across all evaluated books. */
-export function queryTagStats(): { tag: string; count: number }[] {
+/** Aggregate tag counts (EN or RU table per UI locale). */
+export function queryTagStats(displayLocale: "ru" | "en" = "en"): { tag: string; count: number }[] {
   const db = openCacheDb();
+  const table = displayLocale === "ru" ? "book_tags_ru" : "book_tags";
   return db.prepare(`
     SELECT tag, COUNT(*) as count
-    FROM book_tags
+    FROM ${table}
     GROUP BY tag
     ORDER BY count DESC, tag ASC
   `).all() as { tag: string; count: number }[];
@@ -208,16 +234,21 @@ export function queryByDomain(): CollectionGroup[] {
   }));
 }
 
-/** Group books by author. */
-export function queryByAuthor(): CollectionGroup[] {
+/** Group books by author (label follows UI locale: RU vs EN mirrors). */
+export function queryByAuthor(displayLocale: "ru" | "en" = "en"): CollectionGroup[] {
   const db = openCacheDb();
-  const rows = db.prepare(`
-    SELECT COALESCE(COALESCE(author_en, author), 'Unknown Author') as label,
-           COUNT(*) as count, GROUP_CONCAT(id) as ids
-    FROM books
-    GROUP BY label
-    ORDER BY count DESC, label ASC
-  `).all() as Array<{ label: string; count: number; ids: string }>;
+  const labelExpr =
+    displayLocale === "ru"
+      ? "COALESCE(NULLIF(TRIM(author_ru), ''), NULLIF(TRIM(author), ''), NULLIF(TRIM(author_en), ''), 'Unknown Author')"
+      : "COALESCE(NULLIF(TRIM(author_en), ''), NULLIF(TRIM(author), ''), NULLIF(TRIM(author_ru), ''), 'Unknown Author')";
+  const rows = db
+    .prepare(
+      `SELECT ${labelExpr} AS label, COUNT(*) AS count, GROUP_CONCAT(id) AS ids
+       FROM books
+       GROUP BY ${labelExpr}
+       ORDER BY count DESC, label ASC`,
+    )
+    .all() as Array<{ label: string; count: number; ids: string }>;
   return rows.map((r) => ({
     label: r.label,
     count: r.count,
@@ -276,12 +307,13 @@ export function queryBySphere(): CollectionGroup[] {
   }));
 }
 
-/** Group books by LLM-assigned tag (by-tag with bookIds for filtering). */
-export function queryByTag(): CollectionGroup[] {
+/** Group books by LLM-assigned tag (labels follow UI locale: RU vs EN keywords). */
+export function queryByTag(displayLocale: "ru" | "en" = "en"): CollectionGroup[] {
   const db = openCacheDb();
+  const table = displayLocale === "ru" ? "book_tags_ru" : "book_tags";
   const rows = db.prepare(`
     SELECT bt.tag as label, COUNT(*) as count, GROUP_CONCAT(bt.book_id) as ids
-    FROM book_tags bt
+    FROM ${table} bt
     GROUP BY bt.tag
     ORDER BY count DESC, bt.tag ASC
   `).all() as Array<{ label: string; count: number; ids: string }>;

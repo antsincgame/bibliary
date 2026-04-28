@@ -3,13 +3,7 @@ import * as path from "path";
 import { TELEMETRY_MAX_BYTES } from "./constants";
 
 export type TelemetryEvent =
-  | { type: "batch.start"; batchId: string; pipeline: "extraction" | "forge"; config: unknown; ts: string }
-  | { type: "forge.run.start"; runId: string; target: string; baseModel: string; method: string; ts: string }
-  | { type: "forge.run.success"; runId: string; durationMs: number; ts: string }
-  | { type: "forge.run.fail"; runId: string; target: string; error: string; ts: string }
-  | { type: "forge.cloud.upload"; runId: string; target: string; sizeMB: number; ok: boolean; ts: string }
-  | { type: "forge.eval.judge_error"; caseIndex: number; tunedModel: string; error: string; ts: string }
-  | { type: "forge.local.abort_all"; reason: string; ts: string }
+  | { type: "batch.start"; batchId: string; pipeline: "extraction"; config: unknown; ts: string }
   | {
       type: "batch.chunk.ok";
       batchId: string;
@@ -29,13 +23,7 @@ export type TelemetryEvent =
   | { type: "lmstudio.online"; ts: string }
   | { type: "lmstudio.throttle"; tps: number; newCoolDownMs: number; ts: string }
   | { type: "lmstudio.crash_detected"; modelKey: string; ts: string }
-  | { type: "yarn.context.changed"; modelKey: string; fromTokens: number; toTokens: number; factor: number | null; kvDtype: string; ts: string }
-  | { type: "yarn.preset.applied"; modelKey: string; presetId: string; targetTokens: number; ts: string }
-  | { type: "yarn.suggestion.shown"; modelKey: string; suggestionId: string; severity: string; ts: string }
-  | { type: "yarn.suggestion.applied"; modelKey: string; suggestionId: string; action: string; ts: string }
-  | { type: "yarn.applied"; modelKey: string; factor: number; kvDtype: string; vramEstimateGb: number; ts: string }
-  | { type: "yarn.reverted"; modelKey: string; reason: string; ts: string }
-  | { type: "yarn.error"; modelKey: string; error: string; ts: string };
+;
 
 export type TelemetryEventInput<E extends TelemetryEvent = TelemetryEvent> = E extends TelemetryEvent
   ? Omit<E, "ts"> & { ts?: string }

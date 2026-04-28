@@ -25,8 +25,13 @@ import * as path from "path";
 import * as os from "os";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { toWslPath } from "../forge/wsl.js";
 import type { ImageRef } from "./types.js";
+
+function toWslPath(winPath: string): string {
+  return winPath
+    .replace(/\\/g, "/")
+    .replace(/^([A-Za-z]):/, (_, d: string) => `/mnt/${d.toLowerCase()}`);
+}
 
 const execFileAsync = promisify(execFile);
 

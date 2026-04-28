@@ -7,7 +7,8 @@
  * is re-rendered on apply.
  */
 import { el } from "../dom.js";
-import { t } from "../i18n.js";
+import { t, getLocale } from "../i18n.js";
+import { displayBookTags } from "./display-meta.js";
 import { showAlert } from "../components/ui-dialog.js";
 import { CATALOG } from "./state.js";
 
@@ -23,7 +24,7 @@ export async function openTagCloudModal(deps) {
   /** @type {{ tag: string; count: number }[]} */
   let stats = [];
   try {
-    stats = await window.api.library.tagStats();
+    stats = await window.api.library.tagStats(getLocale() === "ru" ? "ru" : "en");
   } catch (e) {
     console.warn("[tag-cloud] failed to load tag stats:", e);
     await showAlert(t("library.tagCloud.loadFailed", {
@@ -106,7 +107,7 @@ export async function openTagCloudModal(deps) {
     }
     const tags = Array.from(selected);
     const matching = CATALOG.rows.filter((row) =>
-      tags.every((tg) => row.tags?.includes(tg))
+      tags.every((tg) => displayBookTags(row).includes(tg))
     );
     matchCounter.textContent = t("library.tagCloud.matchCount", {
       n: String(matching.length),

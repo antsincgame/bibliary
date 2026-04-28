@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS books (
   -- bibliographic
   title               TEXT NOT NULL,
   author              TEXT,
+  title_ru            TEXT,
+  author_ru           TEXT,
   title_en            TEXT,
   author_en           TEXT,
   year                INTEGER,
@@ -43,14 +45,22 @@ CREATE TABLE IF NOT EXISTS book_tags (
   FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS book_tags_ru (
+  book_id TEXT NOT NULL,
+  tag     TEXT NOT NULL,
+  PRIMARY KEY (book_id, tag),
+  FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_books_quality ON books(quality_score);
 CREATE INDEX IF NOT EXISTS idx_books_status  ON books(status);
 CREATE INDEX IF NOT EXISTS idx_books_domain  ON books(domain);
 CREATE INDEX IF NOT EXISTS idx_books_fiction ON books(is_fiction_or_water);
 CREATE INDEX IF NOT EXISTS idx_book_tags_tag ON book_tags(tag);
+CREATE INDEX IF NOT EXISTS idx_book_tags_ru_tag ON book_tags_ru(tag);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS books_fts USING fts5(
-  title_en, author_en, tags, verdict_reason, evaluator_reasoning
+  title_en, author_en, title_ru, author_ru, tags, verdict_reason, evaluator_reasoning
 );
 `;
 
@@ -62,6 +72,8 @@ CREATE VIRTUAL TABLE IF NOT EXISTS books_fts USING fts5(
  *   v2 → v3: year, isbn, publisher columns + indexes.
  *   v3 → v4: last_error column for diagnosable failed extraction/evaluation.
  *   v4 → v5: sphere column + idx_books_sphere, idx_books_author indexes.
+ *   v5 → v6: title_ru, author_ru + rebuild books_fts (RU/EN bibliographic search).
+ *   v6 → v7: book_tags_ru + FTS tags index EN+RU keywords.
  */
 export function applyMigrations(db: Database.Database): void {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number } | undefined;
@@ -112,5 +124,63 @@ export function applyMigrations(db: Database.Database): void {
     db.exec("CREATE INDEX IF NOT EXISTS idx_books_sphere ON books(sphere)");
     db.exec("CREATE INDEX IF NOT EXISTS idx_books_author ON books(author)");
     db.pragma("user_version = 5");
+  }
+
+  if (current < 6) {
+    const cols = db.pragma("table_info(books)") as Array<{ name: string }>;
+    const existing = new Set(cols.map((c) => c.name));
+    if (!existing.has("title_ru")) db.exec("ALTER TABLE books ADD COLUMN title_ru TEXT");
+    if (!existing.has("author_ru")) db.exec("ALTER TABLE books ADD COLUMN author_ru TEXT");
+    db.exec(`
+      DROP TABLE IF EXISTS books_fts;
+      CREATE VIRTUAL TABLE books_fts USING fts5(
+        title_en, author_en, title_ru, author_ru, tags, verdict_reason, evaluator_reasoning
+      );
+    `);
+    db.exec(`
+      INSERT INTO books_fts (rowid, title_en, author_en, title_ru, author_ru, tags, verdict_reason, evaluator_reasoning)
+      SELECT b.rowid,
+             COALESCE(b.title_en, b.title),
+             COALESCE(b.author_en, b.author, ''),
+             COALESCE(b.title_ru, b.title),
+             COALESCE(b.author_ru, b.author, ''),
+             COALESCE((SELECT GROUP_CONCAT(tag, ' ') FROM book_tags WHERE book_id = b.id), ''),
+             COALESCE(b.verdict_reason, ''),
+             COALESCE(b.evaluator_reasoning, '')
+        FROM books b;
+    `);
+    db.pragma("user_version = 6");
+  }
+
+  if (current < 7) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS book_tags_ru (
+        book_id TEXT NOT NULL,
+        tag     TEXT NOT NULL,
+        PRIMARY KEY (book_id, tag),
+        FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_book_tags_ru_tag ON book_tags_ru(tag);
+    `);
+    db.exec(`
+      DROP TABLE IF EXISTS books_fts;
+      CREATE VIRTUAL TABLE books_fts USING fts5(
+        title_en, author_en, title_ru, author_ru, tags, verdict_reason, evaluator_reasoning
+      );
+    `);
+    db.exec(`
+      INSERT INTO books_fts (rowid, title_en, author_en, title_ru, author_ru, tags, verdict_reason, evaluator_reasoning)
+      SELECT b.rowid,
+             COALESCE(b.title_en, b.title),
+             COALESCE(b.author_en, b.author, ''),
+             COALESCE(b.title_ru, b.title),
+             COALESCE(b.author_ru, b.author, ''),
+             TRIM(COALESCE((SELECT GROUP_CONCAT(tag, ' ') FROM book_tags WHERE book_id = b.id), '') || ' ' ||
+                  COALESCE((SELECT GROUP_CONCAT(tag, ' ') FROM book_tags_ru WHERE book_id = b.id), '')),
+             COALESCE(b.verdict_reason, ''),
+             COALESCE(b.evaluator_reasoning, '')
+        FROM books b;
+    `);
+    db.pragma("user_version = 7");
   }
 }

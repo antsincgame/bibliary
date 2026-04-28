@@ -18,15 +18,10 @@ function makeModel(modelKey: string, overrides: Partial<LoadedModelInfo> = {}): 
 
 function makePrefs(overrides: Partial<Preferences> = {}): Preferences {
   return {
-    chatModel: "",
-    agentModel: "",
     extractorModel: "",
     judgeModel: "",
     visionModelKey: "",
     evaluatorModel: "",
-    arenaJudgeModelKey: "",
-    chatModelFallbacks: "",
-    agentModelFallbacks: "",
     extractorModelFallbacks: "",
     judgeModelFallbacks: "",
     visionModelFallbacks: "",
@@ -48,7 +43,7 @@ function makeRatings(): ArenaRatingsFile {
 function installRunCycleHarness({
   prefs = makePrefs(),
   loaded = [makeModel("model/a"), makeModel("model/b")],
-  lock = { busy: false, reasons: [] },
+  lock = { busy: false, reasons: [] as string[] },
   onListLoaded,
 }: {
   prefs?: Preferences;
@@ -78,7 +73,6 @@ function installRunCycleHarness({
       role,
       system: "system",
       user: "user",
-      expected: "expected",
     }),
     recordMatch: async (role, winner, loser) => {
       recordedMatches.push({ role, winner, loser });
@@ -114,11 +108,11 @@ describe("[arena-run-cycle] cycle selection", () => {
 
   test("manual run executes even when background arena is disabled", async () => {
     const harness = installRunCycleHarness({ prefs: makePrefs({ arenaEnabled: false }) });
-    const report = await runArenaCycle({ roles: ["chat"], manual: true });
+    const report = await runArenaCycle({ roles: ["crystallizer"], manual: true });
 
     assert.equal(report.ok, true);
     assert.equal(report.perRole?.length, 1);
-    assert.equal(report.perRole?.[0]?.role, "chat");
+    assert.equal(report.perRole?.[0]?.role, "crystallizer");
     assert.equal(harness.recordedMatches.length, 1);
   });
 
@@ -134,7 +128,7 @@ describe("[arena-run-cycle] cycle selection", () => {
 describe("[arena-run-cycle] lock and capability filtering", () => {
   test("busy GlobalLlmLock returns skipped report and records skip", async () => {
     const harness = installRunCycleHarness({ lock: { busy: true, reasons: ["library-import: active"] } });
-    const report = await runArenaCycle({ roles: ["chat"], manual: true });
+    const report = await runArenaCycle({ roles: ["crystallizer"], manual: true });
 
     assert.equal(report.ok, false);
     assert.equal(report.skipped, true);
@@ -160,13 +154,13 @@ describe("[arena-run-cycle] lock and capability filtering", () => {
 
   test("multi-role cycle updates Elo buckets per role", async () => {
     const harness = installRunCycleHarness();
-    const opts: CycleOptions = { roles: ["chat", "judge"], manual: true };
+    const opts: CycleOptions = { roles: ["crystallizer", "judge"], manual: true };
     const report = await runArenaCycle(opts);
 
     assert.equal(report.ok, true);
-    assert.deepEqual(report.perRole?.map((r) => r.role), ["chat", "judge"]);
+    assert.deepEqual(report.perRole?.map((r) => r.role), ["crystallizer", "judge"]);
     assert.equal(harness.recordedMatches.length, 2);
-    assert.ok(harness.ratings.roles.chat?.["model/a"]);
+    assert.ok(harness.ratings.roles.crystallizer?.["model/a"]);
     assert.ok(harness.ratings.roles.judge?.["model/a"]);
   });
 });

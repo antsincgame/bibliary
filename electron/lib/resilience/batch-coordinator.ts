@@ -1,7 +1,7 @@
 import * as telemetry from "./telemetry";
 import type { CheckpointStore } from "./checkpoint-store";
 
-export type PipelineName = "extraction" | "forge";
+export type PipelineName = "extraction";
 
 export interface BatchInfo {
   batchId: string;

@@ -8,7 +8,8 @@
 import { el, clear } from "../dom.js";
 import { t } from "../i18n.js";
 import { fmtWords, fmtQuality } from "./format.js";
-import { renderMarkdown } from "../chat/markdown.js";
+import { renderMarkdown } from "../markdown.js";
+import { displayBookTitle, displayBookAuthor, displayBookTags } from "./display-meta.js";
 
 /** @type {{ bookId: string; meta: any; html: string; coverDataUrl: string | null } | null} */
 let currentBook = null;
@@ -129,17 +130,22 @@ function renderReader(root) {
 
   const { meta, html, coverDataUrl } = currentBook;
   const q = typeof meta.qualityScore === "number" ? meta.qualityScore : null;
+  const shownTitle = displayBookTitle(meta);
+  const shownAuthor = displayBookAuthor(meta);
+  const shownTags = displayBookTags(meta);
 
   const header = el("div", { class: "lib-reader-header" }, [
     buildBackButton(root),
     coverDataUrl ? el("img", {
       class: "lib-reader-cover",
       src: coverDataUrl,
-      alt: meta.title || t("library.reader.coverAlt"),
+      alt: shownTitle || t("library.reader.coverAlt"),
     }) : null,
     el("div", { class: "lib-reader-meta" }, [
-      el("h1", { class: "lib-reader-title" }, meta.titleEn || meta.title || meta.id),
-      meta.author ? el("div", { class: "lib-reader-author" }, meta.author) : null,
+      el("h1", { class: "lib-reader-title" }, shownTitle),
+      shownAuthor
+        ? el("div", { class: "lib-reader-author" }, shownAuthor)
+        : null,
       el("div", { class: "lib-reader-info" }, [
         typeof meta.year === "number" ? el("span", { class: "lib-reader-year" }, String(meta.year)) : null,
         meta.domain ? el("span", { class: "lib-reader-domain" }, meta.domain) : null,
@@ -147,8 +153,8 @@ function renderReader(root) {
         q !== null ? el("span", { class: "lib-reader-quality" }, t("library.reader.quality", { value: fmtQuality(q) })) : null,
         meta.chapterCount ? el("span", { class: "lib-reader-chapters" }, `${meta.chapterCount} ${t("library.reader.chapters")}`) : null,
       ].filter(Boolean)),
-      meta.tags && meta.tags.length > 0
-        ? el("div", { class: "lib-reader-tags" }, meta.tags.map(
+      shownTags.length > 0
+        ? el("div", { class: "lib-reader-tags" }, shownTags.map(
             /** @param {string} tag */ (tag) => el("span", { class: "lib-reader-tag" }, tag)
           ))
         : null,

@@ -6,6 +6,8 @@ export interface BookRow {
   sha256: string;
   title: string;
   author: string | null;
+  title_ru: string | null;
+  author_ru: string | null;
   title_en: string | null;
   author_en: string | null;
   year: number | null;
@@ -32,13 +34,19 @@ export interface BookRow {
   md_path: string;
 }
 
-export function rowToMeta(row: BookRow, tags: string[]): BookCatalogMeta & { mdPath: string } {
+export function rowToMeta(
+  row: BookRow,
+  tagsEn: string[],
+  tagsRu: string[] = [],
+): BookCatalogMeta & { mdPath: string } {
   const originalFormat = row.original_format as BookCatalogMeta["originalFormat"];
   return {
     id: row.id,
     sha256: row.sha256,
     title: row.title,
     author: row.author ?? undefined,
+    titleRu: row.title_ru ?? undefined,
+    authorRu: row.author_ru ?? undefined,
     titleEn: row.title_en ?? undefined,
     authorEn: row.author_en ?? undefined,
     year: row.year ?? undefined,
@@ -51,7 +59,8 @@ export function rowToMeta(row: BookRow, tags: string[]): BookCatalogMeta & { mdP
     sourceArchive: row.source_archive ?? undefined,
     sphere: row.sphere ?? undefined,
     domain: row.domain ?? undefined,
-    tags: tags.length > 0 ? tags : undefined,
+    tags: tagsEn.length > 0 ? tagsEn : undefined,
+    tagsRu: tagsRu.length > 0 ? tagsRu : undefined,
     qualityScore: row.quality_score ?? undefined,
     conceptualDensity: row.conceptual_density ?? undefined,
     originality: row.originality ?? undefined,
@@ -75,6 +84,8 @@ export interface CatalogQuery {
   hideFictionOrWater?: boolean;
   statuses?: BookStatus[];
   domain?: string;
+  /** Сортировка заголовка с учётом языка UI (`ru` → RU-зеркало первым). */
+  displayLocale?: "ru" | "en";
   orderBy?: "quality" | "title" | "words" | "evaluated";
   orderDir?: "asc" | "desc";
   limit?: number;
@@ -92,6 +103,8 @@ export interface RevisionDedupBook {
   author?: string;
   titleEn?: string;
   authorEn?: string;
+  titleRu?: string;
+  authorRu?: string;
   sourceArchive?: string;
   year?: number;
   isbn?: string;

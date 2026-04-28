@@ -5,7 +5,6 @@
 import { t } from "../i18n.js";
 import { showAlert } from "../components/ui-dialog.js";
 import { STATE } from "./state.js";
-import { renderHistory, loadHistory } from "./history.js";
 
 /**
  * @param {object} deps
@@ -48,7 +47,6 @@ async function pumpQueue(root, deps) {
 
 async function runOne(book, root, deps) {
   STATE.activeIngests.set(book.absPath, "pending");
-  if (STATE.tab === "history") renderHistory(root);
   try {
     const ocrOverride = STATE.ocrOverride !== null ? STATE.ocrOverride : undefined;
     const res = await window.api.scanner.startIngest({
@@ -75,12 +73,6 @@ async function runOne(book, root, deps) {
     deps.renderBooks(root.querySelector(".lib-list"), root);
     deps.refreshSummary(root);
     pumpQueue(root, deps);
-    if (STATE.tab === "history") renderHistory(root);
-    if (STATE.activeIngests.size === 0 && STATE.queue.length === 0) {
-      loadHistory().then(() => {
-        if (STATE.tab === "history") renderHistory(root);
-      });
-    }
   }
 }
 

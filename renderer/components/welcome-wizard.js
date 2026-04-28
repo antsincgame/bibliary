@@ -2,6 +2,7 @@
 import { el, clear } from "../dom.js";
 import { t } from "../i18n.js";
 import { showConfirm } from "./ui-dialog.js";
+import { inferGpuOffloadForLmLoad, pickHardwareAutoModel } from "../models/gpu-offload-hint.js";
 
 const LEGACY_STORAGE_KEY = "bibliary_setup_done";
 const ONBOARDING_VERSION = 2;
@@ -322,11 +323,35 @@ export function openWelcomeWizard(opts) {
       STATE.chatModelIsDownloaded = downloadedOnlyKeys.has(select.value);
     });
 
+    /* Авто-подбор под железо (восстановлено из b0a2271 после рефактора d992470,
+       но теперь через общий helper pickHardwareAutoModel — без 60 строк
+       захардкоженного auto-assign-by-VRAM). */
+    const allCandidates = [
+      ...loaded.map((m) => ({ modelKey: m.modelKey, sizeBytes: m.sizeBytes })),
+      ...downloadedOnly.map((m) => ({ modelKey: m.modelKey, sizeBytes: m.sizeBytes })),
+    ];
+    const autoBtn = /** @type {HTMLButtonElement} */ (el("button", {
+      class: "btn btn-ghost ww-setup-autopick",
+      type: "button",
+      title: t("ww.setup.autopick_title"),
+    }, t("ww.setup.autopick_btn")));
+    if (allCandidates.length === 0 || !STATE.hardware) autoBtn.disabled = true;
+    autoBtn.addEventListener("click", () => {
+      const pick = pickHardwareAutoModel(allCandidates, STATE.hardware);
+      if (!pick) {
+        showWizardToast(t("ww.setup.autopick_empty"), "info");
+        return;
+      }
+      select.value = pick.modelKey;
+      STATE.chatModel = pick.modelKey;
+      STATE.chatModelIsDownloaded = downloadedOnlyKeys.has(pick.modelKey);
+      showWizardToast(t("ww.setup.autopick_done", { key: pick.modelKey, reason: t(pick.reasonKey) }), "success");
+    });
+
     /* A4 helper: если LM Studio пуст — даём кнопку открыть его внешним
        приложением. S1.1: проверяем результат IPC, fallback на https-сайт,
-       при провале обоих — toast. Без feedback пользователь жал бы кнопку
-       и не понимал почему ничего не происходит. */
-    const row = el("div", { class: "ww-setup-model-row" }, [select]);
+       при провале обоих — toast. */
+    const row = el("div", { class: "ww-setup-model-row" }, [select, autoBtn]);
     if (loaded.length === 0 && downloadedOnly.length === 0) {
       const openBtn = /** @type {HTMLButtonElement} */ (el("button", {
         class: "btn btn-ghost ww-setup-open-lmstudio",
@@ -379,8 +404,8 @@ export function openWelcomeWizard(opts) {
   function buildDone() {
     /** @type {Array<{ route: string, primary?: boolean, key: string }>} */
     const actions = [
-      { route: "chat", primary: true, key: "chat" },
-      { route: "library", key: "library" },
+      { route: "library", primary: true, key: "library" },
+      { route: "models", key: "models" },
       { route: "docs", key: "docs" },
     ];
     const grid = el("div", { class: "ww-done-actions" });
@@ -501,8 +526,9 @@ export function openWelcomeWizard(opts) {
     if (STATE.chatModel && STATE.chatModelIsDownloaded) {
       const modelKey = STATE.chatModel;
       showWizardToast(t("ww.done.toast.loading", { model: modelKey }), "info");
+      const offload = inferGpuOffloadForLmLoad(STATE.hardware);
       void window.api.lmstudio
-        .load(modelKey)
+        .load(modelKey, { gpuOffload: offload.gpuOffload ?? "max" })
         .then(() => {
           showGlobalToast(t("ww.done.toast.loaded", { model: modelKey }), "success");
         })

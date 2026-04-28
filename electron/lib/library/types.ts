@@ -10,7 +10,7 @@
  * SQLite-кэш можно удалить -- при следующем старте приложение
  * пересканирует library/ и восстановит каталог из YAML frontmatter'ов.
  *
- * UI оперирует английскими зеркалами titleEn/authorEn (заполняются эвалюатором).
+ * UI: при `ru` показываем titleRu/authorRu (эвалюатор), иначе оригинал; при `en` — titleEn/authorEn.
  * Rich bibliographic fields (year, isbn, publisher) were added for deduplication.
  */
 
@@ -54,14 +54,18 @@ export interface BookCatalogMeta {
   sourceArchive?: string;
   /** Sphere — корневая папка домена из import root (напр. "Mathematics"). */
   sphere?: string;
-  // ── bibliographic (original-language verbatim, English mirror for UI) ──
+  // ── bibliographic (original verbatim + evaluator mirrors RU/EN) ──
   /** Заголовок как пришёл от парсера (исходный язык). */
   title: string;
   /** Автор как пришёл от парсера (исходный язык). */
   author?: string;
-  /** Английский заголовок от эвалюатора (translit/translate). UI primary. */
+  /** Русское библиографическое зеркало заголовка (эвалюатор). */
+  titleRu?: string;
+  /** Русское библиографическое зеркало автора (эвалюатор). */
+  authorRu?: string;
+  /** Английский заголовок от эвалюатора (translit/translate). */
   titleEn?: string;
-  /** Английская транслитерация автора от эвалюатора. UI primary. */
+  /** Английская транслитерация автора от эвалюатора. */
   authorEn?: string;
   // ── bibliographic (for dedup/enrichment) ──
   /** Publication year (from parser metadata, filename, or enrichment). */
@@ -73,11 +77,13 @@ export interface BookCatalogMeta {
   // ── structure ──
   wordCount: number;
   chapterCount: number;
-  // ── evaluator outputs (English) ──
+  // ── evaluator outputs (bilingual bibliographic mirrors + English taxonomy) ──
   /** Узкая научная/профессиональная область. */
   domain?: string;
-  /** Английские ключевые слова (макс 5). */
+  /** Ключевые слова на английском (8–12 от эвалюатора). */
   tags?: string[];
+  /** Ключевые слова на русском (8–12, зеркало `tags`). */
+  tagsRu?: string[];
   /** 0..100 -- интегральная оценка концептуальной ценности. */
   qualityScore?: number;
   /** 0..100 -- плотность определений и абстрактных моделей. */
@@ -186,14 +192,18 @@ export interface ConvertOptions {
 
 /**
  * JSON-ответ Главного Эпистемолога после анализа Structural Surrogate.
- * Все поля -- на английском по контракту: эвалюатор переводит/транслитерирует.
+ * Библиографические зеркала: `title_ru`/`author_ru` и `title_en`/`author_en`.
+ * Теги: `tags` (англ.) и `tags_ru` (рус.) — одна тематическая сетка на двух языках.
  */
 export interface BookEvaluation {
+  title_ru: string;
+  author_ru: string;
   title_en: string;
   author_en: string;
   year: number | null;
   domain: string;
   tags: string[];
+  tags_ru: string[];
   is_fiction_or_water: boolean;
   conceptual_density: number;   // 0..100
   originality: number;          // 0..100

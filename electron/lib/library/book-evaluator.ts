@@ -57,7 +57,9 @@ QUALITY ANALYSIS (think step by step inside <think>...</think>):
    PENALTY: anecdotes, motivational filler, Wikipedia rewrites.
    REWARD: definitions, abstract models, non-obvious conclusions.
 5. DOMAIN CLASSIFICATION: pick ONE narrow area. NOT broad ("science", "psychology"). BE SPECIFIC ("cognitive load theory", "finite element analysis", "mycology of edible fungi").
-6. TAG GENERATION: produce 8-12 tags covering: subject area, methodology, target audience, historical era, key concepts, application domain. Each tag must be specific and useful for filtering.
+6. TAG GENERATION: produce 8-12 tags in BOTH languages:
+   - tags: English — subject area, methodology, audience, era, key concepts, application domain.
+   - tags_ru: Russian — same coverage (not a pedantic literal translation; natural Russian scholarly phrasing).
 
 VERDICT (Quality Score 0-100):
   0-30:  Fiction, esoterica, motivational fluff.
@@ -66,12 +68,15 @@ VERDICT (Quality Score 0-100):
   86-100: Foundational works, breakthrough concepts.
 
 OUTPUT CONTRACT:
-- All fields MUST be in English. Translate/transliterate non-English proper nouns.
-- title_en: clean English title.
-- author_en: English/transliterated author name. REQUIRED. "Unknown" only as absolute last resort with explanation.
-- year: integer publication year. null only if truly absent from all sections.
-- domain: ONE narrow domain (e.g. "behavioral economics", "Oberon compiler design").
+- Bibliographic mirrors in TWO languages (same work, canonical spelling each language):
+  - title_ru / author_ru: Russian (Cyrillic). If the book is not Russian, translate or use conventional Russian bibliographic form; keep Latin personal names in common Russian scholarly form when appropriate.
+  - title_en / author_en: English. Transliterate Cyrillic authors to Latin (e.g. "Иванов В.В." → "Ivanov V.V.").
+- domain, verdict_reason: English (dataset / search consistency).
 - tags: 8-12 specific English keywords. NO generic words ("book", "science", "writing").
+- tags_ru: 8-12 Russian keywords — same themes and granularity as the English "tags" array (translate or natural Russian equivalents; counts should match).
+- author_ru and author_en: REQUIRED unless truly unknowable — then "Unknown" with explanation in verdict_reason.
+- year: integer publication year. null only if truly absent from all sections.
+- domain: ONE narrow domain in English (e.g. "behavioral economics", "Oberon compiler design").
 - verdict_reason: 2-3 sentences. If author="Unknown" or year=null, EXPLAIN what you searched and why you failed.
 - conceptual_density / originality / quality_score: integers 0-100.
 - is_fiction_or_water: true for fiction / motivational / esoteric, else false.
@@ -79,11 +84,14 @@ OUTPUT CONTRACT:
 Output STRICT JSON after </think>.
 
 {
+  "title_ru": "Название на русском",
+  "author_ru": "Фамилия И.О.",
   "title_en": "Clean English Title",
   "author_en": "Author Name",
   "year": 2024,
   "domain": "narrow professional domain",
   "tags": ["specific keyword", "methodology keyword", "target audience", "era or period", "key concept", "another concept", "technical area", "application area"],
+  "tags_ru": ["ключ 1", "ключ 2", "ключ 3", "ключ 4", "ключ 5", "ключ 6", "ключ 7", "ключ 8"],
   "is_fiction_or_water": false,
   "conceptual_density": 72,
   "originality": 64,
@@ -93,11 +101,14 @@ Output STRICT JSON after </think>.
 
 /* Zod-схема для валидации JSON ответа эвалюатора. */
 const evaluationSchema = z.object({
+  title_ru: z.string().min(1),
+  author_ru: z.string().min(1),
   title_en: z.string().min(1),
   author_en: z.string().min(1),
   year: z.number().int().min(1400).max(2100).nullable(),
   domain: z.string().min(1),
   tags: z.array(z.string()).min(8).max(12),
+  tags_ru: z.array(z.string()).min(8).max(12),
   is_fiction_or_water: z.boolean(),
   conceptual_density: z.number().int().min(0).max(100),
   originality: z.number().int().min(0).max(100),
@@ -115,11 +126,14 @@ function buildEvaluatorResponseFormat(): Record<string, unknown> {
         type: "object",
         additionalProperties: false,
         required: [
+          "title_ru",
+          "author_ru",
           "title_en",
           "author_en",
           "year",
           "domain",
           "tags",
+          "tags_ru",
           "is_fiction_or_water",
           "conceptual_density",
           "originality",
@@ -127,11 +141,19 @@ function buildEvaluatorResponseFormat(): Record<string, unknown> {
           "verdict_reason",
         ],
         properties: {
+          title_ru: { type: "string", minLength: 1 },
+          author_ru: { type: "string", minLength: 1 },
           title_en: { type: "string", minLength: 1 },
           author_en: { type: "string", minLength: 1 },
           year: { anyOf: [{ type: "integer", minimum: 1400, maximum: 2100 }, { type: "null" }] },
           domain: { type: "string", minLength: 1 },
           tags: {
+            type: "array",
+            minItems: 8,
+            maxItems: 12,
+            items: { type: "string", minLength: 1 },
+          },
+          tags_ru: {
             type: "array",
             minItems: 8,
             maxItems: 12,

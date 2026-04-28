@@ -1,7 +1,6 @@
 // @ts-check
 import { el, clear } from "./dom.js";
 import { t } from "./i18n.js";
-import { getMode } from "./ui-mode.js";
 import { buildNeonHero, neonDivider } from "./components/neon-helpers.js";
 import { openWelcomeWizard, resetWelcomeWizard } from "./components/welcome-wizard.js";
 import { showAlert, showConfirm } from "./components/ui-dialog.js";
@@ -17,13 +16,9 @@ const STATE = {
   defaults: {},
   dirty: false,
   saving: false,
-  activeSectionId: "chat",
+  activeSectionId: "ingest",
   searchQuery: "",
 };
-
-function modeRank(mode) {
-  return mode === "pro" ? 2 : mode === "advanced" ? 1 : 0;
-}
 
 function optionalT(key) {
   const value = t(key);
@@ -31,8 +26,7 @@ function optionalT(key) {
 }
 
 function getVisibleSections() {
-  const currentRank = modeRank(getMode());
-  return SECTIONS.filter((section) => modeRank(section.mode) <= currentRank);
+  return Array.from(SECTIONS);
 }
 
 function filteredFields(section) {

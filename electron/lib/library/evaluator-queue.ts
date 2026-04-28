@@ -471,11 +471,14 @@ async function evaluateOneInSlot(bookId: string, slot: SlotState): Promise<void>
     const ev = result.evaluation;
     const updated: BookCatalogMeta = {
       ...meta,
+      titleRu: ev.title_ru,
+      authorRu: ev.author_ru,
       titleEn: ev.title_en,
       authorEn: ev.author_en,
       year: ev.year ?? meta.year,
       domain: ev.domain,
       tags: ev.tags,
+      tagsRu: ev.tags_ru,
       qualityScore: ev.quality_score,
       conceptualDensity: ev.conceptual_density,
       originality: ev.originality,

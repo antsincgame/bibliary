@@ -124,21 +124,11 @@ test("electron smoke: app launches, preload bridge works, IPC handlers respond",
   assert.equal(libraryShape.hasRebuildCache, true, "window.api.library.rebuildCache must be a function");
   assert.equal(libraryShape.hasEvaluatorStatus, true, "window.api.library.evaluatorStatus must be a function");
 
-  /* Smoke #4: Models route follows simple/pro progressive disclosure. */
-  await window.evaluate(() => {
-    localStorage.setItem("bibliary_ui_mode", "simple");
-    document.body.dataset.uiMode = "simple";
-  });
+  /* Smoke #4: Models route — минимальная страница (статус LM Studio, списки моделей, роли). */
   await window.locator('[data-route="models"]').first().click();
-  await window.locator("#route-models.route-active #mp-roles").waitFor({ state: "visible", timeout: 10_000 });
-  await window.locator("#route-models .roles-shell").waitFor({ state: "visible", timeout: 10_000 });
-  assert.equal(await window.locator("#route-models .arena-panel").isVisible(), false, "simple mode should hide Arena panel");
-
-  await window.evaluate(() => {
-    localStorage.setItem("bibliary_ui_mode", "pro");
-    document.body.dataset.uiMode = "pro";
-  });
-  await window.locator("#route-models .arena-panel").waitFor({ state: "visible", timeout: 10_000 });
+  await window.locator("#route-models.route-active").waitFor({ state: "visible", timeout: 10_000 });
+  await window.locator("#route-models #mp-roles").waitFor({ state: "visible", timeout: 10_000 });
+  await window.locator("#route-models .models-page").waitFor({ state: "visible", timeout: 10_000 });
 
   /* Smoke #5: переход на library route не падает. */
   const sidebar = await window.locator('[data-route="library"]').count();
@@ -185,10 +175,6 @@ test("electron smoke: app launches, preload bridge works, IPC handlers respond",
   await window.locator(".lib-reader-back").click();
   await window.locator(".lib-reader").waitFor({ state: "detached", timeout: 10_000 });
 
-  await window.evaluate(() => {
-    localStorage.setItem("bibliary_ui_mode", "pro");
-    document.body.dataset.uiMode = "pro";
-  });
   await window.locator(".lib-catalog-search").fill("");
   await window.locator(".lib-catalog-tbody .lib-catalog-cb").first().check();
   await window.locator(".lib-catalog-bottom-actions .lib-btn-danger", { hasText: /Delete|Удалить/ }).click();

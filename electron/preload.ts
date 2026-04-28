@@ -1,16 +1,12 @@
 import { contextBridge, ipcRenderer } from "electron";
 
-interface ChatUsage {
-  prompt: number;
-  completion: number;
-  total: number;
-}
-
-interface CompareResult {
-  withoutRag: string;
-  withRag: string;
-  usageBase?: ChatUsage;
-  usageRag?: ChatUsage;
+interface LoadedModelInfo {
+  identifier: string;
+  modelKey: string;
+  contextLength?: number;
+  quantization?: string;
+  vision?: boolean;
+  trainedForToolUse?: boolean;
 }
 
 interface DownloadedModelInfo {
@@ -19,27 +15,6 @@ interface DownloadedModelInfo {
   format?: string;
   paramsString?: string;
   sizeBytes?: number;
-}
-
-interface LoadedModelInfo {
-  identifier: string;
-  modelKey: string;
-  contextLength?: number;
-  quantization?: string;
-  /** Vision capability (определяется эвристикой по имени в lmstudio-client). */
-  vision?: boolean;
-  /** Tool-use trained capability (qwen, llama-3+, mistral, и т.д.). */
-  trainedForToolUse?: boolean;
-}
-
-interface ProfileSpec {
-  key: string;
-  label: string;
-  quant: string;
-  sizeGB: number;
-  minVramGB: number;
-  capabilities: ReadonlyArray<string>;
-  ttlSec: number;
 }
 
 interface ServerStatus {
@@ -82,11 +57,14 @@ interface QdrantSearchHit {
 interface LibraryBookMeta {
   id: string;
   title: string;
+  titleRu?: string;
+  authorRu?: string;
   titleEn?: string;
   author?: string;
   authorEn?: string;
   domain?: string;
   tags?: string[];
+  tagsRu?: string[];
   wordCount: number;
   status: "imported" | "evaluating" | "evaluated" | "crystallizing" | "indexed" | "failed" | "unsupported";
   year?: number;
@@ -113,6 +91,7 @@ interface LibraryCatalogQuery {
   hideFictionOrWater?: boolean;
   statuses?: Array<"imported" | "evaluating" | "evaluated" | "crystallizing" | "indexed" | "failed" | "unsupported">;
   domain?: string;
+  displayLocale?: "ru" | "en";
   orderBy?: "quality" | "title" | "words" | "evaluated";
   orderDir?: "asc" | "desc";
   limit?: number;
@@ -210,20 +189,9 @@ if (smokeLibrary !== null) {
   });
 }
 
-/* Servitor sweep 2026-04-22 (вторая волна, после god+sherlok аудита):
-   Удалены 5 dead preload методов и соответствующие IPC handlers:
-   - resilience.scanUnfinished + resilience:scan-unfinished
-   - resilience.telemetryTail + resilience:telemetry-tail
-   - system.curatedModels + system:curated-models (curated JSON используется
-     только backend'ом model-profile/dataset-v2, не renderer'ом)
-   - chatHistory.clear + chat-history:clear (UI кнопки нет; load/save живут)
-   - forge.listRuns + forge:list-runs (нет management UI)
-   Оставлены: forge.genConfig (документирован как public API в FINE-TUNING.md),
-   resilience.onLmstudioOffline/Online (active в resilience-bar.js),
-   все *.ipc.ts экспорты abortAll* для shutdown-hook. */
 contextBridge.exposeInMainWorld("api", {
-  /** True when BIBLIARY_SMOKE_UI_HARNESS=1 — all library IPC returns fake data. */
   smokeMode: smokeLibrary !== null,
+
   getCollections: (): Promise<string[]> => ipcRenderer.invoke("qdrant:collections"),
 
   qdrant: {
@@ -242,29 +210,15 @@ contextBridge.exposeInMainWorld("api", {
     cluster: (): Promise<QdrantClusterInfo> => ipcRenderer.invoke("qdrant:cluster-info"),
   },
 
-  sendChat: (
-    messages: Array<{ role: string; content: string }>,
-    model: string,
-    collection: string
-  ): Promise<string> => ipcRenderer.invoke("lmstudio:chat", messages, model, collection),
-  compareChat: (
-    messages: Array<{ role: string; content: string }>,
-    model: string,
-    collection: string
-  ): Promise<CompareResult> => ipcRenderer.invoke("lmstudio:compare", messages, model, collection),
-
   lmstudio: {
     status: (): Promise<ServerStatus> => ipcRenderer.invoke("lmstudio:status"),
     listDownloaded: (): Promise<DownloadedModelInfo[]> => ipcRenderer.invoke("lmstudio:list-downloaded"),
     listLoaded: (): Promise<LoadedModelInfo[]> => ipcRenderer.invoke("lmstudio:list-loaded"),
-    profiles: (): Promise<Record<"BIG" | "SMALL", ProfileSpec>> => ipcRenderer.invoke("lmstudio:profiles"),
     load: (
       modelKey: string,
       opts?: { contextLength?: number; ttlSec?: number; gpuOffload?: "max" | number }
     ): Promise<LoadedModelInfo> => ipcRenderer.invoke("lmstudio:load", modelKey, opts ?? {}),
     unload: (identifier: string): Promise<void> => ipcRenderer.invoke("lmstudio:unload", identifier),
-    switchProfile: (profile: "BIG" | "SMALL", contextLength?: number): Promise<LoadedModelInfo> =>
-      ipcRenderer.invoke("lmstudio:switch-profile", profile, contextLength),
   },
 
   resilience: {
@@ -280,43 +234,15 @@ contextBridge.exposeInMainWorld("api", {
     },
   },
 
-  yarn: {
-    /** Полная рекомендация для UI (factor + KV variants + suggestions). */
-    recommend: (modelKey: string, targetTokens: number, availableForKVGb?: number): Promise<unknown> =>
-      ipcRenderer.invoke("yarn:recommend", { modelKey, targetTokens, availableForKVGb }),
-    /** Прочитать текущий rope_scaling из model card (или null). */
-    readCurrent: (modelKey: string): Promise<{ factor: number; original_max_position_embeddings: number } | null> =>
-      ipcRenderer.invoke("yarn:read-current", modelKey),
-    /** Применить YaRN к модели (atomic + backup). Возвращает summary. */
-    apply: (modelKey: string, targetTokens: number, kvDtype: string): Promise<{ ok: true; configPath: string }> =>
-      ipcRenderer.invoke("yarn:apply", { modelKey, targetTokens, kvDtype }),
-    /** Откатить YaRN: восстановить config из backup. */
-    revert: (modelKey: string): Promise<{ ok: true; restored: boolean }> =>
-      ipcRenderer.invoke("yarn:revert", modelKey),
-    /** Доступен ли активный backup (значит можно revert). */
-    hasBackup: (modelKey: string): Promise<boolean> => ipcRenderer.invoke("yarn:has-backup", modelKey),
-  },
-
   system: {
     hardware: (force?: boolean): Promise<unknown> =>
       ipcRenderer.invoke("system:hardware-info", { force: force === true }),
-    /** Параллельный health-check LM Studio + Qdrant для onboarding wizard. */
     probeServices: (): Promise<{
       lmStudio: { online: boolean; version?: string; url: string };
       qdrant: { online: boolean; version?: string; url: string };
     }> => ipcRenderer.invoke("system:probe-services"),
-    /** Открыть внешний URL (http/https/lmstudio://) в системном браузере. */
     openExternal: (url: string): Promise<{ ok: boolean; reason?: string }> =>
       ipcRenderer.invoke("system:open-external", url),
-  },
-
-  profile: {
-    list: (): Promise<unknown[]> => ipcRenderer.invoke("profile:list"),
-    upsert: (profile: unknown): Promise<unknown> => ipcRenderer.invoke("profile:upsert", profile),
-    remove: (id: string): Promise<boolean> => ipcRenderer.invoke("profile:remove", id),
-    resetToDefaults: (): Promise<unknown[]> => ipcRenderer.invoke("profile:reset-to-defaults"),
-    export: (): Promise<{ path: string } | null> => ipcRenderer.invoke("profile:export"),
-    import: (): Promise<{ path: string; summary: unknown } | null> => ipcRenderer.invoke("profile:import"),
   },
 
   preferences: {
@@ -344,77 +270,20 @@ contextBridge.exposeInMainWorld("api", {
   },
 
   arena: {
-    /** Получить Elo по всем ролям + lastCycleAt + lastError. */
     getRatings: (): Promise<{
       roles: Record<string, Record<string, number>>;
-      chat: Record<string, number>;
       lastCycleAt?: string;
       lastError?: string;
     }> => ipcRenderer.invoke("arena:get-ratings"),
-    /** Запустить cycle. opts.roles — подмножество ролей; opts.manual — ручной запуск даже при выключенном background arena. */
-    runCycle: (opts?: { roles?: string[]; bypassLock?: boolean; manual?: boolean }): Promise<{
-      ok: boolean;
-      message: string;
-      skipped?: boolean;
-      skipReasons?: string[];
-      perRole?: Array<{ role: string; matches: number; results: string[]; ratings: Record<string, number>; skipped?: string }>;
-    }> => ipcRenderer.invoke("arena:run-cycle", opts ?? {}),
-    /** Обнулить Elo. Возвращает пустой ratings файл. */
-    resetRatings: (): Promise<{ version: number; roles: Record<string, Record<string, number>> }> =>
-      ipcRenderer.invoke("arena:reset-ratings"),
-    /** Текущая конфигурация arena (из preferences). */
-    getConfig: (): Promise<{
-      arenaEnabled: boolean;
-      arenaUseLlmJudge: boolean;
-      arenaAutoPromoteWinner: boolean;
-      arenaMatchPairsPerCycle: number;
-      arenaCycleIntervalMs: number;
-      arenaJudgeModelKey: string;
-    }> => ipcRenderer.invoke("arena:get-config"),
-    /** Частично обновить конфигурацию. Возвращает обновлённую конфигурацию. */
-    setConfig: (partial: Record<string, unknown>): Promise<{
-      arenaEnabled: boolean;
-      arenaUseLlmJudge: boolean;
-      arenaAutoPromoteWinner: boolean;
-      arenaMatchPairsPerCycle: number;
-      arenaCycleIntervalMs: number;
-      arenaJudgeModelKey: string;
-    }> => ipcRenderer.invoke("arena:set-config", partial),
-    /** Состояние GlobalLlmLock — занят ли LM Studio импортом / evaluator. */
-    getLockStatus: (): Promise<{
-      busy: boolean;
-      reasons: string[];
-      skipCount: number;
-      lastSkippedAt: string | null;
-      lastSkipReasons: string[];
-      registeredProbes: string[];
-    }> => ipcRenderer.invoke("arena:get-lock-status"),
-  },
-
-  chatHistory: {
-    load: (): Promise<Array<{ role: "user" | "assistant" | "system"; content: string }>> =>
-      ipcRenderer.invoke("chat-history:load"),
-    save: (messages: Array<{ role: string; content: string }>): Promise<{ saved: number }> =>
-      ipcRenderer.invoke("chat-history:save", messages),
-  },
-
-  forge: {
-    listSourceBatches: (): Promise<string[]> => ipcRenderer.invoke("forge:list-source-batches"),
-    nextRunId: (): Promise<string> => ipcRenderer.invoke("forge:next-run-id"),
-    previewSource: (sourcePath: string): Promise<unknown> => ipcRenderer.invoke("forge:preview-source", sourcePath),
-    prepare: (args: { spec: unknown; sourcePath: string; trainRatio?: number; evalRatio?: number; seed?: number }): Promise<unknown> =>
-      ipcRenderer.invoke("forge:prepare", args),
-    generateBundle: (args: { spec: unknown; runId: string; target: string }): Promise<unknown> =>
-      ipcRenderer.invoke("forge:generate-bundle", args),
-    genConfig: (args: { spec: unknown; kind: "unsloth" | "axolotl" }): Promise<{ content: string; ext: string }> =>
-      ipcRenderer.invoke("forge:gen-config", args),
-    openBundleFolder: (runId: string): Promise<string> => ipcRenderer.invoke("forge:open-bundle-folder", runId),
-    markStatus: (runId: string, status: string): Promise<unknown> =>
-      ipcRenderer.invoke("forge:mark-status", { runId, status }),
-  },
-
-  wsl: {
-    detect: (): Promise<unknown> => ipcRenderer.invoke("wsl:detect"),
+    runCycle: (opts?: { roles?: string[]; manual?: boolean; bypassLock?: boolean }): Promise<{
+      ok: boolean; message: string; skipped?: boolean;
+    }> => ipcRenderer.invoke("arena:run-cycle", opts),
+    resetRatings: (): Promise<unknown> => ipcRenderer.invoke("arena:reset-ratings"),
+    getConfig: (): Promise<Record<string, unknown>> => ipcRenderer.invoke("arena:get-config"),
+    setConfig: (partial: Record<string, unknown>): Promise<Record<string, unknown>> =>
+      ipcRenderer.invoke("arena:set-config", partial),
+    getLockStatus: (): Promise<{ busy: boolean; reasons: string[] }> =>
+      ipcRenderer.invoke("arena:get-lock-status"),
   },
 
   scanner: {
@@ -471,33 +340,6 @@ contextBridge.exposeInMainWorld("api", {
     },
   },
 
-  agent: {
-    start: (args: {
-      userMessage: string;
-      /** Обязательно: имя модели, загруженной в LM Studio (см. lmstudio.listLoaded). */
-      model: string;
-      budget?: { maxIterations?: number; maxTokens?: number };
-      /** Multiturn-история диалога (без текущего userMessage). Cap ~50 в UI. */
-      history?: Array<{ role: "user" | "assistant"; content: string }>;
-    }): Promise<{
-      agentId: string;
-      finalAnswer: string;
-      iterations: number;
-      tokensUsed: number;
-      toolHistory: Array<{ name: string; args: unknown; ok: boolean; durationMs: number }>;
-      aborted: boolean;
-      abortedReason?: string;
-    }> => ipcRenderer.invoke("agent:start", args),
-    approve: (callId: string, approved: boolean): Promise<boolean> =>
-      ipcRenderer.invoke("agent:approve", { callId, approved }),
-    cancel: (agentId: string): Promise<boolean> => ipcRenderer.invoke("agent:cancel", agentId),
-    onEvent: (cb: (payload: { agentId: string; type: string; [k: string]: unknown }) => void): (() => void) => {
-      const l = (_e: unknown, p: { agentId: string; type: string; [k: string]: unknown }) => cb(p);
-      ipcRenderer.on("agent:event", l);
-      return () => ipcRenderer.removeListener("agent:event", l);
-    },
-  },
-
   bookhunter: {
     search: (args: {
       query: string;
@@ -539,7 +381,6 @@ contextBridge.exposeInMainWorld("api", {
       bookSourcePath: string;
       chapterRange?: { from: number; to: number };
       extractModel?: string;
-      /** Имя Qdrant-коллекции для тематической изоляции принятых концептов. */
       targetCollection?: string;
     }): Promise<{
       jobId: string;
@@ -549,13 +390,11 @@ contextBridge.exposeInMainWorld("api", {
       totalDelta: { chunks: number; accepted: number; skipped: number };
       warnings: string[];
     }> => ipcRenderer.invoke("dataset-v2:start-extraction", args),
-    /** Multi-book батч из Library: guard'ит по quality_score и is_fiction_or_water. */
     startBatch: (args: {
       bookIds: string[];
       minQuality?: number;
       skipFictionOrWater?: boolean;
       extractModel?: string;
-      /** Тематическая Qdrant-коллекция для всех книг батча. */
       targetCollection?: string;
     }): Promise<{
       batchId: string;
@@ -572,7 +411,6 @@ contextBridge.exposeInMainWorld("api", {
       }>;
     }> => ipcRenderer.invoke("dataset-v2:start-batch", args),
     cancel: (jobId: string): Promise<boolean> => ipcRenderer.invoke("dataset-v2:cancel", jobId),
-    /** Iter 7: прерывает весь батч-цикл (все оставшиеся книги). */
     cancelBatch: (batchId: string): Promise<boolean> => ipcRenderer.invoke("dataset-v2:cancel-batch", batchId),
     listAccepted: (
       collection?: string,
@@ -580,12 +418,6 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.invoke("dataset-v2:list-accepted", collection),
     rejectAccepted: (conceptId: string, collection?: string): Promise<boolean> =>
       ipcRenderer.invoke("dataset-v2:reject-accepted", conceptId, collection),
-    /**
-     * Iter 9: запускает фон-синтез датасета (Qdrant collection → ChatML JSONL)
-     * через child-process scripts/dataset-synth.ts. Вернёт сразу с pid и logPath
-     * (UI отслеживает прогресс через лог-файл, чтобы не блокировать main thread
-     * на 60+ минутный LLM-marathon).
-     */
     synthesize: (args: {
       collection: string;
       outputPath: string;
@@ -659,20 +491,20 @@ contextBridge.exposeInMainWorld("api", {
       smokeLibrary
         ? Promise.resolve({ rows: smokeLibrary.rows, total: smokeLibrary.rows.length, libraryRoot: "smoke-library", dbPath: "smoke.db" })
         : ipcRenderer.invoke("library:catalog", q ?? {}),
-    tagStats: (): Promise<{ tag: string; count: number }[]> =>
+    tagStats: (locale?: string): Promise<{ tag: string; count: number }[]> =>
       smokeLibrary
         ? Promise.resolve([{ tag: "cybernetics", count: 1 }, { tag: "systems", count: 1 }, { tag: "marketing", count: 1 }])
-        : ipcRenderer.invoke("library:tag-stats"),
+        : ipcRenderer.invoke("library:tag-stats", locale),
     collectionByDomain: (): Promise<Array<{ label: string; count: number; bookIds: string[] }>> =>
       smokeLibrary ? Promise.resolve([]) : ipcRenderer.invoke("library:collection-by-domain"),
-    collectionByAuthor: (): Promise<Array<{ label: string; count: number; bookIds: string[] }>> =>
-      smokeLibrary ? Promise.resolve([]) : ipcRenderer.invoke("library:collection-by-author"),
+    collectionByAuthor: (locale?: string): Promise<Array<{ label: string; count: number; bookIds: string[] }>> =>
+      smokeLibrary ? Promise.resolve([]) : ipcRenderer.invoke("library:collection-by-author", locale),
     collectionByYear: (): Promise<Array<{ label: string; count: number; bookIds: string[] }>> =>
       smokeLibrary ? Promise.resolve([]) : ipcRenderer.invoke("library:collection-by-year"),
     collectionBySphere: (): Promise<Array<{ label: string; count: number; bookIds: string[] }>> =>
       smokeLibrary ? Promise.resolve([]) : ipcRenderer.invoke("library:collection-by-sphere"),
-    collectionByTag: (): Promise<Array<{ label: string; count: number; bookIds: string[] }>> =>
-      smokeLibrary ? Promise.resolve([]) : ipcRenderer.invoke("library:collection-by-tag"),
+    collectionByTag: (locale?: string): Promise<Array<{ label: string; count: number; bookIds: string[] }>> =>
+      smokeLibrary ? Promise.resolve([]) : ipcRenderer.invoke("library:collection-by-tag", locale),
     getBook: (bookId: string): Promise<(LibraryBookMeta & { mdPath: string }) | null> =>
       smokeLibrary
         ? Promise.resolve((smokeLibrary.rows.find((row) => row.id === bookId) as LibraryBookMeta & { mdPath: string } | undefined) ?? null)
@@ -701,7 +533,6 @@ contextBridge.exposeInMainWorld("api", {
       smokeLibrary ? Promise.resolve({ queued: smokeLibrary.rows.length }) : ipcRenderer.invoke("library:reevaluate-all"),
     setEvaluatorModel: (modelKey: string | null): Promise<boolean> =>
       smokeLibrary ? Promise.resolve(true) : ipcRenderer.invoke("library:evaluator-set-model", modelKey),
-    /* Phase 4: priority enqueue + runtime slot regulation. */
     evaluatorPrioritize: (bookIds: string[]): Promise<{ ok: boolean; queued: number }> =>
       smokeLibrary ? Promise.resolve({ ok: true, queued: 0 }) : ipcRenderer.invoke("library:evaluator-prioritize", { bookIds }),
     evaluatorSetSlots: (n: number): Promise<{ ok: boolean; slots: number }> =>
@@ -722,7 +553,6 @@ contextBridge.exposeInMainWorld("api", {
       existingBookTitle?: string;
       errorMessage?: string;
       fileWarnings?: string[];
-      /** Backward-compat: для старого UI = processed/discovered. */
       index: number;
       total: number;
     }) => void): (() => void) => {
@@ -849,47 +679,6 @@ contextBridge.exposeInMainWorld("api", {
       const l = (_e: unknown, p: Parameters<typeof cb>[0]) => cb(p);
       ipcRenderer.on("library:scan-report", l);
       return () => ipcRenderer.removeListener("library:scan-report", l);
-    },
-  },
-
-  forgeLocal: {
-    start: (args: { runId: string; scriptWinPath: string; distro?: string }): Promise<{ ok: true }> =>
-      ipcRenderer.invoke("forge:start-local", args),
-    cancel: (runId: string): Promise<boolean> => ipcRenderer.invoke("forge:cancel-local", runId),
-    importGguf: (outputDir: string, modelKey: string): Promise<{ destPath: string; copied: number }> =>
-      ipcRenderer.invoke("forge:import-gguf", { outputDir, modelKey }),
-    runEval: (args: { evalPath: string; baseModel: string; tunedModel: string; judgeModel?: string; maxCases?: number }): Promise<unknown> =>
-      ipcRenderer.invoke("forge:run-eval", args),
-    cancelEval: (): Promise<boolean> => ipcRenderer.invoke("forge:cancel-eval"),
-    onMetric: (cb: (payload: { runId: string; metric: unknown }) => void): (() => void) => {
-      const l = (_e: unknown, p: { runId: string; metric: unknown }) => cb(p);
-      ipcRenderer.on("forge:local-metric", l);
-      return () => ipcRenderer.removeListener("forge:local-metric", l);
-    },
-    onStdout: (cb: (payload: { runId: string; line: string }) => void): (() => void) => {
-      const l = (_e: unknown, p: { runId: string; line: string }) => cb(p);
-      ipcRenderer.on("forge:local-stdout", l);
-      return () => ipcRenderer.removeListener("forge:local-stdout", l);
-    },
-    onStderr: (cb: (payload: { runId: string; line: string }) => void): (() => void) => {
-      const l = (_e: unknown, p: { runId: string; line: string }) => cb(p);
-      ipcRenderer.on("forge:local-stderr", l);
-      return () => ipcRenderer.removeListener("forge:local-stderr", l);
-    },
-    onError: (cb: (payload: { runId: string; error: string }) => void): (() => void) => {
-      const l = (_e: unknown, p: { runId: string; error: string }) => cb(p);
-      ipcRenderer.on("forge:local-error", l);
-      return () => ipcRenderer.removeListener("forge:local-error", l);
-    },
-    onExit: (cb: (payload: { runId: string; code: number | null }) => void): (() => void) => {
-      const l = (_e: unknown, p: { runId: string; code: number | null }) => cb(p);
-      ipcRenderer.on("forge:local-exit", l);
-      return () => ipcRenderer.removeListener("forge:local-exit", l);
-    },
-    onEvalProgress: (cb: (payload: { done: number; total: number }) => void): (() => void) => {
-      const l = (_e: unknown, p: { done: number; total: number }) => cb(p);
-      ipcRenderer.on("forge:eval-progress", l);
-      return () => ipcRenderer.removeListener("forge:eval-progress", l);
     },
   },
 });

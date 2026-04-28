@@ -691,10 +691,13 @@ async function processBook(
         if (!args.skipLibrary && mdPath) {
           const enrichedMeta: BookCatalogMeta = {
             ...libraryMeta,
+            titleRu: evaluation.title_ru,
+            authorRu: evaluation.author_ru,
             titleEn: evaluation.title_en,
             authorEn: evaluation.author_en,
             domain: evaluation.domain,
             tags: evaluation.tags,
+            tagsRu: evaluation.tags_ru,
             qualityScore: evaluation.quality_score,
             conceptualDensity: evaluation.conceptual_density,
             originality: evaluation.originality,

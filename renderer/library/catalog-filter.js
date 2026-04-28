@@ -9,6 +9,7 @@
  * Любая UI-обвязка (renderCatalogTable, syncPresetActive) остаётся в
  * renderer/library.js до следующей итерации strangler'а.
  */
+import { displayBookTags } from "./display-meta.js";
 
 /**
  * UI-пресеты порога качества для toolbar Catalog.
@@ -40,7 +41,7 @@ export const QUALITY_PRESETS = Object.freeze([
  * Контракт:
  *   - quality 0 → пропускает всё; иначе строки без qualityScore (≠ number) отсекаются.
  *   - hideFiction → если строка isFictionOrWater === true, она вылетает; иначе остаётся.
- *   - search → join по titleEn/title/authorEn/author/domain/tags; case-insensitive includes.
+ *   - search → join по titleEn/titleRu/title/authorEn/authorRu/author/domain/tags/tagsRu; case-insensitive includes.
  *
  * @param {Array<object>} rows
  * @param {CatalogFilters} filters
@@ -61,13 +62,14 @@ export function filterCatalog(rows, filters) {
     if (hide && row.isFictionOrWater === true) return false;
     if (needle) {
       const haystack = [
-        row.titleEn, row.title, row.authorEn, row.author, row.domain,
+        row.titleEn, row.titleRu, row.title, row.authorEn, row.authorRu, row.author, row.domain,
         ...(row.tags ?? []),
+        ...(row.tagsRu ?? []),
       ].filter(Boolean).join(" ").toLowerCase();
       if (!haystack.includes(needle)) return false;
     }
     if (tagFilter) {
-      const rowTags = row.tags ?? [];
+      const rowTags = displayBookTags(row);
       if (!tagFilter.every((tg) => rowTags.includes(tg))) return false;
     }
     return true;

@@ -3,13 +3,13 @@ import type { BookCatalogMeta, BookStatus } from "./types.js";
 
 const UPSERT_SQL = `
 INSERT INTO books (
-  id, sha256, title, author, title_en, author_en, year, isbn, publisher,
+  id, sha256, title, author, title_ru, author_ru, title_en, author_en, year, isbn, publisher,
   word_count, chapter_count, original_format, source_archive, sphere,
   domain, quality_score, conceptual_density, originality, is_fiction_or_water,
   verdict_reason, evaluator_reasoning, evaluator_model, evaluated_at,
   concepts_extracted, concepts_accepted, status, last_error, md_path
 ) VALUES (
-  @id, @sha256, @title, @author, @title_en, @author_en, @year, @isbn, @publisher,
+  @id, @sha256, @title, @author, @title_ru, @author_ru, @title_en, @author_en, @year, @isbn, @publisher,
   @word_count, @chapter_count, @original_format, @source_archive, @sphere,
   @domain, @quality_score, @conceptual_density, @originality, @is_fiction_or_water,
   @verdict_reason, @evaluator_reasoning, @evaluator_model, @evaluated_at,
@@ -19,6 +19,8 @@ ON CONFLICT(id) DO UPDATE SET
   sha256              = excluded.sha256,
   title               = excluded.title,
   author              = excluded.author,
+  title_ru            = excluded.title_ru,
+  author_ru           = excluded.author_ru,
   title_en            = excluded.title_en,
   author_en           = excluded.author_en,
   year                = excluded.year,
@@ -46,9 +48,22 @@ ON CONFLICT(id) DO UPDATE SET
 `;
 
 const FTS_DELETE_SQL = `DELETE FROM books_fts WHERE rowid = (SELECT rowid FROM books WHERE id = ?)`;
-const FTS_INSERT_SQL = `INSERT INTO books_fts (rowid, title_en, author_en, tags, verdict_reason, evaluator_reasoning)
-                        SELECT rowid, COALESCE(title_en, title), COALESCE(author_en, author, ''), ?, COALESCE(verdict_reason, ''), COALESCE(evaluator_reasoning, '')
+const FTS_INSERT_SQL = `INSERT INTO books_fts (rowid, title_en, author_en, title_ru, author_ru, tags, verdict_reason, evaluator_reasoning)
+                        SELECT rowid,
+                               COALESCE(title_en, title),
+                               COALESCE(author_en, author, ''),
+                               COALESCE(title_ru, title),
+                               COALESCE(author_ru, author, ''),
+                               ?, COALESCE(verdict_reason, ''), COALESCE(evaluator_reasoning, '')
                         FROM books WHERE id = ?`;
+
+function ftsTagsSearchBlob(meta: BookCatalogMeta): string {
+  const en = (meta.tags ?? []).join(" ").trim();
+  const ru = (meta.tagsRu ?? []).join(" ").trim();
+  if (!en) return ru;
+  if (!ru) return en;
+  return `${en} ${ru}`;
+}
 
 export function upsertBook(meta: BookCatalogMeta, mdPath: string): void {
   const db = openCacheDb();
@@ -57,6 +72,8 @@ export function upsertBook(meta: BookCatalogMeta, mdPath: string): void {
     sha256: meta.sha256,
     title: meta.title,
     author: meta.author ?? null,
+    title_ru: meta.titleRu ?? null,
+    author_ru: meta.authorRu ?? null,
     title_en: meta.titleEn ?? null,
     author_en: meta.authorEn ?? null,
     year: meta.year ?? null,
@@ -86,12 +103,17 @@ export function upsertBook(meta: BookCatalogMeta, mdPath: string): void {
   const txn = db.transaction(() => {
     db.prepare(UPSERT_SQL).run(params);
     db.prepare("DELETE FROM book_tags WHERE book_id = ?").run(meta.id);
+    db.prepare("DELETE FROM book_tags_ru WHERE book_id = ?").run(meta.id);
     if (meta.tags && meta.tags.length > 0) {
       const ins = db.prepare("INSERT OR IGNORE INTO book_tags (book_id, tag) VALUES (?, ?)");
       for (const tag of meta.tags) ins.run(meta.id, tag);
     }
+    if (meta.tagsRu && meta.tagsRu.length > 0) {
+      const insRu = db.prepare("INSERT OR IGNORE INTO book_tags_ru (book_id, tag) VALUES (?, ?)");
+      for (const tag of meta.tagsRu) insRu.run(meta.id, tag);
+    }
     db.prepare(FTS_DELETE_SQL).run(meta.id);
-    db.prepare(FTS_INSERT_SQL).run((meta.tags ?? []).join(" "), meta.id);
+    db.prepare(FTS_INSERT_SQL).run(ftsTagsSearchBlob(meta), meta.id);
   });
   txn();
 }
@@ -108,6 +130,7 @@ export function deleteBook(id: string): void {
   const db = openCacheDb();
   const txn = db.transaction(() => {
     db.prepare(FTS_DELETE_SQL).run(id);
+    db.prepare("DELETE FROM book_tags_ru WHERE book_id = ?").run(id);
     db.prepare("DELETE FROM book_tags WHERE book_id = ?").run(id);
     db.prepare("DELETE FROM books WHERE id = ?").run(id);
   });

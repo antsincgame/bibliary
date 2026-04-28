@@ -68,6 +68,8 @@ function buildFrontmatter(meta: BookCatalogMeta): string {
   // bibliographic
   lines.push(`title: ${escapeYaml(meta.title)}`);
   if (meta.author) lines.push(`author: ${escapeYaml(meta.author)}`);
+  if (meta.titleRu) lines.push(`titleRu: ${escapeYaml(meta.titleRu)}`);
+  if (meta.authorRu) lines.push(`authorRu: ${escapeYaml(meta.authorRu)}`);
   if (meta.titleEn) lines.push(`titleEn: ${escapeYaml(meta.titleEn)}`);
   if (meta.authorEn) lines.push(`authorEn: ${escapeYaml(meta.authorEn)}`);
   if (meta.year !== undefined) lines.push(`year: ${meta.year}`);
@@ -80,6 +82,9 @@ function buildFrontmatter(meta: BookCatalogMeta): string {
   if (meta.domain) lines.push(`domain: ${escapeYaml(meta.domain)}`);
   if (meta.tags && meta.tags.length > 0) {
     lines.push(`tags: [${meta.tags.map((t) => escapeYaml(t)).join(", ")}]`);
+  }
+  if (meta.tagsRu && meta.tagsRu.length > 0) {
+    lines.push(`tagsRu: [${meta.tagsRu.map((t) => escapeYaml(t)).join(", ")}]`);
   }
   if (meta.qualityScore !== undefined) lines.push(`qualityScore: ${meta.qualityScore}`);
   if (meta.conceptualDensity !== undefined) lines.push(`conceptualDensity: ${meta.conceptualDensity}`);

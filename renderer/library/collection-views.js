@@ -5,7 +5,7 @@
  * Данные берутся из SQLite через IPC, никаких физических .bookref.md.
  */
 import { el, clear } from "../dom.js";
-import { t } from "../i18n.js";
+import { t, getLocale } from "../i18n.js";
 
 /** @typedef {{ label: string; count: number; bookIds: string[] }} CollectionGroup */
 
@@ -76,13 +76,13 @@ async function loadActiveTab() {
         groups = await window.api.library.collectionByDomain();
         break;
       case "author":
-        groups = await window.api.library.collectionByAuthor();
+        groups = await window.api.library.collectionByAuthor(getLocale() === "ru" ? "ru" : "en");
         break;
       case "year":
         groups = await window.api.library.collectionByYear();
         break;
       case "tag":
-        groups = await window.api.library.collectionByTag();
+        groups = await window.api.library.collectionByTag(getLocale() === "ru" ? "ru" : "en");
         break;
       case "sphere":
         groups = await window.api.library.collectionBySphere();

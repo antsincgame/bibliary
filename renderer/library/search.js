@@ -7,7 +7,6 @@ import { t } from "../i18n.js";
 import { showAlert } from "../components/ui-dialog.js";
 import { STATE, SEARCH_STATE, DOWNLOAD_STATE, DOWNLOAD_BY_ID } from "./state.js";
 import { formatBytes, cssEscape, makeDownloadId } from "./format.js";
-import { loadHistory } from "./history.js";
 
 export function renderSearch(root) {
   const wrap = root.querySelector(".lib-search");
@@ -185,7 +184,6 @@ async function startCardDownload(candidate, root) {
       status: "done",
       message: t("library.search.status.doneCount").replace("{count}", String(res.upserted)),
     });
-    loadHistory();
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     const cancelled = /aborted|user-cancel/i.test(msg);

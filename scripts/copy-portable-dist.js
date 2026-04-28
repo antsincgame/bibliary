@@ -25,15 +25,75 @@ const src = path.join(buildOutDir, portableName);
  * чтобы git-ignore не сбивался и distribution был в одном месте. */
 const destDir = path.join(root, "release", "dist-portable");
 const dest = path.join(destDir, portableName);
+/** Если основной exe занят (Explorer / антивирус), кладём копию под другим именем. */
+const destAlt = path.join(destDir, `${productName.replace(/\s+/g, "-")}-${version}-portable.exe`);
 
 if (!fs.existsSync(src)) {
   console.error(`Portable не найден (ожидался ${portableName} в ${buildOutDir}). Сначала: npm run electron:build -- --win portable`);
   process.exit(1);
 }
 
+function sleepSync(ms) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    /* busy-wait: без зависимости от SharedArrayBuffer */
+  }
+}
+
+/** Копирует exe через буфер + атомарный rename (обходит часть EBUSY на copyFile). */
+function copyExeAtomic(src, destPath) {
+  const buf = fs.readFileSync(src);
+  const tmp = `${destPath}.tmp-${process.pid}`;
+  try {
+    fs.writeFileSync(tmp, buf);
+    if (fs.existsSync(destPath)) {
+      try {
+        fs.unlinkSync(destPath);
+      } catch {
+        /* занят — rename упадёт, вызывающий код попробует другой путь */
+      }
+    }
+    fs.renameSync(tmp, destPath);
+  } catch (e) {
+    try {
+      fs.unlinkSync(tmp);
+    } catch {
+      /* ignore */
+    }
+    throw e;
+  }
+}
+
+function tryCopyTo(destPath, attempts = 12, delayMs = 500) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      copyExeAtomic(src, destPath);
+      return destPath;
+    } catch (e) {
+      lastErr = e;
+      const code = /** @type {NodeJS.ErrnoException} */ (e)?.code;
+      if (code === "EBUSY" || code === "EPERM" || code === "EACCES") {
+        sleepSync(delayMs);
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastErr;
+}
+
 fs.mkdirSync(destDir, { recursive: true });
-fs.copyFileSync(src, dest);
-console.log(`Portable скопирован: ${path.relative(root, dest)}`);
+
+let placed;
+try {
+  placed = tryCopyTo(dest);
+} catch (primaryErr) {
+  console.warn(`[copy-portable] не удалось записать ${path.relative(root, dest)}:`, primaryErr);
+  console.warn(`[copy-portable] пробую альтернативу: ${path.relative(root, destAlt)}`);
+  placed = tryCopyTo(destAlt);
+}
+console.log(`Portable скопирован: ${path.relative(root, placed)}`);
 
 /* Remove the bare exe from buildOutDir so users don't accidentally launch
    the wrong copy (which has no data/ folder next to it). */

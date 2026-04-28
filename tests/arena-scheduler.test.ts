@@ -1,11 +1,5 @@
 /**
  * Unit tests for electron/lib/llm/arena/scheduler.ts
- *
- * Тестирует: start/stop/restart, идемпотентность, lock guard skip,
- * disabled when arenaEnabled=false.
- *
- * Использует injectable deps (_setSchedulerDepsForTests) и fake timers —
- * setIntervalFn/clearIntervalFn заменяются на синхронные коллекторы.
  */
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
@@ -19,8 +13,6 @@ import {
   _resetSchedulerForTests,
 } from "../electron/lib/llm/arena/scheduler.ts";
 import { globalLlmLock } from "../electron/lib/llm/global-llm-lock.ts";
-
-/* ── fake timer ─────────────────────────────────────────────────────── */
 
 interface FakeTimer {
   id: number;
@@ -60,8 +52,6 @@ class FakeTimerRegistry {
   }
 }
 
-/* ── helpers ────────────────────────────────────────────────────────── */
-
 function makePrefs(arenaEnabled: boolean, intervalMs = 3_600_000) {
   return async () => ({ arenaEnabled, arenaCycleIntervalMs: intervalMs });
 }
@@ -70,12 +60,10 @@ function noopCycle() {
   return async () => ({ ok: true, message: "noop" } as never);
 }
 
-/* ── setup / teardown ───────────────────────────────────────────────── */
-
 let fakeTimers: FakeTimerRegistry;
 
 beforeEach(() => {
-  stopScheduler(); // ensure clean state
+  stopScheduler();
   _resetSchedulerForTests();
   globalLlmLock._resetForTests();
   fakeTimers = new FakeTimerRegistry();
@@ -87,8 +75,6 @@ afterEach(() => {
   globalLlmLock._resetForTests();
 });
 
-/* ── start / stop ───────────────────────────────────────────────────── */
-
 describe("[arena-scheduler] start / stop", () => {
   test("scheduler does not start when arenaEnabled=false", async () => {
     _setSchedulerDepsForTests({
@@ -98,8 +84,8 @@ describe("[arena-scheduler] start / stop", () => {
       clearIntervalFn: fakeTimers.clearInterval as never,
     });
     await startScheduler();
-    assert.equal(isSchedulerRunning(), false, "should NOT start when disabled");
-    assert.equal(fakeTimers.count(), 0, "no timer should be registered");
+    assert.equal(isSchedulerRunning(), false);
+    assert.equal(fakeTimers.count(), 0);
   });
 
   test("scheduler starts when arenaEnabled=true", async () => {
@@ -110,8 +96,8 @@ describe("[arena-scheduler] start / stop", () => {
       clearIntervalFn: fakeTimers.clearInterval as never,
     });
     await startScheduler();
-    assert.equal(isSchedulerRunning(), true, "should be running after start");
-    assert.equal(fakeTimers.count(), 1, "exactly 1 timer registered");
+    assert.equal(isSchedulerRunning(), true);
+    assert.equal(fakeTimers.count(), 1);
   });
 
   test("stopScheduler stops running scheduler", async () => {
@@ -125,18 +111,16 @@ describe("[arena-scheduler] start / stop", () => {
     assert.equal(isSchedulerRunning(), true);
     stopScheduler();
     assert.equal(isSchedulerRunning(), false);
-    assert.equal(fakeTimers.count(), 0, "timer should be cleared on stop");
+    assert.equal(fakeTimers.count(), 0);
   });
 
   test("stopScheduler is safe to call when not running", () => {
-    assert.doesNotThrow(() => stopScheduler(), "stopScheduler on idle should not throw");
+    assert.doesNotThrow(() => stopScheduler());
   });
 });
 
-/* ── idempotency ────────────────────────────────────────────────────── */
-
 describe("[arena-scheduler] idempotency", () => {
-  test("startScheduler with same interval is no-op (does not double-register)", async () => {
+  test("startScheduler with same interval is no-op", async () => {
     _setSchedulerDepsForTests({
       getPrefs: makePrefs(true, 60_000),
       runCycle: noopCycle(),
@@ -144,8 +128,8 @@ describe("[arena-scheduler] idempotency", () => {
       clearIntervalFn: fakeTimers.clearInterval as never,
     });
     await startScheduler();
-    await startScheduler(); // second call — same interval
-    assert.equal(fakeTimers.count(), 1, "should not register duplicate timers");
+    await startScheduler();
+    assert.equal(fakeTimers.count(), 1);
   });
 
   test("startScheduler with different interval replaces old timer", async () => {
@@ -158,7 +142,6 @@ describe("[arena-scheduler] idempotency", () => {
     await startScheduler();
     const firstTimer = fakeTimers.getFirst();
 
-    // change interval
     _setSchedulerDepsForTests({
       getPrefs: makePrefs(true, 120_000),
       runCycle: noopCycle(),
@@ -168,13 +151,11 @@ describe("[arena-scheduler] idempotency", () => {
     await restartScheduler();
     const secondTimer = fakeTimers.getFirst();
 
-    assert.ok(secondTimer, "new timer should exist");
-    assert.notEqual(firstTimer?.id, secondTimer?.id, "timer should be replaced");
-    assert.equal(secondTimer?.intervalMs, 120_000, "new interval applied");
+    assert.ok(secondTimer);
+    assert.notEqual(firstTimer?.id, secondTimer?.id);
+    assert.equal(secondTimer?.intervalMs, 120_000);
   });
 });
-
-/* ── restartScheduler ───────────────────────────────────────────────── */
 
 describe("[arena-scheduler] restartScheduler", () => {
   test("restartScheduler stops then starts", async () => {
@@ -187,8 +168,8 @@ describe("[arena-scheduler] restartScheduler", () => {
     await startScheduler();
     assert.equal(isSchedulerRunning(), true);
     await restartScheduler();
-    assert.equal(isSchedulerRunning(), true, "should still be running after restart");
-    assert.equal(fakeTimers.count(), 1, "exactly one timer after restart");
+    assert.equal(isSchedulerRunning(), true);
+    assert.equal(fakeTimers.count(), 1);
   });
 
   test("restartScheduler with arenaEnabled=false stops scheduler", async () => {
@@ -208,14 +189,12 @@ describe("[arena-scheduler] restartScheduler", () => {
       clearIntervalFn: fakeTimers.clearInterval as never,
     });
     await restartScheduler();
-    assert.equal(isSchedulerRunning(), false, "should stop when arena disabled after restart");
+    assert.equal(isSchedulerRunning(), false);
   });
 });
 
-/* ── lock guard ─────────────────────────────────────────────────────── */
-
 describe("[arena-scheduler] GlobalLlmLock guard on tick", () => {
-  test("tick is skipped and skipCount increases when lock is busy", async () => {
+  test("tick is skipped when lock is busy", async () => {
     let cyclesCalled = 0;
     globalLlmLock.registerProbe("fake-import", () => ({ busy: true, reason: "3 imports" }));
 
@@ -227,21 +206,18 @@ describe("[arena-scheduler] GlobalLlmLock guard on tick", () => {
     });
     await startScheduler();
 
-    // Fire the timer callback
     fakeTimers.tickAll();
-    // Give async tick() a chance to complete
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
 
-    assert.equal(cyclesCalled, 0, "cycle should NOT run when lock busy");
+    assert.equal(cyclesCalled, 0);
     const status = globalLlmLock.getStatus();
-    assert.equal(status.skipCount, 1, "skipCount should be incremented");
+    assert.equal(status.skipCount, 1);
   });
 
   test("tick runs cycle when lock is not busy", async () => {
     let cyclesCalled = 0;
-    // No probes registered → lock is not busy
 
     _setSchedulerDepsForTests({
       getPrefs: makePrefs(true, 60_000),
@@ -256,11 +232,9 @@ describe("[arena-scheduler] GlobalLlmLock guard on tick", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    assert.equal(cyclesCalled, 1, "cycle should run when lock is idle");
+    assert.equal(cyclesCalled, 1);
   });
 });
-
-/* ── re-entrancy guard (RACE-2) ─────────────────────────────────────── */
 
 describe("[arena-scheduler] re-entrancy guard", () => {
   test("second tick is skipped while previous cycle is still in progress", async () => {
@@ -270,8 +244,6 @@ describe("[arena-scheduler] re-entrancy guard", () => {
 
     _setSchedulerDepsForTests({
       getPrefs: makePrefs(true, 60_000),
-      /* Симулируем долгий cycle: первый вызов «висит» пока не resolved
-         внешним кодом. Второй вызов вообще не должен случиться (guard). */
       runCycle: async () => {
         cyclesStarted++;
         if (cyclesStarted === 1) await firstFinished;
@@ -282,27 +254,26 @@ describe("[arena-scheduler] re-entrancy guard", () => {
     });
     await startScheduler();
 
-    fakeTimers.tickAll();          // первый тик — стартует «долгий» cycle
-    await Promise.resolve();       // даём cycleInFlight=true выставиться
-    fakeTimers.tickAll();          // второй тик — должен быть отброшен guard'ом
+    fakeTimers.tickAll();
+    await Promise.resolve();
+    fakeTimers.tickAll();
     await Promise.resolve();
     await Promise.resolve();
 
-    assert.equal(cyclesStarted, 1, "second cycle must NOT start while first in progress");
+    assert.equal(cyclesStarted, 1);
     const status = globalLlmLock.getStatus();
-    assert.ok(status.skipCount >= 1, "skipCount should reflect guarded tick");
+    assert.ok(status.skipCount >= 1);
 
-    /* Завершаем первый cycle и убеждаемся что guard сбросился. */
     resolveFirst!();
     await firstFinished;
     await Promise.resolve();
     await Promise.resolve();
 
-    fakeTimers.tickAll();          // третий тик — guard свободен, должно стартануть
+    fakeTimers.tickAll();
     await Promise.resolve();
     await Promise.resolve();
 
-    assert.equal(cyclesStarted, 2, "after first cycle finished, next tick must run");
+    assert.equal(cyclesStarted, 2);
   });
 
   test("scheduler registers arena-cycle probe in globalLlmLock", async () => {
@@ -314,17 +285,11 @@ describe("[arena-scheduler] re-entrancy guard", () => {
     });
     await startScheduler();
     const status = globalLlmLock.getStatus();
-    assert.ok(
-      status.registeredProbes.includes("arena-cycle"),
-      "arena-cycle probe must be registered while scheduler is running",
-    );
+    assert.ok(status.registeredProbes.includes("arena-cycle"));
 
     stopScheduler();
     const after = globalLlmLock.getStatus();
-    assert.ok(
-      !after.registeredProbes.includes("arena-cycle"),
-      "arena-cycle probe must be unregistered after stopScheduler",
-    );
+    assert.ok(!after.registeredProbes.includes("arena-cycle"));
   });
 
   test("stopScheduler aborts in-flight cycle via signal", async () => {
@@ -348,11 +313,11 @@ describe("[arena-scheduler] re-entrancy guard", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    assert.ok(receivedSignal, "scheduler must pass an AbortSignal to runCycle");
-    assert.equal(receivedSignal!.aborted, false, "signal not aborted yet");
+    assert.ok(receivedSignal);
+    assert.equal(receivedSignal!.aborted, false);
 
     stopScheduler();
-    assert.equal(receivedSignal!.aborted, true, "signal must be aborted after stopScheduler");
+    assert.equal(receivedSignal!.aborted, true);
 
     resolveCycle!();
     await cycleHang;

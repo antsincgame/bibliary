@@ -1,20 +1,8 @@
 /**
- * Arena cycle — фоновая калибровка ролей через Elo.
+ * Arena cycle — background model calibration via Elo.
  *
- * АЛГОРИТМ:
- *   1. Перед стартом проверяем globalLlmLock.isBusy() — если LM Studio занята
- *      импортом / evaluator queue, cycle скипается (защита от OOM).
- *   2. Для каждой роли из `roles` (default = все поддерживаемые):
- *        a. Берём golden prompt этой роли (getGoldenForRole).
- *        b. Фильтруем loaded models по required capability роли.
- *        c. Если eligible.length < 2 — роль скипается (нечего сравнивать).
- *        d. Парим модели pairwise (round-robin), запускаем golden, считаем
- *           winner через LLM judge или objective fallback (length+latency).
- *        e. Обновляем Elo в roles[<role>] через recordMatch.
- *   3. Если arenaAutoPromoteWinner=true — устанавливаем winner как prefs[<role>Model].
- *
- * РОЛИ ИСКЛЮЧЕНИЯ:
- *   - arena_judge не калибруется самим собой (был бы цикл).
+ * For each role: golden prompt -> two models -> compare -> update Elo.
+ * Auto-promotes winner to prefs if enabled.
  */
 
 import { chat, chatWithPolicy, listLoaded, type LoadedModelInfo } from "../../../lmstudio-client.js";
@@ -32,14 +20,7 @@ const JUDGE_TOP_K = 5;
 const OBJECTIVE_MIN_ANSWER_CHARS = 20;
 export const ARENA_MATCH_PAIRS_PER_CYCLE_MAX = 10;
 
-/**
- * Какие роли поддерживаются arena (есть golden и есть смысл сравнивать).
- * Vision_ocr использует тот же golden что vision_meta — для unique cycle
- * включаем только vision_meta, vision_ocr резолвится через тот же Elo bucket.
- */
 const CALIBRATABLE_ROLES: ModelRole[] = [
-  "chat",
-  "agent",
   "judge",
   "crystallizer",
   "evaluator",
@@ -88,16 +69,10 @@ export function _resetRunCycleDepsForTests(): void {
   deps = defaultDeps;
 }
 
-
 export interface CycleOptions {
-  /** Подмножество ролей для калибровки. Default = все CALIBRATABLE_ROLES. */
   roles?: ModelRole[];
-  /** Сигнал отмены (например при app-quit). */
   signal?: AbortSignal;
-  /** Если true — обходит globalLlmLock guard. Default false. Используется
-   *  только когда юзер явно нажимает "Run cycle now" в UI и подтверждает. */
   bypassLock?: boolean;
-  /** Manual user-triggered cycle runs even when background arena is disabled. */
   manual?: boolean;
 }
 
@@ -112,9 +87,7 @@ export interface CycleRoleResult {
 export interface CycleReport {
   ok: boolean;
   message: string;
-  /** True если cycle был пропущен из-за lock. */
   skipped?: boolean;
-  /** Почему скипнули (e.g. "library-import: 3 active import(s)"). */
   skipReasons?: string[];
   perRole?: CycleRoleResult[];
 }
@@ -141,23 +114,11 @@ async function runOneModel(
   signal: AbortSignal,
 ): Promise<{ text: string; ms: number }> {
   const t0 = Date.now();
-  const userContent: string | Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }> =
-    g.imageUrl
-      ? [
-          { type: "text", text: g.user },
-          { type: "image_url", image_url: { url: g.imageUrl } },
-        ]
-      : g.user;
   const r = await deps.chat({
     model: modelKey,
     messages: [
       { role: "system", content: g.system },
-      /* chat() expects content: string. Vision models require richer payload —
-         в нашем lmstudio-client.ts vision-meta выполняется через REST endpoint
-         напрямую, не через chat(). Для arena vision-cycle мы можем отправить
-         текстовое описание prompt без image и считать это базовым sanity-check.
-         Полноценный vision-cycle будет в Фазе 7. */
-      { role: "user", content: typeof userContent === "string" ? userContent : g.user },
+      { role: "user", content: g.user },
     ],
     sampling: { temperature: 0.3, top_p: 0.9, max_tokens: MODEL_RUN_MAX_TOKENS, top_k: MODEL_RUN_TOP_K, min_p: 0, presence_penalty: 0 },
     signal,
@@ -175,7 +136,7 @@ async function decideWinner(
   signal: AbortSignal,
 ): Promise<"A" | "B"> {
   if (prefs.arenaUseLlmJudge) {
-    const judge = await deps.resolveRole("arena_judge");
+    const judge = await deps.resolveRole("judge");
     if (judge) {
       try {
         const prompt =
@@ -196,13 +157,9 @@ async function decideWinner(
         );
         const w = parseWinnerLetter(jresp.content);
         if (w) return w;
-      } catch {
-        /* fallthrough to objective */
-      }
+      } catch { /* fallthrough to objective */ }
     }
   }
-  /* Objective fallback: оба ответа достаточно длинные → быстрее побеждает.
-     Один пустой → побеждает другой. Оба пустые → быстрее. */
   const la = ra.text.replace(/\s+/g, " ").length;
   const lb = rb.text.replace(/\s+/g, " ").length;
   const okA = la > OBJECTIVE_MIN_ANSWER_CHARS;
@@ -227,10 +184,7 @@ async function runCycleForRole(
   const eligible = filterByRoleCaps(role, loaded);
   if (eligible.length < 2) {
     return {
-      role,
-      matches: 0,
-      results: [],
-      ratings: {},
+      role, matches: 0, results: [], ratings: {},
       skipped: `need at least 2 eligible models for role "${role}" (have ${eligible.length})`,
     };
   }
@@ -268,10 +222,6 @@ async function runCycleForRole(
   const ratings = await deps.readRatingsFile();
   const roleRatings = ratings.roles[role] ?? {};
 
-  /* Auto-promote: ОДНОКРАТНО после всех матчей, по топ-Elo среди участников
-     текущего cycle. Старая логика записывала prefs[<role>Model] после КАЖДОГО
-     матча — на промежуточных раундах в prefs могла оказаться слабая модель.
-     Сейчас выбираем итогового лидера по агрегированному Elo. */
   if (prefs.arenaAutoPromoteWinner && results.length > 0) {
     let topKey: string | null = null;
     let topElo = -Infinity;
@@ -293,17 +243,9 @@ async function runCycleForRole(
     }
   }
 
-  return {
-    role,
-    matches: results.length,
-    results,
-    ratings: roleRatings,
-  };
+  return { role, matches: results.length, results, ratings: roleRatings };
 }
 
-/**
- * Главная точка входа: запустить arena cycle для одной или всех ролей.
- */
 export async function runArenaCycle(opts: CycleOptions = {}): Promise<CycleReport> {
   try {
     return await runArenaCycleInner(opts);
@@ -320,8 +262,6 @@ async function runArenaCycleInner(opts: CycleOptions): Promise<CycleReport> {
     return { ok: true, message: "arena disabled" };
   }
 
-  /* GUARD: проверяем GlobalLlmLock — если LM Studio занят (импорт/evaluator),
-     скипаем cycle. Это критично для предотвращения OOM (см. global-llm-lock.ts). */
   if (!opts.bypassLock) {
     const lock = deps.getLockStatus();
     if (lock.busy) {
@@ -329,8 +269,7 @@ async function runArenaCycleInner(opts: CycleOptions): Promise<CycleReport> {
       return {
         ok: false,
         message: `cycle skipped — LM Studio busy: ${lock.reasons.join(", ")}`,
-        skipped: true,
-        skipReasons: lock.reasons,
+        skipped: true, skipReasons: lock.reasons,
       };
     }
   }
@@ -364,12 +303,4 @@ async function runArenaCycleInner(opts: CycleOptions): Promise<CycleReport> {
     message: `completed ${totalMatches} match(es) across ${perRole.length} role(s)`,
     perRole,
   };
-}
-
-/**
- * Backward-compat: старый вызов getChatRatings(arenaFile.roles).
- * В UI Pro mode мы используем readRatingsFile().roles целиком.
- */
-export function getChatRatings(roles: ArenaRatingsFile["roles"]): Record<string, number> {
-  return roles["chat"] ?? {};
 }

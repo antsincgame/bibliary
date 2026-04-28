@@ -604,16 +604,18 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
     }
   );
 
-  ipcMain.handle("library:tag-stats", (): { tag: string; count: number }[] => {
-    return queryTagStats();
+  ipcMain.handle("library:tag-stats", (_e, locale?: string): { tag: string; count: number }[] => {
+    const loc = locale === "ru" ? "ru" : "en";
+    return queryTagStats(loc);
   });
 
   ipcMain.handle("library:collection-by-domain", (): CollectionGroup[] => {
     return queryByDomain();
   });
 
-  ipcMain.handle("library:collection-by-author", (): CollectionGroup[] => {
-    return queryByAuthor();
+  ipcMain.handle("library:collection-by-author", (_e, locale?: string): CollectionGroup[] => {
+    const loc = locale === "ru" ? "ru" : "en";
+    return queryByAuthor(loc);
   });
 
   ipcMain.handle("library:collection-by-year", (): CollectionGroup[] => {
@@ -624,8 +626,9 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
     return queryBySphere();
   });
 
-  ipcMain.handle("library:collection-by-tag", (): CollectionGroup[] => {
-    return queryByTag();
+  ipcMain.handle("library:collection-by-tag", (_e, locale?: string): CollectionGroup[] => {
+    const loc = locale === "ru" ? "ru" : "en";
+    return queryByTag(loc);
   });
 
   ipcMain.handle(
@@ -824,10 +827,13 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
         id: meta.id,
         sha256: meta.sha256,
         originalFile: meta.originalFile,
+        titleRu: meta.titleRu,
+        authorRu: meta.authorRu,
         titleEn: meta.titleEn,
         authorEn: meta.authorEn,
         domain: meta.domain,
         tags: meta.tags,
+        tagsRu: meta.tagsRu,
         qualityScore: meta.qualityScore,
         conceptualDensity: meta.conceptualDensity,
         originality: meta.originality,

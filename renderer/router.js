@@ -1,30 +1,22 @@
-import { mountChat } from "./chat.js";
 import { mountModels, unmountModels } from "./models/models-page.js";
 import { mountDocs } from "./docs.js";
-import { mountForge, isForgeBusy } from "./forge.js";
 import { mountLibrary, isLibraryBusy } from "./library.js";
-import { mountAgent, isAgentBusy } from "./forge-agent.js";
 import { mountCrystal, isCrystalBusy } from "./dataset-v2.js";
-import { mountQdrant } from "./qdrant.js";
+import { mountArena, unmountArena } from "./arena.js";
 import { mountSettings } from "./settings.js";
 import { applyI18n, getLocale, setLocale, listLocales, onLocaleChange, t } from "./i18n.js";
 import { mountResilienceBar } from "./components/resilience-bar.js";
-import { getMode, cycleMode, applyToDocument as applyMode, onModeChange } from "./ui-mode.js";
 import { openWelcomeWizard } from "./components/welcome-wizard.js";
-import { maybeShowRebrandToast } from "./components/changelog-toast.js";
 
-const ROUTES = ["chat", "library", "qdrant", "agent", "crystal", "models", "forge", "docs", "settings"];
-const REMOUNT_ON_LOCALE = new Set(["library", "qdrant", "agent", "crystal", "models", "forge", "docs", "settings"]);
+const ROUTES = ["models", "library", "crystal", "arena", "docs", "settings"];
+const REMOUNT_ON_LOCALE = new Set(["library", "crystal", "models", "arena", "docs", "settings"]);
 const mounted = new Set();
 
 function mountRoute(name) {
-  if (name === "chat") mountChat();
-  else if (name === "library") mountLibrary(document.getElementById("library-root"));
-  else if (name === "qdrant") mountQdrant(document.getElementById("qdrant-root"));
-  else if (name === "agent") mountAgent(document.getElementById("agent-root"));
+  if (name === "library") mountLibrary(document.getElementById("library-root"));
   else if (name === "crystal") mountCrystal(document.getElementById("crystal-root"));
   else if (name === "models") mountModels(document.getElementById("models-root"));
-  else if (name === "forge") mountForge(document.getElementById("forge-root"));
+  else if (name === "arena") mountArena(document.getElementById("arena-root"));
   else if (name === "docs") mountDocs(document.getElementById("docs-root"));
   else if (name === "settings") mountSettings(document.getElementById("settings-root"));
   mounted.add(name);
@@ -32,6 +24,7 @@ function mountRoute(name) {
 
 function unmountRoute(name) {
   if (name === "models") unmountModels();
+  else if (name === "arena") unmountArena();
 }
 
 function showRoute(name) {
@@ -45,14 +38,8 @@ function showRoute(name) {
 }
 
 function canRemount(name) {
-  // Не выкидывать прогресс ingest книг при смене языка.
   if (name === "library" && isLibraryBusy()) return false;
-  // Не убивать активный agent loop сменой локали.
-  if (name === "agent" && isAgentBusy()) return false;
-  // То же для активной crystallization job.
   if (name === "crystal" && isCrystalBusy()) return false;
-  // Не выкидывать активный local fine-tune run сменой локали.
-  if (name === "forge" && isForgeBusy()) return false;
   return true;
 }
 
@@ -83,7 +70,6 @@ function setupLanguageToggle() {
       }
       mountRoute(name);
     }
-    // Обновляем title/aria у sidebar-кнопок и других статических узлов.
     applyI18n(document);
   });
 }
@@ -92,60 +78,32 @@ document.querySelectorAll(".sidebar-icon").forEach((btn) => {
   btn.addEventListener("click", () => showRoute(btn.dataset.route));
 });
 
-function setupUiModeToggle() {
-  const btn = document.getElementById("btn-ui-mode");
-  if (!btn) return;
-  const label = document.getElementById("mode-current-label");
-  const refresh = (mode) => {
-    if (label) label.textContent = mode === "simple" ? "SIM" : mode === "advanced" ? "ADV" : "PRO";
-    btn.dataset.mode = mode;
-    btn.title = t(`mode.${mode}.title`);
-  };
-  refresh(getMode());
-  btn.addEventListener("click", () => {
-    cycleMode();
-  });
-  onModeChange(refresh);
-}
-
-applyMode();
 applyI18n(document);
 setupLanguageToggle();
-setupUiModeToggle();
 mountResilienceBar();
 
-/* Phase 3 Удар 3: source of truth для onboarding — preferences.onboardingDone.
-   Legacy localStorage["bibliary_setup_done"] поддерживается как fallback и
-   мигрируется в prefs при первом обнаружении. */
 (async () => {
   let onboardingDone = false;
   try {
     const prefs = /** @type {any} */ (await window.api.preferences.getAll());
     onboardingDone = prefs?.onboardingDone === true;
-  } catch { /* prefs недоступны — значит свежий запуск */ }
+  } catch { /* fresh start */ }
 
-  /* Миграция legacy → prefs (одноразовая) */
   const legacyDone = localStorage.getItem("bibliary_setup_done") === "1";
   if (legacyDone && !onboardingDone) {
     onboardingDone = true;
     try {
       await window.api.preferences.set({ onboardingDone: true, onboardingVersion: 1 });
       localStorage.removeItem("bibliary_setup_done");
-    } catch { /* следующий запуск повторит миграцию */ }
+    } catch { /* retry next launch */ }
   }
 
-  showRoute("chat");
+  showRoute("models");
   if (!onboardingDone) {
     openWelcomeWizard({ force: true });
-  } else {
-    /* Существующие пользователи: показать changelog-toast о ребрендинге v2.4
-       (Forge → Дообучение, Crystallizer → Извлечение знаний, Memory Forge →
-       Расширение контекста). Новички увидят актуальные термины в wizard. */
-    void maybeShowRebrandToast();
   }
 })();
 
-// Tiny self-test: убедиться, что i18n загружен (иначе в логах увидим warning).
 if (typeof t !== "function") {
   console.warn("[router] i18n is not initialised");
 }

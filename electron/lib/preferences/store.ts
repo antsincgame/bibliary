@@ -17,12 +17,9 @@ import { writeJsonAtomic, withFileLock } from "../resilience";
 // ---------------------------------------------------------------------------
 
 export const PreferencesSchema = z.object({
-  // -- RAG & Chat --
+  // -- RAG --
   ragTopK: z.number().int().min(1).max(100).default(15),
   ragScoreThreshold: z.number().min(0).max(1).default(0.55),
-  chatTemperature: z.number().min(0).max(2).default(0.7),
-  chatTopP: z.number().min(0).max(1).default(0.8),
-  chatMaxTokens: z.number().int().min(256).max(131072).default(16384),
 
   // -- Scanner / Ingest --
   ingestParallelism: z.number().int().min(1).max(16).default(3),
@@ -54,10 +51,6 @@ export const PreferencesSchema = z.object({
   healthPollIntervalMs: z.number().int().min(1_000).max(60_000).default(5_000),
   healthFailThreshold: z.number().int().min(1).max(20).default(3),
   watchdogLivenessTimeoutMs: z.number().int().min(500).max(15_000).default(3_000),
-
-  // -- Forge --
-  forgeHeartbeatMs: z.number().int().min(60_000).max(7_200_000).default(1_800_000),
-  forgeMaxWallMs: z.number().int().min(3_600_000).max(172_800_000).default(43_200_000),
 
   // -- BookHunter --
   searchPerSourceLimit: z.number().int().min(1).max(50).default(6),
@@ -118,17 +111,7 @@ export const PreferencesSchema = z.object({
   lmStudioUrl: z.string().regex(/^$|^https?:\/\/[^\s/$.?#].[^\s]*[^/]$/i, "must be a URL without trailing slash, or empty for default").default(""),
   qdrantUrl: z.string().regex(/^$|^https?:\/\/[^\s/$.?#].[^\s]*[^/]$/i, "must be a URL without trailing slash, or empty for default").default(""),
 
-  // -- Chat session --
-  /** Max messages kept in chat history (FIFO eviction). Caps IPC payload growth. */
-  chatHistoryCap: z.number().int().min(4).max(500).default(50),
-  /** Persist chat history across app restarts via data/chat-history.json. */
-  chatHistoryPersist: z.boolean().default(true),
-
-  // -- Selected models per role (Phase 3 onboarding wizard, extended in Models v3.4 role system) --
-  /** Модель LM Studio для чата (modelKey). Пусто = первая загруженная. */
-  chatModel: z.string().default(""),
-  /** Модель LM Studio для агента (modelKey). Пусто = chatModel или первая загруженная. */
-  agentModel: z.string().default(""),
+  // -- Selected models per role --
   /** Модель LM Studio для extractor (Crystallizer). Пусто = первая загруженная. */
   extractorModel: z.string().default(""),
   /** Модель LM Studio для judge (Crystallizer). Пусто = extractorModel. */
@@ -138,51 +121,18 @@ export const PreferencesSchema = z.object({
    * выберет лучшую автоматически (curated tags + heuristics в book-evaluator.ts).
    */
   evaluatorModel: z.string().default(""),
-  /**
-   * Модель-судья для arena. Пусто → judgeModel → extractorModel → chatModel
-   * (cascade в model-role-resolver). Используется только если arenaUseLlmJudge=true.
-   */
-  arenaJudgeModelKey: z.string().default(""),
-
   // -- Per-role fallback chains (CSV modelKey1,modelKey2,...) --
-  /**
-   * CSV резервных модельных ключей для каждой роли. Резолвер пытается их
-   * по порядку если основной *Model пуст или не загружен. Пусто = no fallback,
-   * сразу переход к arena Elo / built-in profile / first loaded.
-   */
-  chatModelFallbacks: z.string().default(""),
-  agentModelFallbacks: z.string().default(""),
   extractorModelFallbacks: z.string().default(""),
   judgeModelFallbacks: z.string().default(""),
   evaluatorModelFallbacks: z.string().default(""),
   visionModelFallbacks: z.string().default(""),
 
-  // -- Arena (shadow ELO calibration of role assignments) --
-  /**
-   * Включить фоновую arena: периодически парные сравнения загруженных моделей
-   * на golden prompts, обновление Elo в data/arena-ratings.json. Default false —
-   * фоновая нагрузка на LM Studio, юзер должен включить осознанно.
-   *
-   * GUARD: даже при arenaEnabled=true scheduler пропускает тик если
-   * globalLlmLock.isBusy() (массовый импорт / evaluator queue) — защита от OOM.
-   */
+  // -- Arena (shadow model calibration) --
   arenaEnabled: z.boolean().default(false),
-  /**
-   * Использовать LLM-судью (arenaJudgeModelKey) для определения победителя.
-   * Если false — winner = больший по длине ответа + меньшая latency (objective
-   * heuristic). Default false — экономит вызовы.
-   */
   arenaUseLlmJudge: z.boolean().default(false),
-  /**
-   * Автоматически записывать modelKey победителя cycle в prefs.<role>Model.
-   * Default false — пользователь должен включить осознанно (риск что arena
-   * перепишет осознанный выбор юзера). UI должен требовать confirm.
-   */
   arenaAutoPromoteWinner: z.boolean().default(false),
-  /** Сколько пар моделей сравнивать за один cycle. Max 10 — run-cycle жёстко ограничивает cap=10. */
   arenaMatchPairsPerCycle: z.number().int().min(1).max(10).default(3),
-  /** Период между cycle (мс). Default 1ч; min 1мин. */
-  arenaCycleIntervalMs: z.number().int().min(60_000).default(3_600_000),
+  arenaCycleIntervalMs: z.number().int().min(60_000).max(86_400_000).default(3_600_000),
 
   // -- Model role resolver --
   /**
@@ -197,10 +147,6 @@ export const PreferencesSchema = z.object({
   /** Версия пройденного wizard. Позволяет показать wizard повторно при major update. */
   onboardingVersion: z.number().int().min(0).max(1000).default(0),
 
-  // -- Changelog toasts (показываются 1 раз для существующих пользователей) --
-  /** True после того как пользователь увидел и закрыл toast о переименовании
-   *  Forge → Дообучение / Crystallizer → Извлечение знаний / Memory Forge → Расширение контекста (v2.4). */
-  seenRebrandV2: z.boolean().default(false),
 });
 
 export type Preferences = z.infer<typeof PreferencesSchema>;

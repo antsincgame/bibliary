@@ -13,10 +13,7 @@ import { STATE } from "./state.js";
 import { fmtMB } from "./format.js";
 import { selectForPreview } from "./preview.js";
 import { enqueueAndStart, cancelAll } from "./queue.js";
-import { loadHistory } from "./history.js";
 
-export { loadHistory } from "./history.js";
-export { renderHistory } from "./history.js";
 export { renderPreview } from "./preview.js";
 export { loadCollections, loadPrefs };
 
@@ -333,7 +330,6 @@ export function buildLibraryActionButtons(root, listEl) {
   btnPick.addEventListener("click", async () => {
     btnPick.disabled = true;
     try {
-      await loadHistory();
       await probeFolder(root, listEl);
       btnStart.disabled = STATE.books.length === 0;
     } finally {
@@ -343,7 +339,6 @@ export function buildLibraryActionButtons(root, listEl) {
   btnOpenFiles.addEventListener("click", async () => {
     btnOpenFiles.disabled = true;
     try {
-      await loadHistory();
       await openFiles(root, listEl);
       btnStart.disabled = STATE.books.length === 0;
     } finally {
