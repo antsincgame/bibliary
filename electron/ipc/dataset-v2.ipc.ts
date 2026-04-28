@@ -11,7 +11,7 @@
  * для будущего v2-генератора batch-файлов (legacy v1 удалён экстерминатусом).
  */
 
-import { ipcMain, type BrowserWindow } from "electron";
+import { ipcMain, dialog, shell, type BrowserWindow } from "electron";
 import { randomUUID } from "crypto";
 import { parseBook } from "../lib/scanner/parsers/index.js";
 import { isOcrSupported } from "../lib/scanner/ocr/index.js";
@@ -654,6 +654,118 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
       });
 
       return { ok: true, pid: child.pid, logPath };
+    },
+  );
+
+  /**
+   * dataset-v2:pick-export-dir — open native folder picker for "Создание датасета".
+   * Returns absolute path or null if user canceled.
+   */
+  ipcMain.handle("dataset-v2:pick-export-dir", async (): Promise<string | null> => {
+    const win = getMainWindow();
+    const sel = await dialog.showOpenDialog(win ?? undefined!, {
+      title: "Куда сохранить датасет",
+      properties: ["openDirectory", "createDirectory"],
+    });
+    if (sel.canceled || sel.filePaths.length === 0) return null;
+    return sel.filePaths[0] ?? null;
+  });
+
+  /**
+   * dataset-v2:open-folder — reveal exported dataset folder in OS file manager.
+   */
+  ipcMain.handle("dataset-v2:open-folder", async (_e, dirPath: string): Promise<boolean> => {
+    if (typeof dirPath !== "string" || dirPath.length === 0) return false;
+    try {
+      await shell.openPath(dirPath);
+      return true;
+    } catch (e) {
+      console.warn("[dataset-v2:open-folder] failed:", e instanceof Error ? e.message : e);
+      return false;
+    }
+  });
+
+  /**
+   * dataset-v2:export-dataset — read accepted concepts from Qdrant collection
+   * and emit train.jsonl + val.jsonl + meta.json + README.md in chosen format.
+   * Pure template-based (no LLM call), so it runs in seconds even for large
+   * collections and never blocks LM Studio.
+   */
+  ipcMain.handle(
+    "dataset-v2:export-dataset",
+    async (
+      _e,
+      args: {
+        collection: string;
+        outputDir: string;
+        format: "sharegpt" | "chatml";
+        pairsPerConcept: number;
+        trainRatio?: number;
+        limit?: number;
+      },
+    ): Promise<{
+      ok: boolean;
+      error?: string;
+      stats?: {
+        concepts: number;
+        totalLines: number;
+        trainLines: number;
+        valLines: number;
+        outputDir: string;
+        format: "sharegpt" | "chatml";
+        files: string[];
+        byDomain: Record<string, number>;
+      };
+    }> => {
+      try {
+        if (!args || typeof args !== "object") {
+          return { ok: false, error: "invalid args" };
+        }
+        const collection = String(args.collection ?? "").trim() || DEFAULT_COLLECTION;
+        const outputDir = String(args.outputDir ?? "").trim();
+        const format = args.format === "chatml" ? "chatml" : "sharegpt";
+        const pairs = Math.max(1, Math.min(5, Number(args.pairsPerConcept) || 1));
+        if (!outputDir) return { ok: false, error: "не выбрана папка" };
+
+        try {
+          assertValidCollectionName(collection);
+        } catch (e) {
+          return { ok: false, error: e instanceof Error ? e.message : String(e) };
+        }
+
+        const win = getMainWindow();
+        const emit = (linesEmitted: number, conceptsRead: number) => {
+          win?.webContents.send("dataset-v2:event", {
+            stage: "export",
+            phase: "progress",
+            conceptsRead,
+            linesEmitted,
+          });
+        };
+
+        const { exportDataset } = await import("../lib/dataset-v2/export.js");
+        const stats = await exportDataset({
+          collection,
+          outputDir,
+          format,
+          pairsPerConcept: pairs,
+          trainRatio: typeof args.trainRatio === "number" ? args.trainRatio : 0.9,
+          limit: typeof args.limit === "number" && args.limit > 0 ? args.limit : undefined,
+          onProgress: (info) => emit(info.linesEmitted, info.conceptsRead),
+        });
+
+        win?.webContents.send("dataset-v2:event", {
+          stage: "export",
+          phase: "done",
+          stats,
+        });
+
+        return { ok: true, stats };
+      } catch (e) {
+        const error = e instanceof Error ? e.message : String(e);
+        console.warn("[dataset-v2:export-dataset] failed:", error);
+        return { ok: false, error };
+      }
     },
   );
 }

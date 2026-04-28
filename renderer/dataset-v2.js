@@ -1,126 +1,99 @@
 // @ts-check
 import { el, clear } from "./dom.js";
 import { t } from "./i18n.js";
-import { buildNeonHero, neonDivider } from "./components/neon-helpers.js";
-import { buildModelSelect } from "./components/model-select.js";
 import { buildCollectionPicker } from "./components/collection-picker.js";
+import { buildModelSelect } from "./components/model-select.js";
 import { showAlert } from "./components/ui-dialog.js";
 
 /**
- * Phase 3.1 — UI экран «Извлечение знаний» (исторически: Crystallizer).
- * Все вызовы — против реальной LM Studio + реального Qdrant.
+ * Создание датасета — простой UI для генерации обучающих примеров из принятых
+ * концептов в Qdrant. Готовый JSONL заливается прямо в облачные провайдеры
+ * (Together AI, OpenAI, Fireworks, HuggingFace).
  *
- * Источник книг — Library history (scanner:list-history) или прямой пик файла.
- * Модель extractor + judge — из загруженных в LM Studio.
- * Live alchemy log через push events `dataset-v2:event`.
+ * Поток в 4 шага:
+ *   1. Какая коллекция знаний (где лежат принятые концепты)
+ *   2. Сколько примеров на концепт (1 / 2 / 3)
+ *   3. Формат для облака (ShareGPT / ChatML)
+ *   4. Папка сохранения
+ *
+ * Внизу страницы — раскрывающийся «расширенный режим» с прежним извлечением
+ * δ-знаний из книг в коллекции. Бабушкам не показываем, опытным — рядом.
  */
 
 const STATE = {
-  /** @type {Array<{collection: string, books: Array<{bookSourcePath: string, fileName: string, totalChunks: number, status: string}>}>} */
-  history: [],
-  selectedBook: "",
-  targetCollection: "",
-  /** @type {string | null} */
-  currentJobId: null,
+  collection: "delta-knowledge",
+  pairsPerConcept: 2,
+  /** @type {"sharegpt" | "chatml"} */
+  format: "sharegpt",
+  outputDir: "",
   busy: false,
-  /** Live stats — обновляются в реалтайме из событий */
-  stats: {
-    chapter: 0,
-    chapterTitle: "",
-    chunks: 0,
-    extracted: 0,
-    deduped: 0,
-    accepted: 0,
-    rejected: 0,
+  /** @type {null | {concepts: number; totalLines: number; trainLines: number; valLines: number; outputDir: string; format: string; files: string[]; byDomain: Record<string, number>}} */
+  result: null,
+  /** @type {string | null} */
+  lastError: null,
+  exportProgress: { conceptsRead: 0, linesEmitted: 0 },
+
+  /* «Расширенный режим» — старое извлечение из книги */
+  advanced: {
+    open: false,
+    /** @type {Array<{collection: string, books: Array<{bookSourcePath: string, fileName: string, totalChunks: number, status: string}>}>} */
+    history: [],
+    selectedBook: "",
+    extractBusy: false,
+    /** @type {string | null} */
+    currentJobId: null,
+    /** @type {Array<{ts: number, msg: string, level: "info"|"good"|"warn"|"bad"}>} */
+    log: [],
+    stats: { chapter: 0, chapters: 0, accepted: 0, skipped: 0 },
   },
-  /** Last 200 events для alchemy log */
-  /** @type {Array<{ts: number, stage: string, summary: string, level: "info"|"good"|"warn"|"bad"}>} */
-  events: [],
-  /** Accepted в этой сессии (для bottom-list) */
-  /** @type {Array<{conceptId: string, principle: string, domain: string, score: number, rejected?: boolean, rejectError?: string}>} */
-  acceptedThisSession: [],
 };
 
 let unsub = null;
-
-/** Подсказки для pickBestModel в model-select для extractor/judge (Crystal-специфичные). */
-const CRYSTAL_MODEL_HINTS = ["qwen3.6", "qwen3-coder", "mistral-small", "qwen3.5"];
-
-/** Активные экземпляры model-select для extractor/judge. Создаются в renderControls. */
-let extractorSelect = /** @type {ReturnType<typeof buildModelSelect> | null} */ (null);
 let collectionPicker = /** @type {ReturnType<typeof buildCollectionPicker> | null} */ (null);
+let extractorSelect = /** @type {ReturnType<typeof buildModelSelect> | null} */ (null);
+
+const EXTRACTOR_HINTS = ["qwen3.6", "qwen3-coder", "mistral-small", "qwen3.5"];
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Render helpers                                                              */
+/* ────────────────────────────────────────────────────────────────────────── */
 
 function fmtTime(ts) {
   return new Date(ts).toLocaleTimeString();
 }
 
-function fmtPct(v) {
-  return (v * 100).toFixed(0) + "%";
+function pushLog(msg, level = "info") {
+  STATE.advanced.log.push({ ts: Date.now(), msg: String(msg).slice(0, 240), level });
+  if (STATE.advanced.log.length > 200) STATE.advanced.log = STATE.advanced.log.slice(-150);
 }
 
-async function loadHistory() {
-  try {
-    STATE.history = await window.api.scanner.listHistory();
-  } catch {
-    STATE.history = [];
-  }
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Step 1 — collection picker                                                  */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+function buildStep1(root) {
+  const card = el("section", { class: "ds-card" }, [
+    el("div", { class: "ds-card-num" }, "1"),
+    el("div", { class: "ds-card-body" }, [
+      el("h3", { class: "ds-card-title" }, t("dataset.step1.title")),
+      el("p", { class: "ds-card-hint" }, t("dataset.step1.hint")),
+      el("div", { class: "ds-card-control", id: "ds-coll-slot" }),
+    ]),
+  ]);
+
+  setTimeout(() => mountCollectionPicker(root), 0);
+  return card;
 }
 
-function pushEvent(stage, summary, level = "info") {
-  STATE.events.push({ ts: Date.now(), stage, summary: String(summary).slice(0, 240), level });
-  if (STATE.events.length > 300) STATE.events = STATE.events.slice(-200);
-}
-
-function buildSourceRow() {
-  const label = el("label", { class: "cv-label" }, t("crystal.src.label"));
-  const select = el("select", { class: "cv-select cv-source" });
-  if (STATE.history.length === 0) {
-    select.appendChild(el("option", { value: "" }, t("crystal.src.empty")));
-    select.disabled = true;
-  } else {
-    select.appendChild(el("option", { value: "" }, "—"));
-    for (const grp of STATE.history) {
-      const og = el("optgroup", { label: grp.collection });
-      for (const b of grp.books) {
-        const opt = el("option", { value: b.bookSourcePath }, `${b.fileName} (${b.totalChunks} chunks · ${b.status})`);
-        if (b.bookSourcePath === STATE.selectedBook) opt.selected = true;
-        og.appendChild(opt);
-      }
-      select.appendChild(og);
-    }
-  }
-  select.addEventListener("change", () => {
-    STATE.selectedBook = select.value;
-  });
-  return el("div", { class: "cv-row" }, [label, select]);
-}
-
-/**
- * Создать строку cv-row с готовым селектом ролевой модели через общий компонент.
- * @param {"extractor"|"judge"} role
- * @returns {{ row: HTMLElement, instance: ReturnType<typeof buildModelSelect> }}
- */
-function buildCrystalModelRow(role) {
-  const labelKey = role === "extractor" ? "crystal.model.extractor" : "crystal.model.judge";
-  const instance = buildModelSelect({
-    role,
-    label: t(labelKey),
-    hints: CRYSTAL_MODEL_HINTS,
-    wrapClass: "cv-row",
-    labelClass: "cv-label",
-    selectClass: "cv-select",
-  });
-  return { row: instance.wrap, instance };
-}
-
-function buildCollectionRow(root) {
+function mountCollectionPicker(root) {
+  const slot = root.querySelector("#ds-coll-slot");
+  if (!slot) return;
+  clear(slot);
   collectionPicker = buildCollectionPicker({
-    id: "cv-target-collection",
-    labelText: t("library.collection.target"),
-    initialValue: STATE.targetCollection,
+    id: "ds-collection",
+    initialValue: STATE.collection,
     onChange: (name) => {
-      STATE.targetCollection = String(name || "");
-      void renderAcceptedTotal(root);
+      STATE.collection = String(name || "");
     },
     onCreate: async () => {
       await collectionPicker?.refresh();
@@ -134,394 +107,588 @@ function buildCollectionRow(root) {
     },
     createCollection: async (name) => {
       try {
-        const res = /** @type {{ ok?: boolean, error?: string } | null} */ (await window.api.qdrant.create({ name }));
-        return res && res.ok !== false
+        const r = /** @type {{ ok?: boolean; error?: string } | null} */ (
+          await window.api.qdrant.create({ name })
+        );
+        return r && r.ok !== false
           ? { ok: true }
-          : { ok: false, error: res?.error || "unknown" };
+          : { ok: false, error: r?.error || "unknown" };
       } catch (e) {
         return { ok: false, error: e instanceof Error ? e.message : String(e) };
       }
     },
   });
-  return collectionPicker.root;
+  slot.appendChild(collectionPicker.root);
 }
 
-function buildActionsRow(root) {
-  const btnStart = el(
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Step 2 — pairs per concept (radio)                                          */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+function buildStep2() {
+  const opts = [
+    { v: 1, label: t("dataset.step2.opt1.label"), hint: t("dataset.step2.opt1.hint") },
+    { v: 2, label: t("dataset.step2.opt2.label"), hint: t("dataset.step2.opt2.hint") },
+    { v: 3, label: t("dataset.step2.opt3.label"), hint: t("dataset.step2.opt3.hint") },
+  ];
+  const group = el("div", { class: "ds-radio-group", role: "radiogroup" });
+  for (const o of opts) {
+    const isActive = STATE.pairsPerConcept === o.v;
+    const tile = el("button", {
+      type: "button",
+      class: `ds-radio-tile${isActive ? " ds-radio-tile-active" : ""}`,
+      "aria-pressed": String(isActive),
+      "data-value": String(o.v),
+      onclick: (e) => {
+        STATE.pairsPerConcept = o.v;
+        const root = /** @type {HTMLElement | null} */ (e.currentTarget);
+        const grp = root?.closest(".ds-radio-group");
+        if (grp) {
+          grp.querySelectorAll(".ds-radio-tile").forEach((n) => {
+            const node = /** @type {HTMLElement} */ (n);
+            node.classList.toggle(
+              "ds-radio-tile-active",
+              node.dataset.value === String(o.v),
+            );
+            node.setAttribute(
+              "aria-pressed",
+              String(node.dataset.value === String(o.v)),
+            );
+          });
+        }
+      },
+    }, [
+      el("div", { class: "ds-radio-tile-num" }, String(o.v)),
+      el("div", { class: "ds-radio-tile-label" }, o.label),
+      el("div", { class: "ds-radio-tile-hint" }, o.hint),
+    ]);
+    group.appendChild(tile);
+  }
+
+  return el("section", { class: "ds-card" }, [
+    el("div", { class: "ds-card-num" }, "2"),
+    el("div", { class: "ds-card-body" }, [
+      el("h3", { class: "ds-card-title" }, t("dataset.step2.title")),
+      el("p", { class: "ds-card-hint" }, t("dataset.step2.hint")),
+      group,
+    ]),
+  ]);
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Step 3 — format (radio)                                                     */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+function buildStep3() {
+  const opts = [
+    {
+      v: "sharegpt",
+      label: t("dataset.step3.sharegpt.label"),
+      providers: t("dataset.step3.sharegpt.providers"),
+    },
+    {
+      v: "chatml",
+      label: t("dataset.step3.chatml.label"),
+      providers: t("dataset.step3.chatml.providers"),
+    },
+  ];
+  const group = el("div", { class: "ds-radio-group ds-radio-group-2", role: "radiogroup" });
+  for (const o of opts) {
+    const isActive = STATE.format === o.v;
+    const tile = el("button", {
+      type: "button",
+      class: `ds-radio-tile ds-radio-tile-wide${isActive ? " ds-radio-tile-active" : ""}`,
+      "aria-pressed": String(isActive),
+      "data-value": o.v,
+      onclick: (e) => {
+        STATE.format = /** @type {"sharegpt" | "chatml"} */ (o.v);
+        const root = /** @type {HTMLElement | null} */ (e.currentTarget);
+        const grp = root?.closest(".ds-radio-group");
+        if (grp) {
+          grp.querySelectorAll(".ds-radio-tile").forEach((n) => {
+            const node = /** @type {HTMLElement} */ (n);
+            node.classList.toggle("ds-radio-tile-active", node.dataset.value === o.v);
+            node.setAttribute("aria-pressed", String(node.dataset.value === o.v));
+          });
+        }
+      },
+    }, [
+      el("div", { class: "ds-radio-tile-label" }, o.label),
+      el("div", { class: "ds-radio-tile-hint" }, o.providers),
+    ]);
+    group.appendChild(tile);
+  }
+
+  return el("section", { class: "ds-card" }, [
+    el("div", { class: "ds-card-num" }, "3"),
+    el("div", { class: "ds-card-body" }, [
+      el("h3", { class: "ds-card-title" }, t("dataset.step3.title")),
+      el("p", { class: "ds-card-hint" }, t("dataset.step3.hint")),
+      group,
+    ]),
+  ]);
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Step 4 — output folder                                                      */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+function buildStep4(root) {
+  const pathLabel = el(
+    "div",
+    { class: "ds-path-display", id: "ds-path-display" },
+    STATE.outputDir || t("dataset.step4.empty"),
+  );
+  const btn = el(
     "button",
     {
       class: "cv-btn cv-btn-accent",
       type: "button",
-      id: "cv-start",
-      onclick: () => startJob(root),
-    },
-    t("crystal.btn.start")
-  );
-  const btnStop = el(
-    "button",
-    {
-      class: "cv-btn",
-      type: "button",
-      id: "cv-stop",
-      disabled: "true",
-      onclick: () => stopJob(root),
-    },
-    t("crystal.btn.stop")
-  );
-  const btnRefresh = el(
-    "button",
-    {
-      class: "cv-btn",
-      type: "button",
-      title: t("crystal.btn.refresh.title"),
       onclick: async () => {
-        await Promise.all([
-          loadHistory(),
-          extractorSelect?.refresh() ?? Promise.resolve(),
-          collectionPicker?.refresh() ?? Promise.resolve(),
-        ]);
-        renderControls(root);
-        renderAcceptedTotal(root);
+        try {
+          const dir = await window.api.datasetV2.pickExportDir();
+          if (dir) {
+            STATE.outputDir = dir;
+            const node = root.querySelector("#ds-path-display");
+            if (node) node.textContent = dir;
+            const empty = node?.classList;
+            if (empty) empty.toggle("ds-path-display-empty", false);
+          }
+        } catch (e) {
+          await showAlert(e instanceof Error ? e.message : String(e));
+        }
       },
     },
-    "↻"
+    t("dataset.step4.pick"),
   );
-  return el("div", { class: "cv-row cv-actions" }, [btnStart, btnStop, btnRefresh]);
+
+  if (!STATE.outputDir) pathLabel.classList.add("ds-path-display-empty");
+
+  return el("section", { class: "ds-card" }, [
+    el("div", { class: "ds-card-num" }, "4"),
+    el("div", { class: "ds-card-body" }, [
+      el("h3", { class: "ds-card-title" }, t("dataset.step4.title")),
+      el("p", { class: "ds-card-hint" }, t("dataset.step4.hint")),
+      el("div", { class: "ds-path-row" }, [pathLabel, btn]),
+    ]),
+  ]);
 }
 
-function renderControls(root) {
-  const wrap = root.querySelector(".cv-controls");
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Big "Create" button                                                         */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+function buildPrimaryAction(root) {
+  const btn = el(
+    "button",
+    {
+      class: "ds-primary-btn",
+      type: "button",
+      id: "ds-create",
+      onclick: () => onCreateDataset(root),
+    },
+    t("dataset.create.btn"),
+  );
+  return el("div", { class: "ds-primary-row" }, [btn]);
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Progress + Result blocks                                                    */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+function buildProgress() {
+  return el("div", { class: "ds-progress", id: "ds-progress" });
+}
+
+function renderProgress(root) {
+  const wrap = root.querySelector("#ds-progress");
   if (!wrap) return;
   clear(wrap);
 
-  const extractorRow = buildCrystalModelRow("extractor");
-  extractorSelect = extractorRow.instance;
-
-  wrap.append(
-    buildSourceRow(),
-    buildCollectionRow(root),
-    extractorRow.row,
-    buildActionsRow(root)
-  );
+  if (!STATE.busy && !STATE.result && !STATE.lastError) return;
 
   if (STATE.busy) {
-    const start = wrap.querySelector("#cv-start");
-    const stop = wrap.querySelector("#cv-stop");
-    if (start) start.disabled = true;
-    if (stop) stop.disabled = false;
-  }
-}
-
-function renderStats(root) {
-  const wrap = root.querySelector(".cv-stats");
-  if (!wrap) return;
-  clear(wrap);
-  const s = STATE.stats;
-  const cells = [
-    { label: t("crystal.stats.chapter"), value: s.chapter > 0 ? `#${s.chapter} «${s.chapterTitle.slice(0, 30)}»` : "—" },
-    { label: t("crystal.stats.chunks"), value: s.chunks },
-    { label: t("crystal.stats.extracted"), value: s.extracted, kind: "info" },
-    { label: t("crystal.stats.deduped"), value: s.deduped, kind: "info" },
-    { label: t("crystal.stats.accepted"), value: s.accepted, kind: "good" },
-    { label: t("crystal.stats.rejected"), value: s.rejected, kind: "warn" },
-  ];
-  for (const c of cells) {
     wrap.appendChild(
-      el("div", { class: "cv-stat-cell" }, [
-        el("div", { class: "cv-stat-label" }, c.label),
-        el("div", { class: `cv-stat-value cv-stat-${c.kind ?? "default"}` }, String(c.value)),
-      ])
+      el("div", { class: "ds-progress-card ds-progress-running" }, [
+        el("div", { class: "ds-progress-spinner" }),
+        el("div", { class: "ds-progress-body" }, [
+          el("h4", { class: "ds-progress-title" }, t("dataset.progress.running.title")),
+          el("p", { class: "ds-progress-line" },
+            t("dataset.progress.running.line")
+              .replace("{concepts}", String(STATE.exportProgress.conceptsRead))
+              .replace("{lines}", String(STATE.exportProgress.linesEmitted)),
+          ),
+        ]),
+      ]),
     );
-  }
-}
-
-function renderLog(root) {
-  const wrap = root.querySelector(".cv-log");
-  if (!wrap) return;
-  clear(wrap);
-  if (STATE.events.length === 0) {
-    wrap.appendChild(el("div", { class: "cv-log-empty" }, t("crystal.log.empty")));
     return;
   }
-  for (const ev of STATE.events.slice().reverse()) {
-    wrap.appendChild(
-      el("div", { class: `cv-log-row cv-log-${ev.level}` }, [
-        el("span", { class: "cv-log-time" }, fmtTime(ev.ts)),
-        el("span", { class: "cv-log-stage" }, ev.stage),
-        el("span", { class: "cv-log-summary" }, ev.summary),
-      ])
-    );
-  }
-}
 
-function renderAccepted(root) {
-  const wrap = root.querySelector(".cv-accepted");
-  if (!wrap) return;
-  clear(wrap);
-  const head = el("div", { class: "cv-accepted-head" }, t("crystal.accepted.title"));
-  wrap.appendChild(head);
-  if (STATE.acceptedThisSession.length === 0) {
-    wrap.appendChild(el("div", { class: "cv-accepted-empty" }, t("crystal.accepted.empty")));
+  if (STATE.lastError) {
+    wrap.appendChild(
+      el("div", { class: "ds-progress-card ds-progress-error" }, [
+        el("div", { class: "ds-progress-icon" }, "!"),
+        el("div", { class: "ds-progress-body" }, [
+          el("h4", { class: "ds-progress-title" }, t("dataset.progress.error.title")),
+          el("p", { class: "ds-progress-line" }, STATE.lastError),
+        ]),
+      ]),
+    );
     return;
   }
-  for (const c of STATE.acceptedThisSession.slice().reverse()) {
-    wrap.appendChild(buildAcceptedCard(c, root));
-  }
-}
 
-function buildAcceptedCard(concept, root) {
-  const card = el("div", {
-    class: `cv-accepted-card${concept.rejected ? " cv-accepted-card-rejected" : ""}`,
-    "data-concept-id": concept.conceptId,
-  }, [
-    el("div", { class: "cv-accepted-row1" }, [
-      el("span", { class: "cv-accepted-domain" }, concept.domain || "?"),
-      el("span", { class: "cv-accepted-score" }, fmtPct(concept.score)),
-      buildRejectButton(concept, root),
-    ]),
-    el("div", { class: "cv-accepted-principle" }, concept.principle),
-    concept.rejectError
-      ? el("div", { class: "cv-accepted-error" }, concept.rejectError)
-      : null,
-  ]);
-  return card;
-}
+  if (STATE.result) {
+    const r = STATE.result;
+    const filesList = el(
+      "ul",
+      { class: "ds-result-files" },
+      r.files.map((f) => el("li", { class: "ds-result-file" }, f)),
+    );
+    const btn = el(
+      "button",
+      {
+        class: "cv-btn cv-btn-accent ds-open-folder",
+        type: "button",
+        onclick: async () => {
+          try {
+            await window.api.datasetV2.openFolder(r.outputDir);
+          } catch (e) {
+            await showAlert(e instanceof Error ? e.message : String(e));
+          }
+        },
+      },
+      t("dataset.result.openFolder"),
+    );
+    wrap.appendChild(
+      el("div", { class: "ds-progress-card ds-progress-success" }, [
+        el("div", { class: "ds-progress-icon ds-progress-icon-good" }, "✓"),
+        el("div", { class: "ds-progress-body" }, [
+          el("h4", { class: "ds-progress-title" }, t("dataset.result.title")),
+          el("p", { class: "ds-progress-line" },
+            t("dataset.result.summary")
+              .replace("{train}", String(r.trainLines))
+              .replace("{val}", String(r.valLines))
+              .replace("{concepts}", String(r.concepts)),
+          ),
+          el("div", { class: "ds-result-path" }, r.outputDir),
+          filesList,
+          btn,
+        ]),
+      ]),
+    );
 
-function buildRejectButton(concept, root) {
-  if (concept.rejected) {
-    return el("span", { class: "cv-accepted-rejected-badge", title: t("crystal.accepted.rejectedTooltip") },
-      t("crystal.accepted.rejected"));
-  }
-  if (!concept.conceptId) return null;
-  const btn = el("button", {
-    class: "cv-accepted-reject-btn",
-    type: "button",
-    title: t("crystal.accepted.reject.tooltip"),
-    "aria-label": t("crystal.accepted.reject.aria"),
-  }, "x");
-  btn.addEventListener("click", async () => {
-    btn.disabled = true;
-    try {
-      const ok = await window.api.datasetV2.rejectAccepted(concept.conceptId, STATE.targetCollection || undefined);
-      if (ok) {
-        concept.rejected = true;
-        STATE.stats.accepted = Math.max(0, STATE.stats.accepted - 1);
-        STATE.stats.rejected += 1;
-        pushEvent("judge", `MANUAL REJECT «${concept.principle}»`, "warn");
-        renderStats(root);
-        renderAccepted(root);
-        renderAcceptedTotal(root);
-      } else {
-        concept.rejectError = t("crystal.accepted.rejectFailed");
-        renderAccepted(root);
-      }
-    } catch (e) {
-      concept.rejectError = t("crystal.accepted.rejectFailed") + ": " + (e instanceof Error ? e.message : String(e));
-      renderAccepted(root);
+    /* «Контроль качества» — топ-доменов */
+    const domains = Object.entries(r.byDomain)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8);
+    if (domains.length > 0) {
+      const detail = el("details", { class: "ds-quality" }, [
+        el("summary", { class: "ds-quality-summary" }, t("dataset.quality.summary")),
+        el("p", { class: "ds-quality-hint" }, t("dataset.quality.hint")),
+        el(
+          "div",
+          { class: "ds-quality-grid" },
+          domains.map(([d, n]) =>
+            el("div", { class: "ds-quality-cell" }, [
+              el("div", { class: "ds-quality-cell-name" }, d),
+              el("div", { class: "ds-quality-cell-count" }, String(n)),
+            ]),
+          ),
+        ),
+      ]);
+      wrap.appendChild(detail);
     }
-  });
-  return btn;
+  }
 }
 
-async function renderAcceptedTotal(root) {
-  const node = root.querySelector("#cv-accepted-total");
-  if (!node) return;
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Action: create dataset                                                      */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+async function onCreateDataset(root) {
+  if (STATE.busy) return;
+  if (!STATE.collection) {
+    await showAlert(t("dataset.alert.noCollection"));
+    return;
+  }
+  if (!STATE.outputDir) {
+    await showAlert(t("dataset.alert.noFolder"));
+    return;
+  }
+  STATE.busy = true;
+  STATE.result = null;
+  STATE.lastError = null;
+  STATE.exportProgress = { conceptsRead: 0, linesEmitted: 0 };
+  renderProgress(root);
+  const btn = root.querySelector("#ds-create");
+  if (btn) btn.disabled = true;
+
   try {
-    const info = await window.api.datasetV2.listAccepted(STATE.targetCollection || undefined);
-    node.textContent = String(info?.total ?? 0);
-  } catch {
-    node.textContent = "?";
-  }
-}
-
-function setBusy(root, busy) {
-  STATE.busy = busy;
-  const start = root.querySelector("#cv-start");
-  const stop = root.querySelector("#cv-stop");
-  if (start) start.disabled = busy;
-  if (stop) stop.disabled = !busy;
-}
-
-function resetStats() {
-  STATE.stats = { chapter: 0, chapterTitle: "", chunks: 0, extracted: 0, deduped: 0, accepted: 0, rejected: 0 };
-  STATE.events = [];
-  STATE.acceptedThisSession = [];
-}
-
-/* ───── handleEvent: stage handlers (dispatcher pattern) ───── */
-
-function handleParseEvent(_root, payload) {
-  if (String(payload.phase ?? "") !== "done") return;
-  pushEvent("parse", `Книга «${payload.bookTitle}» — ${payload.totalChapters} глав`, "info");
-}
-
-function handleChunkerEvent(root, payload) {
-  STATE.stats.chapter = (Number(payload.chapterIndex) ?? 0) + 1;
-  STATE.stats.chapterTitle = String(payload.chapterTitle ?? "");
-  STATE.stats.chunks += Number(payload.chunks ?? 0);
-  pushEvent("chunker", `Глава #${payload.chapterIndex} → ${payload.chunks} чанков`, "info");
-  renderStats(root);
-}
-
-function handleConfigEvent(_root, payload) {
-  pushEvent("config", `collection=${payload.targetCollection ?? "delta-knowledge"} · model=${payload.extractModel ?? "?"}`, "info");
-}
-
-function handleThesisEvent(_root, payload) {
-  if (typeof payload.thesis !== "string" || !payload.thesis) return;
-  pushEvent("thesis", `Тезис главы: ${payload.thesis.slice(0, 120)}`, "info");
-}
-
-function handleDeltaEvent(root, payload) {
-  const eventType = String(payload.type ?? "");
-  if (eventType === "delta.chunk.start") {
-    pushEvent("delta", `chunk ${payload.chunkPart}/${payload.chunkTotal} → анализ`, "info");
-    return;
-  }
-  if (eventType === "delta.chunk.done") {
-    STATE.stats.extracted += 1;
-    if (payload.accepted) {
-      STATE.stats.accepted += 1;
+    const res = await window.api.datasetV2.exportDataset({
+      collection: STATE.collection,
+      outputDir: STATE.outputDir,
+      format: STATE.format,
+      pairsPerConcept: STATE.pairsPerConcept,
+    });
+    if (!res.ok || !res.stats) {
+      STATE.lastError = res.error || t("dataset.alert.unknownError");
     } else {
-      STATE.stats.deduped += 1;
+      STATE.result = res.stats;
     }
-    pushEvent(
-      "delta",
-      `chunk ${payload.chunkPart}/${payload.chunkTotal}: ${payload.accepted ? "accepted" : "skipped"} (${payload.durationMs}ms)`,
-      payload.accepted ? "good" : "warn"
-    );
-    renderStats(root);
-    return;
-  }
-  if (eventType === "delta.chunk.skip") {
-    pushEvent("delta", `chunk ${payload.chunkPart}: ${payload.reason}`, "warn");
-    return;
-  }
-  if (eventType === "delta.retry") {
-    pushEvent("delta", `chunk ${payload.chunkPart}: retry #${payload.attempt} (${payload.reason})`, "warn");
-    return;
-  }
-  if (eventType === "delta.chunk.error") {
-    STATE.stats.rejected += 1;
-    pushEvent("delta", `chunk ${payload.chunkPart}: ${payload.error}`, "bad");
-    renderStats(root);
+  } catch (e) {
+    STATE.lastError = e instanceof Error ? e.message : String(e);
+  } finally {
+    STATE.busy = false;
+    if (btn) btn.disabled = false;
+    renderProgress(root);
   }
 }
 
-function handleChapterEvent(_root, payload) {
-  if (String(payload.phase ?? "") !== "done") return;
-  pushEvent(
-    "chapter",
-    `done #${payload.chapterIndex}: chunks=${payload.chunks} accepted=${payload.accepted} skipped=${payload.skipped}`,
-    "good"
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Advanced — старое извлечение δ-знаний из книги                             */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+async function loadAdvancedHistory() {
+  try {
+    STATE.advanced.history = await window.api.scanner.listHistory();
+  } catch {
+    STATE.advanced.history = [];
+  }
+}
+
+function buildAdvancedSection(root) {
+  const detail = el("details", {
+    class: "ds-advanced",
+    open: STATE.advanced.open ? "" : null,
+    ontoggle: () => {
+      const open = /** @type {HTMLDetailsElement} */ (detail).open;
+      STATE.advanced.open = open;
+      if (open && STATE.advanced.history.length === 0) {
+        loadAdvancedHistory().then(() => renderAdvanced(root));
+      }
+    },
+  }, [
+    el("summary", { class: "ds-advanced-summary" }, t("dataset.advanced.summary")),
+    el("div", { class: "ds-advanced-hint" }, t("dataset.advanced.hint")),
+    el("div", { class: "ds-advanced-body", id: "ds-advanced-body" }),
+  ]);
+  setTimeout(() => renderAdvanced(root), 0);
+  return detail;
+}
+
+function renderAdvanced(root) {
+  const body = root.querySelector("#ds-advanced-body");
+  if (!body) return;
+  clear(body);
+
+  /* Source row */
+  const srcSelect = el("select", {
+    class: "cv-select",
+    onchange: (e) => {
+      STATE.advanced.selectedBook = /** @type {HTMLSelectElement} */ (e.target).value;
+    },
+  });
+  if (STATE.advanced.history.length === 0) {
+    srcSelect.appendChild(el("option", { value: "" }, t("dataset.advanced.src.empty")));
+    srcSelect.disabled = true;
+  } else {
+    srcSelect.appendChild(el("option", { value: "" }, "—"));
+    for (const grp of STATE.advanced.history) {
+      const og = el("optgroup", { label: grp.collection });
+      for (const b of grp.books) {
+        const opt = el(
+          "option",
+          { value: b.bookSourcePath },
+          `${b.fileName} (${b.totalChunks} · ${b.status})`,
+        );
+        if (b.bookSourcePath === STATE.advanced.selectedBook) opt.selected = true;
+        og.appendChild(opt);
+      }
+      srcSelect.appendChild(og);
+    }
+  }
+
+  /* Extractor model */
+  const extractorRow = buildModelSelect({
+    role: "extractor",
+    label: t("dataset.advanced.model"),
+    hints: EXTRACTOR_HINTS,
+    wrapClass: "cv-row",
+    labelClass: "cv-label",
+    selectClass: "cv-select",
+  });
+  extractorSelect = extractorRow;
+
+  /* Buttons */
+  const startBtn = el("button", {
+    class: "cv-btn cv-btn-accent",
+    type: "button",
+    disabled: STATE.advanced.extractBusy ? "true" : null,
+    onclick: () => onAdvancedStart(root),
+  }, t("dataset.advanced.btn.start"));
+
+  const stopBtn = el("button", {
+    class: "cv-btn",
+    type: "button",
+    disabled: STATE.advanced.extractBusy ? null : "true",
+    onclick: () => onAdvancedStop(root),
+  }, t("dataset.advanced.btn.stop"));
+
+  const refresh = el("button", {
+    class: "cv-btn",
+    type: "button",
+    title: "↻",
+    onclick: async () => {
+      await Promise.all([
+        loadAdvancedHistory(),
+        extractorSelect?.refresh() ?? Promise.resolve(),
+      ]);
+      renderAdvanced(root);
+    },
+  }, "↻");
+
+  /* Stats */
+  const s = STATE.advanced.stats;
+  const stats = el("div", { class: "ds-advanced-stats" }, [
+    el("div", { class: "ds-stat" }, [
+      el("div", { class: "ds-stat-label" }, t("dataset.advanced.stat.chapter")),
+      el("div", { class: "ds-stat-value" }, s.chapter > 0 ? `${s.chapter} / ${s.chapters || "?"}` : "—"),
+    ]),
+    el("div", { class: "ds-stat" }, [
+      el("div", { class: "ds-stat-label" }, t("dataset.advanced.stat.accepted")),
+      el("div", { class: "ds-stat-value ds-stat-good" }, String(s.accepted)),
+    ]),
+    el("div", { class: "ds-stat" }, [
+      el("div", { class: "ds-stat-label" }, t("dataset.advanced.stat.skipped")),
+      el("div", { class: "ds-stat-value ds-stat-warn" }, String(s.skipped)),
+    ]),
+  ]);
+
+  /* Log */
+  const log = el("div", { class: "ds-advanced-log" });
+  if (STATE.advanced.log.length === 0) {
+    log.appendChild(el("div", { class: "ds-advanced-log-empty" }, t("dataset.advanced.log.empty")));
+  } else {
+    for (const ev of STATE.advanced.log.slice().reverse()) {
+      log.appendChild(
+        el("div", { class: `ds-advanced-log-row ds-advanced-log-${ev.level}` }, [
+          el("span", { class: "ds-advanced-log-time" }, fmtTime(ev.ts)),
+          el("span", { class: "ds-advanced-log-msg" }, ev.msg),
+        ]),
+      );
+    }
+  }
+
+  body.append(
+    el("label", { class: "cv-label" }, t("dataset.advanced.src.label")),
+    srcSelect,
+    extractorRow.wrap,
+    el("div", { class: "cv-actions" }, [startBtn, stopBtn, refresh]),
+    stats,
+    log,
   );
 }
 
-function handleAcceptedEvent(root, payload) {
-  const principle = String(payload.principle ?? "").trim();
-  if (!principle) return;
-  STATE.acceptedThisSession.push({
-    conceptId: String(payload.conceptId ?? ""),
-    principle,
-    domain: String(payload.domain ?? "?"),
-    score: Number(payload.score ?? 1),
-  });
-  renderAccepted(root);
-  renderAcceptedTotal(root);
-}
-
-function handleJobEvent(root, payload) {
-  if (String(payload.phase ?? "") !== "done") return;
-  if (payload.stats) {
-    STATE.stats.chunks = Number(payload.stats.chunks ?? STATE.stats.chunks);
-    STATE.stats.extracted = Number(payload.stats.chunks ?? STATE.stats.extracted);
-    STATE.stats.deduped = Number(payload.stats.skipped ?? STATE.stats.deduped);
-    STATE.stats.accepted = Number(payload.stats.accepted ?? STATE.stats.accepted);
-  }
-  pushEvent("job", "DONE — вся книга обработана", "good");
-  renderStats(root);
-  setBusy(root, false);
-}
-
-const STAGE_HANDLERS = {
-  "config": handleConfigEvent,
-  "parse": handleParseEvent,
-  "chunker": handleChunkerEvent,
-  "thesis": handleThesisEvent,
-  "delta": handleDeltaEvent,
-  "accepted": handleAcceptedEvent,
-  "chapter": handleChapterEvent,
-  "job": handleJobEvent,
-};
-
-function handleEvent(root, payload) {
-  if (payload.jobId) {
-    if (!STATE.currentJobId) {
-      STATE.currentJobId = payload.jobId;
-    } else if (payload.jobId !== STATE.currentJobId) {
-      return;
-    }
-  }
-  const handler = STAGE_HANDLERS[String(payload.stage ?? "")];
-  if (handler) handler(root, payload);
-  renderLog(root);
-}
-
-async function startJob(root) {
-  if (STATE.busy) return;
-  if (!STATE.selectedBook) {
-    await showAlert(t("crystal.alert.noBook"));
+async function onAdvancedStart(root) {
+  if (STATE.advanced.extractBusy) return;
+  if (!STATE.advanced.selectedBook) {
+    await showAlert(t("dataset.advanced.alert.noBook"));
     return;
   }
-  if (!STATE.targetCollection) {
-    await showAlert(t("library.catalog.guard.noCollection"));
+  if (!STATE.collection) {
+    await showAlert(t("dataset.alert.noCollection"));
     return;
   }
   const extractModel = extractorSelect?.getValue() ?? "";
   if (!extractModel) {
-    await showAlert(t("crystal.alert.noModel"));
+    await showAlert(t("dataset.advanced.alert.noModel"));
     return;
   }
-  resetStats();
-  setBusy(root, true);
-  renderStats(root);
-  renderLog(root);
-  renderAccepted(root);
-  pushEvent("job", t("crystal.event.started"), "info");
+  STATE.advanced.extractBusy = true;
+  STATE.advanced.log = [];
+  STATE.advanced.stats = { chapter: 0, chapters: 0, accepted: 0, skipped: 0 };
+  pushLog(t("dataset.advanced.event.started"), "info");
+  renderAdvanced(root);
+
   try {
     const result = await window.api.datasetV2.startExtraction({
-      bookSourcePath: STATE.selectedBook,
+      bookSourcePath: STATE.advanced.selectedBook,
       extractModel,
-      targetCollection: STATE.targetCollection || undefined,
+      targetCollection: STATE.collection || undefined,
     });
-    STATE.currentJobId = result.jobId;
-    pushEvent(
-      "job",
-      `Финал: chunks=${result.totalDelta.chunks}, accepted=${result.totalDelta.accepted}, skipped=${result.totalDelta.skipped}`,
-      "good"
+    STATE.advanced.currentJobId = result.jobId;
+    pushLog(
+      `done · accepted=${result.totalDelta.accepted} · skipped=${result.totalDelta.skipped}`,
+      "good",
     );
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    pushEvent("job", `ERROR: ${msg}`, "bad");
+    pushLog(`error: ${e instanceof Error ? e.message : String(e)}`, "bad");
   } finally {
-    STATE.currentJobId = null;
-    setBusy(root, false);
-    renderLog(root);
+    STATE.advanced.currentJobId = null;
+    STATE.advanced.extractBusy = false;
+    renderAdvanced(root);
   }
 }
 
-async function stopJob(root) {
-  if (!STATE.currentJobId) return;
+async function onAdvancedStop(root) {
+  if (!STATE.advanced.currentJobId) return;
   try {
-    await window.api.datasetV2.cancel(STATE.currentJobId);
-    pushEvent("job", t("crystal.event.stoppedByUser"), "warn");
+    await window.api.datasetV2.cancel(STATE.advanced.currentJobId);
+    pushLog(t("dataset.advanced.event.stopped"), "warn");
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    pushEvent("job", t("crystal.event.stopFailed") + ": " + msg, "bad");
+    pushLog(`stop failed: ${e instanceof Error ? e.message : String(e)}`, "bad");
   }
-  setBusy(root, false);
-  renderLog(root);
+  STATE.advanced.extractBusy = false;
+  renderAdvanced(root);
 }
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Event handler — слушаем только export.progress + chapter.done для логов    */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+function handleEvent(root, payload) {
+  const stage = String(payload.stage ?? "");
+  if (stage === "export") {
+    if (String(payload.phase) === "progress") {
+      STATE.exportProgress = {
+        conceptsRead: Number(payload.conceptsRead ?? STATE.exportProgress.conceptsRead),
+        linesEmitted: Number(payload.linesEmitted ?? STATE.exportProgress.linesEmitted),
+      };
+      renderProgress(root);
+    }
+    return;
+  }
+
+  /* Advanced extraction events */
+  if (stage === "chunker") {
+    STATE.advanced.stats.chapter = (Number(payload.chapterIndex) ?? 0) + 1;
+    pushLog(`глава #${payload.chapterIndex} → ${payload.chunks} чанков`, "info");
+    renderAdvanced(root);
+    return;
+  }
+  if (stage === "delta" && String(payload.type) === "delta.chunk.done") {
+    if (payload.accepted) STATE.advanced.stats.accepted += 1;
+    else STATE.advanced.stats.skipped += 1;
+    renderAdvanced(root);
+    return;
+  }
+  if (stage === "chapter" && String(payload.phase) === "done") {
+    pushLog(
+      `глава ${payload.chapterIndex} готова: +${payload.accepted} / ~${payload.skipped}`,
+      "good",
+    );
+    renderAdvanced(root);
+    return;
+  }
+  if (stage === "job" && String(payload.phase) === "done") {
+    pushLog(t("dataset.advanced.event.done"), "good");
+    renderAdvanced(root);
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Mount                                                                       */
+/* ────────────────────────────────────────────────────────────────────────── */
 
 export function mountCrystal(root) {
   if (!root) return;
@@ -529,58 +696,36 @@ export function mountCrystal(root) {
   root.dataset.mounted = "1";
   clear(root);
 
-  root.appendChild(buildNeonHero({
-    title: t("crystal.header.title"),
-    subtitle: t("crystal.header.sub"),
-    pattern: "metatron",
-  }));
-  root.appendChild(neonDivider());
-
-  const controls = el("div", { class: "cv-controls" });
-  const stats = el("div", { class: "cv-stats" });
-  const totalsBar = el("div", { class: "cv-totals-bar" }, [
-    el("span", { class: "cv-totals-label" }, t("crystal.totals.acceptedAll") + ":"),
-    el("span", { class: "cv-totals-value", id: "cv-accepted-total" }, "—"),
-    el("span", { class: "cv-totals-hint" }, t("crystal.totals.hint")),
+  /* Hero */
+  const hero = el("header", { class: "ds-hero" }, [
+    el("h1", { class: "ds-hero-title" }, t("dataset.hero.title")),
+    el("p", { class: "ds-hero-sub" }, t("dataset.hero.sub")),
   ]);
 
-  const log = el("div", { class: "cv-log" });
-  const accepted = el("div", { class: "cv-accepted" });
-
-  const layout = el("div", { class: "cv-layout" }, [
-    el("div", { class: "cv-left" }, [controls, stats, totalsBar]),
-    el("div", { class: "cv-center" }, [log]),
-    el("div", { class: "cv-right" }, [accepted]),
+  /* Steps */
+  const steps = el("div", { class: "ds-steps" }, [
+    buildStep1(root),
+    buildStep2(),
+    buildStep3(),
+    buildStep4(root),
   ]);
 
-  root.appendChild(layout);
+  /* Action */
+  const action = buildPrimaryAction(root);
 
-  /* model-select экземпляры самозагружаются при создании внутри renderControls.
-     Здесь параллельно подгружаем history (для buildSourceRow) и threshold (slider).
-     AUDIT 2026-04-21: добавлен .catch — без него любая ошибка IPC (preferences,
-     scanner.listHistory) превращалась в unhandledrejection и Crystallizer
-     оставался полупустым без диагностики. */
-  Promise.all([loadHistory()])
-    .then(() => {
-      renderControls(root);
-      renderStats(root);
-      renderLog(root);
-      renderAccepted(root);
-      renderAcceptedTotal(root);
-    })
-    .catch((e) => {
-      console.error("[crystal] bootstrap failed:", e);
-      renderControls(root);
-      renderStats(root);
-      renderLog(root);
-      renderAccepted(root);
-      renderAcceptedTotal(root);
-    });
+  /* Progress slot */
+  const progress = buildProgress();
+
+  /* Advanced */
+  const advanced = buildAdvancedSection(root);
+
+  root.append(hero, steps, action, progress, advanced);
+  renderProgress(root);
 
   if (unsub) unsub();
   unsub = window.api.datasetV2.onEvent((payload) => handleEvent(root, payload));
 }
 
 export function isCrystalBusy() {
-  return STATE.busy;
+  return STATE.busy || STATE.advanced.extractBusy;
 }

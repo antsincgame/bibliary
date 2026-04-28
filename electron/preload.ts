@@ -428,6 +428,29 @@ contextBridge.exposeInMainWorld("api", {
       limit?: number;
     }): Promise<{ ok: boolean; pid?: number; logPath?: string; error?: string }> =>
       ipcRenderer.invoke("dataset-v2:synthesize", args),
+    pickExportDir: (): Promise<string | null> => ipcRenderer.invoke("dataset-v2:pick-export-dir"),
+    openFolder: (dirPath: string): Promise<boolean> => ipcRenderer.invoke("dataset-v2:open-folder", dirPath),
+    exportDataset: (args: {
+      collection: string;
+      outputDir: string;
+      format: "sharegpt" | "chatml";
+      pairsPerConcept: number;
+      trainRatio?: number;
+      limit?: number;
+    }): Promise<{
+      ok: boolean;
+      error?: string;
+      stats?: {
+        concepts: number;
+        totalLines: number;
+        trainLines: number;
+        valLines: number;
+        outputDir: string;
+        format: "sharegpt" | "chatml";
+        files: string[];
+        byDomain: Record<string, number>;
+      };
+    }> => ipcRenderer.invoke("dataset-v2:export-dataset", args),
     onEvent: (cb: (payload: { jobId?: string; batchId?: string; stage: string; [k: string]: unknown }) => void): (() => void) => {
       const l = (_e: unknown, p: { jobId?: string; batchId?: string; stage: string; [k: string]: unknown }) => cb(p);
       ipcRenderer.on("dataset-v2:event", l);
