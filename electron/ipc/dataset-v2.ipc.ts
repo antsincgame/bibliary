@@ -27,6 +27,7 @@ import { extractChapterThesis } from "../lib/dataset-v2/delta-extractor.js";
 import { embedPassage } from "../lib/embedder/shared.js";
 import { chatWithPolicy, PROFILE } from "../lmstudio-client.js";
 import { getPreferencesStore } from "../lib/preferences/store.js";
+import { resolveCrystallizerModelKey } from "../lib/llm/model-role-resolver.js";
 import { coordinator } from "../lib/resilience/batch-coordinator.js";
 import { runBatchExtraction } from "../lib/library/batch-runner.js";
 import {
@@ -173,7 +174,22 @@ async function runExtraction(
   });
 
   const emitWithJob = (event: Record<string, unknown>): void => emit({ jobId, ...event });
-  const extractModel = args.extractModel ?? PROFILE.BIG.key;
+  /* Цепочка выбора:
+       1. явный override от UI (args.extractModel)
+       2. prefs.extractorModel + fallback chain (через role-resolver)
+       3. PROFILE.BIG.key как последний рубеж
+     Без шага 2 пользовательский Settings → Models на «extractor» игнорировался. */
+  let extractModel = args.extractModel;
+  if (!extractModel) {
+    try {
+      const resolved = await resolveCrystallizerModelKey();
+      if (resolved?.modelKey) extractModel = resolved.modelKey;
+    } catch (e) {
+      console.warn(`[extraction] role-resolver failed, falling back to PROFILE.BIG: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+  if (!extractModel) extractModel = PROFILE.BIG.key;
+
   const llm = makeLlm(extractModel, ctrl.signal);
 
   emitWithJob({ stage: "config", phase: "info", extractModel, targetCollection });

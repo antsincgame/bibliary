@@ -230,6 +230,96 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
       return 0.2;
     },
   },
+
+  /* ─── НОВЫЕ ДИСЦИПЛИНЫ ДЛЯ FALLBACK CHAIN ─────────────────────────── */
+
+  {
+    /* Описание примера кода — кейс bundle-import: cpp-книга + сотни .cpp файлов
+       рядом. LLM должна за 2-3 предложения объяснить что делает код. */
+    id: "code-summary-cpp",
+    role: "crystallizer", /* sidecar describer тоже идёт через crystallizer */
+    description: "Описать пример C++ кода (sidecar для bundle-import).",
+    system:
+      "You are a code reviewer. In 2-3 sentences explain what this C++ code does. " +
+      "Be concise and technical. No markdown.",
+    user:
+      "```cpp\n" +
+      "#include <vector>\n" +
+      "#include <algorithm>\n" +
+      "void quicksort(std::vector<int>& v, int lo, int hi) {\n" +
+      "  if (lo >= hi) return;\n" +
+      "  int pivot = v[(lo + hi) / 2];\n" +
+      "  int i = lo, j = hi;\n" +
+      "  while (i <= j) {\n" +
+      "    while (v[i] < pivot) i++;\n" +
+      "    while (v[j] > pivot) j--;\n" +
+      "    if (i <= j) std::swap(v[i++], v[j--]);\n" +
+      "  }\n" +
+      "  quicksort(v, lo, j);\n" +
+      "  quicksort(v, i, hi);\n" +
+      "}\n" +
+      "```",
+    maxTokens: 200,
+    score: (a) => {
+      const lower = a.toLowerCase();
+      let s = 0;
+      if (lower.length > 30 && lower.length < 1500) s += 0.2; /* разумная длина */
+      if (lower.includes("quicksort") || lower.includes("quick sort") || lower.includes("быстр")) s += 0.3;
+      if (lower.includes("pivot") || lower.includes("опорн")) s += 0.2;
+      if (lower.includes("recurs") || lower.includes("рекурс")) s += 0.15;
+      if (lower.includes("partition") || lower.includes("разби") || lower.includes("разделя")) s += 0.15;
+      return Math.min(1, s);
+    },
+  },
+
+  {
+    /* HTML-extraction: извлечь полезный текст из скачанного фрагмента сайта.
+       Важно для bundle-import (книга + downloaded examples-files). */
+    id: "html-extract",
+    role: "crystallizer",
+    description: "Извлечь чистый текст из HTML (без тегов, скриптов, CSS).",
+    system:
+      "Extract the visible main content as plain text. Skip <script>, <style>, " +
+      "navigation menus, ads. Output ONLY the cleaned text.",
+    user:
+      "<!DOCTYPE html><html><head><title>Tutorial</title>" +
+      "<script>var x = 1;</script><style>body{color:red}</style></head>" +
+      "<body><nav>Menu | Home | About</nav>" +
+      "<main><h1>Binary Search</h1>" +
+      "<p>Binary search is an algorithm with O(log n) complexity. " +
+      "It works on sorted arrays by halving the search range.</p></main>" +
+      "<footer>(c) 2024</footer></body></html>",
+    maxTokens: 256,
+    score: (a) => {
+      const lower = a.toLowerCase();
+      let s = 0;
+      if (!a.includes("<")) s += 0.25; /* нет tags — хорошо */
+      if (!lower.includes("<script") && !lower.includes("<style")) s += 0.15;
+      if (lower.includes("binary search") || lower.includes("бинарн")) s += 0.25;
+      if (lower.includes("o(log n)") || lower.includes("o(log")) s += 0.2;
+      if (!lower.includes("menu") && !lower.includes("(c) 2024")) s += 0.15; /* убрал navigation/footer */
+      return Math.min(1, s);
+    },
+  },
+
+  {
+    /* Lang detection — должно быть быстро, для роли lang_detector. */
+    id: "lang-detect-mixed",
+    role: "judge", /* решение как «pick: ru | uk | en» — это judge */
+    description: "Определить язык текста (наша роль lang_detector).",
+    system:
+      "You detect language. Output ONLY a single word: ru, uk, en, or de.",
+    user:
+      "Text: 'Алгоритм пошуку в глибину обходить дерево'. What language?",
+    maxTokens: 8,
+    score: (a) => {
+      const t = a.trim().toLowerCase().replace(/[^a-z]/g, "");
+      if (t === "uk") return 1.0;
+      if (t.startsWith("uk")) return 0.85;
+      if (t === "ru") return 0.2; /* частая ошибка из-за кириллицы */
+      return 0.0;
+    },
+  },
 ];
 
 /* ─── LM Studio API ──────────────────────────────────────────────────── */

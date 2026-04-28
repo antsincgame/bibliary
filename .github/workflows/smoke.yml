@@ -37,12 +37,17 @@ jobs:
       - name: TypeScript check
         run: npm run typecheck
 
-      # Самые критичные тесты: грязные файлы + Олимпиада-классификация.
+      # Самые критичные тесты: грязные файлы + классификация + fallback.
       # Если хотя бы они падают — PR не должен мержиться.
-      - name: Critical tests (dirty-world + olympics + librarian)
+      - name: Critical tests (dirty-world + classifier + fallback + delta)
         run: |
           node --import tsx --test \
             tests/ingest-dirty-world.test.ts \
             tests/olympics-weights.test.ts \
             tests/librarian.test.ts \
-            tests/folder-bundle.test.ts
+            tests/folder-bundle.test.ts \
+            tests/magic-bytes.test.ts \
+            tests/with-model-fallback.test.ts \
+            tests/delta-extractor-prompt.test.ts \
+            tests/lang-detector.test.ts \
+            tests/parsers-html-edge.test.ts
