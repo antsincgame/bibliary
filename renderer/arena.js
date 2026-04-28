@@ -10,9 +10,11 @@ const ROLE_LABELS = {
 };
 
 const REFRESH_MS = 10_000;
+const FEEDBACK_HOLD_MS = 6_000;
 
 let root = null;
 let refreshTimer = null;
+let lockTimer = null;
 let localeUnsub = null;
 
 export function mountArena(container) {
@@ -25,7 +27,9 @@ export function mountArena(container) {
 
 export function unmountArena() {
   if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+  if (lockTimer) { clearInterval(lockTimer); lockTimer = null; }
   if (localeUnsub) { localeUnsub(); localeUnsub = null; }
+  if (root) { delete root.dataset.mounted; }
   root = null;
 }
 
@@ -45,9 +49,23 @@ async function render() {
     el("p", { class: "arena-subtitle" }, t("arena.subtitle")),
   ]);
 
+  const reqBox = el("div", { class: "arena-requirements" }, [
+    el("div", { class: "arena-requirements-title" }, t("arena.requirements.title")),
+    el("ul", { class: "arena-requirements-list" }, [
+      el("li", {}, t("arena.requirements.models")),
+      el("li", {}, t("arena.requirements.lmFree")),
+      el("li", {}, t("arena.requirements.time")),
+    ]),
+  ]);
+
+  const lockStatusEl = el("div", { class: "arena-lock-status" }, t("arena.lock.checking"));
+
   const toggleRow = el("div", { class: "arena-toggle-row" }, [
     el("label", { class: "arena-toggle-label" }, [
-      el("span", {}, t("arena.autoCalibrate")),
+      el("span", { class: "arena-toggle-text" }, [
+        el("span", { class: "arena-toggle-title" }, t("arena.autoCalibrate")),
+        el("span", { class: "arena-toggle-hint" }, t("arena.autoCalibrate.hint")),
+      ]),
       createToggle(enabled, async (val) => {
         await window.api.arena.setConfig({ arenaEnabled: val });
         render();
@@ -55,18 +73,28 @@ async function render() {
     ]),
   ]);
 
+  const feedbackEl = el("div", { class: "arena-feedback", hidden: true });
+
   const runBtn = el("button", {
     class: "arena-run-btn",
     onclick: async () => {
       runBtn.disabled = true;
       runBtn.textContent = t("arena.running");
+      showFeedback(feedbackEl, t("arena.running"), "info");
       try {
         const result = await window.api.arena.runCycle({ manual: true });
-        runBtn.textContent = result.ok ? t("arena.done") : t("arena.failed");
-        setTimeout(() => render(), 1500);
-      } catch {
+        applyCycleResult(result, runBtn, feedbackEl);
+        setTimeout(() => render(), 2500);
+      } catch (e) {
         runBtn.textContent = t("arena.failed");
-        setTimeout(() => render(), 2000);
+        showFeedback(
+          feedbackEl,
+          t("arena.feedback.exception", { msg: e instanceof Error ? e.message : String(e) }),
+          "error",
+        );
+        setTimeout(() => render(), 3000);
+      } finally {
+        runBtn.disabled = false;
       }
     },
   }, t("arena.runNow"));
@@ -79,15 +107,133 @@ async function render() {
   root.appendChild(
     el("div", { class: "arena-page" }, [
       header,
+      reqBox,
+      lockStatusEl,
       toggleRow,
       el("div", { class: "arena-actions" }, [runBtn, statusLine]),
+      feedbackEl,
       table,
       settingsSection,
     ]),
   );
 
+  refreshLockStatus(lockStatusEl);
+  if (lockTimer) clearInterval(lockTimer);
+  lockTimer = setInterval(() => refreshLockStatus(lockStatusEl), 5000);
+
   if (refreshTimer) clearInterval(refreshTimer);
   refreshTimer = setInterval(() => refreshRatings(), REFRESH_MS);
+}
+
+/**
+ * Превращает CycleReport в человекочитаемое сообщение.
+ * @param {{ok: boolean; message?: string; skipped?: boolean; skipReasons?: string[]; perRole?: Array<{role: string; matches: number; skipped?: string}>}} result
+ * @param {HTMLButtonElement} btn
+ * @param {HTMLElement} fb
+ */
+function applyCycleResult(result, btn, fb) {
+  if (result.skipped) {
+    btn.textContent = t("arena.failed");
+    const reasons = (result.skipReasons || []).join(", ") || result.message || "";
+    showFeedback(fb, t("arena.feedback.skippedLock", { reasons }), "warn");
+    return;
+  }
+
+  if (!result.ok) {
+    btn.textContent = t("arena.failed");
+    const msg = result.message || "";
+    if (/at least 2 loaded/i.test(msg)) {
+      showFeedback(fb, t("arena.feedback.fewModels"), "warn");
+    } else if (/no calibratable roles/i.test(msg)) {
+      showFeedback(fb, t("arena.feedback.noRoles"), "warn");
+    } else {
+      showFeedback(fb, t("arena.feedback.failed", { msg }), "error");
+    }
+    return;
+  }
+
+  const perRole = result.perRole || [];
+  const totalMatches = perRole.reduce((acc, r) => acc + (r.matches || 0), 0);
+
+  if (totalMatches === 0) {
+    btn.textContent = t("arena.done");
+    const skipped = perRole.filter((r) => r.skipped);
+    if (skipped.length > 0) {
+      const skipText = skipped
+        .map((r) => `${roleHuman(r.role)}: ${humanizeSkip(r.skipped || "")}`)
+        .join("; ");
+      showFeedback(fb, t("arena.feedback.zeroMatches", { details: skipText }), "warn");
+    } else {
+      showFeedback(fb, t("arena.feedback.zeroMatchesNoSkips"), "warn");
+    }
+    return;
+  }
+
+  btn.textContent = t("arena.done");
+  const rolesPlayed = perRole
+    .filter((r) => r.matches > 0)
+    .map((r) => roleHuman(r.role))
+    .join(", ");
+  showFeedback(
+    fb,
+    t("arena.feedback.success", { matches: String(totalMatches), roles: rolesPlayed || "—" }),
+    "ok",
+  );
+}
+
+/** @param {string} role */
+function roleHuman(role) {
+  const key = ROLE_LABELS[role];
+  return key ? t(key) : role;
+}
+
+/** @param {string} reason */
+function humanizeSkip(reason) {
+  const r = reason.toLowerCase();
+  if (r.includes("need at least 2 eligible models")) {
+    if (r.includes("vision_meta")) return t("arena.skip.fewVision");
+    return t("arena.skip.fewModels");
+  }
+  if (r.includes("no golden prompt")) return t("arena.skip.noPrompt");
+  return reason;
+}
+
+/**
+ * @param {HTMLElement} el
+ * @param {string} text
+ * @param {"info"|"ok"|"warn"|"error"} kind
+ */
+function showFeedback(el, text, kind) {
+  el.hidden = false;
+  el.className = `arena-feedback arena-feedback-${kind}`;
+  el.textContent = text;
+  if (kind === "ok" || kind === "warn" || kind === "error") {
+    setTimeout(() => {
+      if (el.textContent === text) {
+        el.hidden = true;
+        el.textContent = "";
+      }
+    }, FEEDBACK_HOLD_MS);
+  }
+}
+
+async function refreshLockStatus(target) {
+  if (!target) return;
+  try {
+    const status = await window.api.arena.getLockStatus();
+    if (status.busy) {
+      target.className = "arena-lock-status arena-lock-busy";
+      target.textContent = t("arena.lock.busy", {
+        reasons: (status.reasons || []).join(", ") || "—",
+      });
+    } else {
+      target.className = "arena-lock-status arena-lock-free";
+      target.textContent = t("arena.lock.free");
+    }
+  } catch {
+    target.className = "arena-lock-status arena-lock-unknown";
+    target.textContent = t("arena.lock.unknown");
+  }
 }
 
 function createToggle(on, onChange) {
@@ -160,11 +306,13 @@ function buildSettings(config) {
     {
       key: "arenaUseLlmJudge",
       label: "arena.setting.llmJudge",
+      hint: "arena.setting.llmJudge.hint",
       value: config.arenaUseLlmJudge,
     },
     {
       key: "arenaAutoPromoteWinner",
       label: "arena.setting.autoPromote",
+      hint: "arena.setting.autoPromote.hint",
       value: config.arenaAutoPromoteWinner,
     },
   ];
@@ -174,7 +322,10 @@ function buildSettings(config) {
     el("div", { class: "arena-settings-body" },
       items.map((item) =>
         el("label", { class: "arena-setting-row" }, [
-          el("span", {}, t(item.label)),
+          el("span", { class: "arena-setting-text" }, [
+            el("span", { class: "arena-setting-title" }, t(item.label)),
+            el("span", { class: "arena-setting-hint" }, t(item.hint)),
+          ]),
           createToggle(item.value, async (val) => {
             await window.api.arena.setConfig({ [item.key]: val });
           }),
@@ -184,6 +335,7 @@ function buildSettings(config) {
     el("div", { class: "arena-settings-body" }, [
       el("button", {
         class: "arena-reset-btn",
+        title: t("arena.reset.tooltip"),
         onclick: async () => {
           await window.api.arena.resetRatings();
           render();

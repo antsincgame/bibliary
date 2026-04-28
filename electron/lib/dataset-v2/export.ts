@@ -14,8 +14,8 @@
 
 import { promises as fs } from "fs";
 import * as path from "path";
-import { fetchQdrantJson, QDRANT_URL, SCROLL_PAGE_SIZE } from "../qdrant/http-client.js";
 import { assertValidCollectionName } from "./types.js";
+import { iterAcceptedConcepts, type AcceptedConcept } from "./concept-loader.js";
 import {
   type ShareGPTLine,
   type ChatMLLine,
@@ -26,80 +26,7 @@ import {
   splitLines,
 } from "./format.js";
 
-interface RawConcept {
-  id: string;
-  domain: string;
-  essence: string;
-  cipher?: string;
-  proof?: string;
-  applicability?: string;
-  chapterContext?: string;
-  tags: string[];
-  bookSourcePath?: string;
-}
-
-interface QdrantPoint {
-  id: string | number;
-  payload?: Record<string, unknown>;
-}
-
-interface QdrantScrollResp {
-  result: {
-    points: QdrantPoint[];
-    next_page_offset?: string | number | null;
-  };
-}
-
-async function* iterConcepts(collection: string, limit?: number): AsyncGenerator<RawConcept> {
-  let offset: string | number | null = null;
-  let yielded = 0;
-  for (;;) {
-    const body: Record<string, unknown> = {
-      limit: SCROLL_PAGE_SIZE,
-      with_payload: true,
-      with_vector: false,
-    };
-    if (offset !== null) body.offset = offset;
-
-    const resp = await fetchQdrantJson<QdrantScrollResp>(
-      `${QDRANT_URL}/collections/${collection}/points/scroll`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        timeoutMs: 60_000,
-      },
-    );
-    for (const point of resp.result.points) {
-      const c = parsePoint(point);
-      if (!c) continue;
-      yield c;
-      yielded++;
-      if (limit && yielded >= limit) return;
-    }
-    offset = resp.result.next_page_offset ?? null;
-    if (!offset) return;
-  }
-}
-
-function parsePoint(point: QdrantPoint): RawConcept | null {
-  const p = (point.payload ?? {}) as Record<string, unknown>;
-  const essence = String(p.essence ?? p.principle ?? "").trim();
-  const domain = String(p.domain ?? "").trim();
-  if (!essence || !domain) return null;
-  const tags = Array.isArray(p.tags) ? (p.tags as unknown[]).map(String).filter(Boolean) : [];
-  return {
-    id: String(point.id),
-    essence,
-    domain,
-    cipher: p.cipher ? String(p.cipher) : undefined,
-    proof: p.proof ? String(p.proof) : undefined,
-    applicability: p.applicability ? String(p.applicability) : undefined,
-    chapterContext: p.chapterContext ? String(p.chapterContext) : undefined,
-    bookSourcePath: p.bookSourcePath ? String(p.bookSourcePath) : undefined,
-    tags,
-  };
-}
+type RawConcept = AcceptedConcept;
 
 const QUESTION_VARIANTS = [
   "Сформулируй ключевой принцип одним-двумя предложениями.",
@@ -195,7 +122,7 @@ export async function exportDataset(opts: ExportOptions): Promise<ExportStats> {
   const byDomain: Record<string, number> = {};
   let conceptsRead = 0;
 
-  for await (const concept of iterConcepts(opts.collection, opts.limit)) {
+  for await (const concept of iterAcceptedConcepts(opts.collection, { limit: opts.limit })) {
     conceptsRead++;
     byDomain[concept.domain] = (byDomain[concept.domain] ?? 0) + 1;
     const lines = conceptToShareGPT(concept, pairs);

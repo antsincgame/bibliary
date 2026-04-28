@@ -5,7 +5,7 @@
  *
  * @typedef {{
  *   key: string;
- *   type: "int"|"float"|"bool"|"enum"|"tags"|"url"|"password";
+ *   type: "int"|"float"|"bool"|"enum"|"tags"|"url"|"password"|"text";
  *   min?: number;
  *   max?: number;
  *   step?: number;

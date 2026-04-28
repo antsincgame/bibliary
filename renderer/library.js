@@ -98,7 +98,35 @@ function buildLibraryTopBar(root) {
   });
   void picker.refresh();
 
-  return el("div", { class: "lib-topbar" }, [header, picker.root]);
+  /* Quick-jump: создать датасет из выбранной коллекции прямо отсюда. Кладём
+     имя коллекции в sessionStorage и переключаем sidebar на Crystal — там
+     mountCrystal подхватит pre-fill при первом монтировании / re-mount. */
+  const goCreateBtn = el("button", {
+    class: "lib-btn lib-btn-accent lib-collection-go-create",
+    type: "button",
+    title: t("library.collection.goCreate.title"),
+    onclick: () => {
+      const name = STATE.targetCollection || STATE.collection || "";
+      if (!name) return;
+      try {
+        sessionStorage.setItem("bibliary_dataset_prefill_collection", name);
+      } catch { /* private mode */ }
+      const crystalRoot = document.getElementById("crystal-root");
+      if (crystalRoot) {
+        delete crystalRoot.dataset.mounted;
+        crystalRoot.innerHTML = "";
+      }
+      const trigger = /** @type {HTMLButtonElement | null} */ (
+        document.querySelector('.sidebar-icon[data-route="crystal"]')
+      );
+      trigger?.click();
+    },
+  }, t("library.collection.goCreate"));
+
+  return el("div", { class: "lib-topbar" }, [
+    header,
+    el("div", { class: "lib-topbar-row" }, [picker.root, goCreateBtn]),
+  ]);
 }
 
 function installWindowDropGuards(root) {

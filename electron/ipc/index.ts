@@ -9,6 +9,7 @@ import { registerLmstudioIpc } from "./lmstudio.ipc.js";
 import { registerSystemIpc } from "./system.ipc.js";
 import { registerScannerIpc, abortAllIngests } from "./scanner.ipc.js";
 import { registerDatasetV2Ipc, abortAllDatasetV2 } from "./dataset-v2.ipc.js";
+import { registerDatasetsIpc } from "./datasets.ipc.js";
 import { registerBookhunterIpc, abortAllBookhunter } from "./bookhunter.ipc.js";
 import { registerPreferencesIpc } from "./preferences.ipc.js";
 import { registerModelRolesIpc } from "./model-roles.ipc.js";
@@ -37,6 +38,7 @@ export function registerAllIpcHandlers(getMainWindow: () => BrowserWindow | null
   registerSystemIpc();
   registerScannerIpc(getMainWindow);
   registerDatasetV2Ipc(getMainWindow);
+  registerDatasetsIpc(getMainWindow);
   registerBookhunterIpc(getMainWindow);
   registerPreferencesIpc();
   registerModelRolesIpc();

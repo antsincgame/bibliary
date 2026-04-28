@@ -36,18 +36,24 @@ function renderTabs() {
   clear(viewRoot);
 
   const tabs = [
-    { id: "domain", label: t("library.collections.domains") || "Домены" },
-    { id: "author", label: t("library.collections.authors") || "Авторы" },
-    { id: "year", label: t("library.collections.years") || "Годы" },
-    { id: "tag", label: t("library.collections.tags") || "Теги" },
-    { id: "sphere", label: t("library.collections.spheres") || "Сферы" },
+    { id: "domain", label: t("library.collections.domains"), tip: t("library.collections.tip.domain") },
+    { id: "author", label: t("library.collections.authors"), tip: t("library.collections.tip.author") },
+    { id: "year", label: t("library.collections.years"), tip: t("library.collections.tip.year") },
+    { id: "tag", label: t("library.collections.tags"), tip: t("library.collections.tip.tag") },
+    { id: "sphere", label: t("library.collections.spheres"), tip: t("library.collections.tip.sphere") },
   ];
+
+  const intro = el("div", { class: "lib-collections-intro" }, [
+    el("div", { class: "lib-collections-intro-title" }, t("library.collections.intro.title")),
+    el("div", { class: "lib-collections-intro-body" }, t("library.collections.intro.body")),
+  ]);
 
   const tabBar = el("div", { class: "lib-collections-tabs" },
     tabs.map((tab) =>
       el("button", {
         class: `lib-collections-tab ${tab.id === activeTab ? "active" : ""}`,
         type: "button",
+        title: tab.tip,
         onclick: () => {
           activeTab = /** @type {typeof activeTab} */ (tab.id);
           renderTabs();
@@ -58,7 +64,7 @@ function renderTabs() {
   );
 
   const content = el("div", { class: "lib-collections-content", id: "lib-collections-content" });
-  viewRoot.append(tabBar, content);
+  viewRoot.append(intro, tabBar, content);
 }
 
 async function loadActiveTab() {
@@ -66,7 +72,7 @@ async function loadActiveTab() {
   if (!content) return;
 
   clear(/** @type {HTMLElement} */ (content));
-  content.appendChild(el("div", { class: "lib-collections-loading" }, t("library.collections.loading") || "Loading..."));
+  content.appendChild(el("div", { class: "lib-collections-loading" }, t("library.collections.loading")));
 
   try {
     /** @type {CollectionGroup[]} */
@@ -93,8 +99,9 @@ async function loadActiveTab() {
     renderGroups(/** @type {HTMLElement} */ (content), groups);
   } catch (err) {
     clear(/** @type {HTMLElement} */ (content));
+    const msg = err instanceof Error ? err.message : String(err);
     content.appendChild(el("div", { class: "lib-collections-error" },
-      `Error: ${err instanceof Error ? err.message : String(err)}`));
+      `${t("library.collections.errPrefix")}: ${msg}`));
   }
 }
 
@@ -106,7 +113,7 @@ function renderGroups(container, groups) {
   clear(container);
   if (groups.length === 0) {
     container.appendChild(el("div", { class: "lib-collections-empty" },
-      t("library.collections.empty") || "Нет данных"));
+      t("library.collections.empty")));
     return;
   }
 
@@ -133,10 +140,11 @@ function renderGroups(container, groups) {
   const resetBtn = el("button", {
     class: "lib-btn lib-collections-reset",
     type: "button",
+    title: t("library.collections.showAll.tip"),
     onclick: () => {
       if (onFilterCallback) onFilterCallback([]);
     },
-  }, t("library.collections.showAll") || "Показать все");
+  }, t("library.collections.showAll"));
 
   container.append(list, resetBtn);
 }

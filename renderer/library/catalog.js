@@ -219,6 +219,7 @@ function updateLoadMoreButton(root) {
     btn = el("button", {
       type: "button",
       class: "lib-btn lib-btn-ghost lib-catalog-load-more",
+      title: t("library.catalog.tooltip.loadMore"),
       onclick: async () => {
         btn.disabled = true;
         btn.textContent = "...";
@@ -289,6 +290,7 @@ export function buildCatalogToolbar(root) {
 
   const tagCloudBtn = el("button", {
     type: "button", class: "lib-btn lib-btn-ghost",
+    title: t("library.catalog.tooltip.tagCloud"),
     onclick: () => void openTagCloudModal({ root, renderCatalogTable }),
   }, t("library.catalog.btn.tagCloud"));
 
@@ -366,10 +368,14 @@ export function buildCatalogBottomBar(root, deps) {
 
   const deleteBtn = el("button", {
     type: "button", class: "lib-btn lib-btn-danger",
+    title: t("library.catalog.tooltip.delete"),
     onclick: (ev) => void withButtonBusy(ev, async () => {
-      if (CATALOG.selected.size === 0) return;
+      if (CATALOG.selected.size === 0) {
+        setCatalogStatus(root, t("library.catalog.toast.nothingSelected"));
+        return;
+      }
       if (!(await showConfirm(t("library.catalog.confirm.delete", {
-        title: `${CATALOG.selected.size} books`,
+        n: String(CATALOG.selected.size),
       }), {
         title: t("library.catalog.confirm.deleteTitle"),
         okText: t("library.catalog.btn.delete"),
@@ -404,7 +410,16 @@ export function buildCatalogBottomBar(root, deps) {
     "data-mode-min": "advanced",
     title: t("library.catalog.tooltip.reevaluate"),
     onclick: (ev) => void withButtonBusy(ev, async () => {
-      if (CATALOG.selected.size === 0) return;
+      if (CATALOG.selected.size === 0) {
+        setCatalogStatus(root, t("library.catalog.toast.nothingSelected"));
+        return;
+      }
+      if (!(await showConfirm(t("library.catalog.confirm.reevaluate", {
+        n: String(CATALOG.selected.size),
+      }), {
+        title: t("library.catalog.confirm.reevaluateTitle"),
+        okText: t("library.catalog.btn.reevaluate"),
+      }))) return;
       const ids = Array.from(CATALOG.selected);
       let queued = 0;
       const reevalErrors = /** @type {string[]} */ ([]);
@@ -453,6 +468,13 @@ export function buildCatalogBottomBar(root, deps) {
         await showAlert(t("library.catalog.reparse.nothingToDo"));
         return;
       }
+
+      if (!(await showConfirm(t("library.catalog.confirm.reparse", {
+        n: String(targets.length),
+      }), {
+        title: t("library.catalog.confirm.reparseTitle"),
+        okText: t("library.catalog.btn.reparse"),
+      }))) return;
 
       let ok = 0;
       let fail = 0;

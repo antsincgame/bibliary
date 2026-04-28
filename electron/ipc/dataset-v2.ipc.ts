@@ -79,14 +79,14 @@ const activeJobs = new Map<string, AbortController>();
 const activeBatches = new Map<string, AbortController>();
 let unregisterDatasetLlmProbe: (() => void) | null = null;
 
-/** Track spawned synth child processes so we can kill them on app quit. */
-const activeSynthChildren = new Set<import("child_process").ChildProcess>();
-
+/**
+ * killAllSynthChildren — back-compat: раньше синтез запускался как child
+ * process через `npx tsx`, и main.ts при выходе должен был их прибить. Сейчас
+ * синтез — обычный модуль внутри main, его отменяет `abortAllDatasetV2` через
+ * activeJobs. Функция оставлена пустой, чтобы main.ts не пришлось трогать.
+ */
 export function killAllSynthChildren(): void {
-  for (const child of activeSynthChildren) {
-    try { child.kill(); } catch { /* already dead */ }
-  }
-  activeSynthChildren.clear();
+  /* no-op: synth теперь in-process, отменяется через activeJobs */
 }
 
 export function abortAllDatasetV2(reason: string): void {
@@ -574,15 +574,14 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
   );
 
   /**
-   * dataset-v2:synthesize -- Iter 9: запускает scripts/dataset-synth.ts
-   * как child-process. Возвращает {pid, outputPath, command} сразу;
-   * progress пишется в файл-лог рядом с output. UI открывает файл-папку
-   * по завершении. Не блокирует main thread.
+   * dataset-v2:synthesize — in-process LLM-синтез.
    *
-   * Контракт: вместо прямого вызова синтеза в main process (где LM Studio
-   * вызовы блокировали бы IPC очередь), мы spawn-им tsx в отдельном
-   * Node.js процессе. Это единственный безопасный способ запускать
-   * 60+ минутный LLM-marathon из UI без подвисания app shell.
+   * Раньше тут был spawn `npx tsx scripts/dataset-synth.ts`, но в собранном
+   * `.exe` после `npm prune --production` tsx отсутствует, прогресс летел в
+   * .log-файл который UI не видел, и не было общего AbortController с
+   * остальным пайплайном. Теперь синтез — обычный модуль, прогресс идёт
+   * через тот же `dataset-v2:event` (stage: "synth"), отмена — через
+   * `dataset-v2:cancel(jobId)`.
    */
   ipcMain.handle(
     "dataset-v2:synthesize",
@@ -590,70 +589,86 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
       _e,
       args: {
         collection: string;
-        outputPath: string;
-        pairsPerConcept?: number;
-        includeReasoning?: boolean;
-        preset?: string;
-        model?: string;
+        outputDir: string;
+        format: "sharegpt" | "chatml";
+        pairsPerConcept: number;
+        model: string;
+        trainRatio?: number;
         limit?: number;
       },
-    ): Promise<{ ok: boolean; pid?: number; logPath?: string; error?: string }> => {
-      const { spawn } = await import("child_process");
-      const { promises: fsAsync, createWriteStream: createLog } = await import("fs");
-      const path = await import("path");
-
+    ): Promise<{
+      ok: boolean;
+      jobId?: string;
+      error?: string;
+      stats?: import("../lib/dataset-v2/synthesize.js").SynthStats;
+    }> => {
       try {
-        assertValidCollectionName(args.collection);
+        if (!args || typeof args !== "object") {
+          return { ok: false, error: "invalid args" };
+        }
+        const collection = String(args.collection ?? "").trim() || DEFAULT_COLLECTION;
+        const outputDir = String(args.outputDir ?? "").trim();
+        const format = args.format === "chatml" ? "chatml" : "sharegpt";
+        const pairs = Math.max(1, Math.min(5, Number(args.pairsPerConcept) || 2));
+        const model = String(args.model ?? "").trim();
+
+        if (!outputDir) return { ok: false, error: "не выбрана папка для сохранения" };
+        if (!model) return { ok: false, error: "не выбрана модель LM Studio" };
+
+        try {
+          assertValidCollectionName(collection);
+        } catch (e) {
+          return { ok: false, error: e instanceof Error ? e.message : String(e) };
+        }
+
+        const jobId = randomUUID();
+        const ctrl = new AbortController();
+        activeJobs.set(jobId, ctrl);
+        coordinator.reportBatchStart({
+          pipeline: "extraction",
+          batchId: jobId,
+          startedAt: new Date().toISOString(),
+          config: { kind: "synth", collection, model, format, pairs },
+        });
+
+        const win = getMainWindow();
+        const emit = (extra: Record<string, unknown>): void => {
+          win?.webContents.send("dataset-v2:event", {
+            jobId,
+            stage: "synth",
+            ...extra,
+          });
+        };
+
+        try {
+          emit({ phase: "start", collection, model, pairs, format });
+          const { synthesizeDataset } = await import("../lib/dataset-v2/synthesize.js");
+          const stats = await synthesizeDataset({
+            collection,
+            outputDir,
+            format,
+            pairsPerConcept: pairs,
+            model,
+            trainRatio: typeof args.trainRatio === "number" ? args.trainRatio : 0.9,
+            limit: typeof args.limit === "number" && args.limit > 0 ? args.limit : undefined,
+            signal: ctrl.signal,
+            onProgress: (info) => emit({ ...info, phase: "progress" }),
+          });
+          emit({ phase: "done", stats });
+          return { ok: true, jobId, stats };
+        } catch (e) {
+          const error = e instanceof Error ? e.message : String(e);
+          console.warn("[dataset-v2:synthesize] failed:", error);
+          emit({ phase: "error", error });
+          return { ok: false, jobId, error };
+        } finally {
+          activeJobs.delete(jobId);
+          coordinator.reportBatchEnd(jobId);
+        }
       } catch (e) {
-        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+        const error = e instanceof Error ? e.message : String(e);
+        return { ok: false, error };
       }
-
-      const out = path.resolve(args.outputPath);
-      const logPath = out.replace(/\.jsonl$/i, "") + ".log";
-
-      try {
-        await fsAsync.mkdir(path.dirname(out), { recursive: true });
-      } catch (e) {
-        return { ok: false, error: `mkdir: ${e instanceof Error ? e.message : String(e)}` };
-      }
-
-      const cliArgs = [
-        "scripts/dataset-synth.ts",
-        "--collection", args.collection,
-        "--out", out,
-        "--pairs-per-concept", String(args.pairsPerConcept ?? 2),
-        "--preset", args.preset ?? "auto",
-      ];
-      if (args.includeReasoning) cliArgs.push("--include-reasoning");
-      if (args.model)            cliArgs.push("--model", args.model);
-      if (args.limit)            cliArgs.push("--limit", String(args.limit));
-
-      /* npm-script "dataset:synth" под капотом — `tsx`. Используем npx
-         напрямую чтобы избежать оверхеда npm wrapper'а. shell:true нужен
-         для Windows .cmd shim'ов. */
-      const child = spawn("npx", ["tsx", ...cliArgs], {
-        cwd: process.cwd(),
-        shell: true,
-        stdio: ["ignore", "pipe", "pipe"],
-        detached: false,
-      });
-
-      activeSynthChildren.add(child);
-
-      const logStream = createLog(logPath, { flags: "w", encoding: "utf8" });
-      logStream.write(`[synth] cmd: npx tsx ${cliArgs.join(" ")}\n[synth] cwd: ${process.cwd()}\n\n`);
-      child.stdout?.pipe(logStream);
-      child.stderr?.pipe(logStream);
-
-      child.on("error", (err) => {
-        try { logStream.write(`\n[synth] spawn error: ${err.message}\n`); } catch { /* stream may be closed */ }
-      });
-      child.on("close", (code) => {
-        activeSynthChildren.delete(child);
-        try { logStream.write(`\n[synth] exit code: ${code}\n`); logStream.end(); } catch { /* ignore */ }
-      });
-
-      return { ok: true, pid: child.pid, logPath };
     },
   );
 

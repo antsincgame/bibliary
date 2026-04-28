@@ -276,7 +276,17 @@ contextBridge.exposeInMainWorld("api", {
       lastError?: string;
     }> => ipcRenderer.invoke("arena:get-ratings"),
     runCycle: (opts?: { roles?: string[]; manual?: boolean; bypassLock?: boolean }): Promise<{
-      ok: boolean; message: string; skipped?: boolean;
+      ok: boolean;
+      message: string;
+      skipped?: boolean;
+      skipReasons?: string[];
+      perRole?: Array<{
+        role: string;
+        matches: number;
+        results: string[];
+        ratings: Record<string, number>;
+        skipped?: string;
+      }>;
     }> => ipcRenderer.invoke("arena:run-cycle", opts),
     resetRatings: (): Promise<unknown> => ipcRenderer.invoke("arena:reset-ratings"),
     getConfig: (): Promise<Record<string, unknown>> => ipcRenderer.invoke("arena:get-config"),
@@ -420,14 +430,32 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.invoke("dataset-v2:reject-accepted", conceptId, collection),
     synthesize: (args: {
       collection: string;
-      outputPath: string;
-      pairsPerConcept?: number;
-      includeReasoning?: boolean;
-      preset?: string;
-      model?: string;
+      outputDir: string;
+      format: "sharegpt" | "chatml";
+      pairsPerConcept: number;
+      model: string;
+      trainRatio?: number;
       limit?: number;
-    }): Promise<{ ok: boolean; pid?: number; logPath?: string; error?: string }> =>
-      ipcRenderer.invoke("dataset-v2:synthesize", args),
+    }): Promise<{
+      ok: boolean;
+      jobId?: string;
+      error?: string;
+      stats?: {
+        concepts: number;
+        byDomain: Record<string, number>;
+        totalLines: number;
+        trainLines: number;
+        valLines: number;
+        outputDir: string;
+        format: "sharegpt" | "chatml";
+        files: string[];
+        llmFailures: number;
+        schemaFailures: number;
+        emptyPayloadSkips: number;
+        model: string;
+        durationMs: number;
+      };
+    }> => ipcRenderer.invoke("dataset-v2:synthesize", args),
     pickExportDir: (): Promise<string | null> => ipcRenderer.invoke("dataset-v2:pick-export-dir"),
     openFolder: (dirPath: string): Promise<boolean> => ipcRenderer.invoke("dataset-v2:open-folder", dirPath),
     exportDataset: (args: {
@@ -456,6 +484,27 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.on("dataset-v2:event", l);
       return () => ipcRenderer.removeListener("dataset-v2:event", l);
     },
+  },
+
+  datasets: {
+    readMeta: (
+      dirPath: string,
+    ): Promise<{
+      ok: boolean;
+      error?: string;
+      meta?: Record<string, unknown>;
+      files?: Array<{ name: string; sizeBytes: number; lines?: number }>;
+      outputDir?: string;
+    }> => ipcRenderer.invoke("datasets:read-meta", dirPath),
+    readJsonlHead: (args: {
+      filePath: string;
+      limit?: number;
+    }): Promise<{
+      ok: boolean;
+      error?: string;
+      lines?: Array<{ raw: string; parsed: unknown | null }>;
+    }> => ipcRenderer.invoke("datasets:read-jsonl-head", args),
+    pickFolder: (): Promise<string | null> => ipcRenderer.invoke("datasets:pick-folder"),
   },
 
   library: {
