@@ -294,6 +294,16 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.invoke("arena:set-config", partial),
     getLockStatus: (): Promise<{ busy: boolean; reasons: string[] }> =>
       ipcRenderer.invoke("arena:get-lock-status"),
+    runOlympics: (opts?: { models?: string[]; disciplines?: string[]; maxModels?: number }): Promise<unknown> =>
+      ipcRenderer.invoke("arena:run-olympics", opts ?? {}),
+    cancelOlympics: (): Promise<boolean> => ipcRenderer.invoke("arena:cancel-olympics"),
+    applyOlympicsRecommendations: (payload: { recommendations: Record<string, string> }): Promise<unknown> =>
+      ipcRenderer.invoke("arena:apply-olympics-recommendations", payload),
+    onOlympicsProgress: (cb: (e: unknown) => void): (() => void) => {
+      const listener = (_: unknown, data: unknown): void => cb(data);
+      ipcRenderer.on("arena:olympics-progress", listener);
+      return () => ipcRenderer.off("arena:olympics-progress", listener);
+    },
   },
 
   scanner: {
@@ -321,6 +331,15 @@ contextBridge.exposeInMainWorld("api", {
       ocrOverride?: boolean;
     }): Promise<{ ingestId: string; result: unknown }> => ipcRenderer.invoke("scanner:start-ingest", args),
     cancelIngest: (ingestId: string): Promise<boolean> => ipcRenderer.invoke("scanner:cancel-ingest", ingestId),
+    startFolderBundle: (args: { folderPath: string; collection: string }): Promise<{
+      ingestId: string;
+      bundleStats: { sidecars: number; described: number; warnings: string[] };
+    }> => ipcRenderer.invoke("scanner:start-folder-bundle", args),
+    onBundleProgress: (cb: (payload: unknown) => void): (() => void) => {
+      const l = (_e: unknown, p: unknown): void => cb(p);
+      ipcRenderer.on("scanner:bundle-progress", l);
+      return () => ipcRenderer.removeListener("scanner:bundle-progress", l);
+    },
     listHistory: (): Promise<
       Array<{
         collection: string;

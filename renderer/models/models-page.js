@@ -391,7 +391,171 @@ function buildLayout() {
       el("p", { class: "mp-card-sub" }, t("models.header.sub_simple")),
       el("div", { id: "mp-roles", class: "mp-roles-list mp-roles-list-compact" }, t("models.card.loading")),
     ]),
+
+    buildOlympicsCard(),
   ]);
+}
+
+// ---------------------------------------------------------------------------
+// Олимпиада: автонастройка ролей через реальный турнир локальных моделей
+// ---------------------------------------------------------------------------
+
+let olympicsBusy = false;
+let lastOlympicsReport = null;
+
+function buildOlympicsCard() {
+  return el("section", { class: "mp-card mp-card-compact mp-olympics-card" }, [
+    el("h2", { class: "mp-card-title" }, t("models.olympics.title")),
+    el("p", { class: "mp-card-sub" }, t("models.olympics.sub")),
+    el("div", { class: "mp-olympics-actions" }, [
+      el("button", {
+        id: "mp-olympics-run",
+        class: "btn btn-primary",
+        type: "button",
+        onclick: () => void runOlympicsAndShow(),
+      }, t("models.olympics.run")),
+      el("button", {
+        id: "mp-olympics-cancel",
+        class: "btn btn-ghost",
+        type: "button",
+        style: "display:none",
+        onclick: () => void cancelOlympics(),
+      }, t("models.olympics.cancel")),
+    ]),
+    el("div", { id: "mp-olympics-progress", class: "mp-olympics-progress" }, ""),
+    el("div", { id: "mp-olympics-results", class: "mp-olympics-results" }, ""),
+  ]);
+}
+
+async function runOlympicsAndShow() {
+  if (olympicsBusy) return;
+  if (!window.api?.arena?.runOlympics) {
+    showToast(t("models.olympics.unavailable"), "error");
+    return;
+  }
+  olympicsBusy = true;
+  setOlympicsButtons(true);
+  const progressEl = pageRoot?.querySelector("#mp-olympics-progress");
+  const resultsEl = pageRoot?.querySelector("#mp-olympics-results");
+  if (progressEl) progressEl.textContent = t("models.olympics.starting");
+  if (resultsEl) clear(resultsEl);
+
+  let unsub = null;
+  if (typeof window.api.arena.onOlympicsProgress === "function") {
+    unsub = window.api.arena.onOlympicsProgress((ev) => {
+      if (!progressEl || !ev || typeof ev !== "object") return;
+      const e = ev;
+      if (e.type === "olympics.start") {
+        progressEl.textContent = t("models.olympics.progress.start", { models: e.models?.length ?? 0, disciplines: e.disciplines?.length ?? 0 });
+      } else if (e.type === "olympics.discipline.start") {
+        progressEl.textContent = t("models.olympics.progress.discipline", { discipline: e.discipline });
+      } else if (e.type === "olympics.model.done") {
+        const score = Math.round((e.score ?? 0) * 100);
+        const dur = ((e.durationMs ?? 0) / 1000).toFixed(1);
+        progressEl.textContent = `${e.discipline} · ${e.model} → ${score}/100 (${dur}s)`;
+      }
+    });
+  }
+
+  try {
+    const report = await window.api.arena.runOlympics({});
+    lastOlympicsReport = report;
+    if (progressEl) progressEl.textContent = t("models.olympics.done", { ms: ((report.totalDurationMs ?? 0) / 1000).toFixed(1) });
+    renderOlympicsReport(report);
+    showToast(t("models.olympics.success"), "success");
+  } catch (e) {
+    if (progressEl) progressEl.textContent = "";
+    const msg = errMsg(e);
+    showToast(t("models.olympics.failed", { reason: msg }), "error");
+    if (resultsEl) resultsEl.appendChild(el("div", { class: "mp-error" }, msg));
+  } finally {
+    olympicsBusy = false;
+    setOlympicsButtons(false);
+    if (typeof unsub === "function") unsub();
+  }
+}
+
+async function cancelOlympics() {
+  if (!olympicsBusy) return;
+  if (!window.api?.arena?.cancelOlympics) return;
+  try {
+    await window.api.arena.cancelOlympics();
+  } catch (e) {
+    showToast(errMsg(e), "error");
+  }
+}
+
+function setOlympicsButtons(running) {
+  const runBtn = pageRoot?.querySelector("#mp-olympics-run");
+  const cancelBtn = pageRoot?.querySelector("#mp-olympics-cancel");
+  if (runBtn) runBtn.disabled = running;
+  if (cancelBtn) cancelBtn.style.display = running ? "" : "none";
+}
+
+function renderOlympicsReport(report) {
+  const root = pageRoot?.querySelector("#mp-olympics-results");
+  if (!root) return;
+  clear(root);
+
+  const medalsBox = el("div", { class: "mp-olympics-medals" }, [
+    el("h3", {}, t("models.olympics.leaderboard")),
+    ...((report.medals ?? []).map((row) =>
+      el("div", { class: "mp-olympics-medal-row" }, [
+        el("span", { class: "mp-olympics-medal-model" }, row.model),
+        el("span", { class: "mp-olympics-medals-cell" }, `🥇${row.gold} 🥈${row.silver} 🥉${row.bronze}`),
+        el("span", { class: "mp-olympics-medals-time" }, `${(row.totalDurationMs / 1000).toFixed(1)}s`),
+      ])
+    )),
+  ]);
+  root.appendChild(medalsBox);
+
+  const disciplines = el("div", { class: "mp-olympics-disciplines" }, [
+    el("h3", {}, t("models.olympics.disciplines")),
+    ...((report.disciplines ?? []).map((d) => {
+      const sorted = [...(d.perModel ?? [])].sort((a, b) => b.score - a.score);
+      const podium = ["🥇", "🥈", "🥉"];
+      return el("div", { class: "mp-olympics-discipline" }, [
+        el("div", { class: "mp-olympics-discipline-title" }, `${d.discipline} (${d.role})`),
+        el("div", { class: "mp-olympics-discipline-desc" }, d.description ?? ""),
+        ...sorted.map((p, i) =>
+          el("div", { class: "mp-olympics-discipline-row" },
+            `${podium[i] ?? "  "} ${p.model} — ${Math.round(p.score * 100)}/100  (${(p.durationMs / 1000).toFixed(1)}s)`
+          ),
+        ),
+      ]);
+    })),
+  ]);
+  root.appendChild(disciplines);
+
+  const recs = report.recommendations ?? {};
+  const recsKeys = Object.keys(recs);
+  if (recsKeys.length === 0) {
+    root.appendChild(el("div", { class: "mp-olympics-no-recs" }, t("models.olympics.no_recommendations")));
+    return;
+  }
+
+  const recsBox = el("div", { class: "mp-olympics-recs" }, [
+    el("h3", {}, t("models.olympics.recommendations")),
+    el("p", { class: "mp-card-sub" }, t("models.olympics.recommendations_hint")),
+    ...recsKeys.map((k) => el("div", { class: "mp-olympics-rec-row" }, `${k}: ${recs[k]}`)),
+    el("button", {
+      class: "btn btn-primary",
+      type: "button",
+      onclick: () => void applyRecommendations(recs),
+    }, t("models.olympics.apply")),
+  ]);
+  root.appendChild(recsBox);
+}
+
+async function applyRecommendations(recs) {
+  if (!window.api?.arena?.applyOlympicsRecommendations) return;
+  try {
+    await window.api.arena.applyOlympicsRecommendations({ recommendations: recs });
+    showToast(t("models.olympics.applied"), "success");
+    void refresh();
+  } catch (e) {
+    showToast(errMsg(e), "error");
+  }
 }
 
 async function refreshAll() {

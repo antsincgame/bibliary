@@ -9,6 +9,7 @@ import { getPreferencesStore, type Preferences } from "../lib/preferences/store.
 import { globalLlmLock } from "../lib/llm/global-llm-lock.js";
 import { modelRoleResolver, type ModelRole } from "../lib/llm/model-role-resolver.js";
 import { restartScheduler } from "../lib/llm/arena/scheduler.js";
+import { runOlympics, type OlympicsReport } from "../lib/llm/arena/olympics.js";
 
 const VALID_ROLES: readonly string[] = [
   "crystallizer",
@@ -113,5 +114,67 @@ export function registerArenaIpc(): void {
 
   ipcMain.handle("arena:get-lock-status", async () => {
     return globalLlmLock.getStatus();
+  });
+
+  /* ─── Олимпиада: реальный турнир локальных моделей через LM Studio ─── */
+
+  let activeOlympicsCtrl: AbortController | null = null;
+
+  ipcMain.handle("arena:run-olympics", async (e, payload: unknown): Promise<OlympicsReport> => {
+    if (activeOlympicsCtrl) {
+      throw new Error("Олимпиада уже идёт. Подожди или нажми «Отмена».");
+    }
+    const args = (payload && typeof payload === "object" ? payload : {}) as Record<string, unknown>;
+    const ctrl = new AbortController();
+    activeOlympicsCtrl = ctrl;
+
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const send = (channel: string, data: unknown): void => {
+      if (win && !win.isDestroyed()) win.webContents.send(channel, data);
+    };
+
+    try {
+      const report = await runOlympics({
+        models: Array.isArray(args.models) ? (args.models as string[]) : undefined,
+        disciplines: Array.isArray(args.disciplines) ? (args.disciplines as string[]) : undefined,
+        maxModels: typeof args.maxModels === "number" ? args.maxModels : undefined,
+        signal: ctrl.signal,
+        onProgress: (ev) => send("arena:olympics-progress", ev),
+      });
+      return report;
+    } finally {
+      activeOlympicsCtrl = null;
+    }
+  });
+
+  ipcMain.handle("arena:cancel-olympics", async (): Promise<boolean> => {
+    if (!activeOlympicsCtrl) return false;
+    activeOlympicsCtrl.abort();
+    return true;
+  });
+
+  ipcMain.handle("arena:apply-olympics-recommendations", async (_e, payload: unknown): Promise<Preferences> => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("apply-olympics-recommendations: ожидается объект {recommendations}");
+    }
+    const recs = (payload as { recommendations?: Record<string, string> }).recommendations;
+    if (!recs || typeof recs !== "object") throw new Error("recommendations отсутствуют");
+
+    /* Whitelist: только эти ключи разрешено применять. */
+    const ALLOWED = new Set(["extractorModel", "judgeModel", "evaluatorModel", "translatorModel", "visionModelKey"]);
+    const filtered: Partial<Preferences> = {};
+    for (const [k, v] of Object.entries(recs)) {
+      if (ALLOWED.has(k) && typeof v === "string" && v.trim().length > 0) {
+        (filtered as Record<string, unknown>)[k] = v;
+      }
+    }
+    if (Object.keys(filtered).length === 0) {
+      throw new Error("Нет валидных рекомендаций для применения");
+    }
+    await getPreferencesStore().set(filtered);
+    modelRoleResolver.invalidate();
+    const prefs = await getPreferencesStore().getAll();
+    broadcastPreferencesChanged(prefs);
+    return prefs;
   });
 }

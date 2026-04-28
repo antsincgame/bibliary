@@ -50,6 +50,13 @@ export function buildImportPane(deps) {
     onclick: () => importFromFiles(deps),
   }, t("library.import.btn.pickFiles"));
 
+  const bundleBtn = el("button", {
+    type: "button",
+    class: "lib-btn lib-import-pick-bundle",
+    title: t("library.import.btn.bundleHint"),
+    onclick: () => importFolderAsBundle(deps),
+  }, t("library.import.btn.bundle"));
+
   const pauseBtn = el("button", {
     type: "button",
     class: "lib-btn lib-import-pause",
@@ -125,7 +132,7 @@ export function buildImportPane(deps) {
 
   const body = el("div", { class: "lib-import-body" }, [
     dropzone,
-    el("div", { class: "lib-import-actions" }, [pickFolderBtn, pickFilesBtn, scanBtn, pauseBtn, cancelBtn]),
+    el("div", { class: "lib-import-actions" }, [pickFolderBtn, pickFilesBtn, bundleBtn, scanBtn, pauseBtn, cancelBtn]),
     opts,
     status,
     logPanel,
@@ -327,6 +334,69 @@ async function importFromFolder(deps) {
     }),
     deps,
   );
+}
+
+/**
+ * Импорт ВСЕЙ папки как «комплекта»: книга + иллюстрации + код + сайты.
+ * Использует scanner:start-folder-bundle (LLM описывает sidecars, всё
+ * сшивается в один Markdown и грузится одним документом).
+ *
+ * @param {object} _deps
+ */
+async function importFolderAsBundle(_deps) {
+  if (IMPORT_STATE.busy) return;
+  if (!window.api?.scanner?.startFolderBundle) {
+    showLibraryToast({ kind: "error", message: t("library.bundle.unavailable") });
+    return;
+  }
+  let folderPath = null;
+  try { folderPath = await window.api.library.pickFolder(); } catch (_e) {
+    console.warn("[import] bundle pickFolder failed:", _e);
+    showLibraryToast({ kind: "error", message: t("library.import.pickFolderFailed") });
+    return;
+  }
+  if (!folderPath) return;
+
+  const collection = window.prompt(t("library.bundle.collectionPrompt"), "default");
+  if (!collection) return;
+
+  const status = document.querySelector(".lib-import-status");
+  const setStatus = (text) => { if (status) status.textContent = text; };
+
+  let unsub = null;
+  try {
+    setStatus(t("library.bundle.starting"));
+    if (typeof window.api.scanner.onBundleProgress === "function") {
+      unsub = window.api.scanner.onBundleProgress((p) => {
+        if (!p || typeof p !== "object") return;
+        const phase = String(p.phase || "");
+        if (phase === "discover") setStatus(t("library.bundle.phase.discover"));
+        else if (phase === "describe") {
+          if (p.event && p.event.type === "describe.file.done") {
+            setStatus(t("library.bundle.phase.describing", { file: String(p.event.absPath || "").split(/[\\/]/).pop() }));
+          } else if (typeof p.sidecarsTotal === "number") {
+            setStatus(t("library.bundle.phase.describeStart", { total: p.sidecarsTotal }));
+          }
+        }
+        else if (phase === "parse-book") setStatus(t("library.bundle.phase.parseBook", { file: String(p.file || "") }));
+        else if (phase === "ingest") setStatus(t("library.bundle.phase.ingest"));
+      });
+    }
+    const r = await window.api.scanner.startFolderBundle({ folderPath, collection });
+    const stats = r?.bundleStats;
+    setStatus(t("library.bundle.done", {
+      sidecars: stats?.sidecars ?? 0,
+      described: stats?.described ?? 0,
+      warnings: stats?.warnings?.length ?? 0,
+    }));
+    showLibraryToast({ kind: "success", message: t("library.bundle.successToast") });
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    setStatus(t("library.bundle.failed", { reason }));
+    showLibraryToast({ kind: "error", message: t("library.bundle.failed", { reason }) });
+  } finally {
+    if (typeof unsub === "function") unsub();
+  }
 }
 
 /** @param {object} deps */

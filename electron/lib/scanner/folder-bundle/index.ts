@@ -21,3 +21,9 @@ export {
   type BundleMarkdownInput,
   type SidecarDescription,
 } from "./markdown-builder.js";
+
+export {
+  describeSidecars,
+  type DescribeSidecarsOptions,
+  type DescribeProgressEvent,
+} from "./describe-sidecars.js";

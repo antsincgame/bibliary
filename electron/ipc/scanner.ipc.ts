@@ -20,8 +20,15 @@
 
 import { ipcMain, dialog, app, type BrowserWindow } from "electron";
 import * as path from "path";
+import * as os from "os";
+import { promises as fs } from "fs";
 import { getPreferencesStore } from "../lib/preferences/store.js";
 import { randomUUID } from "crypto";
+import {
+  discoverBundle,
+  describeSidecars,
+  buildBundleMarkdown,
+} from "../lib/scanner/folder-bundle/index.js";
 import {
   AbsoluteFilePathSchema,
   AbsoluteFilePathArraySchema,
@@ -214,6 +221,114 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
     activeIngests.delete(ingestId);
     return true;
   });
+
+  /**
+   * Folder-bundle: импорт ВСЕЙ папки как одного «комплекта».
+   * Шаги:
+   *   1. discoverBundle → классификация всех файлов
+   *   2. описать sidecars через LLM (vision для картинок, text-summary для кода/сайтов)
+   *   3. парсинг основной книги (если есть)
+   *   4. сборка единого markdown через buildBundleMarkdown
+   *   5. запись markdown в tmp-файл под расширением .txt → ingestBook
+   *   6. при закрытии — удаление tmp-файла
+   */
+  ipcMain.handle(
+    "scanner:start-folder-bundle",
+    async (
+      _e,
+      args: { folderPath: string; collection: string },
+    ): Promise<{ ingestId: string; bundleStats: { sidecars: number; described: number; warnings: string[] } }> => {
+      if (!args || typeof args.folderPath !== "string" || typeof args.collection !== "string") {
+        throw new Error("folderPath и collection обязательны");
+      }
+      const collection = parseOrThrow(CollectionNameSchema, args.collection, "collection");
+      const stat = await fs.stat(args.folderPath).catch(() => null);
+      if (!stat || !stat.isDirectory()) throw new Error(`folderPath не директория: ${args.folderPath}`);
+
+      const ingestId = randomUUID();
+      const ctrl = new AbortController();
+      activeIngests.set(ingestId, ctrl);
+      const win = getMainWindow();
+      const send = (channel: string, payload: unknown): void => {
+        if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
+      };
+
+      const tmpFile = path.join(os.tmpdir(), `bibliary-bundle-${ingestId}.txt`);
+
+      try {
+        send("scanner:bundle-progress", { ingestId, phase: "discover" });
+        const bundle = await discoverBundle(args.folderPath);
+
+        send("scanner:bundle-progress", {
+          ingestId,
+          phase: "describe",
+          sidecarsTotal: bundle.sidecars.length,
+        });
+        const { descriptions, warnings: descWarnings } = await describeSidecars(bundle, {
+          signal: ctrl.signal,
+          concurrency: 2,
+          onProgress: (ev) => send("scanner:bundle-progress", { ingestId, phase: "describe", event: ev }),
+        });
+
+        /* Парсим основную книгу если есть */
+        let bookMarkdown = "";
+        let bookTitle: string | undefined;
+        let bookAuthor: string | undefined;
+        if (bundle.book) {
+          send("scanner:bundle-progress", { ingestId, phase: "parse-book", file: bundle.book.relPath });
+          try {
+            const parsed = await parseBook(bundle.book.absPath);
+            bookTitle = parsed.metadata.title;
+            bookAuthor = parsed.metadata.author;
+            bookMarkdown = parsed.sections
+              .map((s) => `${"#".repeat(s.level + 1)} ${s.title}\n\n${s.paragraphs.join("\n\n")}`)
+              .join("\n\n");
+          } catch (e) {
+            const reason = e instanceof Error ? e.message : String(e);
+            bundle.warnings.push(`failed to parse main book: ${reason}`);
+          }
+        }
+
+        const md = buildBundleMarkdown({
+          bundle,
+          bookMarkdown,
+          bookTitle,
+          bookAuthor,
+          descriptions,
+        });
+        await fs.writeFile(tmpFile, md, "utf8");
+
+        send("scanner:bundle-progress", { ingestId, phase: "ingest", file: tmpFile });
+
+        const prefs = await getPreferencesStore().getAll();
+        const qdrantUrl = await getQdrantUrl();
+        await ingestBook(tmpFile, {
+          collection,
+          qdrantUrl,
+          qdrantApiKey: QDRANT_API_KEY,
+          state: stateStore(),
+          signal: ctrl.signal,
+          upsertBatch: prefs.ingestUpsertBatch,
+          maxBookChars: prefs.maxBookChars,
+          translateNonRussian: prefs.translateNonRussianBooks,
+          parseOptions: { signal: ctrl.signal },
+          onProgress: (p: IngestProgress) => send("scanner:ingest-progress", { ingestId, ...p }),
+        });
+
+        return {
+          ingestId,
+          bundleStats: {
+            sidecars: bundle.sidecars.length,
+            described: descriptions.size,
+            warnings: [...bundle.warnings, ...descWarnings],
+          },
+        };
+      } finally {
+        activeIngests.delete(ingestId);
+        await fs.unlink(tmpFile).catch(() => undefined);
+      }
+    },
+  );
 
   /**
    * Группированная история ingest по коллекциям.
