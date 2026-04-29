@@ -102,3 +102,30 @@ jobs:
       - name: Unit tests
         run: npm run test:fast
         continue-on-error: false
+
+  # ─────────────────────────────────────────────────────────────────
+  # Отдельный policy-gate: ловит регрессии "thinking-friendly" политики
+  # роли → дисциплины. Если кто-то добавил новую crystallizer/evaluator
+  # дисциплину без `thinkingFriendly: true` — этот job упадёт быстро
+  # (≈3 сек) и без зависимости от sqlite/electron-rebuild.
+  # ─────────────────────────────────────────────────────────────────
+  olympics-policy:
+    name: Olympics · thinking-policy gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+      - name: Olympics thinking-policy + structure tests
+        run: node --import tsx --test tests/olympics-thinking-policy.test.ts tests/olympics-weights.test.ts

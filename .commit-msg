@@ -1,42 +1,30 @@
-feat: топологическое извлечение + vision split + CLIP image search
+test(olympics): thinking-policy gate + дополнить thinkingFriendly для crystallizer/evaluator
 
-Engineer-Researcher sprint по запросу: «генерация чанков + промпты для
-топологического извлечения, тесты под роли, векторный поиск по картинкам».
+Согласно политике из таблицы (crystallizer = ДА критично, evaluator = ДА,
+judge/lang_detector/ukrainian/vision = НЕТ, translator = частично) —
+проставлены недостающие thinkingFriendly: true:
 
-Слой 1 — Топология знаний:
-- DeltaKnowledgeSchema: relations [{S,P,O}] обязательное поле (1-8 троек)
-- TopologyRelationSchema: запрет copula-предикатов (is/was/has)
-- electron/defaults/prompts/{delta-knowledge-extractor,chapter-thesis}.md
-  созданы (CoST + AURA + few-shot + relations)
-- arena/role-prompts.ts: единый JUDGE/LANG_DETECT/TRANSLATE_* (3+5+1 -> 1)
-- crystallizer-production-delta — тестирует ТОЧНУЮ боевую DeltaKnowledge
-- translator-en-ru / translator-ru-en с negative examples
+- crystallizer-rover, crystallizer-ru-mendeleev, code-summary-cpp
+- evaluator-clrs, evaluator-noise, evaluator-midrange, evaluator-ru-classic
 
-Слой 2 — Vision split на 3 роли:
-- ModelRole + prefs: vision_meta / vision_ocr / vision_illustration
-- Backward-compat: legacy visionModelKey как fallback
-- Олимпиада: vision_meta-strict-json, vision_ocr-plain-text,
-  vision_illustration-with-context
-- illustration-worker: контекст книги/главы в промпт + 30s timeout +
-  fallback на список моделей
+Без флага efficiency пенализит thinking-модели за время рассуждения,
+из-за чего сильные CoT-модели могут получить 0/100 на crystallizer/evaluator
+дисциплинах (см. предыдущий fix stripThinkingBlock).
 
-Слой 3 — CLIP мультимодальный поиск:
-- embedder/image-embedder.ts: Xenova/clip-vit-base-patch32, 512-dim,
-  L2-normalised, embedImage + embedTextForImage в одном пространстве
-- qdrant/illustrations-index.ts: коллекция bibliary_illustrations,
-  searchByText / searchByImage, детерминированные UUID-ids
-- imageVectorIndexEnabled prefs flag (default false — экономит RAM)
-- Step D в illustration-worker: опциональная CLIP-индексация
+Регрессионный тест tests/olympics-thinking-policy.test.ts (6 проверок):
+1. crystallizer/evaluator → thinkingFriendly: true (с whitelist исключений)
+2. judge/lang_detector/ukrainian/vision* → thinkingFriendly не должен быть true
+3. каждая core-роль имеет хотя бы одну дисциплину
+4. id уникальны
+5. description/system/user/maxTokens/score корректны у каждой
+6. vision-роли имеют валидный data:image/ URL
 
-UI: разворачивающиеся результаты + табы по ролям:
-- «Результаты испытаний» -> details разворачивающийся блок
-- Дисциплины сгруппированы по ролям -> табы с человеческими названиями
-  (Кристаллизатор знаний / Литературный критик / Судья / ...)
-- Каждая дисциплина — details со спортивной номинацией
-  (Марсоход / Аполлон-11 / Боевая схема / Менделеев / ...)
-- 3 новые vision-роли в ALL_ROLES + иконки
+CI:
+- .github/workflows/smoke.yml — добавлен olympics-thinking-policy в quick gate
+- .github/workflows/ci.yml — отдельный job "Olympics · thinking-policy gate"
+  на ubuntu (≈3 сек, без electron-rebuild) — даёт явный pass/fail на PR
 
 Verification:
-- tsc -p tsconfig.electron.json --noEmit: pass
-- ReadLints: clean
-- Backward compat: DeltaKnowledgeLegacySchema для чтения старых записей
+- node --test tests/olympics-thinking-policy.test.ts: 6/6 pass
+- node --test tests/olympics-{thinking-policy,weights,lifecycle}.test.ts: 18/18 pass
+- tsc --noEmit: clean

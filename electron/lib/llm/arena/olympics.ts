@@ -330,6 +330,7 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
   {
     id: "crystallizer-rover",
     role: "crystallizer",
+    thinkingFriendly: true, /* crystallizer = ДА критично (см. docs/audits): извлечение фактов выигрывает от CoT */
     description: "Извлечь факты + сущности (наша роль delta-extractor).",
     whyImportant:
       "Кристаллизатор — основа dataset-генерации. Тест проверяет: 1) валидность JSON-структуры; 2) полноту извлечения (4 факта в источнике); 3) корректную типизацию сущностей; 4) отсутствие галлюцинаций.",
@@ -390,6 +391,7 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
   {
     id: "evaluator-clrs",
     role: "evaluator",
+    thinkingFriendly: true, /* evaluator = ДА: взвешивание факторов = reasoning, не угадывание числа */
     description: "Оценить классику CS-литературы (high-end).",
     whyImportant:
       "CLRS — общепризнанная классика, эталон оценки 9-10. Если модель ставит ≤6 — она недооценивает референсы и засорит датасет шумовыми книгами. Тест на «верхнюю планку».",
@@ -427,6 +429,7 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
   {
     id: "evaluator-noise",
     role: "evaluator",
+    thinkingFriendly: true, /* evaluator = ДА: рассуждение «технический ли текст?» */
     description: "Отсеять шумовую книгу (low-end).",
     whyImportant:
       "Без проверки на «нижнюю планку» оценщик пропустит мотивашки и поваренные книги в технический датасет. Тест проверяет, что модель ставит 1-3 за non-CS noise.",
@@ -461,6 +464,7 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
   {
     id: "evaluator-midrange",
     role: "evaluator",
+    thinkingFriendly: true, /* evaluator = ДА: середина шкалы = самый сложный случай для reasoning */
     description: "Оценить средне-качественную книгу (mid-range 5-7).",
     whyImportant:
       "Evaluator должен различать 3 уровня: шум (1-3), среднее (5-7), эталон (9-10). Без теста на середину шкалы оценщик может пропускать нишевые, но полезные книги или, наоборот, завышать посредственные.",
@@ -499,6 +503,7 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
   {
     id: "evaluator-ru-classic",
     role: "evaluator",
+    thinkingFriendly: true, /* evaluator = ДА: классика на русском требует распознать культурный контекст */
     description: "Оценить классику на русском (мультиязычная калибровка).",
     whyImportant:
       "Библиотека содержит книги на русском. Если оценщик не понимает русскоязычные описания — результат непредсказуем. Тест: Кнут «Искусство программирования» → 9-10.",
@@ -1012,6 +1017,7 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
   {
     id: "crystallizer-ru-mendeleev",
     role: "crystallizer",
+    thinkingFriendly: true, /* crystallizer = ДА критично: извлечение фактов на русском */
     description: "Извлечь факты из русскоязычного текста.",
     whyImportant:
       "Библиотека содержит книги на русском. Если модель плохо работает с кириллицей — кристаллизатор пропустит факты.",
@@ -1054,6 +1060,7 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
        рядом. LLM должна за 2-3 предложения объяснить что делает код. */
     id: "code-summary-cpp",
     role: "crystallizer", /* sidecar describer тоже идёт через crystallizer */
+    thinkingFriendly: true, /* crystallizer = ДА: рассуждение о структуре кода даёт лучшее резюме */
     description: "Описать пример C++ кода (sidecar для bundle-import).",
     system:
       "You are a code reviewer. In 2-3 sentences explain what this C++ code does. " +
