@@ -493,6 +493,8 @@ export default {
   "models.olympics.option.test_all": "Test ALL models",
   "models.olympics.option.test_all_hint": "Ignores class filter — takes longer but tests every loaded model.",
   "models.olympics.option.weight_classes": "Model class:",
+  "models.olympics.option.role_tuning": "Per-role tuning",
+  "models.olympics.option.role_tuning_hint": "Load each model with optimal contextLength + FlashAttention per role. Requires ≥ 8 GB VRAM. Without this flag — all models load identically (2K context).",
   "models.olympics.role.tests": "tests",
   "models.card.from_disk": "On disk (load into memory)",
   "models.load.hint": "Select a model you already downloaded in LM Studio, then Load. GPU offload follows the hardware hint below.",

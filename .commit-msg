@@ -1,88 +1,86 @@
-feat: удалить Shadow Arena + E5-sidecar для иллюстраций + per-role tuning
+feat(olympics): per-role LM Studio tuning подключён к боевому pipeline
 
-Sherlok-аудит выявил пропуски прошлой итерации (be68ef2):
-- E5-over-descriptions ПРОПУЩЕН — реализован сразу CLIP вопреки плану
-  «сначала пункт 13, потом CLIP» (план: 80% результата без +200MB)
-- crystallizer-aura, vision_meta-cover-en/ru — НЕ добавлены
-- P-Limit 3-5 параллельных в illustration-worker — НЕ добавлен
-- CLIP сделан раньше времени (правильно за feature-flag, но обход духа плана)
+Финальная фича Олимпиады. Раньше role-load-config.ts был research-only,
+сейчас интегрирован в реальный lmsLoadModel/lmsChat с feature-флагом для
+безопасности.
 
-Закрыто всё что найдено:
+== ЧТО СДЕЛАНО ==
 
-== УДАЛЕНИЕ Shadow Arena ==
-Mahakala + Servitor: исполнено явное распоряжение пользователя
-- Удалены: run-cycle.ts, scheduler.ts, ratings-store.ts, golden-prompts.ts
-- Удалены 4 теста: arena-{e2e,run-cycle,scheduler,olympics}.test.ts
-- Удалён renderer/arena.js, route arena, sidebar button
-- Очищены prefs.arena*, локализация nav.arena/arena.*
-- main.ts: убран initArenaRatingsStore + startScheduler/stopScheduler
-- arena.ipc.ts: остались ТОЛЬКО Olympics handlers
-  (channel name `arena:*` сохранён для backward-compat preload bridge)
-- preload.ts: arena bridge сократился до olympics-only
+1. lmsLoadModel расширен: принимает LMSLoadConfig, передаёт в LM Studio
+   /api/v1/models/load body: context_length, flash_attention,
+   keep_model_in_memory, try_mmap, gpu.
+   Default (без config) = legacy 2048/FA=true — backward compat.
 
-Удалено: ~50 KB кода, 4 теста, route, prefs, ~80 i18n-ключей.
+2. lmsChat расширен: принимает topP параметр, добавляет top_p в OpenAI body.
 
-== E5-SIDECAR для иллюстраций (пункт 13 плана) ==
-Файл: electron/lib/qdrant/illustrations-text-index.ts
-- Отдельная коллекция `bibliary_illustrations_text` (384-dim E5 cosine)
-- vector = E5(description), payload = bookPath/title/sha256/score/chapter
-- Те же ID что в CLIP-индексе → JOIN-able по id для гибрида
-- searchIllustrationsByText() — поиск иллюстраций текстовым запросом
-- Default-on: E5-модель уже загружена для книг → 0 новых зависимостей
-- Stamp Step D в illustration-worker (CLIP стал Step E, опционально)
+3. computeOlympicsLoadConfig(roles, enabled) — экспортированный helper.
+   Олимпиада грузит модель ОДИН раз для всех её ролей, поэтому config
+   агрегируется как «максимально требовательный»:
+   - contextLength = max(roles)
+   - flashAttention = any(roles) — нужно одной → нужно всем
+   - keepModelInMemory = any(roles)
+   - gpu = "max" если хоть кто-то требует, иначе max numeric
+   При enabled=false возвращает legacy {2048, FA=true}.
 
-== P-LIMIT 3-5 параллельных ==
-illustration-worker: in-process pool без новых зависимостей (worker pattern).
-- VISION_PARALLELISM=4 — 100 картинок: 10 мин → ~2.5 мин
-- mdSerial: serialize только md-патчинг (race-free для bookMd)
-- abort signal honoured через cursor
+4. runOlympics: новая опция roleLoadConfigEnabled (default false).
+   - Pre-computes roles per model (с учётом vision capability).
+   - Передаёт computed config в lmsLoadModel.
+   - В цикле дисциплин использует getRoleInferenceDefaults для
+     temperature/topP (только при enabled=true). Reasoning crystallizer
+     по-прежнему получает temp ≥ 0.6 для CoT.
 
-== ДИСЦИПЛИНЫ из плана (Слой 2) ==
-- crystallizer-aura — chapter_thesis prompt (одно предложение ≤200 chars,
-  AURA-фильтр-вход), thinkingFriendly: true
-- vision_meta-cover-en — английская обложка → strict JSON
-- vision_meta-cover-ru — русскоязычная обложка → strict JSON
-- UI: добавлены литературные названия в DISCIPLINE_HUMAN
+5. arena.ipc.ts: читает prefs.olympicsRoleLoadConfigEnabled и
+   передаёт в runOlympics.
 
-== УСИЛЕННЫЕ ТЕСТЫ Олимпиады ==
-tests/olympics-scorers.test.ts — 7 проверок integrity для всех scorers:
-1. Правильный ответ ≥ 0.30 (для 22+ дисциплин)
-2. Margin good - bad ≥ 0.20 (champion должен быть выделим)
-3. Неверный ответ ≤ 0.40
-4. Пустой ответ ≤ 0.15
-5. Markdown fences штрафуются
-6. <think>...</think> → стрипается → score как clean
-7. SAMPLES покрытие всех текстовых дисциплин
+6. preferences/store.ts: новый флаг olympicsRoleLoadConfigEnabled
+   (default false).
 
-Тесты вскрыли реальные баги — исправлены:
-- judge-bst/judge-async: возвращали 0.20 для пустого ответа → 0
-- vision_ocr-plain-text: пустой ответ давал 0.20 → 0.05
-- ukrainian-uk-write: пустой ответ → 0
-- crystallizer-aura: усилен штраф за meta-обёртки («В этой главе…»)
-- html-extract: добавлена нижняя граница на длину
+7. UI: чекбокс "Per-role tuning" в Models → Olympics card.
+   Подсказка: "Нужно ≥ 8 GB VRAM. Без флага — все модели грузятся
+   одинаково (2K контекст)."
+   Локализация ru + en.
 
-CI:
-- smoke.yml + ci.yml policy gate включают olympics-scorers.test.ts
+== ТЕСТЫ ==
 
-== LM STUDIO SDK research (звёздочка*) ==
-Файл: electron/lib/llm/role-load-config.ts
-+ docs/audits/2026-04-29-lmstudio-role-tuning.md
+- tests/role-load-config.test.ts (10 проверок):
+  * каждая роль имеет валидный load config
+  * длинные контексты (≥8K) требуют flashAttention
+  * inference defaults в разумных границах
+  * structured-output роли имеют temp ≤ 0.3
+  * judge maxTokens ≤ 32, lang_detector ≤ 16
+  * crystallizer maxTokens ≥ 1024 (для structured JSON)
+  * vision-роли имеют keepModelInMemory=true
+  * fallback для unknown role безопасен
 
-LM Studio SDK поддерживает per-load contextLength, gpu.ratio, flashAttention,
-keepModelInMemory, tryMmap. Bibliary сейчас НЕ использует — все модели грузятся
-с дефолтным preset.
+- tests/olympics-load-config-integration.test.ts (9 проверок):
+  * enabled=false → legacy (2048, FA=true)
+  * пустой массив ролей → legacy
+  * crystallizer alone → ≥ 32K
+  * judge alone → ≤ 4K
+  * crystallizer+judge → max(32K)
+  * vision_meta+vision_ocr → ≥ 8K
+  * keepInMemory aggregation
+  * gpu="max" if any
+  * gpu numeric если только мелкая роль
 
-ROLE_LOAD_CONFIG: 9 ролей × оптимальный load-config (например, crystallizer
-получает 32K context + flashAttention для длинных глав, lang_detector — 1K
-context + gpu=0.5 для мелкой модели).
+44/44 olympics-related тестов pass (включая все предыдущие policy/scorers/
+weights/lifecycle).
 
-ROLE_INFERENCE_DEFAULTS: temp/topP/maxTokens per role (judge: temp=0.0
-для детерминизма, ukrainian_specialist: temp=0.4 для естественности).
+== БЕЗОПАСНОСТЬ ==
 
-Не интегрировано в lmsLoadModel() — это требует UX-toggle в Models page.
-Готово к подключению в отдельной итерации (документ описывает план).
+- Default off — пользователь сам включает когда уверен в железе.
+- Backward compat: lmsLoadModel(url, key, log, signal) без 5-го arg
+  работает как раньше (legacy config).
+- Mahakala-критерии: tsc 0 ошибок, lint clean, все olympics-тесты pass.
+
+== CI ==
+
+- ci.yml: olympics-policy job включает role-load-config + integration.
+- smoke.yml: те же тесты в quick-gate.
 
 Verification:
 - tsc -p tsconfig.electron.json --noEmit: pass
-- node --test tests/olympics-{scorers,thinking-policy,weights,lifecycle}.test.ts: 25/25
-- ReadLints: clean
+- npm run lint: pass (0 warnings)
+- node --test tests/{role-load-config,olympics-load-config-integration,
+  olympics-scorers,olympics-thinking-policy,olympics-weights,
+  olympics-lifecycle}.test.ts: 44/44 pass

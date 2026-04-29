@@ -16,6 +16,12 @@ import {
   LANG_DETECT_SYSTEM_PROMPT,
   TRANSLATE_TO_RU_SYSTEM_PROMPT,
 } from "./role-prompts.js";
+import {
+  getRoleLoadConfig,
+  getRoleInferenceDefaults,
+  type LMSLoadConfig,
+} from "../role-load-config.js";
+import type { ModelRole } from "../model-role-resolver.js";
 
 const DEFAULT_LMS_URL = "http://localhost:1234";
 
@@ -52,6 +58,15 @@ export interface OlympicsOptions {
   testAll?: boolean;
   /** Фильтр по ролям — запускать только дисциплины этих ролей. Пустой = все. */
   roles?: OlympicsRole[];
+  /**
+   * Если true — каждая модель грузится с per-role load config
+   * (см. role-load-config.ts) и tested with per-role inference defaults
+   * (temperature/topP). False = legacy (2048 ctx, FA=true, temp=0.2/0.6).
+   *
+   * Backward-compat: дефолт false. Включается prefs.olympicsRoleLoadConfigEnabled
+   * через arena.ipc.ts.
+   */
+  roleLoadConfigEnabled?: boolean;
   /** Прогресс-каллбэк. */
   onProgress?: (e: OlympicsEvent) => void;
   /** Abort. */
@@ -1716,29 +1731,90 @@ async function lmsWaitForReady(
  * CRITICAL: caller MUST unload via lmsUnloadModel after use, otherwise
  * VRAM accumulates until BSOD (we hit 0x000000FD on RTX 5090 with 6 models).
  */
+/**
+ * Compute the LM Studio load config for a single Olympics run of `modelKey`.
+ *
+ * Олимпиада грузит модель ОДИН раз и прогоняет на ней все дисциплины,
+ * которые попадают под её capability-фильтр. Поэтому config выбирается как
+ * "максимально-требовательный" среди всех ролей, которые модель будет играть:
+ *
+ *   contextLength = max по всем ролям (crystallizer = 32K → cover all)
+ *   flashAttention = true если хоть одна роль требует
+ *   keepModelInMemory = true если хоть одна роль требует
+ *
+ * Если `enabled === false` — возвращаем legacy-config (2048, FA=true) чтобы
+ * сохранить backward-compat с пользователями где per-role tuning отключён.
+ */
+export function computeOlympicsLoadConfig(
+  rolesToRun: ModelRole[],
+  enabled: boolean,
+): LMSLoadConfig {
+  if (!enabled || rolesToRun.length === 0) {
+    return { contextLength: 2048, flashAttention: true };
+  }
+  const configs = rolesToRun.map((r) => getRoleLoadConfig(r));
+  const maxCtx = Math.max(...configs.map((c) => c.contextLength ?? 2048));
+  const anyFA = configs.some((c) => c.flashAttention === true);
+  const anyKeepInMem = configs.some((c) => c.keepModelInMemory === true);
+  const anyMmap = configs.some((c) => c.tryMmap === true);
+  /* GPU ratio: если хоть одна роль хочет "max" — берём max; иначе максимум
+   * среди числовых; "off" игнорируем — Олимпиаде нужен GPU для адекватного
+   * замера efficiency. */
+  let gpu: LMSLoadConfig["gpu"] = { ratio: "max" };
+  const hasMax = configs.some((c) => c.gpu?.ratio === "max");
+  if (!hasMax) {
+    const numeric = configs
+      .map((c) => c.gpu?.ratio)
+      .filter((r): r is number => typeof r === "number");
+    if (numeric.length > 0) gpu = { ratio: Math.max(...numeric) };
+  }
+  return {
+    contextLength: maxCtx,
+    flashAttention: anyFA,
+    keepModelInMemory: anyKeepInMem,
+    tryMmap: anyMmap,
+    gpu,
+  };
+}
+
 async function lmsLoadModel(
   lmsUrl: string,
   modelKey: string,
   log: OlympicsLogger,
   signal?: AbortSignal,
+  loadConfig?: LMSLoadConfig,
 ): Promise<{ ok: true; instanceId: string; loadTimeMs: number } | { ok: false; reason: string }> {
   const t0 = Date.now();
   const ctrl = new AbortController();
   const timeoutId = setTimeout(() => ctrl.abort(), 180_000);
   const onAbort = (): void => ctrl.abort();
   signal?.addEventListener("abort", onAbort);
-  log("info", "loading model", { modelKey, contextLength: 2048 });
+  /* Default = legacy 2048/FA=true (backward-compat). */
+  const cfg: LMSLoadConfig = loadConfig ?? { contextLength: 2048, flashAttention: true };
+  const ctxLen = cfg.contextLength ?? 2048;
+  const fa = cfg.flashAttention ?? true;
+  log("info", "loading model", {
+    modelKey,
+    contextLength: ctxLen,
+    flashAttention: fa,
+    gpuRatio: cfg.gpu?.ratio,
+  });
   telemetry.logEvent({ type: "olympics.model_lifecycle", phase: "load_start", modelKey });
+  /* Build LM Studio /api/v1/models/load body, omitting undefined fields. */
+  const body: Record<string, unknown> = {
+    model: modelKey,
+    context_length: ctxLen,
+    flash_attention: fa,
+    echo_load_config: false,
+  };
+  if (cfg.keepModelInMemory !== undefined) body.keep_model_in_memory = cfg.keepModelInMemory;
+  if (cfg.tryMmap !== undefined) body.try_mmap = cfg.tryMmap;
+  if (cfg.gpu !== undefined) body.gpu = cfg.gpu;
   try {
     const r = await fetch(`${lmsUrl}/api/v1/models/load`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: modelKey,
-        context_length: 2048,
-        flash_attention: true,
-        echo_load_config: false,
-      }),
+      body: JSON.stringify(body),
       signal: ctrl.signal,
     });
     const loadTimeMs = Date.now() - t0;
@@ -1926,7 +2002,14 @@ async function lmsChat(
   model: string,
   system: string,
   user: string,
-  opts: { temperature?: number; maxTokens?: number; timeoutMs?: number; signal?: AbortSignal; imageUrl?: string },
+  opts: {
+    temperature?: number;
+    topP?: number;
+    maxTokens?: number;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+    imageUrl?: string;
+  },
 ): Promise<ChatResp> {
   const t0 = Date.now();
   const ctrl = new AbortController();
@@ -1941,18 +2024,20 @@ async function lmsChat(
           { type: "image_url" as const, image_url: { url: opts.imageUrl } },
         ]
       : user;
+    const body: Record<string, unknown> = {
+      model,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: userContent },
+      ],
+      temperature: opts.temperature ?? 0.2,
+      max_tokens: opts.maxTokens ?? 512,
+    };
+    if (typeof opts.topP === "number") body.top_p = opts.topP;
     const r = await fetch(`${lmsUrl}/v1/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: userContent },
-        ],
-        temperature: opts.temperature ?? 0.2,
-        max_tokens: opts.maxTokens ?? 512,
-      }),
+      body: JSON.stringify(body),
       signal: ctrl.signal,
     });
     if (!r.ok) {
@@ -2419,11 +2504,36 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
   opts.onProgress?.({ type: "olympics.start", models, disciplines: disciplines.map((d) => d.id) });
   telemetry.logEvent({ type: "olympics.run", phase: "start", models, disciplines: disciplines.map((d) => d.id) });
 
+  /* Per-role tuning toggle (default off — legacy 2048/temp=0.2). */
+  const roleLoadConfigEnabled = opts.roleLoadConfigEnabled === true;
+  if (roleLoadConfigEnabled) {
+    log("info", "per-role load config ENABLED", {
+      hint: "models will load with role-specific contextLength and FA",
+    });
+  }
+
   /* Accumulate per-discipline results across the model loop. */
   const disciplineResults = new Map<string, OlympicsModelResult[]>();
   for (const d of disciplines) disciplineResults.set(d.id, []);
 
   let skippedModels = 0;
+
+  /* Pre-compute roles per model (vision-capability-aware) to choose load config. */
+  const rolesByModel = new Map<string, ModelRole[]>();
+  for (const info of selectedInfos) {
+    const isVision = visionCapableKeys.has(info.key);
+    const rolesForModel = new Set<ModelRole>();
+    for (const d of disciplines) {
+      const role = d.role as ModelRole;
+      const isVisionDisc = role === "vision_meta" || role === "vision_ocr"
+        || role === "vision_illustration" || (d.role === "vision");
+      if (isVisionDisc && !isVision) continue;
+      /* Skip legacy "vision" — not in ModelRole type. */
+      if (d.role === "vision") continue;
+      rolesForModel.add(role);
+    }
+    rolesByModel.set(info.key, [...rolesForModel]);
+  }
 
   for (const modelInfo of selectedInfos) {
     if (opts.signal?.aborted) break;
@@ -2439,7 +2549,9 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
     }
 
     opts.onProgress?.({ type: "olympics.model.loading", model: modelKey });
-    const loadResult = await lmsLoadModel(lmsUrl, modelKey, log, opts.signal);
+    const rolesForModel = rolesByModel.get(modelKey) ?? [];
+    const modelLoadConfig = computeOlympicsLoadConfig(rolesForModel, roleLoadConfigEnabled);
+    const loadResult = await lmsLoadModel(lmsUrl, modelKey, log, opts.signal, modelLoadConfig);
     if (!loadResult.ok) {
       log("warn", `не удалось загрузить — чистим возможный поздний load и пропускаем`, { modelKey, reason: loadResult.reason });
       await lmsUnloadAllInstancesForModel(lmsUrl, modelKey, log);
@@ -2463,8 +2575,23 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
         opts.onProgress?.({ type: "olympics.discipline.start", discipline: d.id, role: d.role });
 
         const useReasoning = reasoningCapableKeys.has(modelKey) && d.role === "crystallizer";
+        /* Per-role inference defaults — only when feature flag enabled.
+         * Otherwise legacy: temp=0.6 для reasoning crystallizer, 0.2 иначе. */
+        let temperature: number;
+        let topP: number | undefined;
+        if (roleLoadConfigEnabled && d.role !== "vision") {
+          const inf = getRoleInferenceDefaults(d.role as ModelRole);
+          /* Reasoning models на crystallizer всё равно получают 0.6 для CoT —
+           * перебивает дисциплинарный default 0.1. */
+          temperature = useReasoning ? Math.max(inf.temperature, 0.6) : inf.temperature;
+          topP = inf.topP;
+        } else {
+          temperature = useReasoning ? 0.6 : 0.2;
+          topP = undefined;
+        }
         const r = await lmsChat(lmsUrl, modelKey, d.system, d.user, {
-          temperature: useReasoning ? 0.6 : 0.2,
+          temperature,
+          topP,
           maxTokens: d.maxTokens,
           timeoutMs: opts.perDisciplineTimeoutMs ?? 90_000,
           signal: opts.signal,

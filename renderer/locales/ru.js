@@ -493,6 +493,8 @@ export default {
   "models.olympics.option.test_all": "Тестировать ВСЕ модели",
   "models.olympics.option.test_all_hint": "Игнорирует фильтр по классу — займёт больше времени, но проверит каждую загруженную модель.",
   "models.olympics.option.weight_classes": "Класс моделей:",
+  "models.olympics.option.role_tuning": "Per-role tuning",
+  "models.olympics.option.role_tuning_hint": "Грузить каждую модель с оптимальным contextLength + FlashAttention под роли. Нужно ≥ 8 ГБ VRAM. Без флага — все модели грузятся одинаково (2K контекст).",
   "models.olympics.role.tests": "тестов",
   "models.card.from_disk": "На диске (загрузить в память)",
   "models.load.hint": "Выберите GGUF, уже скачанный в LM Studio, затем «Загрузить». Разгрузка на GPU подстраивается под профиль железа ниже.",

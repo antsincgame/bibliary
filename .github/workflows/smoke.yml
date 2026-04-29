@@ -39,13 +39,15 @@ jobs:
 
       # Самые критичные тесты: грязные файлы + классификация + fallback.
       # Если хотя бы они падают — PR не должен мержиться.
-      - name: Critical tests (dirty-world + classifier + fallback + delta + olympics policy + scorers)
+      - name: Critical tests (dirty-world + classifier + fallback + delta + olympics + role-tuning)
         run: |
           node --import tsx --test \
             tests/ingest-dirty-world.test.ts \
             tests/olympics-weights.test.ts \
             tests/olympics-thinking-policy.test.ts \
             tests/olympics-scorers.test.ts \
+            tests/role-load-config.test.ts \
+            tests/olympics-load-config-integration.test.ts \
             tests/librarian.test.ts \
             tests/folder-bundle.test.ts \
             tests/magic-bytes.test.ts \

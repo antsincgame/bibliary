@@ -56,6 +56,8 @@ export function registerArenaIpc(): void {
       if (win && !win.isDestroyed()) win.webContents.send(channel, data);
     };
 
+    /* Read prefs once for per-role tuning toggle. */
+    const prefs = await getPreferencesStore().getAll();
     try {
       const report = await runOlympics({
         models: Array.isArray(args.models) ? (args.models as string[]) : undefined,
@@ -64,6 +66,7 @@ export function registerArenaIpc(): void {
         weightClasses: Array.isArray(args.weightClasses) ? (args.weightClasses as Array<"xs"|"s"|"m"|"l"|"xl"|"unknown">) : undefined,
         testAll: args.testAll === true,
         roles: Array.isArray(args.roles) ? (args.roles as OlympicsRole[]) : undefined,
+        roleLoadConfigEnabled: prefs.olympicsRoleLoadConfigEnabled === true,
         signal: ctrl.signal,
         onProgress: (ev) => send("arena:olympics-progress", ev),
       });

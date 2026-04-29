@@ -419,7 +419,7 @@ function buildOlympicsCard() {
   return el("section", { class: "mp-card mp-card-compact mp-olympics-card" }, [
     el("h2", { class: "mp-card-title" }, t("models.olympics.title")),
     el("p", { class: "mp-card-sub" }, t("models.olympics.sub")),
-    /* Опции: режим testAll + размах класса */
+    /* Опции: режим testAll + размах класса + per-role tuning */
     el("div", { class: "mp-olympics-options" }, [
       el("label", { class: "mp-olympics-option" }, [
         el("input", { id: "mp-olympics-testall", type: "checkbox" }),
@@ -438,6 +438,26 @@ function buildOlympicsCard() {
           sel.value = "s,m";
           return sel;
         })(),
+      ]),
+      el("label", { class: "mp-olympics-option" }, [
+        (() => {
+          const cb = el("input", { id: "mp-olympics-role-tuning", type: "checkbox" });
+          /* Подгружаем текущее значение из prefs (асинхронно — не блокируем render). */
+          if (window.api?.preferences?.getAll) {
+            void window.api.preferences.getAll().then((prefs) => {
+              cb.checked = prefs?.olympicsRoleLoadConfigEnabled === true;
+            }).catch(() => { /* ignore */ });
+          }
+          /* Сохраняем при изменении. */
+          cb.addEventListener("change", () => {
+            if (window.api?.preferences?.set) {
+              void window.api.preferences.set({ olympicsRoleLoadConfigEnabled: cb.checked });
+            }
+          });
+          return cb;
+        })(),
+        el("span", {}, t("models.olympics.option.role_tuning")),
+        el("span", { class: "mp-olympics-option-hint" }, t("models.olympics.option.role_tuning_hint")),
       ]),
     ]),
     /* Per-role checkboxes — позволяют запускать только нужные роли */
@@ -935,12 +955,10 @@ function renderOlympicsReport(report) {
   }
 
   /** Активировать вкладку по индексу. */
-  let activeTabIdx = 0;
   const tabButtons = [];
   const tabPanels = [];
 
   function setActiveTab(idx) {
-    activeTabIdx = idx;
     for (let i = 0; i < tabButtons.length; i++) {
       tabButtons[i].classList.toggle("active", i === idx);
       tabButtons[i].setAttribute("aria-selected", i === idx ? "true" : "false");
