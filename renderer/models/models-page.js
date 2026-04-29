@@ -655,15 +655,31 @@ function renderOlympicsReport(report) {
     root.appendChild(warnBox);
   }
 
-  /* ── Медальный зачёт ── */
+  /* ── Медальный зачёт с BT-MLE и capabilities ── */
+  const caps = report.modelCapabilities ?? {};
+  const btScores = report.btScores ?? {};
+
+  function capBadges(modelKey) {
+    const c = caps[modelKey];
+    if (!c) return "";
+    const badges = [];
+    if (c.vision) badges.push("👁");
+    if (c.reasoning) badges.push("🧠");
+    if (c.toolUse) badges.push("🔧");
+    if (c.paramsString) badges.push(c.paramsString);
+    return badges.length > 0 ? ` [${badges.join(" ")}]` : "";
+  }
+
   const medalsBox = el("div", { class: "mp-olympics-medals" }, [
     el("h3", {}, t("models.olympics.leaderboard")),
     ...((report.medals ?? []).map((row, i) => {
       const icon = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "  ";
+      const btScore = btScores[row.model];
+      const btStr = typeof btScore === "number" ? ` · BT: ${Math.round(btScore * 100)}` : "";
       return el("div", { class: "mp-olympics-medal-row" }, [
         el("span", { class: "mp-olympics-medals-rank" }, icon),
-        el("span", { class: "mp-olympics-medal-model" }, row.model),
-        el("span", { class: "mp-olympics-medals-cell" }, `${row.gold}🥇 ${row.silver}🥈 ${row.bronze}🥉`),
+        el("span", { class: "mp-olympics-medal-model" }, row.model + capBadges(row.model)),
+        el("span", { class: "mp-olympics-medals-cell" }, `${row.gold}🥇 ${row.silver}🥈 ${row.bronze}🥉${btStr}`),
         el("span", { class: "mp-olympics-medals-time" }, `${(row.totalDurationMs / 1000).toFixed(1)}s`),
       ]);
     })),
@@ -746,7 +762,7 @@ function renderOlympicsReport(report) {
           `${(agg.disciplines ?? []).length} ${t("models.olympics.role.tests")}`),
       ]),
 
-      /* Top-3 модели со средними показателями */
+      /* Top-3 модели со средними показателями + capabilities */
       el("div", { class: "mp-olympics-role-top" },
         top.map((p, i) => {
           const podium = ["🥇", "🥈", "🥉"][i] ?? "  ";
@@ -757,12 +773,15 @@ function renderOlympicsReport(report) {
           const tags = [];
           if (isChamp) tags.push(el("span", { class: "mp-olympics-tag mp-olympics-tag-champion" }, "ЧЕМПИОН"));
           if (isOpt) tags.push(el("span", { class: "mp-olympics-tag mp-olympics-tag-optimum" }, "ОПТИМУМ"));
+          const capStr = capBadges(p.model);
+          const btScore = btScores[p.model];
+          const btStr = typeof btScore === "number" ? ` BT:${Math.round(btScore * 100)}` : "";
           const level = score >= 70 ? "good" : score >= 40 ? "mid" : "bad";
           return el("div", { class: `mp-olympics-role-row mp-olympics-row-${level}` }, [
             el("span", { class: "mp-olympics-role-rank" }, podium),
-            el("span", { class: "mp-olympics-role-model" }, p.model),
+            el("span", { class: "mp-olympics-role-model" }, p.model + capStr),
             el("span", { class: "mp-olympics-role-stats" },
-              `${score}/100 (min ${minScore}) · ${(p.avgDurationMs / 1000).toFixed(1)}s`),
+              `${score}/100 (min ${minScore}) · ${(p.avgDurationMs / 1000).toFixed(1)}s${btStr}`),
             ...tags,
           ]);
         })

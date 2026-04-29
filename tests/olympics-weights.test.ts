@@ -1,9 +1,11 @@
-/* Olympics: weight-class classification + optimum vs champion logic. */
+/* Olympics: weight-class classification + optimum vs champion + BT-MLE. */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   classifyWeight,
   pickModelsForOlympics,
+  pickModelsForOlympicsV1,
+  type LmsModelInfo,
 } from "../electron/lib/llm/arena/olympics.ts";
 
 test("classifyWeight: parses size markers in model names", () => {
@@ -67,6 +69,66 @@ test("pickModelsForOlympics: family diversification within class", () => {
     "mistralai/ministral-3b",
   ];
   const picked = pickModelsForOlympics(all, undefined, 4, ["s"]);
-  /* После 2-х qwen семейство «qwen» блокируется, mistral попадает следующим. */
   assert.ok(picked.includes("mistralai/ministral-3b"), `mistral should be included; got ${picked.join(", ")}`);
+});
+
+/* ─── New tests: paramsString-based weight classification ──────────── */
+
+test("classifyWeight: uses paramsString when available (v1 API)", () => {
+  assert.equal(classifyWeight("custom-model-no-marker", "4B"), "s");
+  assert.equal(classifyWeight("custom-model-no-marker", "27B"), "l");
+  assert.equal(classifyWeight("custom-model-no-marker", "671B"), "xl");
+  assert.equal(classifyWeight("custom-model-no-marker", "0.6B"), "xs");
+  assert.equal(classifyWeight("custom-model-no-marker", "26B-A4B"), "l");
+  assert.equal(classifyWeight("zai-org/glm-4.7-flash", null), "unknown");
+  assert.equal(classifyWeight("custom-model-9b", "9B"), "m");
+});
+
+test("classifyWeight: paramsString overrides name-based guess", () => {
+  assert.equal(classifyWeight("my-model-3b", "12B"), "m");
+  assert.equal(classifyWeight("model-70b", "4B"), "s");
+});
+
+/* ─── pickModelsForOlympicsV1: capability-aware selection ─────────── */
+
+function makeFakeModel(key: string, overrides: Partial<LmsModelInfo> = {}): LmsModelInfo {
+  return {
+    key, type: "llm", publisher: "", displayName: key, architecture: "",
+    quantization: { name: "Q4_K_M", bits_per_weight: 4 }, sizeBytes: 0,
+    paramsString: null, loadedInstances: [], maxContextLength: 0, format: "gguf",
+    capabilities: { vision: false, trained_for_tool_use: false }, description: null,
+    ...overrides,
+  };
+}
+
+test("pickModelsForOlympicsV1: uses paramsString for weight classification", () => {
+  const models = [
+    makeFakeModel("custom-alpha", { paramsString: "4B" }),
+    makeFakeModel("custom-beta", { paramsString: "9B" }),
+    makeFakeModel("custom-gamma", { paramsString: "27B" }),
+  ];
+  const picked = pickModelsForOlympicsV1(models, undefined, 3, ["s"]);
+  assert.equal(picked.length, 1);
+  assert.equal(picked[0].key, "custom-alpha");
+});
+
+test("pickModelsForOlympicsV1: prefers loaded models", () => {
+  const models = [
+    makeFakeModel("model-a-4b", { paramsString: "4B" }),
+    makeFakeModel("model-b-4b", { paramsString: "4B", loadedInstances: [{ id: "model-b-4b", config: {} }] }),
+  ];
+  const picked = pickModelsForOlympicsV1(models, undefined, 1, ["s"]);
+  assert.equal(picked[0].key, "model-b-4b", "loaded model should be preferred");
+});
+
+test("pickModelsForOlympicsV1: diversifies by architecture", () => {
+  const models = [
+    makeFakeModel("pub/qwen-a-4b", { paramsString: "4B", architecture: "qwen3" }),
+    makeFakeModel("pub/qwen-b-4b", { paramsString: "4B", architecture: "qwen3" }),
+    makeFakeModel("pub/gemma-4b", { paramsString: "4B", architecture: "gemma4" }),
+    makeFakeModel("pub/mistral-3b", { paramsString: "3B", architecture: "mistral3" }),
+  ];
+  const picked = pickModelsForOlympicsV1(models, undefined, 3, ["s"]);
+  const archs = new Set(picked.map((p) => p.architecture));
+  assert.ok(archs.size >= 2, `expected >=2 architectures, got: ${[...archs].join(", ")}`);
 });

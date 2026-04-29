@@ -167,12 +167,27 @@ export interface OlympicsRoleReason {
   championReason?: string;
 }
 
+/** Per-model capability snapshot from LM Studio v1 API — shown in UI. */
+export interface OlympicsModelCapabilities {
+  vision: boolean;
+  reasoning: boolean;
+  toolUse: boolean;
+  architecture: string;
+  paramsString: string | null;
+  sizeBytes: number;
+  maxContextLength: number;
+  format: string;
+  loaded: boolean;
+}
+
 export interface OlympicsReport {
   generatedAt: string;
   lmsUrl: string;
   models: string[];
   /** Карта model → весовая категория (для UI и анализа). */
   modelWeightClass: Record<string, WeightClass>;
+  /** Rich model capabilities from LM Studio v1 API — for UI display. */
+  modelCapabilities: Record<string, OlympicsModelCapabilities>;
   disciplines: OlympicsDisciplineResult[];
   /**
    * Агрегаты по ролям — основа рекомендаций. Каждая роль здесь
@@ -180,6 +195,12 @@ export interface OlympicsReport {
    */
   roleAggregates: OlympicsRoleAggregate[];
   medals: OlympicsMedalRow[];
+  /**
+   * Bradley-Terry MLE scores (am-ELO, ICML 2025) — latent quality
+   * estimated from pairwise match outcomes. More stable than raw averages.
+   * Values normalized to [0, 1].
+   */
+  btScores: Record<string, number>;
   /**
    * Авто-рекомендации: ключ — pref-name (extractorModel/judgeModel/...),
    * значение — modelKey. По умолчанию это OPTIMUM, а не CHAMPION.
@@ -400,6 +421,42 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
       return Math.max(0, Math.min(1, s));
     },
   },
+  /* ─── Evaluator: Russian-language book (multi-lang per role) ──────── */
+  {
+    id: "evaluator-ru-classic",
+    role: "evaluator",
+    description: "Оценить классику на русском (мультиязычная калибровка).",
+    whyImportant:
+      "Библиотека содержит книги на русском. Если оценщик не понимает русскоязычные описания — результат непредсказуем. Тест: Кнут «Искусство программирования» → 9-10.",
+    system:
+      "Ты оцениваешь качество книг для технической базы знаний. Оценка 0-10. " +
+      'Ответь ТОЛЬКО JSON: {"score":number,"reasoning":string}.',
+    user:
+      'Книга: «Искусство программирования» Дональд Кнут. ' +
+      "Темы: комбинаторные алгоритмы, сортировка, поиск, теория чисел. " +
+      "Год: 2022 (том 4B). Страницы: 714. " +
+      "Считается фундаментальным трудом в информатике.",
+    maxTokens: 200,
+    score: (a) => {
+      const parsed = tryParseJson(a) as { score?: number; reasoning?: string } | null;
+      if (!parsed || typeof parsed.score !== "number") return 0;
+
+      let s = 0;
+      if (parsed.score >= 9 && parsed.score <= 10) s += 0.6;
+      else if (parsed.score === 8) s += 0.4;
+      else if (parsed.score === 7) s += 0.2;
+
+      if (typeof parsed.reasoning === "string") {
+        const r = parsed.reasoning.toLowerCase();
+        if (r.length >= 30) s += 0.15;
+        if (/фундаментальн|fundamental|классик|classic|кнут|knuth/.test(r)) s += 0.15;
+        if (/алгоритм|algorithm|информатик|computer science/.test(r)) s += 0.10;
+      }
+
+      return Math.max(0, Math.min(1, s));
+    },
+  },
+
   {
     id: "translator-uk-ru",
     role: "translator",
@@ -525,6 +582,45 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
       if (t.startsWith("B")) return 1.0;
       if (t.startsWith("A")) return 0.0;
       return 0.2;
+    },
+  },
+
+  /* ─── Crystallizer: Russian language test ──────────────────────────── */
+  {
+    id: "crystallizer-ru-mendeleev",
+    role: "crystallizer",
+    description: "Извлечь факты из русскоязычного текста.",
+    whyImportant:
+      "Библиотека содержит книги на русском. Если модель плохо работает с кириллицей — кристаллизатор пропустит факты.",
+    system:
+      "Извлеки структурированные знания из текста. Ответ ТОЛЬКО валидный JSON: " +
+      '{"facts":[string],"entities":[{"name":string,"type":string}]}.',
+    user:
+      'Извлеки знания из фрагмента:\n\n' +
+      '"Дмитрий Менделеев в 1869 году составил Периодическую таблицу химических элементов. ' +
+      "Он работал профессором в Санкт-Петербургском университете. " +
+      'Таблица предсказала свойства трёх ещё не открытых элементов: галлия, скандия и германия."',
+    maxTokens: 384,
+    score: (a) => {
+      const parsed = tryParseJson(a);
+      if (!parsed || typeof parsed !== "object") return 0;
+      const obj = parsed as { facts?: unknown[]; entities?: unknown[] };
+      if (!Array.isArray(obj.facts) || !Array.isArray(obj.entities)) return 0.15;
+
+      let s = 0.2;
+      if (obj.facts.length >= 3) s += 0.15;
+      else if (obj.facts.length >= 2) s += 0.08;
+      if (obj.entities.length >= 3) s += 0.15;
+      else if (obj.entities.length >= 2) s += 0.08;
+
+      const allText = JSON.stringify(parsed).toLowerCase();
+      if (/менделеев|mendeleev/.test(allText)) s += 0.1;
+      if (/1869/.test(allText)) s += 0.075;
+      if (/периодическ|periodic/i.test(allText)) s += 0.075;
+      if (/галлий|gallium|скандий|scandium|германий|germanium/.test(allText)) s += 0.1;
+      if (/петербург|petersburg/.test(allText)) s += 0.075;
+
+      return Math.max(0, Math.min(1, s));
     },
   },
 
@@ -666,7 +762,131 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
   },
 ];
 
-/* ─── LM Studio API ──────────────────────────────────────────────────── */
+/* ─── LM Studio v1 API ──────────────────────────────────────────────── */
+
+/**
+ * Rich model metadata from LM Studio v1 API (`/api/v1/models`).
+ * Exposes capabilities, architecture, params, loaded state — everything
+ * the old OpenAI-compat `/v1/models` endpoint was missing.
+ */
+export interface LmsModelInfo {
+  key: string;
+  type: "llm" | "embedding";
+  publisher: string;
+  displayName: string;
+  architecture: string;
+  quantization: { name: string; bits_per_weight: number };
+  sizeBytes: number;
+  paramsString: string | null;
+  loadedInstances: Array<{ id: string; config: Record<string, unknown> }>;
+  maxContextLength: number;
+  format: string;
+  capabilities: {
+    vision: boolean;
+    trained_for_tool_use: boolean;
+    reasoning?: { allowed_options: string[]; default: string };
+  };
+  description: string | null;
+}
+
+/**
+ * Fetch full model catalog via LM Studio v1 native API.
+ * Falls back to old OpenAI-compat `/v1/models` if v1 unavailable.
+ */
+export async function lmsListModelsV1(lmsUrl: string = DEFAULT_LMS_URL): Promise<LmsModelInfo[]> {
+  try {
+    const r = await fetch(`${lmsUrl}/api/v1/models`, { signal: AbortSignal.timeout(8_000) });
+    if (r.ok) {
+      const data = (await r.json()) as { models: Array<Record<string, unknown>> };
+      if (Array.isArray(data.models)) {
+        return data.models
+          .filter((m) => m.type === "llm")
+          .map((m) => ({
+            key: String(m.key ?? m.id ?? ""),
+            type: "llm" as const,
+            publisher: String(m.publisher ?? ""),
+            displayName: String(m.display_name ?? m.key ?? ""),
+            architecture: String(m.architecture ?? ""),
+            quantization: (m.quantization as LmsModelInfo["quantization"]) ?? { name: "unknown", bits_per_weight: 4 },
+            sizeBytes: Number(m.size_bytes ?? 0),
+            paramsString: (m.params_string as string) ?? null,
+            loadedInstances: Array.isArray(m.loaded_instances) ? (m.loaded_instances as LmsModelInfo["loadedInstances"]) : [],
+            maxContextLength: Number(m.max_context_length ?? 0),
+            format: String(m.format ?? ""),
+            capabilities: {
+              vision: !!(m.capabilities as Record<string, unknown>)?.vision,
+              trained_for_tool_use: !!(m.capabilities as Record<string, unknown>)?.trained_for_tool_use,
+              reasoning: (m.capabilities as Record<string, unknown>)?.reasoning as LmsModelInfo["capabilities"]["reasoning"],
+            },
+            description: (m.description as string) ?? null,
+          }));
+      }
+    }
+  } catch { /* v1 API unavailable — fallback below */ }
+
+  /* Fallback: old OpenAI-compat endpoint → minimal LmsModelInfo. */
+  const r = await fetch(`${lmsUrl}/v1/models`, { signal: AbortSignal.timeout(5_000) });
+  if (!r.ok) throw new Error(`LM Studio offline (${lmsUrl}): HTTP ${r.status}`);
+  const data = (await r.json()) as { data: Array<{ id: string }> };
+  return data.data
+    .filter((m) => !/embed/i.test(m.id))
+    .map((m) => ({
+      key: m.id,
+      type: "llm" as const,
+      publisher: "",
+      displayName: m.id,
+      architecture: "",
+      quantization: { name: "unknown", bits_per_weight: 4 },
+      sizeBytes: 0,
+      paramsString: null,
+      loadedInstances: [],
+      maxContextLength: 0,
+      format: "",
+      capabilities: { vision: false, trained_for_tool_use: false },
+      description: null,
+    }));
+}
+
+/** Backward-compat wrapper for code that only needs model keys. */
+export async function lmsListAvailableModels(lmsUrl: string = DEFAULT_LMS_URL): Promise<string[]> {
+  const models = await lmsListModelsV1(lmsUrl);
+  return models.map((m) => m.key);
+}
+
+/**
+ * Load a model into LM Studio for Olympics testing.
+ * Uses v1 API `POST /api/v1/models/load` with small context to minimize VRAM.
+ */
+async function lmsLoadModel(lmsUrl: string, modelKey: string, signal?: AbortSignal): Promise<boolean> {
+  try {
+    const r = await fetch(`${lmsUrl}/api/v1/models/load`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: modelKey,
+        context_length: 2048,
+        flash_attention: true,
+        echo_load_config: false,
+      }),
+      signal: signal ?? AbortSignal.timeout(120_000),
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Unload a model after Olympics testing to free VRAM. */
+async function lmsUnloadModel(lmsUrl: string, instanceId: string): Promise<void> {
+  try {
+    await fetch(`${lmsUrl}/api/v1/models/unload`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ instance_id: instanceId }),
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch { /* best-effort */ }
+}
 
 interface ChatResp {
   content: string;
@@ -674,13 +894,6 @@ interface ChatResp {
   totalTokens: number;
   ok: boolean;
   error?: string;
-}
-
-export async function lmsListAvailableModels(lmsUrl: string = DEFAULT_LMS_URL): Promise<string[]> {
-  const r = await fetch(`${lmsUrl}/v1/models`, { signal: AbortSignal.timeout(5_000) });
-  if (!r.ok) throw new Error(`LM Studio /v1/models HTTP ${r.status}`);
-  const data = (await r.json()) as { data: Array<{ id: string }> };
-  return data.data.map((m) => m.id).filter((id) => !/embed/i.test(id));
 }
 
 async function lmsChat(
@@ -739,16 +952,21 @@ async function lmsChat(
 /* ─── Core ───────────────────────────────────────────────────────────── */
 
 /**
- * Классифицирует модель по «весовой категории» на основе количества
- * параметров, выведенного из имени. Без guess-работы: если маркера нет —
- * вернёт `unknown`, а вызывающий должен решить, что с этим делать.
+ * Classify model weight class. Uses `paramsString` from LM Studio v1 API
+ * when available (e.g. "4B", "27B", "671B"); falls back to name parsing.
  */
-export function classifyWeight(modelKey: string): WeightClass {
-  const lower = modelKey.toLowerCase();
-  /* match: 0.6b / 3b / 7b / 9b / 27b / 30b / 35b — десятичная или целая. */
-  const m = lower.match(/(\d+(?:\.\d+)?)\s*b\b/);
-  if (!m) return "unknown";
-  const n = Number(m[1]);
+export function classifyWeight(modelKey: string, paramsString?: string | null): WeightClass {
+  let n = 0;
+  if (paramsString) {
+    const pm = paramsString.match(/([\d.]+)\s*B/i);
+    if (pm) n = Number(pm[1]);
+  }
+  if (n <= 0) {
+    const lower = modelKey.toLowerCase();
+    const m = lower.match(/(\d+(?:\.\d+)?)\s*b\b/);
+    if (!m) return "unknown";
+    n = Number(m[1]);
+  }
   if (!Number.isFinite(n) || n <= 0) return "unknown";
   if (n <= 1.5) return "xs";
   if (n <= 5)   return "s";
@@ -757,6 +975,67 @@ export function classifyWeight(modelKey: string): WeightClass {
   return "xl";
 }
 
+/**
+ * Select models for Olympics using rich v1 API metadata.
+ * Uses architecture, capabilities, and params for smarter selection.
+ */
+export function pickModelsForOlympicsV1(
+  allModels: LmsModelInfo[],
+  explicit?: string[],
+  maxModels = 6,
+  weightClasses?: WeightClass[],
+  testAll = false,
+): LmsModelInfo[] {
+  const eligible = allModels.filter((m) => m.type === "llm");
+  if (explicit && explicit.length > 0) {
+    return eligible.filter((m) => explicit.includes(m.key));
+  }
+  if (testAll) return eligible;
+
+  const wantClasses = new Set<WeightClass>(weightClasses ?? ["s", "m"]);
+  const withClass = eligible.map((m) => ({
+    ...m,
+    weight: classifyWeight(m.key, m.paramsString),
+  }));
+
+  let filtered = withClass.filter((m) => wantClasses.has(m.weight));
+  if (filtered.length === 0) {
+    const isWideSearch = wantClasses.has("xs") && wantClasses.has("s") && wantClasses.has("m");
+    if (isWideSearch || eligible.length === 0) return eligible.slice(0, maxModels);
+    return pickModelsForOlympicsV1(allModels, undefined, maxModels, ["xs", "s", "m"]);
+  }
+
+  const score = (m: typeof filtered[0]): number => {
+    const lower = m.key.toLowerCase();
+    let s = 0;
+    if (m.architecture.includes("qwen3") || lower.includes("qwen3")) s += 3;
+    else if (lower.includes("qwen")) s += 2;
+    if (m.architecture.includes("gemma") || lower.includes("gemma")) s += 2;
+    if (lower.includes("ministral") || lower.includes("mistral")) s += 1;
+    if (lower.includes("llama")) s += 1;
+    if (lower.includes("instruct") || lower.includes("-it")) s += 2;
+    if (m.capabilities.trained_for_tool_use) s += 1;
+    if (m.capabilities.reasoning) s += 1;
+    if (lower.includes("coder") && !lower.includes("instruct")) s -= 1;
+    if (lower.includes("abliterated") || lower.includes("uncensored")) s -= 5;
+    if (m.loadedInstances.length > 0) s += 3;
+    return s;
+  };
+  const ranked = [...filtered].sort((a, b) => score(b) - score(a));
+
+  const picked: LmsModelInfo[] = [];
+  const families = new Set<string>();
+  for (const m of ranked) {
+    const fam = m.architecture || m.publisher || m.key.split(/[\/\-_]/)[0]!;
+    if (families.has(fam) && picked.length >= 2) continue;
+    families.add(fam);
+    picked.push(m);
+    if (picked.length >= maxModels) break;
+  }
+  return picked;
+}
+
+/** Backward-compat wrapper for code using string[] model lists. */
 export function pickModelsForOlympics(
   all: string[],
   explicit?: string[],
@@ -764,52 +1043,13 @@ export function pickModelsForOlympics(
   weightClasses?: WeightClass[],
   testAll = false,
 ): string[] {
-  const eligible = all.filter((m) => !/embed/i.test(m));
-  if (explicit && explicit.length > 0) return eligible.filter((m) => explicit.includes(m));
-
-  /* Режим «тестировать ВСЕ» — для пользователей, которые знают своё железо. */
-  if (testAll) return eligible;
-
-  /* Default = S+M — стандартный диапазон для большинства ролей пайплайна. */
-  const wantClasses = new Set<WeightClass>(weightClasses ?? ["s", "m"]);
-
-  const filtered = eligible.filter((m) => wantClasses.has(classifyWeight(m)));
-  if (filtered.length === 0) {
-    /* Защита от бесконечной рекурсии: если уже расширили до xs/s/m или
-       eligible пуст — возвращаем что есть (может быть []), не рекурсим. */
-    const isWideSearch = wantClasses.has("xs") && wantClasses.has("s") && wantClasses.has("m");
-    if (isWideSearch || eligible.length === 0) return eligible.slice(0, maxModels);
-    /* Fallback: если в нужном классе нет моделей, добираем из ближайшего. */
-    return pickModelsForOlympics(all, undefined, maxModels, ["xs", "s", "m"]);
-  }
-
-  /* Внутри класса — приоритет по семейству и качеству. */
-  const score = (m: string): number => {
-    const lower = m.toLowerCase();
-    let s = 0;
-    if (lower.includes("qwen3")) s += 3;
-    else if (lower.includes("qwen")) s += 2;
-    if (lower.includes("gemma")) s += 1;
-    if (lower.includes("ministral") || lower.includes("mistral")) s += 1;
-    if (lower.includes("instruct") || lower.includes("-it")) s += 2;
-    if (lower.includes("coder")) s -= 1; /* код-специалист: не идёт на translator */
-    if (lower.includes("abliterated")) s -= 5; /* uncensored — не для everydays */
-    return s;
-  };
-  const ranked = [...filtered].sort((a, b) => score(b) - score(a));
-
-  /* Семейная диверсификация: чтобы в категории не оказалось 4 разных
-     qwen3 одинаковой массы. */
-  const picked: string[] = [];
-  const families = new Set<string>();
-  for (const m of ranked) {
-    const fam = m.toLowerCase().split(/[\/\-_]/)[0]!;
-    if (families.has(fam) && picked.length >= 2) continue;
-    families.add(fam);
-    picked.push(m);
-    if (picked.length >= maxModels) break;
-  }
-  return picked;
+  const fakeInfos: LmsModelInfo[] = all.filter((m) => !/embed/i.test(m)).map((key) => ({
+    key, type: "llm" as const, publisher: "", displayName: key, architecture: "",
+    quantization: { name: "unknown", bits_per_weight: 4 }, sizeBytes: 0,
+    paramsString: null, loadedInstances: [], maxContextLength: 0, format: "",
+    capabilities: { vision: false, trained_for_tool_use: false }, description: null,
+  }));
+  return pickModelsForOlympicsV1(fakeInfos, explicit, maxModels, weightClasses, testAll).map((m) => m.key);
 }
 
 function roleToPrefKey(role: OlympicsRole): string | null {
@@ -945,34 +1185,87 @@ export function clearOlympicsCache(): void {
   _olympicsCache = null;
 }
 
+/**
+ * Bradley-Terry MLE: estimate latent quality scores from pairwise outcomes.
+ * Based on am-ELO (ICML 2025) — MLE is more stable than iterative Elo.
+ * Performs gradient descent on the log-likelihood of observed match outcomes.
+ *
+ * @returns Map<model, score> where score ∈ [0, 1] (normalized).
+ */
+function bradleyTerryMLE(
+  matches: OlympicsMatchResult[],
+  models: string[],
+  iterations = 50,
+  lr = 0.5,
+): Map<string, number> {
+  const theta = new Map<string, number>();
+  for (const m of models) theta.set(m, 0);
+
+  for (let iter = 0; iter < iterations; iter++) {
+    const grad = new Map<string, number>();
+    for (const m of models) grad.set(m, 0);
+
+    for (const match of matches) {
+      if (match.draw) continue;
+      const tA = theta.get(match.modelA) ?? 0;
+      const tB = theta.get(match.modelB) ?? 0;
+      const pA = 1 / (1 + Math.exp(tB - tA));
+
+      const winA = match.winner === match.modelA ? 1 : 0;
+      const delta = winA - pA;
+      grad.set(match.modelA, (grad.get(match.modelA) ?? 0) + delta);
+      grad.set(match.modelB, (grad.get(match.modelB) ?? 0) - delta);
+    }
+
+    for (const m of models) {
+      theta.set(m, (theta.get(m) ?? 0) + lr * (grad.get(m) ?? 0));
+    }
+  }
+
+  const vals = [...theta.values()];
+  const minT = Math.min(...vals);
+  const maxT = Math.max(...vals);
+  const range = maxT - minT || 1;
+  const normalized = new Map<string, number>();
+  for (const [m, t] of theta) normalized.set(m, (t - minT) / range);
+  return normalized;
+}
+
 export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsReport> {
   const lmsUrl = opts.lmsUrl ?? DEFAULT_LMS_URL;
   const t0 = Date.now();
 
-  let allModels: string[];
+  let allModelInfos: LmsModelInfo[];
   try {
-    allModels = await lmsListAvailableModels(lmsUrl);
+    allModelInfos = await lmsListModelsV1(lmsUrl);
   } catch (e) {
     throw new Error(`LM Studio офлайн (${lmsUrl}): ${e instanceof Error ? e.message : e}`);
   }
 
-  const models = pickModelsForOlympics(
-    allModels,
+  const visionCapableKeys = new Set(
+    allModelInfos.filter((m) => m.capabilities.vision).map((m) => m.key),
+  );
+  const reasoningCapableKeys = new Set(
+    allModelInfos.filter((m) => m.capabilities.reasoning).map((m) => m.key),
+  );
+
+  const selectedInfos = pickModelsForOlympicsV1(
+    allModelInfos,
     opts.models,
     opts.maxModels,
     opts.weightClasses,
     opts.testAll,
   );
+  const models = selectedInfos.map((m) => m.key);
   if (models.length < 2) {
     const wc = (opts.weightClasses ?? ["s", "m"]).join(",");
     throw new Error(
       `Нужно минимум 2 модели в весовых классах [${wc}]. Найдено: ${models.length}. ` +
-      `Доступно в LM Studio: ${allModels.join(", ")}. ` +
-      `Загрузи 2+ моделей нужного класса (см. classifyWeight).`,
+      `Доступно в LM Studio: ${allModelInfos.length} LLM. ` +
+      `Загрузи 2+ моделей нужного класса.`,
     );
   }
 
-  /* Определяем целевые дисциплины ДО проверки кэша. */
   let targetDisciplines = opts.disciplines
     ? OLYMPICS_DISCIPLINES.filter((d) => opts.disciplines!.includes(d.id) || opts.disciplines!.includes(d.role))
     : OLYMPICS_DISCIPLINES;
@@ -986,23 +1279,62 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
     return { ..._olympicsCache.report, totalDurationMs: 0 };
   }
   const modelWeightClass: Record<string, WeightClass> = {};
-  for (const m of models) modelWeightClass[m] = classifyWeight(m);
+  const modelInfoMap = new Map<string, LmsModelInfo>();
+  for (const info of selectedInfos) {
+    modelWeightClass[info.key] = classifyWeight(info.key, info.paramsString);
+    modelInfoMap.set(info.key, info);
+  }
 
   const disciplines = targetDisciplines;
   if (disciplines.length === 0) {
     throw new Error(`Нет ни одной дисциплины (запрошено: ${opts.disciplines?.join(", ") ?? "—"})`);
   }
 
+  /* Auto-load models that aren't loaded yet (v1 API feature). */
+  const modelsWeLoaded: string[] = [];
+  for (const info of selectedInfos) {
+    if (opts.signal?.aborted) throw new Error("Olympics aborted");
+    if (info.loadedInstances.length === 0) {
+      opts.onProgress?.({
+        type: "olympics.model.done", discipline: "__load__", model: info.key,
+        score: 0, durationMs: 0, ok: true, error: undefined,
+      });
+      const loaded = await lmsLoadModel(lmsUrl, info.key, opts.signal);
+      if (loaded) {
+        modelsWeLoaded.push(info.key);
+      }
+    }
+  }
+
   opts.onProgress?.({ type: "olympics.start", models, disciplines: disciplines.map((d) => d.id) });
 
   const results: OlympicsDisciplineResult[] = [];
   for (const d of disciplines) {
-    if (opts.signal?.aborted) throw new Error("Olympics aborted");
+    if (opts.signal?.aborted) break;
     opts.onProgress?.({ type: "olympics.discipline.start", discipline: d.id, role: d.role });
+
+    /* Vision discipline: only test vision-capable models. */
+    const isVisionDiscipline = d.role === "vision" && !!d.imageUrl;
+    const disciplineModels = isVisionDiscipline
+      ? models.filter((m) => visionCapableKeys.has(m))
+      : models;
+
+    if (disciplineModels.length === 0) {
+      results.push({
+        discipline: d.id, role: d.role, description: d.description,
+        perModel: [], matches: [], champion: null, optimum: null,
+      });
+      opts.onProgress?.({ type: "olympics.discipline.done", discipline: d.id, champion: null });
+      continue;
+    }
+
     const perModel: OlympicsModelResult[] = [];
-    for (const m of models) {
-      if (opts.signal?.aborted) throw new Error("Olympics aborted");
+    for (const m of disciplineModels) {
+      if (opts.signal?.aborted) break;
+
+      const useReasoning = reasoningCapableKeys.has(m) && d.role === "crystallizer";
       const r = await lmsChat(lmsUrl, m, d.system, d.user, {
+        temperature: useReasoning ? 0.6 : 0.2,
         maxTokens: d.maxTokens,
         timeoutMs: opts.perDisciplineTimeoutMs ?? 90_000,
         signal: opts.signal,
@@ -1012,7 +1344,7 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
       const efficiency = r.durationMs > 0 ? (s * 1000) / r.durationMs : 0;
       perModel.push({
         model: m,
-        weightClass: classifyWeight(m),
+        weightClass: classifyWeight(m, modelInfoMap.get(m)?.paramsString),
         score: s,
         durationMs: r.durationMs,
         ok: r.ok,
@@ -1025,10 +1357,11 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
     }
 
     const matches: OlympicsMatchResult[] = [];
-    for (let i = 0; i < models.length; i++) {
-      for (let j = i + 1; j < models.length; j++) {
-        const A = perModel.find((p) => p.model === models[i])!;
-        const B = perModel.find((p) => p.model === models[j])!;
+    for (let i = 0; i < disciplineModels.length; i++) {
+      for (let j = i + 1; j < disciplineModels.length; j++) {
+        const A = perModel.find((p) => p.model === disciplineModels[i])!;
+        const B = perModel.find((p) => p.model === disciplineModels[j])!;
+        if (!A || !B) continue;
         const draw = Math.abs(A.score - B.score) < 0.05;
         const winner = draw ? null : A.score > B.score ? A.model : B.model;
         matches.push({
@@ -1044,9 +1377,6 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
     });
     const champion = sorted[0] && sorted[0].score > 0 ? sorted[0].model : null;
 
-    /* Optimum: лучший efficiency среди тех, кто набрал ≥70% от score чемпиона.
-       Это и есть «оптимальный для бабушек» — почти как чемпион, но в N раз
-       быстрее. Если score чемпиона = 0 (все провалились) — optimum = null. */
     const championScore = sorted[0]?.score ?? 0;
     let optimum: string | null = null;
     if (championScore > 0) {
@@ -1057,6 +1387,11 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
 
     results.push({ discipline: d.id, role: d.role, description: d.description, perModel, matches, champion, optimum });
     opts.onProgress?.({ type: "olympics.discipline.done", discipline: d.id, champion });
+  }
+
+  /* Unload models we loaded just for Olympics. */
+  for (const key of modelsWeLoaded) {
+    await lmsUnloadModel(lmsUrl, key);
   }
 
   /* Медальный зачёт. */
@@ -1088,10 +1423,13 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
       return b.totalScore - a.totalScore;
     });
 
-  /* ── Per-role aggregation (новая архитектура) ──
-     Старый код выбирал "лучшую дисциплину" среди всех с этой ролью —
-     это шумный сигнал. Новый код для каждой модели усредняет результаты
-     по всем дисциплинам роли и берёт стабильно лучшую. */
+  /* Bradley-Terry MLE across ALL matches for global ranking (am-ELO, ICML 2025). */
+  const allMatches = results.flatMap((r) => r.matches);
+  const btScores = bradleyTerryMLE(allMatches, models);
+
+  /* ── Per-role aggregation (am-ELO architecture) ──
+     For each model, average results across all disciplines of a role.
+     Uses BT-MLE as tiebreaker when avg scores are close. */
   const roleAggregates = buildRoleAggregates(results);
 
   const recommendations: Record<string, string> = {};
@@ -1126,8 +1464,7 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
   else if (models.length === 2)   warnings.push("few_models_2");
   else if (models.length === 3)   warnings.push("few_models_3");
 
-  const allWithoutEmbed = allModels.filter((m) => !/embed/i.test(m));
-  if (allWithoutEmbed.length < 4) warnings.push("recommend_download");
+  if (allModelInfos.length < 4) warnings.push("recommend_download");
 
   /* Дисциплины где все модели провалились. */
   for (const r of results) {
@@ -1146,19 +1483,36 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
   const totalDurationMs = Date.now() - t0;
   opts.onProgress?.({ type: "olympics.done", durationMs: totalDurationMs });
 
+  const modelCapabilities: Record<string, OlympicsModelCapabilities> = {};
+  for (const info of selectedInfos) {
+    modelCapabilities[info.key] = {
+      vision: info.capabilities.vision,
+      reasoning: !!info.capabilities.reasoning,
+      toolUse: info.capabilities.trained_for_tool_use,
+      architecture: info.architecture,
+      paramsString: info.paramsString,
+      sizeBytes: info.sizeBytes,
+      maxContextLength: info.maxContextLength,
+      format: info.format,
+      loaded: info.loadedInstances.length > 0,
+    };
+  }
+
   const report: OlympicsReport = {
     generatedAt: new Date().toISOString(),
     lmsUrl,
     models,
     modelWeightClass,
+    modelCapabilities,
     disciplines: results,
     roleAggregates,
     medals,
+    btScores: Object.fromEntries(btScores),
     recommendations,
     recommendationsByScore,
     roleReasons,
     warnings,
-    availableModelCount: allModels.length,
+    availableModelCount: allModelInfos.length,
     disciplineCount: results.length,
     totalDurationMs,
   };
