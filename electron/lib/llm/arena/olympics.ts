@@ -1797,19 +1797,24 @@ async function lmsLoadModel(
     modelKey,
     contextLength: ctxLen,
     flashAttention: fa,
-    gpuRatio: cfg.gpu?.ratio,
+    /* note: gpu/keepInMemory/tryMmap пока не передаём в REST — только для SDK-route. */
+    desiredGpuRatio: cfg.gpu?.ratio,
+    desiredKeepInMem: cfg.keepModelInMemory,
   });
   telemetry.logEvent({ type: "olympics.model_lifecycle", phase: "load_start", modelKey });
-  /* Build LM Studio /api/v1/models/load body, omitting undefined fields. */
+  /* LM Studio REST API /api/v1/models/load принимает ТОЛЬКО эти поля.
+   * Rich-параметры (keepModelInMemory, tryMmap, gpu) живут в TypeScript SDK
+   * @lmstudio/sdk и в REST не передаются — иначе HTTP 400 "Unrecognized key(s)".
+   * См. docs/audits/2026-04-30-lmstudio-rest-vs-sdk.md (готовится).
+   *
+   * Поля cfg.keepModelInMemory/tryMmap/gpu сейчас остаются в LMSLoadConfig для
+   * future SDK-route, но в HTTP body НЕ попадают. */
   const body: Record<string, unknown> = {
     model: modelKey,
     context_length: ctxLen,
     flash_attention: fa,
     echo_load_config: false,
   };
-  if (cfg.keepModelInMemory !== undefined) body.keep_model_in_memory = cfg.keepModelInMemory;
-  if (cfg.tryMmap !== undefined) body.try_mmap = cfg.tryMmap;
-  if (cfg.gpu !== undefined) body.gpu = cfg.gpu;
   try {
     const r = await fetch(`${lmsUrl}/api/v1/models/load`, {
       method: "POST",

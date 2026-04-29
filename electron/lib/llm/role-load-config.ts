@@ -12,14 +12,21 @@
  *   - tryMmap          — memory-mapped загрузка (быстрый cold start)
  *   - offload_kv_cache_to_gpu — KV cache в GPU memory (для длинных контекстов)
  *
- * ВНИМАНИЕ: текущая Bibliary НЕ использует этот файл при загрузке моделей
- * (загружает с дефолтным preset из LM Studio). Этот модуль — research-результат,
- * готовый к интеграции в отдельной итерации:
- *   1. Добавить ручку «оптимизировать загрузку» в Models page
- *   2. Передавать getRoleLoadConfig(role) в lmsLoadModel()
- *   3. Тестировать на реальных моделях через Олимпиаду
+ * ВАЖНО про SDK vs REST:
+ *   LM Studio даёт ДВА разных API контракта:
+ *     - REST `/api/v1/models/load` — принимает ТОЛЬКО:
+ *         model, context_length, flash_attention, echo_load_config
+ *     - TypeScript SDK `@lmstudio/sdk` — принимает rich config (gpu, mmap,
+ *       keepInMemory и т.д.)
  *
- * См. docs/audits/2026-04-29-lmstudio-role-tuning.md для обоснования.
+ *   Bibliary Olympics ходит по REST, поэтому из этого файла В HTTP body
+ *   попадают ТОЛЬКО `contextLength` и `flashAttention`. Поля `gpu`,
+ *   `keepModelInMemory`, `tryMmap` оставлены в `LMSLoadConfig` как
+ *   forward-compatible blueprint для будущего SDK-route.
+ *
+ *   См. docs/audits/2026-04-29-lmstudio-role-tuning.md и
+ *   regression-тест `tests/olympics-lifecycle.test.ts` ("ТОЛЬКО валидные
+ *   REST-поля").
  */
 
 import type { ModelRole } from "./model-role-resolver.js";

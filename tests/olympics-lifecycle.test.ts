@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runOlympics } from "../electron/lib/llm/arena/olympics.ts";
+import { runOlympics, clearOlympicsCache } from "../electron/lib/llm/arena/olympics.ts";
 
 function modelRecord(key: string, loadedIds: string[] = []): Record<string, unknown> {
   return {
@@ -97,6 +97,71 @@ test("runOlympics cleans preloaded selected models and unloads each model before
     assert.ok(calls.indexOf("unload:pre-a") < calls.indexOf("load:model-a-4b"));
     assert.ok(calls.indexOf("unload:inst-model-a-4b") < calls.indexOf("load:model-b-4b"));
     assert.ok(calls.indexOf("unload:inst-model-b-4b") > calls.indexOf("load:model-b-4b"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("runOlympics: /api/v1/models/load body содержит ТОЛЬКО валидные REST-поля (regression)", async () => {
+  /* Регрессия против бага fe1a3c7 — per-role tuning подсунул в HTTP body
+   * SDK-only поля (keep_model_in_memory, try_mmap, gpu), и LM Studio REST
+   * вернул HTTP 400 "Unrecognized key(s)" для всех 24 моделей.
+   *
+   * REST /api/v1/models/load принимает ТОЛЬКО:
+   *   model, context_length, flash_attention, echo_load_config
+   *
+   * Любые другие ключи в body — баг, ловится этим тестом. */
+  /* Сбрасываем кэш — иначе тесты выше могли его наполнить и load не вызовется. */
+  clearOlympicsCache();
+
+  const ALLOWED_LOAD_KEYS = new Set([
+    "model", "context_length", "flash_attention", "echo_load_config",
+  ]);
+  const observedBodies: Record<string, unknown>[] = [];
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/api/v1/models") && (!init?.method || init.method === "GET")) {
+      return Response.json({ models: [modelRecord("model-a-4b"), modelRecord("model-b-4b")] });
+    }
+    if (url.endsWith("/api/v1/models/load")) {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      observedBodies.push(body);
+      return Response.json({ instance_id: `inst-${String(body.model)}` });
+    }
+    if (url.endsWith("/api/v1/models/unload")) return Response.json({ ok: true });
+    if (url.endsWith("/v1/chat/completions")) {
+      return Response.json({
+        choices: [{ message: { content: "{}" } }],
+        usage: { total_tokens: 1 },
+      });
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as typeof fetch;
+
+  try {
+    /* Включаем per-role tuning — именно там был баг. */
+    await runOlympics({
+      models: ["model-a-4b", "model-b-4b"],
+      disciplines: ["crystallizer-rover"],
+      roleLoadConfigEnabled: true,
+      lmsUrl: "http://test-lms",
+    });
+
+    assert.ok(observedBodies.length >= 2, "load должен быть вызван минимум 2 раза");
+    for (const body of observedBodies) {
+      const unknownKeys = Object.keys(body).filter((k) => !ALLOWED_LOAD_KEYS.has(k));
+      assert.deepEqual(
+        unknownKeys, [],
+        `LM Studio REST /api/v1/models/load не принимает ключи: ${unknownKeys.join(", ")}. ` +
+        `Body: ${JSON.stringify(body)}`,
+      );
+      /* Sanity: ключевые поля присутствуют. */
+      assert.equal(typeof body.model, "string");
+      assert.equal(typeof body.context_length, "number");
+      assert.equal(typeof body.flash_attention, "boolean");
+    }
   } finally {
     globalThis.fetch = originalFetch;
   }
