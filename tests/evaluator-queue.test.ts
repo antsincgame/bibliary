@@ -324,7 +324,9 @@ test("evaluator-queue handles 'no LLM loaded' gracefully", async (t) => {
 
   assert.equal(llmCalled, false, "no LLM call when no model available");
   const failed = events.find((e) => e.type === "evaluator.failed");
-  assert.equal(failed?.error, "no LLM loaded");
+  /* После 2026-04 фикса error приходит с префиксом `evaluator:` для
+     консистентности с warning-ами в md-frontmatter. */
+  assert.equal(failed?.error, "evaluator: no LLM loaded");
   const cached = getBookById(book.meta.id);
   assert.equal(cached?.status, "failed");
 });
@@ -542,6 +544,9 @@ test("evaluator-queue passes prefs.evaluatorModel into pickEvaluatorModel (no si
 });
 
 test("evaluator-queue marks book failed with descriptive reason when preferred model not loaded", async (t) => {
+  /* Cache-db не персистит warnings (только md-frontmatter), поэтому reason
+     проверяем через event evaluator.failed.error и через содержимое
+     book.md, в который evaluator-queue записывает frontmatter. */
   const env = await setupTestEnv();
   t.after(env.cleanup);
 
@@ -559,14 +564,21 @@ test("evaluator-queue marks book failed with descriptive reason when preferred m
     },
   });
 
+  const { events } = collectEvents();
   enqueueBook(book.meta.id);
   await waitForIdle();
 
   const cached = getBookById(book.meta.id);
   assert.equal(cached?.status, "failed");
-  const warnings = (cached?.warnings ?? []).join("\n");
-  assert.match(warnings, /ghost-model/, "warning упоминает выбранную пользователем модель");
-  assert.match(warnings, /not loaded/i);
+
+  const failed = events.find((e) => e.type === "evaluator.failed");
+  assert.ok(failed, "evaluator.failed event present");
+  assert.match(failed!.error ?? "", /ghost-model/, "error упоминает выбранную пользователем модель");
+  assert.match(failed!.error ?? "", /not loaded/i);
+
+  /* Frontmatter book.md тоже должен содержать warning с моделью. */
+  const md = await readFile(book.mdPath, "utf-8");
+  assert.match(md, /ghost-model/);
 });
 
 test("setEvaluatorModel overrides pickEvaluatorModel result", async (t) => {
