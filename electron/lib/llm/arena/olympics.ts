@@ -107,6 +107,16 @@ export interface OlympicsOptions {
    * через arena.ipc.ts.
    */
   roleLoadConfigEnabled?: boolean;
+  /**
+   * Если true — load/unload идут через TypeScript SDK (`@lmstudio/sdk`),
+   * что позволяет передать gpu.ratio/keepModelInMemory/tryMmap/flashAttention.
+   * При любой ошибке SDK runtime откатывается на REST с предупреждением.
+   * Default false — REST путь (стабильнее, mock-able в тестах).
+   *
+   * Имеет смысл включать вместе с roleLoadConfigEnabled, иначе SDK получит
+   * только дефолтный {ctx=2048, FA=true} — преимущества над REST не будет.
+   */
+  useLmsSDK?: boolean;
   /** Прогресс-каллбэк. */
   onProgress?: (e: OlympicsEvent) => void;
   /** Abort. */
@@ -515,6 +525,14 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
     });
   }
 
+  /* SDK transport toggle (default REST). При SDK ошибке runtime fallback. */
+  const transport: "rest" | "sdk" = opts.useLmsSDK === true ? "sdk" : "rest";
+  if (transport === "sdk") {
+    log("info", "LM Studio SDK transport ENABLED", {
+      hint: "load/unload через @lmstudio/sdk client.llm.load() — full LLMLoadModelConfig",
+    });
+  }
+
   /* Accumulate per-discipline results across the model loop. */
   const disciplineResults = new Map<string, OlympicsModelResult[]>();
   for (const d of disciplines) disciplineResults.set(d.id, []);
@@ -554,10 +572,10 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
     opts.onProgress?.({ type: "olympics.model.loading", model: modelKey });
     const rolesForModel = rolesByModel.get(modelKey) ?? [];
     const modelLoadConfig = computeOlympicsLoadConfig(rolesForModel, roleLoadConfigEnabled);
-    const loadResult = await lmsLoadModel(lmsUrl, modelKey, log, opts.signal, modelLoadConfig);
+    const loadResult = await lmsLoadModel(lmsUrl, modelKey, log, opts.signal, modelLoadConfig, transport);
     if (!loadResult.ok) {
       log("warn", `не удалось загрузить — чистим возможный поздний load и пропускаем`, { modelKey, reason: loadResult.reason });
-      await lmsUnloadAllInstancesForModel(lmsUrl, modelKey, log);
+      await lmsUnloadAllInstancesForModel(lmsUrl, modelKey, log, [], transport);
       opts.onProgress?.({ type: "olympics.model.load_failed", model: modelKey, reason: loadResult.reason });
       skippedModels++;
       continue;
@@ -632,7 +650,7 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
 
     /* ── Step 3: Always unload model to free VRAM ── */
     } finally {
-      await lmsUnloadAllInstancesForModel(lmsUrl, modelKey, log, instanceId ? [instanceId] : []);
+      await lmsUnloadAllInstancesForModel(lmsUrl, modelKey, log, instanceId ? [instanceId] : [], transport);
       opts.onProgress?.({ type: "olympics.model.unloaded", model: modelKey });
       await new Promise((res) => setTimeout(res, 1500));
     }

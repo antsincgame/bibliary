@@ -495,6 +495,8 @@ export default {
   "models.olympics.option.weight_classes": "Model class:",
   "models.olympics.option.role_tuning": "Per-role tuning",
   "models.olympics.option.role_tuning_hint": "Load each model with optimal contextLength + FlashAttention per role. Requires ≥ 8 GB VRAM. Without this flag — all models load identically (2K context).",
+  "models.olympics.option.use_sdk": "LM Studio SDK",
+  "models.olympics.option.use_sdk_hint": "Load via @lmstudio/sdk client.llm.load() — passes gpu.ratio / keepInMemory / tryMmap. Without this flag — REST /api/v1/models/load (only context_length + flash_attention). Recommended with per-role tuning.",
   "models.olympics.role.tests": "tests",
   "models.card.from_disk": "On disk (load into memory)",
   "models.load.hint": "Select a model you already downloaded in LM Studio, then Load. GPU offload follows the hardware hint below.",

@@ -442,13 +442,11 @@ function buildOlympicsCard() {
       el("label", { class: "mp-olympics-option" }, [
         (() => {
           const cb = el("input", { id: "mp-olympics-role-tuning", type: "checkbox" });
-          /* Подгружаем текущее значение из prefs (асинхронно — не блокируем render). */
           if (window.api?.preferences?.getAll) {
             void window.api.preferences.getAll().then((prefs) => {
               cb.checked = prefs?.olympicsRoleLoadConfigEnabled === true;
             }).catch(() => { /* ignore */ });
           }
-          /* Сохраняем при изменении. */
           cb.addEventListener("change", () => {
             if (window.api?.preferences?.set) {
               void window.api.preferences.set({ olympicsRoleLoadConfigEnabled: cb.checked });
@@ -458,6 +456,24 @@ function buildOlympicsCard() {
         })(),
         el("span", {}, t("models.olympics.option.role_tuning")),
         el("span", { class: "mp-olympics-option-hint" }, t("models.olympics.option.role_tuning_hint")),
+      ]),
+      el("label", { class: "mp-olympics-option" }, [
+        (() => {
+          const cb = el("input", { id: "mp-olympics-use-sdk", type: "checkbox" });
+          if (window.api?.preferences?.getAll) {
+            void window.api.preferences.getAll().then((prefs) => {
+              cb.checked = prefs?.olympicsUseLmsSDK === true;
+            }).catch(() => { /* ignore */ });
+          }
+          cb.addEventListener("change", () => {
+            if (window.api?.preferences?.set) {
+              void window.api.preferences.set({ olympicsUseLmsSDK: cb.checked });
+            }
+          });
+          return cb;
+        })(),
+        el("span", {}, t("models.olympics.option.use_sdk")),
+        el("span", { class: "mp-olympics-option-hint" }, t("models.olympics.option.use_sdk_hint")),
       ]),
     ]),
     /* Per-role checkboxes — позволяют запускать только нужные роли */

@@ -495,6 +495,8 @@ export default {
   "models.olympics.option.weight_classes": "Класс моделей:",
   "models.olympics.option.role_tuning": "Per-role tuning",
   "models.olympics.option.role_tuning_hint": "Грузить каждую модель с оптимальным contextLength + FlashAttention под роли. Нужно ≥ 8 ГБ VRAM. Без флага — все модели грузятся одинаково (2K контекст).",
+  "models.olympics.option.use_sdk": "LM Studio SDK",
+  "models.olympics.option.use_sdk_hint": "Грузить через @lmstudio/sdk client.llm.load() — позволяет передать gpu.ratio / keepInMemory / tryMmap. Без флага — REST /api/v1/models/load (только context_length + flash_attention). Имеет смысл вместе с per-role tuning.",
   "models.olympics.role.tests": "тестов",
   "models.card.from_disk": "На диске (загрузить в память)",
   "models.load.hint": "Выберите GGUF, уже скачанный в LM Studio, затем «Загрузить». Разгрузка на GPU подстраивается под профиль железа ниже.",

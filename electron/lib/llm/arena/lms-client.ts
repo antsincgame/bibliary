@@ -1,27 +1,36 @@
 /**
- * LM Studio HTTP client for Olympics — load/unload/health/chat/list.
+ * LM Studio client for Olympics — load/unload/health/chat/list.
  *
- * Извлечён из `olympics.ts` в рамках декомпозиции god-файла (Mahakala
- * рефакторинг 2026-04-30). Содержит ВСЁ что общается с LM Studio по HTTP:
- *   - listModelsV1 / listAvailableModels — каталог моделей
- *   - loadModel / unloadModel / unloadAllInstancesForModel — lifecycle
- *   - waitForReady / healthCheck — readiness probes
- *   - chat — обёртка над /v1/chat/completions с поддержкой vision и timeout
- *   - estimateVramBytes — оценка footprint для VRAM-guard
- *   - makeLogger — структурный логгер для post-mortem
+ * Поддерживает ДВА transport'а:
  *
- * Контракты:
- *   - REST `/api/v1/models/load` принимает ТОЛЬКО:
- *     model, context_length, flash_attention, echo_load_config.
- *     SDK-only поля (gpu, keepInMemory, tryMmap) НЕ попадают в body —
- *     иначе HTTP 400. Защищено regression-тестом
- *     `tests/olympics-lifecycle.test.ts` ("ТОЛЬКО валидные REST-поля").
+ * 1. **REST** (legacy, default) — через `/api/v1/models/load` /
+ *    `/v1/chat/completions`. Простой, mock-ируется через `globalThis.fetch`.
+ *    Минус: REST `/load` принимает ТОЛЬКО {model, context_length,
+ *    flash_attention, echo_load_config}. Поля gpu/keepModelInMemory/tryMmap
+ *    проигнорируются (а в старых LM Studio вернут HTTP 400 — защищено
+ *    regression-тестом).
+ *
+ * 2. **SDK** (per-role tuning, opt-in) — через `@lmstudio/sdk` v1.5+
+ *    (`client.llm.load(modelKey, { config: { ... }, ttl })`). Принимает
+ *    полный `LLMLoadModelConfig`: gpu.ratio, keepModelInMemory, tryMmap,
+ *    flashAttention, contextLength. Возвращает `LLM` handle который кэшируем
+ *    по `instanceId` (= handle.identifier) для последующего unload.
+ *    Документация: https://lmstudio.ai/docs/typescript/manage-models/loading
+ *
+ * Public API (`lmsLoadModel`/`lmsUnloadModel`/`lmsChat`) принимает optional
+ * `transport: "rest" | "sdk"` параметр с default "rest". Если SDK путь
+ * упадёт (sdk не найден / WS отвалился) — runtime fallback на REST с
+ * предупреждением в лог. Это страхует от поломки Олимпиады при опечатке
+ * в keys или сетевых проблемах между renderer и LM Studio (Mahakala-протокол).
+ *
+ * Извлечён из `olympics.ts` в рамках декомпозиции god-файла (2026-04-30).
  */
 
 import * as telemetry from "../../resilience/telemetry.js";
 import type { LMSLoadConfig } from "../role-load-config.js";
 
 export const DEFAULT_LMS_URL = "http://localhost:1234";
+export type LmsTransport = "rest" | "sdk";
 
 /* ─── Logger ──────────────────────────────────────────────────────────── */
 
@@ -183,6 +192,13 @@ export async function lmsWaitForReady(
  *
  * CRITICAL: caller MUST unload via lmsUnloadModel after use, otherwise
  * VRAM accumulates until BSOD.
+ *
+ * `transport`:
+ *   - "rest" (default) — POST `/api/v1/models/load`. Простой, mock-able через
+ *      `globalThis.fetch`. Игнорирует gpu/keepModelInMemory/tryMmap из cfg.
+ *   - "sdk" — `client.llm.load(modelKey, { config })` через `@lmstudio/sdk`.
+ *      Передаёт ВЕСЬ конфиг. При любой ошибке делает runtime-fallback на REST
+ *      с предупреждением в лог (Mahakala-страховка).
  */
 export async function lmsLoadModel(
   lmsUrl: string,
@@ -190,7 +206,14 @@ export async function lmsLoadModel(
   log: OlympicsLogger,
   signal?: AbortSignal,
   loadConfig?: LMSLoadConfig,
-): Promise<{ ok: true; instanceId: string; loadTimeMs: number } | { ok: false; reason: string }> {
+  transport: LmsTransport = "rest",
+): Promise<{ ok: true; instanceId: string; loadTimeMs: number; transport: LmsTransport } | { ok: false; reason: string }> {
+  if (transport === "sdk") {
+    const sdkResult = await lmsLoadModelSDK(lmsUrl, modelKey, log, signal, loadConfig);
+    if (sdkResult.ok) return { ...sdkResult, transport: "sdk" };
+    log("warn", "SDK load failed — falling back to REST", { modelKey, sdkReason: sdkResult.reason });
+    /* fall through to REST */
+  }
   const t0 = Date.now();
   const ctrl = new AbortController();
   const timeoutId = setTimeout(() => ctrl.abort(), 180_000);
@@ -204,17 +227,15 @@ export async function lmsLoadModel(
     modelKey,
     contextLength: ctxLen,
     flashAttention: fa,
-    /* note: gpu/keepInMemory/tryMmap пока не передаём в REST — только для SDK-route. */
+    /* gpu/keepInMemory/tryMmap из cfg идут только в SDK-route (lmsLoadModelSDK).
+     * Через REST они недоступны — endpoint не принимает. */
     desiredGpuRatio: cfg.gpu?.ratio,
     desiredKeepInMem: cfg.keepModelInMemory,
   });
   telemetry.logEvent({ type: "olympics.model_lifecycle", phase: "load_start", modelKey });
   /* LM Studio REST API /api/v1/models/load принимает ТОЛЬКО эти поля.
-   * Rich-параметры (keepModelInMemory, tryMmap, gpu) живут в TypeScript SDK
-   * @lmstudio/sdk и в REST не передаются — иначе HTTP 400 "Unrecognized key(s)".
-   *
-   * Поля cfg.keepModelInMemory/tryMmap/gpu сейчас остаются в LMSLoadConfig для
-   * future SDK-route, но в HTTP body НЕ попадают. */
+   * Rich-параметры (keepModelInMemory, tryMmap, gpu) доступны через SDK-route
+   * (см. lmsLoadModelSDK выше). Если нужен полный конфиг — включи useLmsSDK. */
   const body: Record<string, unknown> = {
     model: modelKey,
     context_length: ctxLen,
@@ -245,7 +266,7 @@ export async function lmsLoadModel(
     const instanceId = j?.instance_id ?? modelKey;
     log("info", `loaded in ${loadTimeMs}ms`, { modelKey, instanceId });
     telemetry.logEvent({ type: "olympics.model_lifecycle", phase: "load_ok", modelKey, instanceId, durationMs: loadTimeMs });
-    return { ok: true, instanceId, loadTimeMs };
+    return { ok: true, instanceId, loadTimeMs, transport: "rest" };
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     log("error", "load threw", { modelKey, reason, loadTimeMs: Date.now() - t0 });
@@ -263,12 +284,22 @@ export async function lmsLoadModel(
   }
 }
 
-/** Unload a model — best-effort with timeout + logging. */
+/** Unload a model — best-effort with timeout + logging.
+ *  `transport`: "rest" (default) | "sdk". При ошибке SDK fallback на REST
+ *  (best-effort: некоторые SDK-инстансы видны в REST API, некоторые нет;
+ *  в худшем случае получим warn-лог и продолжим — лучше чем зависнуть). */
 export async function lmsUnloadModel(
   lmsUrl: string,
   instanceId: string,
   log: OlympicsLogger,
+  transport: LmsTransport = "rest",
 ): Promise<boolean> {
+  if (transport === "sdk") {
+    const sdkOk = await lmsUnloadModelSDK(lmsUrl, instanceId, log);
+    if (sdkOk) return true;
+    log("warn", "SDK unload failed — falling back to REST", { instanceId });
+    /* fall through to REST */
+  }
   const t0 = Date.now();
   try {
     const r = await fetch(`${lmsUrl}/api/v1/models/unload`, {
@@ -374,6 +405,7 @@ export async function lmsUnloadAllInstancesForModel(
   modelKey: string,
   log: OlympicsLogger,
   knownInstanceIds: string[] = [],
+  transport: LmsTransport = "rest",
 ): Promise<number> {
   const fromRefresh = await lmsLoadedInstanceIdsForModel(lmsUrl, modelKey, log);
   const ids = [...new Set([...knownInstanceIds, ...fromRefresh])];
@@ -389,7 +421,7 @@ export async function lmsUnloadAllInstancesForModel(
   }
 
   for (const id of ids) {
-    if (await lmsUnloadModel(lmsUrl, id, log)) unloaded++;
+    if (await lmsUnloadModel(lmsUrl, id, log, transport)) unloaded++;
   }
 
   if (ids.length === 0) {
@@ -472,5 +504,163 @@ export async function lmsChat(
   } finally {
     clearTimeout(timeoutId);
     opts.signal?.removeEventListener("abort", onAbort);
+  }
+}
+
+/* ─── SDK Route ──────────────────────────────────────────────────────
+ * Вторая точка входа в LM Studio — через TypeScript SDK `@lmstudio/sdk`.
+ * Реализует Mahakala-проверенный паттерн "Strangler Fig": SDK живёт рядом
+ * с REST, выбирается флагом `transport` в публичном API, при ошибке
+ * автоматически откатывается на REST.
+ *
+ * Преимущество SDK: `client.llm.load()` принимает полный `LLMLoadModelConfig`
+ * (gpu.ratio, keepModelInMemory, tryMmap, flashAttention, contextLength),
+ * чего REST `/api/v1/models/load` не умеет.
+ * ─────────────────────────────────────────────────────────────────── */
+
+/**
+ * Минимальный TypeScript-контракт LMStudioClient — только методы которые
+ * реально использует Olympics. Это позволяет тестам подменить клиент
+ * mock-объектом без `any`, и не зависеть от полного SDK типа в API.
+ */
+export interface OlympicsLLMHandle {
+  identifier: string;
+  unload(): Promise<void>;
+}
+export interface OlympicsLLMNamespace {
+  load(modelKey: string, options?: { config?: Record<string, unknown>; ttl?: number; identifier?: string }): Promise<OlympicsLLMHandle>;
+  unload(identifier: string): Promise<void>;
+}
+export interface OlympicsLMStudioClient {
+  llm: OlympicsLLMNamespace;
+}
+
+/** Cache of SDK model handles keyed by handle.identifier (= instanceId).
+ *  Required for unload — SDK needs the full handle, not just an id string. */
+const _sdkHandles = new Map<string, OlympicsLLMHandle>();
+
+/** Test override — bypass real `@lmstudio/sdk` import. */
+let _sdkClientOverride: OlympicsLMStudioClient | null = null;
+export function _setOlympicsSdkClientForTests(client: OlympicsLMStudioClient | null): void {
+  _sdkClientOverride = client;
+  if (!client) {
+    _sdkHandles.clear();
+    _cachedSdkClient = null;
+  }
+}
+
+let _cachedSdkClient: OlympicsLMStudioClient | null = null;
+
+/**
+ * Lazy-resolve SDK client. Real import is dynamic to avoid pulling
+ * `@lmstudio/sdk` into modules that never use the SDK route (lower
+ * cold-start cost, easier mocking in tests).
+ */
+async function _getSdkClient(lmsUrl: string): Promise<OlympicsLMStudioClient> {
+  if (_sdkClientOverride) return _sdkClientOverride;
+  if (_cachedSdkClient) return _cachedSdkClient;
+  const sdk = (await import("@lmstudio/sdk")) as { LMStudioClient: new (opts?: { baseUrl?: string }) => OlympicsLMStudioClient };
+  const wsUrl = lmsUrl.replace(/^http(s?):\/\//, "ws$1://");
+  _cachedSdkClient = new sdk.LMStudioClient({ baseUrl: wsUrl });
+  return _cachedSdkClient;
+}
+
+/**
+ * Convert internal LMSLoadConfig → SDK LLMLoadModelConfig shape.
+ * Skips undefined fields so SDK uses its own defaults.
+ */
+function _toSdkLoadConfig(cfg: LMSLoadConfig): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (typeof cfg.contextLength === "number") out.contextLength = cfg.contextLength;
+  if (typeof cfg.flashAttention === "boolean") out.flashAttention = cfg.flashAttention;
+  if (typeof cfg.keepModelInMemory === "boolean") out.keepModelInMemory = cfg.keepModelInMemory;
+  if (typeof cfg.tryMmap === "boolean") out.tryMmap = cfg.tryMmap;
+  if (cfg.gpu && typeof cfg.gpu.ratio === "number") out.gpu = { ratio: cfg.gpu.ratio };
+  return out;
+}
+
+/**
+ * Load a model via LM Studio SDK. Returns SDK handle.identifier as instanceId.
+ *
+ * Caller MUST unload via `lmsUnloadModelSDK(instanceId)` (or `lmsUnloadModel`
+ * with transport="sdk") to release the handle and free VRAM.
+ */
+export async function lmsLoadModelSDK(
+  lmsUrl: string,
+  modelKey: string,
+  log: OlympicsLogger,
+  signal?: AbortSignal,
+  loadConfig?: LMSLoadConfig,
+): Promise<{ ok: true; instanceId: string; loadTimeMs: number } | { ok: false; reason: string }> {
+  const t0 = Date.now();
+  if (signal?.aborted) return { ok: false, reason: "aborted before SDK load" };
+  const cfg: LMSLoadConfig = loadConfig ?? { contextLength: 2048, flashAttention: true };
+  const sdkConfig = _toSdkLoadConfig(cfg);
+  log("info", "loading model via SDK", { modelKey, sdkConfig });
+  telemetry.logEvent({ type: "olympics.model_lifecycle", phase: "load_start", modelKey });
+  try {
+    const client = await _getSdkClient(lmsUrl);
+    /* SDK `.load()` доменно блокирующий — race с external signal руками.
+     * abort просто оставит handle висеть, но это лучше чем зависнуть
+     * на 3 минуты VRAM-bound операции. */
+    const handle = await Promise.race([
+      client.llm.load(modelKey, { config: sdkConfig }),
+      new Promise<never>((_resolve, reject) => {
+        if (!signal) return;
+        const onAbort = (): void => reject(new Error("aborted during SDK load"));
+        signal.addEventListener("abort", onAbort, { once: true });
+      }),
+    ]);
+    const instanceId = handle.identifier;
+    _sdkHandles.set(instanceId, handle);
+    const loadTimeMs = Date.now() - t0;
+    log("info", `SDK loaded in ${loadTimeMs}ms`, { modelKey, instanceId });
+    telemetry.logEvent({ type: "olympics.model_lifecycle", phase: "load_ok", modelKey, instanceId, durationMs: loadTimeMs });
+    return { ok: true, instanceId, loadTimeMs };
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    const loadTimeMs = Date.now() - t0;
+    log("error", "SDK load failed", { modelKey, reason, loadTimeMs });
+    telemetry.logEvent({ type: "olympics.model_lifecycle", phase: "load_fail", modelKey, durationMs: loadTimeMs, error: reason });
+    return { ok: false, reason };
+  }
+}
+
+/**
+ * Unload via SDK handle. If handle isn't in cache (e.g. mixed REST+SDK
+ * session) — falls through to client.llm.unload(identifier) which works
+ * for SDK-loaded models keyed by identifier.
+ */
+export async function lmsUnloadModelSDK(
+  lmsUrl: string,
+  instanceId: string,
+  log: OlympicsLogger,
+): Promise<boolean> {
+  const t0 = Date.now();
+  try {
+    const cached = _sdkHandles.get(instanceId);
+    if (cached) {
+      await cached.unload();
+      _sdkHandles.delete(instanceId);
+    } else {
+      const client = await _getSdkClient(lmsUrl);
+      await client.llm.unload(instanceId);
+    }
+    const durationMs = Date.now() - t0;
+    log("info", `SDK unloaded in ${durationMs}ms`, { instanceId });
+    telemetry.logEvent({ type: "olympics.model_lifecycle", phase: "unload_ok", modelKey: instanceId, instanceId, durationMs });
+    return true;
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    log("warn", "SDK unload failed (best-effort)", { instanceId, reason });
+    telemetry.logEvent({
+      type: "olympics.model_lifecycle",
+      phase: "unload_fail",
+      modelKey: instanceId,
+      instanceId,
+      durationMs: Date.now() - t0,
+      error: reason,
+    });
+    return false;
   }
 }

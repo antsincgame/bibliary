@@ -67,6 +67,7 @@ export function registerArenaIpc(): void {
         testAll: args.testAll === true,
         roles: Array.isArray(args.roles) ? (args.roles as OlympicsRole[]) : undefined,
         roleLoadConfigEnabled: prefs.olympicsRoleLoadConfigEnabled === true,
+        useLmsSDK: prefs.olympicsUseLmsSDK === true,
         signal: ctrl.signal,
         onProgress: (ev) => send("arena:olympics-progress", ev),
       });

@@ -127,5 +127,5 @@ jobs:
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
-      - name: Olympics policy + scorers + role-load-config tests
-        run: node --import tsx --test tests/olympics-thinking-policy.test.ts tests/olympics-scorers.test.ts tests/olympics-weights.test.ts tests/role-load-config.test.ts tests/olympics-load-config-integration.test.ts
+      - name: Olympics policy + scorers + role-load-config + lifecycle + SDK-route tests
+        run: node --import tsx --test tests/olympics-thinking-policy.test.ts tests/olympics-scorers.test.ts tests/olympics-weights.test.ts tests/role-load-config.test.ts tests/olympics-load-config-integration.test.ts tests/olympics-lifecycle.test.ts tests/olympics-sdk-route.test.ts
