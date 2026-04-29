@@ -302,7 +302,11 @@ async function mirrorProgressToLogger(importId: string, evt: ProgressEvent): Pro
       break;
     case "skipped":
       category = "file.skipped";
-      level = "info";
+      /* Пропуск с причиной (magic-guard, cross-format, broken file) — это
+         деградация, должен быть warn-уровня, чтобы счётчик WARN в UI
+         отражал реальные «потерянные» файлы. Чистый duplicate-skip без
+         errorMessage остаётся info (нечего показывать пользователю). */
+      level = evt.errorMessage ? "warn" : "info";
       break;
     case "failed":
       category = "file.failed";
@@ -312,21 +316,51 @@ async function mirrorProgressToLogger(importId: string, evt: ProgressEvent): Pro
       category = "file.skipped";
       level = "info";
   }
-  const baseMessage = evt.outcome === "duplicate" && evt.existingBookTitle
-    ? `Duplicate of "${evt.existingBookTitle}" (${evt.duplicateReason ?? "unknown"})`
-    : evt.outcome === "failed"
-      ? evt.errorMessage ?? "Import failed"
-      : `${evt.outcome ?? "processed"}: ${evt.processed}/${evt.discovered}`;
+  /* baseMessage всегда содержит максимум контекста: тип события + причина.
+     Для skipped с reason раньше пользователь видел только "skipped: 5/42"
+     и причина терялась в details. Теперь причина в message — видна сразу
+     в одной строке. */
+  let baseMessage: string;
+  if (evt.outcome === "duplicate" && evt.existingBookTitle) {
+    baseMessage = `Duplicate of "${evt.existingBookTitle}" (${evt.duplicateReason ?? "unknown"})`;
+  } else if (evt.outcome === "failed") {
+    baseMessage = evt.errorMessage ?? "Import failed";
+  } else if (evt.outcome === "skipped" && evt.errorMessage) {
+    baseMessage = `Skipped: ${evt.errorMessage}`;
+  } else {
+    baseMessage = `${evt.outcome ?? "processed"}: ${evt.processed}/${evt.discovered}`;
+  }
   await logger.write({
     importId,
     level,
     category,
     message: baseMessage,
     file: evt.currentFile,
-    details: evt.fileWarnings && evt.fileWarnings.length > 0
-      ? { warnings: evt.fileWarnings }
-      : undefined,
+    details: {
+      ...(evt.fileWarnings && evt.fileWarnings.length > 0 ? { warnings: evt.fileWarnings } : {}),
+      ...(evt.errorMessage ? { errorMessage: evt.errorMessage } : {}),
+      ...(evt.duplicateReason ? { duplicateReason: evt.duplicateReason } : {}),
+      ...(evt.existingBookId ? { existingBookId: evt.existingBookId } : {}),
+      progress: `${evt.processed}/${evt.discovered}`,
+    },
   });
+  /* Дополнительно эмитим каждую строку fileWarnings как отдельную запись
+     `file.warning`. Это даёт пользователю ленту вида:
+       file.added    | "OK: 5/42 (book.pdf)"
+       file.warning  | "isbn-meta: lookup failed for 9785..."
+       file.warning  | "vision-meta: low confidence (0.32)"
+     вместо «added: 5/42» с скрытыми деталями в JSON. */
+  if (evt.fileWarnings && evt.fileWarnings.length > 0) {
+    for (const w of evt.fileWarnings) {
+      await logger.write({
+        importId,
+        level: "warn",
+        category: "file.warning",
+        message: w,
+        file: evt.currentFile,
+      });
+    }
+  }
 }
 
 export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): void {
@@ -517,6 +551,12 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
                  сразу, а не в конце большого batch. */
               if (r.outcome === "added" && r.bookId) enqueueBook(r.bookId);
             }
+            /* Сводим warnings и первую ошибку из batch в одно прогресс-событие.
+               Без этого `mirrorProgressToLogger` для items-import видел только
+               outcome без причин — лог-панель оставалась немой. */
+            const firstFailure = itemResults.find((r) => r.outcome === "failed" || r.outcome === "skipped");
+            const aggregatedWarnings: string[] = [];
+            for (const r of itemResults) aggregatedWarnings.push(...r.warnings);
             broadcastImportProgress(getMainWindow, importId, {
               phase: "processed",
               discovered: paths.length,
@@ -526,6 +566,8 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
               duplicateReason: itemResults[0]?.duplicateReason,
               existingBookId: itemResults[0]?.existingBookId,
               existingBookTitle: itemResults[0]?.existingBookTitle,
+              errorMessage: firstFailure?.error ?? undefined,
+              fileWarnings: aggregatedWarnings.length > 0 ? aggregatedWarnings : undefined,
               index: i + 1,
               total: paths.length,
             });

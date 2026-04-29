@@ -14,10 +14,19 @@ async function parseHtml(filePath: string): Promise<ParseResult> {
 
   const charsetMatch = text.match(/<meta[^>]+charset=["']?([^"';\s>]+)/i);
   if (charsetMatch) {
-    const charset = charsetMatch[1].toLowerCase();
-    if (charset === "windows-1251" || charset === "cp1251") {
-      text = buf.toString("latin1");
-      warnings.push(`detected charset ${charset}, decoded as latin1`);
+    const charsetRaw = charsetMatch[1].toLowerCase();
+    /* Node ships with built-in `TextDecoder` powered by the WHATWG Encoding
+       Standard. It supports windows-1251, koi8-r, iso-8859-*, etc. — all the
+       Cyrillic encodings real-world HTML books use. Falling back to UTF-8 if
+       the label is unknown keeps the parser tolerant. */
+    if (charsetRaw && charsetRaw !== "utf-8" && charsetRaw !== "utf8") {
+      try {
+        const decoder = new TextDecoder(charsetRaw, { fatal: false });
+        text = decoder.decode(buf);
+        warnings.push(`detected charset ${charsetRaw}, decoded via TextDecoder`);
+      } catch {
+        warnings.push(`unsupported charset ${charsetRaw}, kept utf-8 decoding`);
+      }
     }
   }
 

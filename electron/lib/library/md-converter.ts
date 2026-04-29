@@ -404,7 +404,9 @@ export async function convertBookToMarkdown(
   /* OCR auto-fallback: если парсер вернул 0 секций, пробуем OCR независимо от
      пользовательской настройки — нет смысла помечать книгу как unsupported, если
      ОС умеет OCR. Применяется только к форматам, которые могут быть сканами. */
+  let ocrAutoRetried = false;
   if (parsed.sections.length === 0 && isOcrSupported() && (format === "pdf" || format === "djvu")) {
+    ocrAutoRetried = true;
     parsed = await parseBook(absFilePath, {
       ocrEnabled: true, ocrAccuracy: "accurate", ocrPdfDpi: 200,
       djvuOcrProvider: opts.djvuOcrProvider,
@@ -412,7 +414,17 @@ export async function convertBookToMarkdown(
       visionModelKey: opts.visionModelKey,
       signal: opts.signal,
     });
+    /* Явно фиксируем причину второго прохода — без этого пользователь видит
+       только время «парсинг занял Х минут» без понимания почему было так
+       долго. Сообщение попадает в book.md frontmatter и в import-log. */
+    if (!parsed.metadata.warnings) parsed.metadata.warnings = [];
+    parsed.metadata.warnings.push(
+      parsed.sections.length > 0
+        ? `parser: text layer empty, OCR auto-retry produced ${parsed.sections.length} sections`
+        : `parser: text layer empty, OCR auto-retry also returned 0 sections`,
+    );
   }
+  void ocrAutoRetried;
 
   const effectiveSections = parsed.sections;
 
@@ -463,6 +475,12 @@ export async function convertBookToMarkdown(
         if (gbResult && (gbResult.title || gbResult.authors?.length)) {
           isbnMeta = gbResult;
           allWarnings.push(`isbn-meta: Google Books (ISBN ${candidateIsbn})`);
+        } else {
+          /* Оба источника промолчали — раньше пользователь видел только
+             отсутствие `isbn-meta:` в warnings, без понимания «искали или нет».
+             Теперь явно фиксируем negative result, чтобы можно было различать
+             «ISBN не нашёлся в тексте» и «нашёлся, но lookup провалился». */
+          allWarnings.push(`isbn-meta: lookup failed (ISBN ${candidateIsbn}, both Open Library and Google Books returned empty)`);
         }
       }
     }

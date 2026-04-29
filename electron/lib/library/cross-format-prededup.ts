@@ -15,7 +15,14 @@
 
 import * as path from "path";
 
-/** Format priority: higher number = preferred when deduplicating. */
+/**
+ * Format priority: higher number = preferred when deduplicating.
+ *
+ * Must mirror `SUPPORTED_BOOK_EXTS` from `./types.ts` — formats not in the
+ * supported set are never reached by the walker and entering them here only
+ * confuses the dedup ledger (e.g. a `.mobi` next to a `.pdf` should not
+ * influence the `.pdf` decision because `.mobi` cannot be imported anyway).
+ */
 const FORMAT_PRIORITY: Record<string, number> = {
   epub: 100,
   pdf:  80,
@@ -26,9 +33,6 @@ const FORMAT_PRIORITY: Record<string, number> = {
   doc:  40,
   rtf:  30,
   odt:  25,
-  mobi: 20,
-  azw3: 20,
-  chm:  15,
   txt:  10,
   html: 5,
   htm:  5,

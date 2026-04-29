@@ -266,8 +266,24 @@ export async function importBookFromFile(
     const abortCombined = () => combinedAbort.abort("shutdown");
     if (opts.signal) opts.signal.addEventListener("abort", abortCombined, { once: true });
     appSignal.addEventListener("abort", abortCombined, { once: true });
-    void processIllustrations(bookDir, blobsRoot, combinedAbort.signal).catch((err) => {
-      console.error("[import] illustration processing failed:", err instanceof Error ? err.message : String(err));
+    void processIllustrations(bookDir, blobsRoot, combinedAbort.signal).catch(async (err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[import] illustration processing failed:", msg);
+      /* Иллюстрации обрабатываются асинхронно (post-return), поэтому ошибка
+         не может попасть в `warnings` исходной задачи. Логируем напрямую в
+         centralised import logger — без этого пользователь никогда не узнает
+         о провале (раньше ошибка терялась в console main-процесса). */
+      try {
+        const { getImportLogger } = await import("./import-logger.js");
+        await getImportLogger().write({
+          importId: "post-import",
+          level: "warn",
+          category: "system.warn",
+          message: `illustration processing failed for ${finalMeta.titleEn || finalMeta.title || finalMeta.id}: ${msg}`,
+          file: absPath,
+          details: { bookId: finalMeta.id, stage: "illustrations" },
+        });
+      } catch { /* logger недоступен — продолжаем тихо */ }
     }).finally(() => {
       if (opts.signal) opts.signal.removeEventListener("abort", abortCombined);
       appSignal.removeEventListener("abort", abortCombined);

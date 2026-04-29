@@ -20,6 +20,7 @@ import JSZip from "jszip";
 import { detectExt } from "../scanner/parsers/index.js";
 import { SUPPORTED_BOOK_EXTS } from "./types.js";
 import { shouldIncludeImportCandidate } from "./import-candidate-filter.js";
+import { verifyExtMatchesContent, verifyExtMatchesContentHead } from "./import-magic-guard.js";
 const ARCHIVE_EXTS = new Set([".zip", ".cbz", ".rar", ".cbr", ".7z"]);
 const req = createRequire(path.join(process.cwd(), "package.json"));
 
@@ -276,6 +277,13 @@ async function extractZipLike(absPath: string, tempDir: string, warnings: string
       ) {
         continue;
       }
+      const headForMagic = data.subarray(0, Math.min(32, data.byteLength));
+      const magicVerdict = verifyExtMatchesContentHead(ext, headForMagic);
+      if (!magicVerdict.ok) {
+        warnings.push(`archive-extractor: skipped ${entry.name} in ${sourceArchive}: ${magicVerdict.reason ?? "magic mismatch"}`);
+        try { await fs.unlink(out_path); } catch { /* best-effort cleanup */ }
+        continue;
+      }
       out.push({ absPath: out_path, entryName: entry.name, sourceArchive });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -372,6 +380,11 @@ async function collectExtractedBooks(
           sizeBytes: stat.size,
         })
       ) {
+        continue;
+      }
+      const magicVerdict = await verifyExtMatchesContent(resolved, ext);
+      if (!magicVerdict.ok) {
+        warnings.push(`archive-extractor: skipped ${path.relative(tempDir, resolved)} in ${sourceArchive}: ${magicVerdict.reason ?? "magic mismatch"}`);
         continue;
       }
       totalBytes += stat.size;

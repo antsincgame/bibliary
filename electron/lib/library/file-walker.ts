@@ -20,6 +20,7 @@ import * as path from "path";
 import { detectExt, type SupportedExt } from "../scanner/parsers/index.js";
 import { isArchive } from "./archive-extractor.js";
 import { shouldIncludeImportCandidate } from "./import-candidate-filter.js";
+import { verifyExtMatchesContent } from "./import-magic-guard.js";
 
 export interface WalkOptions {
   /** Если true, архивы (zip/cbz/...) тоже yields для последующей распаковки. */
@@ -33,6 +34,18 @@ export interface WalkOptions {
   /** If true, directories containing ≥ MIN_HTML_CLUSTER_SIZE HTML files are yielded
    *  as special sentinel paths so the caller can create CompositeHtmlBook tasks. */
   detectCompositeHtml?: boolean;
+  /**
+   * If true, read first bytes of each candidate and verify magic matches its
+   * extension. Defends against renamed binaries (virus.pdf, junk.epub).
+   * Default `false` to keep test fixtures with fake content working; production
+   * `importFolderToLibrary` enables it explicitly.
+   */
+  verifyMagic?: boolean;
+  /**
+   * Optional callback invoked when a file is rejected by magic-guard.
+   * Lets the caller emit a user-visible warning without throwing.
+   */
+  onMagicReject?: (filePath: string, reason: string) => void;
 }
 
 /**
@@ -48,6 +61,7 @@ const DIR_BLACKLIST: ReadonlySet<string> = new Set([
   ".git", ".svn", ".hg",
   "node_modules", "__pycache__", ".tox", ".mypy_cache",
   ".idea", ".vscode", ".vs",
+  ".cache", ".npm", ".yarn", ".pnpm", ".gradle", ".m2",
   "build", "dist", "target", "out", "bin", "obj",
   "vendor",
   "BlackBox.AD",
@@ -62,6 +76,8 @@ const DIR_BLACKLIST: ReadonlySet<string> = new Set([
   "examples", "example",
   "samples", "sample",
   "resources", "resource",
+  // OS / IDE artefact directories
+  "$recycle.bin", "system volume information", ".trash", ".trashes",
 ]);
 
 const BASENAME_BLACKLIST: ReadonlySet<string> = new Set([
@@ -71,6 +87,10 @@ const BASENAME_BLACKLIST: ReadonlySet<string> = new Set([
   "makefile", "cmakelists.txt",
   "dockerfile", ".gitignore", ".editorconfig", ".eslintrc",
   "package.json", "tsconfig.json", "cargo.toml",
+  // OS metadata files (binary, never books)
+  "thumbs.db", ".ds_store", "desktop.ini", ".localized",
+  // Lockfiles / package metadata that may have book-ish extensions but aren't books
+  "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "composer.lock",
 ]);
 
 /**
@@ -168,6 +188,20 @@ export async function* walkSupportedFiles(
         }
       } catch {
         continue;
+      }
+
+      if (opts.verifyMagic === true && isBook && ext) {
+        const verdict = await verifyExtMatchesContent(full, ext);
+        if (!verdict.ok) {
+          if (opts.onMagicReject && verdict.reason) {
+            try {
+              opts.onMagicReject(full, verdict.reason);
+            } catch {
+              /* swallow logger errors — they must never break the walker */
+            }
+          }
+          continue;
+        }
       }
 
       yield full;

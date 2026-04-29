@@ -13,7 +13,7 @@ import { showAlert } from "../components/ui-dialog.js";
 const LOG_RING_SIZE = 1000;
 const LOG_LEVEL_PRIORITY = { debug: 0, info: 1, warn: 2, error: 3 };
 
-/** @type {{level: string, category: string, ts: string, message: string, file?: string, details?: Record<string, unknown>}[]} */
+/** @type {{level: string, category: string, ts: string, message: string, file?: string, details?: Record<string, unknown>, durationMs?: number, importId?: string}[]} */
 const LOG_RING = [];
 let LOG_FILTER_LEVEL = "info";
 let LOG_PANEL_REF = null;
@@ -162,9 +162,11 @@ export function renderImport(root) {
 function buildLogPanel() {
   if (LOG_PANEL_REF) return LOG_PANEL_REF;
 
-  const counterErr = el("span", { class: "lib-import-log-counter lib-import-log-counter-err" }, "0");
-  const counterWarn = el("span", { class: "lib-import-log-counter lib-import-log-counter-warn" }, "0");
-  const counterInfo = el("span", { class: "lib-import-log-counter lib-import-log-counter-info" }, "0");
+  const counterErr = el("span", { class: "lib-import-log-counter lib-import-log-counter-err", title: t("library.import.log.counter.errors") }, "0");
+  const counterWarn = el("span", { class: "lib-import-log-counter lib-import-log-counter-warn", title: t("library.import.log.counter.warnings") }, "0");
+  const counterInfo = el("span", { class: "lib-import-log-counter lib-import-log-counter-info", title: t("library.import.log.counter.info") }, "0");
+  const counterDup = el("span", { class: "lib-import-log-counter lib-import-log-counter-dup", title: t("library.import.log.counter.duplicates") }, "0");
+  const counterSkip = el("span", { class: "lib-import-log-counter lib-import-log-counter-skip", title: t("library.import.log.counter.skipped") }, "0");
 
   const filterSelect = /** @type {HTMLSelectElement} */ (el("select", {
     class: "lib-import-log-filter",
@@ -193,15 +195,19 @@ function buildLogPanel() {
   const copyBtn = el("button", {
     type: "button",
     class: "lib-btn lib-btn-ghost lib-import-log-btn",
+    title: t("library.import.log.copyTooltip"),
     onclick: async () => {
-      const text = LOG_RING.map((e) =>
-        `[${e.ts}] [${e.level.toUpperCase()}] [${e.category}] ${e.message}${e.file ? ` (${e.file})` : ""}`
-      ).join("\n");
+      /* Copy ровно то, что видит пользователь (после фильтра по уровню) +
+         поля details для каждой строки. Раньше Copy сбрасывал весь буфер
+         включая скрытые debug-записи — пользователь получал не то, что на
+         экране. */
+      const visible = LOG_RING.filter(entryPassesFilter);
+      const text = visible.map((e) => formatLogLineForCopy(e)).join("\n");
       try {
         await navigator.clipboard.writeText(text);
-      } catch (e) {
+      } catch (err) {
         await showAlert(t("library.import.log.copyFailed", {
-          msg: e instanceof Error ? e.message : String(e),
+          msg: err instanceof Error ? err.message : String(err),
         }));
       }
     },
@@ -212,6 +218,8 @@ function buildLogPanel() {
     counterErr,
     counterWarn,
     counterInfo,
+    counterDup,
+    counterSkip,
     el("span", { class: "lib-import-log-spacer" }),
     filterSelect,
     clearBtn,
@@ -226,6 +234,8 @@ function buildLogPanel() {
   /** @type {any} */ (panel)._counterErr = counterErr;
   /** @type {any} */ (panel)._counterWarn = counterWarn;
   /** @type {any} */ (panel)._counterInfo = counterInfo;
+  /** @type {any} */ (panel)._counterDup = counterDup;
+  /** @type {any} */ (panel)._counterSkip = counterSkip;
   /** @type {any} */ (panel)._list = list;
 
   if (typeof window.api?.library?.onImportLog === "function") {
@@ -288,7 +298,7 @@ function rerenderLogList() {
   }
 }
 
-/** @param {{level: string, category: string, ts: string, message: string, file?: string}} entry */
+/** @param {{level: string, category: string, ts: string, message: string, file?: string, details?: any, durationMs?: number, importId?: string}} entry */
 function appendLogRow(entry) {
   if (!LOG_PANEL_REF) return;
   const list = /** @type {HTMLElement} */ (/** @type {any} */ (LOG_PANEL_REF)._list);
@@ -296,16 +306,138 @@ function appendLogRow(entry) {
 
   const time = entry.ts.slice(11, 19); /* HH:MM:SS из ISO-8601 */
   const fileLabel = entry.file ? trimFile(entry.file) : "";
-  const row = el("div", { class: `lib-import-log-row lib-import-log-${entry.level}` }, [
+  const hasDetails = hasMeaningfulDetails(entry);
+
+  const expandToggle = hasDetails
+    ? el("span", {
+      class: "lib-import-log-expand",
+      title: t("library.import.log.expand"),
+      "aria-label": t("library.import.log.expand"),
+    }, "▸")
+    : null;
+
+  const headerRow = el("div", { class: "lib-import-log-row-head" }, [
+    expandToggle,
     el("span", { class: "lib-import-log-time" }, time),
     el("span", { class: "lib-import-log-cat" }, entry.category),
-    el("span", { class: "lib-import-log-msg" }, entry.message),
+    el("span", { class: "lib-import-log-msg", title: entry.message }, entry.message),
+    typeof entry.durationMs === "number"
+      ? el("span", { class: "lib-import-log-duration", title: `${entry.durationMs} ms` }, formatDuration(entry.durationMs))
+      : null,
     fileLabel ? el("span", { class: "lib-import-log-file", title: entry.file }, fileLabel) : null,
   ].filter(Boolean));
+
+  const row = el("div", {
+    class: `lib-import-log-row lib-import-log-${entry.level}${hasDetails ? " lib-import-log-row-expandable" : ""}`,
+    /* Двойной клик копирует одну строку — без контекстного меню для скорости. */
+    ondblclick: async () => {
+      try { await navigator.clipboard.writeText(formatLogLineForCopy(entry)); } catch { /* swallow */ }
+    },
+  }, [headerRow]);
+
+  if (hasDetails && expandToggle) {
+    /* Expand-collapse: клик по голове разворачивает блок details. JSON.stringify
+       с indent=2 — компактно для warnings array и читаемо для structured payload. */
+    headerRow.addEventListener("click", (ev) => {
+      /* Игнорируем клик по самой иконке файла (для UX hover'а), но кликом
+         в любую другую часть headerRow тоглим. */
+      if ((ev.target instanceof HTMLElement) && ev.target.classList.contains("lib-import-log-file")) return;
+      const expanded = row.classList.toggle("lib-import-log-expanded");
+      expandToggle.textContent = expanded ? "▾" : "▸";
+      const existing = row.querySelector(".lib-import-log-details");
+      if (expanded && !existing) {
+        const block = el("pre", { class: "lib-import-log-details" }, formatDetailsForDisplay(entry));
+        row.appendChild(block);
+      } else if (!expanded && existing) {
+        existing.remove();
+      }
+    });
+  }
+
   list.appendChild(row);
   /* Авто-скролл вниз только если пользователь не отскроллился вверх */
   const distanceFromBottom = list.scrollHeight - list.scrollTop - list.clientHeight;
   if (distanceFromBottom < 40) list.scrollTop = list.scrollHeight;
+}
+
+/**
+ * Содержит ли запись details, которые стоит показать пользователю?
+ * Пустой `{}`, `{ progress: '5/42' }` (только счётчик) — не считаем.
+ * @param {{details?: any, durationMs?: number}} entry
+ */
+function hasMeaningfulDetails(entry) {
+  if (typeof entry.durationMs === "number" && entry.durationMs > 0) return true;
+  const d = entry.details;
+  if (!d || typeof d !== "object") return false;
+  const keys = Object.keys(d);
+  if (keys.length === 0) return false;
+  /* progress — это технический счётчик ("5/42"), не интересен в развёрнутом виде. */
+  if (keys.length === 1 && keys[0] === "progress") return false;
+  return true;
+}
+
+/**
+ * Преобразует details в читаемый блок для expand. warnings — построчно
+ * вверху (это самое важное), остальные поля — JSON в конце.
+ * @param {{details?: any, durationMs?: number, importId?: string, file?: string}} entry
+ */
+function formatDetailsForDisplay(entry) {
+  const lines = [];
+  const d = entry.details ?? {};
+  if (Array.isArray(d.warnings) && d.warnings.length > 0) {
+    lines.push(t("library.import.log.detailsWarnings"));
+    for (const w of d.warnings) lines.push(`  • ${w}`);
+  }
+  if (typeof d.errorMessage === "string" && d.errorMessage) {
+    lines.push(`${t("library.import.log.detailsError")}: ${d.errorMessage}`);
+  }
+  if (typeof d.duplicateReason === "string") {
+    lines.push(`${t("library.import.log.detailsDuplicateReason")}: ${d.duplicateReason}`);
+  }
+  if (typeof entry.durationMs === "number" && entry.durationMs > 0) {
+    lines.push(`${t("library.import.log.detailsDuration")}: ${entry.durationMs} ms`);
+  }
+  if (entry.file) lines.push(`${t("library.import.log.detailsFile")}: ${entry.file}`);
+  if (entry.importId) lines.push(`${t("library.import.log.detailsImportId")}: ${entry.importId}`);
+  /* Остаток payload без уже выведенных полей и системного "progress". */
+  const skip = new Set(["warnings", "errorMessage", "duplicateReason", "progress"]);
+  const rest = Object.fromEntries(Object.entries(d).filter(([k]) => !skip.has(k)));
+  if (Object.keys(rest).length > 0) {
+    lines.push("");
+    lines.push(JSON.stringify(rest, null, 2));
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Форматирует одну запись для буфера обмена. Многострочный формат с details
+ * — иначе вставка в issue-tracker теряет половину контекста.
+ * @param {{level: string, category: string, ts: string, message: string, file?: string, details?: any, durationMs?: number, importId?: string}} entry
+ */
+function formatLogLineForCopy(entry) {
+  const head = `[${entry.ts}] [${entry.level.toUpperCase()}] [${entry.category}] ${entry.message}`;
+  const parts = [head];
+  if (entry.file) parts.push(`  file: ${entry.file}`);
+  if (typeof entry.durationMs === "number") parts.push(`  durationMs: ${entry.durationMs}`);
+  if (entry.importId) parts.push(`  importId: ${entry.importId}`);
+  if (entry.details && typeof entry.details === "object") {
+    const d = entry.details;
+    if (Array.isArray(d.warnings) && d.warnings.length > 0) {
+      parts.push("  warnings:");
+      for (const w of d.warnings) parts.push(`    - ${w}`);
+    }
+    if (typeof d.errorMessage === "string" && d.errorMessage) {
+      parts.push(`  errorMessage: ${d.errorMessage}`);
+    }
+  }
+  return parts.join("\n");
+}
+
+/** @param {number} ms */
+function formatDuration(ms) {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.round(ms / 60_000)}m`;
 }
 
 /** @param {string} p */
@@ -319,15 +451,23 @@ function updateCounters() {
   const ce = /** @type {HTMLElement} */ (/** @type {any} */ (LOG_PANEL_REF)._counterErr);
   const cw = /** @type {HTMLElement} */ (/** @type {any} */ (LOG_PANEL_REF)._counterWarn);
   const ci = /** @type {HTMLElement} */ (/** @type {any} */ (LOG_PANEL_REF)._counterInfo);
-  let e = 0; let w = 0; let i = 0;
+  const cd = /** @type {HTMLElement} */ (/** @type {any} */ (LOG_PANEL_REF)._counterDup);
+  const cs = /** @type {HTMLElement} */ (/** @type {any} */ (LOG_PANEL_REF)._counterSkip);
+  let e = 0; let w = 0; let i = 0; let dup = 0; let skip = 0;
   for (const entry of LOG_RING) {
     if (entry.level === "error") e++;
     else if (entry.level === "warn") w++;
     else if (entry.level === "info") i++;
+    /* Категории-добавки: дубли и пропуски часто важнее общего "info", их
+       полезно видеть отдельно при разборе большого импорта. */
+    if (entry.category === "file.duplicate") dup++;
+    if (entry.category === "file.skipped") skip++;
   }
   if (ce) ce.textContent = String(e);
   if (cw) cw.textContent = String(w);
   if (ci) ci.textContent = String(i);
+  if (cd) cd.textContent = String(dup);
+  if (cs) cs.textContent = String(skip);
 }
 
 /** @param {object} deps */

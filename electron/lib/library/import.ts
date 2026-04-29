@@ -186,6 +186,19 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
     includeArchives: opts.scanArchives === true,
     signal: opts.signal,
     detectCompositeHtml: true,
+    verifyMagic: true,
+    onMagicReject: (filePath, reason) => {
+      result.warnings.push(`magic-guard: skipped ${path.basename(filePath)} — ${reason}`);
+      counters.discovered += 1;
+      counters.processed += 1;
+      result.skipped += 1;
+      emit("discovered");
+      emit("processed", {
+        currentFile: filePath,
+        outcome: "skipped",
+        errorMessage: reason,
+      });
+    },
   };
   if (typeof opts.maxDepth === "number" && Number.isFinite(opts.maxDepth) && opts.maxDepth >= 0) {
     walkOpts.maxDepth = Math.floor(opts.maxDepth);
