@@ -413,6 +413,7 @@ function buildLayout() {
 // ---------------------------------------------------------------------------
 
 let olympicsBusy = false;
+let olympicsDebugVisible = false;
 
 function buildOlympicsCard() {
   return el("section", { class: "mp-card mp-card-compact mp-olympics-card" }, [
@@ -464,10 +465,10 @@ function buildOlympicsCard() {
         onclick: () => void cancelOlympics(),
       }, t("models.olympics.cancel")),
     ]),
-    /* Лог-панель: накапливает все события турнира (не только последнее). */
+    /* Лог-панель: скрыта по умолчанию, показывается кнопкой "Логи дебага". */
     el("div", { id: "mp-olympics-log", class: "mp-olympics-log", style: "display:none" }, ""),
     el("div", { id: "mp-olympics-results", class: "mp-olympics-results" }, ""),
-    /* Кнопка очистки кэша внизу карточки */
+    /* Кнопки управления: очистка кэша + переключатель debug-логов */
     el("div", { class: "mp-olympics-cache-row" }, [
       el("button", {
         class: "btn btn-ghost btn-xs",
@@ -475,10 +476,23 @@ function buildOlympicsCard() {
         onclick: async () => {
           if (window.api?.arena?.clearOlympicsCache) {
             await window.api.arena.clearOlympicsCache();
-            showToast("Кэш олимпиады очищен", "success");
           }
+          resetOlympicsUI();
+          showToast("Кэш олимпиады очищен, экран готов к новому запуску", "success");
         },
-      }, "🗑 Очистить кэш результатов"),
+      }, "🗑 Очистить кэш"),
+      el("button", {
+        id: "mp-olympics-debug-toggle",
+        class: "btn btn-ghost btn-xs",
+        type: "button",
+        onclick: () => {
+          olympicsDebugVisible = !olympicsDebugVisible;
+          const logEl = pageRoot?.querySelector("#mp-olympics-log");
+          const toggleBtn = pageRoot?.querySelector("#mp-olympics-debug-toggle");
+          if (logEl) logEl.style.display = olympicsDebugVisible ? "" : "none";
+          if (toggleBtn) toggleBtn.textContent = olympicsDebugVisible ? "🔽 Скрыть логи" : "📋 Логи дебага";
+        },
+      }, "📋 Логи дебага"),
     ]),
   ]);
 }
@@ -486,10 +500,21 @@ function buildOlympicsCard() {
 /** Добавляет строку в лог олимпиады (накопительный, не перезаписывает). */
 function appendOlympicsLog(logEl, text, level = "info") {
   if (!logEl) return;
-  logEl.style.display = "";
+  if (olympicsDebugVisible) logEl.style.display = "";
   const entry = el("div", { class: `mp-olympics-log-entry mp-olympics-log-${level}` }, text);
   logEl.appendChild(entry);
   logEl.scrollTop = logEl.scrollHeight;
+}
+
+/** Полный сброс видимого UI олимпиады: логи + результаты → чистый экран. */
+function resetOlympicsUI() {
+  const logEl = pageRoot?.querySelector("#mp-olympics-log");
+  const resultsEl = pageRoot?.querySelector("#mp-olympics-results");
+  if (logEl) { clear(logEl); logEl.style.display = "none"; }
+  if (resultsEl) clear(resultsEl);
+  olympicsDebugVisible = false;
+  const toggleBtn = pageRoot?.querySelector("#mp-olympics-debug-toggle");
+  if (toggleBtn) toggleBtn.textContent = "📋 Логи дебага";
 }
 
 async function runOlympicsAndShow() {
@@ -500,10 +525,9 @@ async function runOlympicsAndShow() {
   }
   olympicsBusy = true;
   setOlympicsButtons(true);
+  resetOlympicsUI();
   const logEl = pageRoot?.querySelector("#mp-olympics-log");
   const resultsEl = pageRoot?.querySelector("#mp-olympics-results");
-  if (logEl) { clear(logEl); logEl.style.display = "none"; }
-  if (resultsEl) clear(resultsEl);
   appendOlympicsLog(logEl, t("models.olympics.starting"));
 
   let unsub = null;
@@ -571,9 +595,14 @@ async function runOlympicsAndShow() {
     showToast(t("models.olympics.success"), "success");
   } catch (e) {
     const msg = errMsg(e);
-    appendOlympicsLog(logEl, `✗ ${msg}`, "bad");
-    showToast(t("models.olympics.failed", { reason: msg }), "error");
-    if (resultsEl) resultsEl.appendChild(el("div", { class: "mp-error" }, msg));
+    const isAbort = msg.includes("aborted") || msg.includes("abort") || msg.includes("cancel");
+    if (isAbort) {
+      resetOlympicsUI();
+    } else {
+      appendOlympicsLog(logEl, `✗ ${msg}`, "bad");
+      showToast(t("models.olympics.failed", { reason: msg }), "error");
+      if (resultsEl) resultsEl.appendChild(el("div", { class: "mp-error" }, msg));
+    }
   } finally {
     olympicsBusy = false;
     setOlympicsButtons(false);
@@ -586,6 +615,7 @@ async function cancelOlympics() {
   if (!window.api?.arena?.cancelOlympics) return;
   try {
     await window.api.arena.cancelOlympics();
+    showToast("Олимпиада отменена. Экран готов к новому запуску.", "success");
   } catch (e) {
     showToast(errMsg(e), "error");
   }
