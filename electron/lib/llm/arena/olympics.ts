@@ -260,6 +260,24 @@ function tryParseJson(answer: string): unknown | null {
   }
 }
 
+/** Scorer для всех украинских lang-detect дисциплин.
+ *  Принимает: uk / ukrainian / Українська (кириллица удаляется, проверяем latin) /
+ *             украинська / українська (Cyrillic check отдельно).
+ *  Ноль если модель говорит "ru" — критическая ошибка для pipeline.
+ */
+function ukLangScore(a: string): number {
+  const raw = a.trim().toLowerCase();
+  /* Кириллический ответ: «українська», «украинский» — проверяем до strip */
+  if (raw.includes("укра")) return 0.85;  /* "українська", "украинська", "украинский" - but not "uk" = penalize a little */
+  const t = raw.replace(/[^a-z]/g, "");
+  if (t === "uk")         return 1.0;
+  if (t.startsWith("uk") && t.length <= 10) return 0.85;  /* "ukrainian", "ukrainain" typo */
+  if (t === "ukrainian")  return 0.85;
+  if (t === "ru" || t === "russian") return 0.0; /* грубая ошибка: перепутал uk↔ru */
+  if (t === "")           return 0.05; /* пустой ответ */
+  return 0.1;
+}
+
 export const OLYMPICS_DISCIPLINES: Discipline[] = [
   {
     id: "crystallizer-rover",
@@ -706,22 +724,64 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
   {
     id: "lang-detect-uk",
     role: "lang_detector",
-    description: "Различить украинский от русского (анти-bias на кириллицу).",
+    description: "Відрізнити українську від російської (антибайєс на кирилицю).",
     whyImportant:
-      "Lang-detector часто путает UK и RU из-за общей кириллицы. Этот тест вылавливает модели которые при виде кириллицы отвечают «ru». Использование таких моделей сломает украинский pipeline.",
+      "Lang-detector часто путає UK і RU через спільну кирилицю. " +
+      "Цей тест відловлює моделі, що відповідають «ru» на будь-який кириличний текст. " +
+      "Дисципліна використовує абзац з українськими маркерами (є, ї, дозволяє, невід'ємною) " +
+      "яких не існує в російській мові. Такі моделі зламають pipeline обробки українських книг.",
     system:
-      "You detect language. Output ONLY a single word: ru, uk, en, or de. No punctuation.",
+      "You detect language. Output ONLY a single word: ru, uk, en, or de. No punctuation. No explanation.",
     user:
-      "Text: 'Алгоритм пошуку в глибину обходить дерево, починаючи з кореня'. What language?",
-    maxTokens: 8,
-    score: (a) => {
-      const t = a.trim().toLowerCase().replace(/[^a-z]/g, "");
-      if (t === "uk")          return 1.0;
-      if (t.startsWith("uk"))  return 0.85;
-      if (t === "ru")          return 0.0; /* серьёзная ошибка для пайплайна */
-      if (t === "ukrainian")   return 0.85;
-      return 0.1;
-    },
+      "What language is this text?\n\n" +
+      "«Штучний інтелект є невід'ємною частиною сучасного технологічного прогресу. " +
+      "Алгоритми машинного навчання дозволяють комп'ютерам вчитися з даних та вирішувати " +
+      "складні завдання без явного програмування. Системи глибокого навчання досягають " +
+      "вражаючих результатів у галузях розпізнавання мовлення, обробки зображень та " +
+      "обробки природної мови.»",
+    maxTokens: 16,
+    score: ukLangScore,
+  },
+  {
+    id: "lang-detect-uk-shevchenko",
+    role: "lang_detector",
+    description: "Визначити мову поезії Шевченка (складний тест).",
+    whyImportant:
+      "Класична літературна українська — найважчий тест. Лексика Шевченка унікальна: " +
+      "«нащо», «лихо», «чом» — цих форм немає в російській. " +
+      "Модель яка провалить цей тест, не розпізнає старих або художніх українських текстів.",
+    system:
+      "You detect language. Output ONLY a single word: ru, uk, en, or de. No punctuation. No explanation.",
+    user:
+      "What language is this text?\n\n" +
+      "«Думи мої, думи мої, лихо мені з вами! " +
+      "Нащо стали на папері сумними рядами? " +
+      "Чом вас вітер не розвіяв в степу, як пилину? " +
+      "Чом вас лихо не приспало, як свою дитину? " +
+      "Встаньте, діти, орли сизі, розправте крила! " +
+      "Летіть у поле, де широко, де вільно й мило.»",
+    maxTokens: 16,
+    score: ukLangScore,
+  },
+  {
+    id: "lang-detect-uk-library",
+    role: "lang_detector",
+    description: "Визначити мову технічного тексту про книги (доменний тест).",
+    whyImportant:
+      "Пайплайн обробляє бібліотечні описи. Тест використовує технічний текст бібліотечної " +
+      "тематики українською — саме той контент, що потрапляє в pipeline. " +
+      "Слова «видання», «надходження», «рубриками», «здійснювати» — унікально українські.",
+    system:
+      "You detect language. Output ONLY a single word: ru, uk, en, or de. No punctuation. No explanation.",
+    user:
+      "What language is this text?\n\n" +
+      "«Бібліотечний каталог містить тисячі книжок різних жанрів і тематик. " +
+      "Кожне видання має унікальний ідентифікатор, автора, назву та анотацію. " +
+      "Система автоматично індексує нові надходження та дозволяє користувачам " +
+      "здійснювати пошук за ключовими словами, іменами авторів або тематичними рубриками. " +
+      "Електронні читанки надають доступ до оцифрованих рукописів і стародруків.»",
+    maxTokens: 16,
+    score: ukLangScore,
   },
   {
     id: "lang-detect-en",
@@ -730,15 +790,43 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
     whyImportant:
       "Контрольный тест: english не должен вызывать проблем. Если и здесь модель промахивается — она сломана.",
     system:
-      "You detect language. Output ONLY a single word: ru, uk, en, or de. No punctuation.",
+      "You detect language. Output ONLY a single word: ru, uk, en, or de. No punctuation. No explanation.",
     user:
-      "Text: 'The depth-first search algorithm traverses the tree starting from the root'. What language?",
-    maxTokens: 8,
+      "What language is this text?\n\n" +
+      "«The depth-first search algorithm traverses the tree starting from the root node. " +
+      "It explores each branch completely before backtracking to explore other branches. " +
+      "This approach uses a stack data structure, either explicitly or via the call stack.»",
+    maxTokens: 16,
     score: (a) => {
       const t = a.trim().toLowerCase().replace(/[^a-z]/g, "");
       if (t === "en" || t === "english") return 1.0;
       if (t.startsWith("en"))             return 0.85;
       return 0.0;
+    },
+  },
+  {
+    id: "lang-detect-ru",
+    role: "lang_detector",
+    description: "Распознать русский язык (контрольный тест).",
+    whyImportant:
+      "Если модель отвечает «ru» на всё подряд, этот тест покажет что она случайно угадала. " +
+      "Правильная lang-detect модель должна уметь различать ru от uk. " +
+      "Тест использует длинный технический абзац по-русски.",
+    system:
+      "You detect language. Output ONLY a single word: ru, uk, en, or de. No punctuation. No explanation.",
+    user:
+      "What language is this text?\n\n" +
+      "«Алгоритм поиска в глубину обходит дерево, начиная с корневого узла. " +
+      "Он исследует каждую ветку полностью, прежде чем вернуться назад и исследовать другие ветки. " +
+      "Этот подход использует структуру данных стек, явно или через стек вызовов функций. " +
+      "Временная сложность алгоритма составляет O(V+E), где V — вершины, E — рёбра.»",
+    maxTokens: 16,
+    score: (a) => {
+      const t = a.trim().toLowerCase().replace(/[^a-z]/g, "");
+      if (t === "ru" || t === "russian") return 1.0;
+      if (t.startsWith("ru"))            return 0.85;
+      if (t === "uk")                    return 0.0; /* критическая ошибка: путает ru↔uk */
+      return 0.1;
     },
   },
 
