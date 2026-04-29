@@ -246,6 +246,28 @@ interface Discipline {
   imageUrl?: string;
 }
 
+/**
+ * Удаляет `<think>…</think>` блок из ответа LLM.
+ *
+ * Qwen3, GLM-4 и другие "thinking" модели могут вставлять внутренний
+ * reasoning прямо в `content` (LM Studio не всегда разделяет content
+ * и reasoning_content). Если не вырезать — scorer получит мусор вместо ответа.
+ *
+ * Поведение:
+ * - `<think>reasoning here</think>\n\nen` → `en`
+ * - `<think>...</think>{"score":9}` → `{"score":9}`
+ * - `en` (без think) → `en` (noop)
+ * - `<think>only reasoning, no close tag` → всё удалено → `""` (пустой)
+ */
+function stripThinkingBlock(raw: string): string {
+  if (!raw.includes("<think")) return raw;
+  const stripped = raw
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/<think>[\s\S]*/gi, "")  /* незакрытый <think> — удалить всё после */
+    .trim();
+  return stripped;
+}
+
 /* Helper: безопасный парсинг JSON с очисткой markdown-обёрток. */
 function tryParseJson(answer: string): unknown | null {
   const cleaned = answer
@@ -1266,7 +1288,8 @@ async function lmsChat(
       usage?: { total_tokens?: number };
     };
     const choice = j.choices?.[0]?.message;
-    const content = (choice?.content ?? choice?.reasoning_content ?? "").trim();
+    const raw = (choice?.content ?? choice?.reasoning_content ?? "").trim();
+    const content = stripThinkingBlock(raw);
     return { content, durationMs: Date.now() - t0, totalTokens: j.usage?.total_tokens ?? 0, ok: true };
   } catch (e) {
     return { content: "", durationMs: Date.now() - t0, totalTokens: 0, ok: false, error: e instanceof Error ? e.message : String(e) };
