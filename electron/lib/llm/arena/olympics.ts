@@ -1396,8 +1396,15 @@ function roleToPrefKey(role: OlympicsRole): string | null {
  * Считает per-role aggregates: для каждой роли усредняет результаты её
  * дисциплин по каждой модели. Это и есть основа корректного выбора —
  * одна дисциплина даёт случайный сигнал, среднее по 2-3 даёт надёжный.
+ *
+ * @param btScores Bradley-Terry scores (Map<model, [0..1]>) — используются
+ *   как тайbreaker при одинаковом avgScore, чтобы список совпадал
+ *   с реальным рейтингом турнира, а не зависел от порядка тестирования.
  */
-function buildRoleAggregates(results: OlympicsDisciplineResult[]): OlympicsRoleAggregate[] {
+function buildRoleAggregates(
+  results: OlympicsDisciplineResult[],
+  btScores: Map<string, number>,
+): OlympicsRoleAggregate[] {
   const byRole = new Map<OlympicsRole, OlympicsDisciplineResult[]>();
   for (const r of results) {
     const list = byRole.get(r.role) ?? [];
@@ -1448,9 +1455,14 @@ function buildRoleAggregates(results: OlympicsDisciplineResult[]): OlympicsRoleA
       };
     });
 
-    /* Champion = лучший по avgScore (стабильное качество); тай-брейк по avgDurationMs. */
+    /* Champion = лучший по avgScore; тай-брейки: BT → speed.
+     * Tolerance 0.5% — если разница счёта меньше, считаем модели равными
+     * и решаем по BT-рейтингу, а при равном BT — по скорости ответа. */
     const sortedByQuality = [...perModel].sort((a, b) => {
-      if (Math.abs(a.avgScore - b.avgScore) > 0.03) return b.avgScore - a.avgScore;
+      if (Math.abs(a.avgScore - b.avgScore) > 0.005) return b.avgScore - a.avgScore;
+      const btA = btScores.get(a.model) ?? 0;
+      const btB = btScores.get(b.model) ?? 0;
+      if (Math.abs(btA - btB) > 0.02) return btB - btA;
       return a.avgDurationMs - b.avgDurationMs;
     });
     const champion = sortedByQuality[0] && sortedByQuality[0].avgScore > 0.3
@@ -1486,7 +1498,19 @@ function buildRoleAggregates(results: OlympicsDisciplineResult[]): OlympicsRoleA
       role,
       prefKey,
       disciplines: disciplineResults.map((d) => d.discipline),
-      perModel: perModel.sort((a, b) => b.avgScore - a.avgScore),
+      /* Сортировка для отображения:
+       *   1) avgScore DESC (основное — качество)
+       *   2) BT score DESC (турнирный рейтинг как тайbreaker — стабилизирует
+       *      порядок когда несколько моделей набрали одинаковый avgScore)
+       *   3) avgDurationMs ASC (при прочих равных — быстрее лучше)
+       * Это гарантирует что champion/optimum всегда на 1-м/2-м месте в списке. */
+      perModel: perModel.sort((a, b) => {
+        if (Math.abs(a.avgScore - b.avgScore) > 0.005) return b.avgScore - a.avgScore;
+        const btA = btScores.get(a.model) ?? 0;
+        const btB = btScores.get(b.model) ?? 0;
+        if (Math.abs(btA - btB) > 0.02) return btB - btA;
+        return a.avgDurationMs - b.avgDurationMs;
+      }),
       champion,
       optimum,
       championReason,
@@ -1852,8 +1876,9 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
 
   /* ── Per-role aggregation (am-ELO architecture) ──
      For each model, average results across all disciplines of a role.
-     Uses BT-MLE as tiebreaker when avg scores are close. */
-  const roleAggregates = buildRoleAggregates(results);
+     btScores переданы явно — используются как тайbreaker при одинаковом
+     avgScore, чтобы порядок в списке совпадал с реальным турнирным рейтингом. */
+  const roleAggregates = buildRoleAggregates(results, btScores);
 
   const recommendations: Record<string, string> = {};
   const recommendationsByScore: Record<string, string> = {};

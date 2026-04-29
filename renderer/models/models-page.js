@@ -757,7 +757,10 @@ function renderOlympicsReport(report) {
   const disciplines = el("div", { class: "mp-olympics-disciplines" }, [
     el("h3", {}, t("models.olympics.disciplines")),
     ...((report.disciplines ?? []).map((d) => {
-      const sorted = [...(d.perModel ?? [])].sort((a, b) => b.score - a.score);
+      const sorted = [...(d.perModel ?? [])].sort((a, b) => {
+        if (Math.abs(a.score - b.score) > 0.005) return b.score - a.score;
+        return a.durationMs - b.durationMs; /* тайbreaker: быстрее лучше */
+      });
       const podium = ["🥇", "🥈", "🥉"];
       return el("div", { class: "mp-olympics-discipline" }, [
         el("div", { class: "mp-olympics-discipline-title" }, `${d.discipline}`),
