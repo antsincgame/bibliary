@@ -9,7 +9,7 @@ import { getPreferencesStore, type Preferences } from "../lib/preferences/store.
 import { globalLlmLock } from "../lib/llm/global-llm-lock.js";
 import { modelRoleResolver, type ModelRole } from "../lib/llm/model-role-resolver.js";
 import { restartScheduler } from "../lib/llm/arena/scheduler.js";
-import { runOlympics, type OlympicsReport } from "../lib/llm/arena/olympics.js";
+import { runOlympics, type OlympicsReport, type OlympicsRole } from "../lib/llm/arena/olympics.js";
 
 const VALID_ROLES: readonly string[] = [
   "crystallizer",
@@ -140,6 +140,7 @@ export function registerArenaIpc(): void {
         maxModels: typeof args.maxModels === "number" ? args.maxModels : undefined,
         weightClasses: Array.isArray(args.weightClasses) ? (args.weightClasses as Array<"xs"|"s"|"m"|"l"|"xl"|"unknown">) : undefined,
         testAll: args.testAll === true,
+        roles: Array.isArray(args.roles) ? (args.roles as OlympicsRole[]) : undefined,
         signal: ctrl.signal,
         onProgress: (ev) => send("arena:olympics-progress", ev),
       });
@@ -153,6 +154,12 @@ export function registerArenaIpc(): void {
     if (!activeOlympicsCtrl) return false;
     activeOlympicsCtrl.abort();
     return true;
+  });
+
+  ipcMain.handle("arena:clear-olympics-cache", async () => {
+    const { clearOlympicsCache } = await import("../lib/llm/arena/olympics.js");
+    clearOlympicsCache();
+    return { ok: true };
   });
 
   ipcMain.handle("arena:apply-olympics-recommendations", async (_e, payload: unknown): Promise<Preferences> => {

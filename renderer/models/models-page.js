@@ -439,6 +439,16 @@ function buildOlympicsCard() {
         })(),
       ]),
     ]),
+    /* Per-role checkboxes — позволяют запускать только нужные роли */
+    el("div", { class: "mp-olympics-roles" }, [
+      el("span", { class: "mp-olympics-roles-label" }, "Роли:"),
+      ...ALL_ROLES.map((r) =>
+        el("label", { class: "mp-olympics-role-check" }, [
+          el("input", { type: "checkbox", "data-role": r.role, checked: true }),
+          el("span", {}, r.label),
+        ])
+      ),
+    ]),
     el("div", { class: "mp-olympics-actions" }, [
       el("button", {
         id: "mp-olympics-run",
@@ -457,6 +467,19 @@ function buildOlympicsCard() {
     /* Лог-панель: накапливает все события турнира (не только последнее). */
     el("div", { id: "mp-olympics-log", class: "mp-olympics-log", style: "display:none" }, ""),
     el("div", { id: "mp-olympics-results", class: "mp-olympics-results" }, ""),
+    /* Кнопка очистки кэша внизу карточки */
+    el("div", { class: "mp-olympics-cache-row" }, [
+      el("button", {
+        class: "btn btn-ghost btn-xs",
+        type: "button",
+        onclick: async () => {
+          if (window.api?.arena?.clearOlympicsCache) {
+            await window.api.arena.clearOlympicsCache();
+            showToast("Кэш олимпиады очищен", "success");
+          }
+        },
+      }, "🗑 Очистить кэш результатов"),
+    ]),
   ]);
 }
 
@@ -513,9 +536,15 @@ async function runOlympicsAndShow() {
   const testAll = testAllEl?.checked === true;
   const wcStr = classesEl?.value ?? "s,m";
   const weightClasses = wcStr.split(",").map((s) => s.trim()).filter(Boolean);
+  /* Per-role filter: только отмеченные роли. */
+  const roleChecks = pageRoot?.querySelectorAll(".mp-olympics-role-check input[data-role]") ?? [];
+  const roles = [];
+  for (const cb of roleChecks) {
+    if (cb.checked) roles.push(cb.getAttribute("data-role"));
+  }
 
   try {
-    const report = await window.api.arena.runOlympics({ testAll, weightClasses });
+    const report = await window.api.arena.runOlympics({ testAll, weightClasses, roles });
     appendOlympicsLog(logEl, t("models.olympics.done", { ms: ((report.totalDurationMs ?? 0) / 1000).toFixed(1) }), "good");
     renderOlympicsReport(report);
     showToast(t("models.olympics.success"), "success");
@@ -557,6 +586,7 @@ function prefKeyLabel(k) {
     translatorModel:          "Переводчик",
     langDetectorModel:        "Определитель языка",
     ukrainianSpecialistModel: "Украинская модель",
+    visionModelKey:           "Vision (OCR/обложки)",
   };
   return MAP[k] ?? k;
 }
@@ -570,9 +600,21 @@ function roleIcon(prefKey) {
     translatorModel:          "🌐",
     langDetectorModel:        "🔤",
     ukrainianSpecialistModel: "🇺🇦",
+    visionModelKey:           "👁️",
   };
   return MAP[prefKey] ?? "🤖";
 }
+
+/** Все роли для чекбоксов. */
+const ALL_ROLES = [
+  { role: "crystallizer",         label: "💎 Кристаллизатор" },
+  { role: "evaluator",            label: "📚 Оценщик" },
+  { role: "judge",                label: "⚖️ Критик" },
+  { role: "translator",           label: "🌐 Переводчик" },
+  { role: "lang_detector",        label: "🔤 Язык" },
+  { role: "ukrainian_specialist", label: "🇺🇦 Укр." },
+  { role: "vision",               label: "👁️ Vision" },
+];
 
 function renderOlympicsReport(report) {
   const root = pageRoot?.querySelector("#mp-olympics-results");

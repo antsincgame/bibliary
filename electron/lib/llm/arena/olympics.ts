@@ -43,6 +43,8 @@ export interface OlympicsOptions {
   weightClasses?: WeightClass[];
   /** Тестировать ВСЕ доступные модели (игнорирует weightClasses + maxModels). */
   testAll?: boolean;
+  /** Фильтр по ролям — запускать только дисциплины этих ролей. Пустой = все. */
+  roles?: OlympicsRole[];
   /** Прогресс-каллбэк. */
   onProgress?: (e: OlympicsEvent) => void;
   /** Abort. */
@@ -90,7 +92,8 @@ export type OlympicsRole =
   | "translator"
   | "judge"
   | "lang_detector"
-  | "ukrainian_specialist";
+  | "ukrainian_specialist"
+  | "vision";
 
 export interface OlympicsDisciplineResult {
   discipline: string;
@@ -210,6 +213,8 @@ interface Discipline {
   maxTokens: number;
   /** Краткое объяснение почему этот тест важен для роли (для UI explain). */
   whyImportant?: string;
+  /** Base64 data-URI картинки для мультимодальной дисциплины (vision). */
+  imageUrl?: string;
 }
 
 /* Helper: безопасный парсинг JSON с очисткой markdown-обёрток. */
@@ -353,6 +358,43 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
       if (typeof parsed.reasoning === "string") {
         const r = parsed.reasoning.toLowerCase();
         if (/non[\s-]?technical|self[\s-]?help|mot|noise|шум|нетехни|self[\s-]?publ|low\s*qual/.test(r)) s += 0.2;
+      }
+
+      return Math.max(0, Math.min(1, s));
+    },
+  },
+  {
+    id: "evaluator-midrange",
+    role: "evaluator",
+    description: "Оценить средне-качественную книгу (mid-range 5-7).",
+    whyImportant:
+      "Evaluator должен различать 3 уровня: шум (1-3), среднее (5-7), эталон (9-10). Без теста на середину шкалы оценщик может пропускать нишевые, но полезные книги или, наоборот, завышать посредственные.",
+    system:
+      "You evaluate book quality for a TECHNICAL knowledge base. Score 0-10. " +
+      'Output ONLY JSON: {"score":number,"reasoning":string}.',
+    user:
+      'Book: "Git & GitHub Visual Guide" by Bloomfield B., Ocean D., Skylark A., Celis V. ' +
+      "Topics: git basics, branching, pull requests, GitHub Actions. " +
+      "Year: 2024. Pages: 210. Visual step-by-step format. " +
+      "Aimed at beginners. Published by small publisher.",
+    maxTokens: 200,
+    score: (a) => {
+      const parsed = tryParseJson(a) as { score?: number; reasoning?: string } | null;
+      if (!parsed || typeof parsed.score !== "number") return 0;
+
+      let s = 0;
+      /* Ожидаем 5-7: полезная нишевая книга, не шум и не классика. */
+      if (parsed.score >= 5 && parsed.score <= 7)         s += 0.6;
+      else if (parsed.score === 4 || parsed.score === 8)  s += 0.3;
+      else if (parsed.score === 3 || parsed.score === 9)  s += 0.1;
+      else                                                 s += 0.0;
+
+      if (typeof parsed.reasoning === "string") {
+        const r = parsed.reasoning.toLowerCase();
+        if (r.length >= 30) s += 0.15;
+        if (r.length >= 80) s += 0.05;
+        if (/beginner|начинающ|visual|step|introduction|вводн/.test(r)) s += 0.10;
+        if (/niche|narrow|basics|базов|git/.test(r)) s += 0.10;
       }
 
       return Math.max(0, Math.min(1, s));
@@ -595,6 +637,33 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
       return 0.0;
     },
   },
+
+  /* ─── Vision ────────────────────────────────────────────────────────── */
+  {
+    id: "vision-describe-shapes",
+    role: "vision",
+    description: "Описать содержимое изображения (vision-модель).",
+    whyImportant:
+      "Vision-модели используются для OCR обложек и иллюстраций. Если модель не видит " +
+      "геометрию на тривиальной картинке — она не справится с OCR книжных обложек.",
+    system:
+      "You are a vision assistant. Describe what you see in this image. " +
+      "Be precise about colors and shapes. 1-2 sentences. No markdown.",
+    user: "Describe this image.",
+    imageUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFAAAAAeCAIAAAA0IQ7mAAAAUklEQVR4nO3PwQkAIAwEweu/MrvSjxVIArLZ5d4hk2QNW9Yek2B6gukJpieYXjM4eV/XR4JrzwsWLFhw7UeCa88LZoP/SzA9wfQE0xNM74JH7QAkJZohvhUzSwAAAABJRU5ErkJggg==",
+    maxTokens: 128,
+    score: (a) => {
+      const lower = a.toLowerCase();
+      let s = 0;
+      if (lower.length >= 10 && lower.length < 500) s += 0.15;
+      if (/red|красн/.test(lower))                   s += 0.25;
+      if (/rectangle|rect|square|квадрат|прямоуг/.test(lower)) s += 0.25;
+      if (/blue|синий|голуб/.test(lower))             s += 0.15;
+      if (/white|бел/.test(lower))                    s += 0.10;
+      if (/border|frame|рамк|обвод/.test(lower))      s += 0.10;
+      return Math.min(1, s);
+    },
+  },
 ];
 
 /* ─── LM Studio API ──────────────────────────────────────────────────── */
@@ -619,7 +688,7 @@ async function lmsChat(
   model: string,
   system: string,
   user: string,
-  opts: { temperature?: number; maxTokens?: number; timeoutMs?: number; signal?: AbortSignal },
+  opts: { temperature?: number; maxTokens?: number; timeoutMs?: number; signal?: AbortSignal; imageUrl?: string },
 ): Promise<ChatResp> {
   const t0 = Date.now();
   const ctrl = new AbortController();
@@ -627,6 +696,13 @@ async function lmsChat(
   const onAbort = (): void => ctrl.abort();
   opts.signal?.addEventListener("abort", onAbort);
   try {
+    /* Мультимодальный content для vision-дисциплин (OpenAI-compat). */
+    const userContent = opts.imageUrl
+      ? [
+          { type: "text" as const, text: user },
+          { type: "image_url" as const, image_url: { url: opts.imageUrl } },
+        ]
+      : user;
     const r = await fetch(`${lmsUrl}/v1/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -634,7 +710,7 @@ async function lmsChat(
         model,
         messages: [
           { role: "system", content: system },
-          { role: "user", content: user },
+          { role: "user", content: userContent },
         ],
         temperature: opts.temperature ?? 0.2,
         max_tokens: opts.maxTokens ?? 512,
@@ -744,6 +820,7 @@ function roleToPrefKey(role: OlympicsRole): string | null {
     case "translator":           return "translatorModel";
     case "lang_detector":        return "langDetectorModel";
     case "ukrainian_specialist": return "ukrainianSpecialistModel";
+    case "vision":               return "visionModelKey";
     default:                      return null;
   }
 }
@@ -853,6 +930,21 @@ function buildRoleAggregates(results: OlympicsDisciplineResult[]): OlympicsRoleA
   return aggregates;
 }
 
+/* ─── Кэш результатов ─────────────────────────────────────────────────
+   Если набор моделей и дисциплин не изменился с прошлого запуска —
+   возвращаем кэш мгновенно. Кэш хранится в памяти процесса; при
+   перезапуске или clearOlympicsCache() он сбрасывается. */
+let _olympicsCache: { key: string; report: OlympicsReport } | null = null;
+
+function makeCacheKey(models: string[], disciplineIds: string[]): string {
+  return [...models].sort().join("|") + "@@" + [...disciplineIds].sort().join("|");
+}
+
+/** Очистить кэш результатов олимпиады (IPC: arena:clear-olympics-cache). */
+export function clearOlympicsCache(): void {
+  _olympicsCache = null;
+}
+
 export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsReport> {
   const lmsUrl = opts.lmsUrl ?? DEFAULT_LMS_URL;
   const t0 = Date.now();
@@ -879,12 +971,24 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
       `Загрузи 2+ моделей нужного класса (см. classifyWeight).`,
     );
   }
+
+  /* Определяем целевые дисциплины ДО проверки кэша. */
+  let targetDisciplines = opts.disciplines
+    ? OLYMPICS_DISCIPLINES.filter((d) => opts.disciplines!.includes(d.id) || opts.disciplines!.includes(d.role))
+    : OLYMPICS_DISCIPLINES;
+  if (opts.roles && opts.roles.length > 0) {
+    const wantRoles = new Set(opts.roles);
+    targetDisciplines = targetDisciplines.filter((d) => wantRoles.has(d.role));
+  }
+  const cacheKey = makeCacheKey(models, targetDisciplines.map((d) => d.id));
+  if (_olympicsCache && _olympicsCache.key === cacheKey) {
+    opts.onProgress?.({ type: "olympics.done", durationMs: 0 });
+    return { ..._olympicsCache.report, totalDurationMs: 0 };
+  }
   const modelWeightClass: Record<string, WeightClass> = {};
   for (const m of models) modelWeightClass[m] = classifyWeight(m);
 
-  const disciplines = opts.disciplines
-    ? OLYMPICS_DISCIPLINES.filter((d) => opts.disciplines!.includes(d.id) || opts.disciplines!.includes(d.role))
-    : OLYMPICS_DISCIPLINES;
+  const disciplines = targetDisciplines;
   if (disciplines.length === 0) {
     throw new Error(`Нет ни одной дисциплины (запрошено: ${opts.disciplines?.join(", ") ?? "—"})`);
   }
@@ -902,6 +1006,7 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
         maxTokens: d.maxTokens,
         timeoutMs: opts.perDisciplineTimeoutMs ?? 90_000,
         signal: opts.signal,
+        imageUrl: d.imageUrl,
       });
       const s = r.ok ? d.score(r.content) : 0;
       const efficiency = r.durationMs > 0 ? (s * 1000) / r.durationMs : 0;
@@ -1041,7 +1146,7 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
   const totalDurationMs = Date.now() - t0;
   opts.onProgress?.({ type: "olympics.done", durationMs: totalDurationMs });
 
-  return {
+  const report: OlympicsReport = {
     generatedAt: new Date().toISOString(),
     lmsUrl,
     models,
@@ -1057,4 +1162,6 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
     disciplineCount: results.length,
     totalDurationMs,
   };
+  _olympicsCache = { key: cacheKey, report };
+  return report;
 }

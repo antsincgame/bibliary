@@ -6662,6 +6662,29 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   padding: 3px 6px; border-radius: 4px; font-size: 11px;
 }
 
+/* ── Olympics: per-role checkboxes ── */
+.mp-olympics-roles {
+  display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+  padding: 6px 10px; margin-bottom: 8px;
+  background: rgba(0,0,0,0.1); border: 1px solid var(--border, #2a2a2a);
+  border-radius: 6px; font-size: 11px;
+}
+.mp-olympics-roles-label { font-weight: 600; margin-right: 4px; color: var(--text-secondary); }
+.mp-olympics-role-check {
+  display: flex; align-items: center; gap: 3px;
+  cursor: pointer; user-select: none;
+  padding: 2px 5px; border-radius: 4px;
+  transition: background 0.15s;
+}
+.mp-olympics-role-check:hover { background: rgba(255,255,255,0.05); }
+.mp-olympics-role-check input[type="checkbox"] { cursor: pointer; width: 13px; height: 13px; }
+/* ── Olympics: cache button ── */
+.mp-olympics-cache-row {
+  display: flex; justify-content: flex-end; padding: 4px 0; margin-top: 4px;
+}
+.btn-xs { font-size: 10px; padding: 2px 8px; opacity: 0.6; }
+.btn-xs:hover { opacity: 1; }
+
 /* ── Olympics: champion vs optimum two-column (legacy, sub) ── */
 .mp-olympics-recs-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
 .mp-olympics-recs-col { background: rgba(0,0,0,0.15); border: 1px solid var(--border, #2a2a2a); border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
