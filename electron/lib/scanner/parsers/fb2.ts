@@ -65,7 +65,18 @@ async function parseFb2(filePath: string): Promise<ParseResult> {
   try {
     parsed = parser.parse(xml) as Record<string, unknown>;
   } catch (e) {
-    throw new Error(`fb2 parse failed: ${e instanceof Error ? e.message : String(e)}`);
+    /* Унификация с ODT и «FictionBook root not found»: XML parse error не
+       обязательно означает что файл совсем не является FB2 — он мог быть
+       слегка повреждён. Деградируем до warnings + empty sections чтобы
+       import-book получил outcome "unsupported", а не "failed".
+       Исключение: I/O ошибки (readFile выше) пробрасываются наружу — это
+       системная ошибка, не ошибка формата. */
+    warnings.push(`fb2: XML parse failed — ${e instanceof Error ? e.message : String(e)}`);
+    return {
+      metadata: { title: path.basename(filePath, path.extname(filePath)), warnings },
+      sections: [],
+      rawCharCount: 0,
+    };
   }
 
   const root = (parsed["FictionBook"] ?? parsed["fictionbook"]) as Record<string, unknown> | undefined;

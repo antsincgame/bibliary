@@ -549,7 +549,23 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
               /* Симметрия с folder-импортом: каждую новую книгу немедленно
                  ставим в evaluator-queue, чтобы LLM-оценка началась
                  сразу, а не в конце большого batch. */
-              if (r.outcome === "added" && r.bookId) enqueueBook(r.bookId);
+              if (r.outcome === "added" && r.bookId) {
+                enqueueBook(r.bookId);
+                /* Зеркалим evaluator.queued в ImportLogger, как делает
+                   folder-импорт через onBookImported. Без этого import-files
+                   не давал ни одной "evaluator.queued" записи — пользователь
+                   не видел что книга попала в очередь оценки. */
+                void logger.write({
+                  importId, level: "info", category: "evaluator.queued",
+                  message: `Queued for evaluation: ${r.meta?.titleEn || r.meta?.title || r.bookId}`,
+                  file: p,
+                  details: {
+                    bookId: r.bookId,
+                    format: r.meta?.originalFormat,
+                    words: r.meta?.wordCount,
+                  },
+                });
+              }
             }
             /* Сводим warnings и первую ошибку из batch в одно прогресс-событие.
                Без этого `mirrorProgressToLogger` для items-import видел только

@@ -95,7 +95,24 @@ async function parseEpub(filePath: string): Promise<ParseResult> {
     };
   }
   const buf = await fs.readFile(filePath);
-  const zip = await JSZip.loadAsync(buf);
+  /* Ловим ошибки JSZip отдельно: повреждённый ZIP, ZIP-bomb guard, неверная
+     структура — всё это degrade до warnings + empty, как ODT делает с
+     "ODT unzip failed". До этой правки JSZip throw'ил наружу → import-book
+     помечал книгу как failed вместо unsupported. */
+  let zip: JSZip;
+  try {
+    zip = await JSZip.loadAsync(buf);
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    return {
+      metadata: {
+        title: path.basename(filePath, path.extname(filePath)),
+        warnings: [`epub: ZIP load failed (${reason}) — file is corrupt or not a valid EPUB`],
+      },
+      sections: [],
+      rawCharCount: 0,
+    };
+  }
   const warnings: string[] = [];
 
   const containerFile = zip.file("META-INF/container.xml");

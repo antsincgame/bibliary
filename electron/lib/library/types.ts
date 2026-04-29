@@ -74,6 +74,12 @@ export interface BookCatalogMeta {
   isbn?: string;
   /** Publisher name from file metadata. */
   publisher?: string;
+  /**
+   * Detected language of the book text (ISO 639-1 code: "ru", "uk", "en",
+   * "de", "fr", "es", or "unknown"). Filled by lang-detector (regex-based)
+   * during import; never blocks import on failure.
+   */
+  language?: string;
   // ── structure ──
   wordCount: number;
   chapterCount: number;

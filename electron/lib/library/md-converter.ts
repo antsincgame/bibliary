@@ -23,6 +23,7 @@ import { pickBestBookTitle } from "./title-heuristics.js";
 import { extractIsbnsFromSections } from "./isbn-extractor.js";
 import { lookupIsbnOpenLibrary } from "../bookhunter/sources/openlibrary.js";
 import { lookupIsbnGoogleBooks } from "../bookhunter/sources/google-books-meta.js";
+import { detectLanguageByRegex } from "../llm/lang-detector.js";
 import {
   SUPPORTED_BOOK_EXTS,
   type BookCatalogMeta,
@@ -73,6 +74,7 @@ function buildFrontmatter(meta: BookCatalogMeta): string {
   if (meta.titleEn) lines.push(`titleEn: ${escapeYaml(meta.titleEn)}`);
   if (meta.authorEn) lines.push(`authorEn: ${escapeYaml(meta.authorEn)}`);
   if (meta.year !== undefined) lines.push(`year: ${meta.year}`);
+  if (meta.language) lines.push(`language: ${escapeYaml(meta.language)}`);
   if (meta.isbn) lines.push(`isbn: ${escapeYaml(meta.isbn)}`);
   if (meta.publisher) lines.push(`publisher: ${escapeYaml(meta.publisher)}`);
   // structure
@@ -554,6 +556,28 @@ export async function convertBookToMarkdown(
 
   const status: BookStatus = chapters.length === 0 ? "unsupported" : "imported";
 
+  /* Language detection: чисто-regex, не зависит от LLM и не может упасть.
+     Берём выборку из первых 3 глав (до 4096 символов), чтобы покрыть
+     предисловие и начало основного текста. Если парсер уже вернул язык в
+     metadata — предпочитаем его (metadata-зона точнее для языка издания). */
+  let detectedLanguage: string | undefined;
+  try {
+    const parserLanguage = parsed.metadata.language?.toLowerCase?.();
+    if (parserLanguage && parserLanguage !== "unknown") {
+      detectedLanguage = parserLanguage;
+    } else if (chapters.length > 0) {
+      const textSample = chapters
+        .slice(0, 3)
+        .map((ch) => ch.paragraphs.join(" "))
+        .join(" ")
+        .slice(0, 4096);
+      const langResult = detectLanguageByRegex(textSample);
+      if (langResult.lang !== "unknown") detectedLanguage = langResult.lang;
+    }
+  } catch {
+    /* Никогда не должно упасть, но страхуемся — детектор не должен ломать импорт. */
+  }
+
   const meta: BookCatalogMeta = {
     id: bookIdFromSha(sha256),
     sha256,
@@ -562,6 +586,7 @@ export async function convertBookToMarkdown(
     title: finalTitle,
     author: finalAuthor,
     year: finalYear,
+    language: detectedLanguage,
     isbn: parsed.metadata.identifier ?? extractedIsbn ?? isbnMeta?.isbn13,
     publisher: finalPublisher,
     wordCount: totalWords,

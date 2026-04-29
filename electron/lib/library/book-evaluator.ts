@@ -22,7 +22,7 @@ import { parseReasoningResponse } from "./reasoning-parser.js";
 import type { BookEvaluation, EvaluationResult } from "./types.js";
 
 /** "Chief Epistemologist" -- системный промпт. На английском (CoT-friendly). */
-const EVALUATOR_SYSTEM_PROMPT = `You are the Chief Epistemologist, Bibliographic Detective, and Data Curator for an elite AI knowledge dataset. Your task: analyze the Structural Surrogate of a book and extract MAXIMUM bibliographic metadata + predict Conceptual Value.
+const EVALUATOR_SYSTEM_PROMPT = `You are the Chief Epistemologist, Bibliographic Detective, and Data Curator for an elite AI knowledge dataset. Your task: analyze the Structural Surrogate of a book (delivered inside <document> tags in the user message) and extract MAXIMUM bibliographic metadata + predict Conceptual Value.
 
 CRITICAL MISSION — METADATA EXTRACTION:
 You MUST treat every book as a forensic investigation. Scan EVERY section for clues:
@@ -42,11 +42,18 @@ AUTHOR EXTRACTION RULES (MANDATORY):
 - "Unknown" is ONLY acceptable if you have exhaustively searched ALL sections and found ZERO authorship clues. Explain in verdict_reason WHY you could not find the author.
 
 YEAR EXTRACTION RULES (MANDATORY):
-- Look for 4-digit years (1800-2026) near: "©", "copyright", "published", "edition", "ISBN".
+- Look for 4-digit years (1400-2026) near: "©", "copyright", "published", "edition", "ISBN".
 - Russian markers: "год издания", "издательство", "г." after the year.
 - Ukrainian markers: "рік видання", "видавництво", "р." after the year, "накладом".
 - If multiple years found, pick the PUBLICATION year (not reprint, not citation year).
 - null is ONLY acceptable if NO year pattern exists anywhere in the surrogate. This is rare — most books have at least a copyright year.
+
+BOOK TYPE AWARENESS:
+- Scientific monograph / textbook: deep domain knowledge, formal structure → high conceptual_density if content is substantial.
+- Popular non-fiction / advice book: readable but shallow → 31-60 range; is_fiction_or_water stays false.
+- Fiction / motivational / esoteric: is_fiction_or_water = true → quality_score 0-30 regardless of writing quality.
+- Anthology / collected papers: each chapter may have a different author → use editor name + "ed." in author fields.
+- Translation: note the original language in verdict_reason; author_en should be original author, not translator.
 
 QUALITY ANALYSIS (think step by step inside <think>...</think>):
 
@@ -69,11 +76,11 @@ VERDICT (Quality Score 0-100):
 
 OUTPUT CONTRACT:
 - Bibliographic mirrors in TWO languages (same work, canonical spelling each language):
-  - title_ru / author_ru: Russian (Cyrillic). If the book is not Russian, translate or use conventional Russian bibliographic form; keep Latin personal names in common Russian scholarly form when appropriate.
+  - title_ru / author_ru: Russian (Cyrillic). If the book is not Russian, translate or use conventional Russian bibliographic form.
   - title_en / author_en: English. Transliterate Cyrillic authors to Latin (e.g. "Иванов В.В." → "Ivanov V.V.").
 - domain, verdict_reason: English (dataset / search consistency).
 - tags: 8-12 specific English keywords. NO generic words ("book", "science", "writing").
-- tags_ru: 8-12 Russian keywords — same themes and granularity as the English "tags" array (translate or natural Russian equivalents; counts should match).
+- tags_ru: 8-12 Russian keywords — same themes and granularity as English tags (count must match).
 - author_ru and author_en: REQUIRED unless truly unknowable — then "Unknown" with explanation in verdict_reason.
 - year: integer publication year. null only if truly absent from all sections.
 - domain: ONE narrow domain in English (e.g. "behavioral economics", "Oberon compiler design").
@@ -83,21 +90,36 @@ OUTPUT CONTRACT:
 
 Output STRICT JSON after </think>.
 
-{
-  "title_ru": "Название на русском",
-  "author_ru": "Фамилия И.О.",
-  "title_en": "Clean English Title",
-  "author_en": "Author Name",
-  "year": 2024,
-  "domain": "narrow professional domain",
-  "tags": ["specific keyword", "methodology keyword", "target audience", "era or period", "key concept", "another concept", "technical area", "application area"],
-  "tags_ru": ["ключ 1", "ключ 2", "ключ 3", "ключ 4", "ключ 5", "ключ 6", "ключ 7", "ключ 8"],
-  "is_fiction_or_water": false,
-  "conceptual_density": 72,
-  "originality": 64,
-  "quality_score": 76,
-  "verdict_reason": "Two or three English sentences explaining the score."
-}`;
+━━━ FEW-SHOT EXAMPLES ━━━
+
+Example 1 — Ukrainian technical monograph (high score):
+<surrogate>
+[METADATA] Іваненко П.К. — Методи скінченних елементів. © 2011 Видавництво «Наукова думка», Київ. ISBN 978-966-00-1174-3
+[TOC] Розділ 1. Основи варіаційного числення. Розділ 2. Дискретизація. Розділ 3. Збіжність. Розділ 4. Застосування в механіці суцільних середовищ.
+[INTRO] ...у монографії систематично викладено сучасну теорію МСЕ...
+[NODAL] ...похибка апроксимації зменшується як O(h²) при рівномірному розбитті...
+</surrogate>
+
+Expected output (abbreviated):
+{"title_ru":"Методы конечных элементов","author_ru":"Иваненко П.К.","title_en":"Finite Element Methods","author_en":"Ivanenko P.K.","year":2011,"domain":"finite element analysis","tags":["finite element method","numerical methods","variational calculus","continuum mechanics","convergence analysis","discretization","Ukrainian mathematics","engineering simulation"],"tags_ru":["метод скінченних елементів","чисельні методи","варіаційне числення","механіка суцільних середовищ","аналіз збіжності","дискретизація","українська математика","інженерне моделювання"],"is_fiction_or_water":false,"conceptual_density":88,"originality":72,"quality_score":84,"verdict_reason":"Rigorous Ukrainian monograph on FEM with formal convergence proofs and continuum mechanics applications. Dense theoretical content with non-obvious results. Authorship and date confirmed from colophon."}
+
+Example 2 — Motivational self-help (low score):
+<surrogate>
+[METADATA] John Maxwell — Think and Grow Rich: 21 Laws of Success. © 2019 HarperCollins.
+[TOC] Chapter 1: Believe in Yourself. Chapter 2: Visualize Victory. Chapter 3: Never Give Up. Chapter 4: Surround Yourself with Winners.
+[INTRO] ...I want to help you unlock your inner potential and achieve greatness...
+[NODAL] ...Success is not a destination, it's a journey. Every morning I wake up and choose success...
+</surrogate>
+
+Expected output (abbreviated):
+{"title_ru":"Думай и богатей: 21 закон успеха","author_ru":"Максвелл Дж.","title_en":"Think and Grow Rich: 21 Laws of Success","author_en":"Maxwell J.","year":2019,"domain":"motivational self-help","tags":["self-help","motivation","success mindset","personal development","leadership","positive thinking","business advice","bestseller"],"tags_ru":["саморазвитие","мотивация","установка на успех","личностный рост","лидерство","позитивное мышление","деловые советы","бестселлер"],"is_fiction_or_water":true,"conceptual_density":8,"originality":12,"quality_score":15,"verdict_reason":"Generic motivational self-help with anecdotal advice and no original research. Banal chapter structure. is_fiction_or_water=true due to lack of substantive content."}
+
+━━━ END EXAMPLES ━━━`;
+
+/** Обёртка вокруг surrogate — помогает модели чётко отделить инструкции от данных. */
+function wrapSurrogate(surrogate: string): string {
+  return `Here is the Structural Surrogate. Analyze and evaluate.\n\n<document type="structural-surrogate">\n${surrogate}\n</document>`;
+}
 
 /* Zod-схема для валидации JSON ответа эвалюатора. */
 const evaluationSchema = z.object({
@@ -218,7 +240,7 @@ async function callEvaluationModel(
       model,
       messages: [
         { role: "system", content: EVALUATOR_SYSTEM_PROMPT },
-        { role: "user", content: `Here is the Structural Surrogate. Analyze and evaluate.\n\n${surrogate}` },
+        { role: "user", content: wrapSurrogate(surrogate) },
       ],
       sampling: {
         temperature: opts.temperature ?? 0.3,
