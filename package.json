@@ -46,6 +46,7 @@
     "setup:7zip": "node scripts/download-7zip-win.cjs"
   },
   "dependencies": {
+    "@firecrawl/pdf-inspector": "^1.8.0",
     "@lmstudio/sdk": "^1.5.0",
     "@napi-rs/canvas": "^0.1.99",
     "@napi-rs/system-ocr": "^1.0.2",

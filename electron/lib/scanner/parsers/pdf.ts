@@ -5,6 +5,7 @@ import { isOcrSupported, rasterisePdfPages, recognizeImageBuffer } from "../ocr/
 import { parsePdfInWorker, isWorkerPdfEnabled } from "./pdf-worker-host.js";
 import { getPdfjsStandardFontDataUrl } from "../pdfjs-node.js";
 import { isLowValueBookTitle, pickBestBookTitle } from "../../library/title-heuristics.js";
+import { tryParsePdfWithInspector } from "./pdf-inspector-parser.js";
 
 /**
  * Жёсткие потолки памяти для PDF parser — защита от OOM на огромных книгах.
@@ -148,6 +149,17 @@ async function parsePdf(filePath: string, opts: ParseOptions = {}): Promise<Pars
  * Main-thread implementation. Используется когда worker отключён,
  * OCR enabled, или worker не загрузился. Также этот же код вызывается
  * ИЗ worker'а — поэтому он чистый, без AbortSignal-привязки к main.
+ *
+ * Пайплайн (Apr 2026):
+ *   1. OOM-guard по размеру файла.
+ *   2. pdf-inspector (Rust/NAPI) — primary path:
+ *      - 30-100x быстрее pdfjs на TextBased PDF
+ *      - детектит таблицы и колонки (pdfjs не умеет)
+ *      - возвращает готовый markdown с layout
+ *   3. Если pdf-inspector сообщил "Scanned"/"ImageBased" — пропускаем
+ *      pdfjs полностью и идём в OCR. Экономия минут на больших сканах.
+ *   4. Если pdf-inspector упал/не доступен — fallback на pdfjs (текущий
+ *      путь), без потери функциональности.
  */
 export async function parsePdfMain(filePath: string, opts: ParseOptions = {}): Promise<ParseResult> {
   // OOM-guard #1: отказ до чтения, если файл превышает MAX_PDF_FILE_BYTES.
@@ -164,6 +176,32 @@ export async function parsePdfMain(filePath: string, opts: ParseOptions = {}): P
       sections: [],
       rawCharCount: 0,
     };
+  }
+
+  /* Stage 0 — pdf-inspector primary path.
+     Не throws: возвращает status "ok" / "scanned" / "fallback" / "skipped".
+     Опт-аут через ENV `BIBLIARY_PDF_INSPECTOR=0` (на случай если у конкретной
+     книги inspector ломается, а пользователь хочет принудительный pdfjs). */
+  const inspectorEnabled = process.env.BIBLIARY_PDF_INSPECTOR !== "0";
+  let inspectorScanWarning: string | null = null;
+  if (inspectorEnabled) {
+    const outcome = await tryParsePdfWithInspector(filePath, opts);
+    if (outcome.status === "ok" && outcome.result) {
+      /* OCR не нужен — inspector извлёк текст. Возвращаем как есть. */
+      return outcome.result;
+    }
+    if (outcome.status === "scanned") {
+      /* Skip pdfjs entirely — мы знаем что текста нет. Идём прямо в OCR
+         (через тот же allParagraphs.length === 0 → OCR блок ниже).
+         Но pdfjs всё равно нужен для metadata (Title, Author, ISBN из info)
+         и outline. Сделаем lightweight pdfjs run с ТОЛЬКО metadata, без
+         page-by-page text — экономим время. */
+      inspectorScanWarning = outcome.reason ?? "pdf-inspector: scanned PDF, OCR required";
+    } else if (outcome.status === "fallback" && outcome.reason) {
+      /* Зафиксируем причину в warnings полностью прошедшего pdfjs-парсера
+         ниже — не теряем диагностику. */
+      inspectorScanWarning = `pdf-inspector fallback: ${outcome.reason}`;
+    }
   }
 
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -249,10 +287,21 @@ export async function parsePdfMain(filePath: string, opts: ParseOptions = {}): P
   let totalChars = 0;
   let pagesParsed = 0;
   let truncatedAtPage: number | null = null;
+
+  /* Если pdf-inspector сообщил, что PDF — скан/image-based, мы УЖЕ знаем,
+     что page.getTextContent() даст 0 параграфов. Пропускаем дорогой цикл
+     на N сотен страниц и идём прямо в OCR-блок. Экономия — минуты на
+     больших томах с 500+ страницами. */
+  const skipTextLayer = inspectorScanWarning !== null && /scanned|imagebased/i.test(inspectorScanWarning);
+  if (skipTextLayer) {
+    warnings.push(inspectorScanWarning!);
+    pagesParsed = doc.numPages;
+  }
+
   /* AUDIT MED-6: цикл по страницам мог идти минутами на 1000-страничном
      PDF и игнорировал opts.signal — cancel ingest'а не прерывал парсинг.
      Проверяем перед каждой страницей: дешёво, но мгновенно отвечает. */
-  for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
+  for (let pageNum = 1; !skipTextLayer && pageNum <= doc.numPages; pageNum++) {
     if (opts.signal?.aborted) {
       await doc.destroy().catch((err) => console.error("[pdf/parsePdfText] destroy Error:", err));
       throw new Error(`pdf parse aborted at page ${pageNum}/${doc.numPages}`);
@@ -304,6 +353,13 @@ export async function parsePdfMain(filePath: string, opts: ParseOptions = {}): P
       `PDF truncated at page ${truncatedAtPage}/${doc.numPages} ` +
       `(parsed ${pagesParsed}, ~${limitMchars}M chars hard limit reached)`,
     );
+  }
+
+  /* Зафиксируем причину pdf-inspector fallback — даже если эту книгу
+     успешно распарсил pdfjs, оставим аудит-след в warnings чтобы видеть
+     паттерны проблемных PDF (для будущих фиксов в pdf-inspector). */
+  if (inspectorScanWarning !== null && !skipTextLayer) {
+    warnings.push(inspectorScanWarning);
   }
 
   let ocrAppliedPages = 0;

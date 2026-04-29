@@ -58,5 +58,10 @@ data/preferences.json
 # Rebuild / native-module stash
 .electron-rebuild-stash/
 
+# Temporary native-build artifacts (когда экспериментируем с компиляцией Rust-крейтов
+# вручную — финальный pdf-inspector подключаем как готовый npm-пакет с prebuilt binary)
+build-temp/
+test_rust.rs
+
 # DjVuLibre downloaded installers (not needed in repo)
 vendor/djvulibre/**/*_Setup.exe
