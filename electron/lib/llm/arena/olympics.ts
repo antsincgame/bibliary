@@ -10,6 +10,8 @@
  * в реальной работе приложения.
  */
 
+import * as telemetry from "../../resilience/telemetry.js";
+
 const DEFAULT_LMS_URL = "http://localhost:1234";
 
 /**
@@ -56,7 +58,13 @@ export type OlympicsEvent =
   | { type: "olympics.discipline.start"; discipline: string; role: string }
   | { type: "olympics.model.done"; discipline: string; model: string; score: number; durationMs: number; ok: boolean; error?: string }
   | { type: "olympics.discipline.done"; discipline: string; champion: string | null }
-  | { type: "olympics.done"; durationMs: number };
+  | { type: "olympics.done"; durationMs: number }
+  | { type: "olympics.log"; level: string; message: string; ctx?: Record<string, unknown> }
+  | { type: "olympics.model.loading"; model: string }
+  | { type: "olympics.model.loaded"; model: string; loadTimeMs: number }
+  | { type: "olympics.model.unloaded"; model: string }
+  | { type: "olympics.model.load_failed"; model: string; reason: string }
+  | { type: "olympics.vram_guard"; action: string; estimatedGB: number; limitGB: number };
 
 export interface OlympicsModelResult {
   model: string;
@@ -853,11 +861,88 @@ export async function lmsListAvailableModels(lmsUrl: string = DEFAULT_LMS_URL): 
   return models.map((m) => m.key);
 }
 
+/* ─── Internal Olympics logger ────────────────────────────────────────
+   Structured logging для отладки тяжёлых сценариев (BSOD, VRAM
+   exhaustion, GPU TDR). Всегда пишет в stderr с префиксом, чтобы
+   при разборе post-mortem можно было быстро восстановить ход событий.
+   onProgress('olympics.log') опционально дублирует в UI. */
+type OlympicsLogLevel = "info" | "warn" | "error" | "debug";
+type OlympicsLogger = (level: OlympicsLogLevel, msg: string, ctx?: Record<string, unknown>) => void;
+
+function makeLogger(onProgress?: (e: OlympicsEvent) => void): OlympicsLogger {
+  return (level, msg, ctx) => {
+    const prefix = `[olympics ${new Date().toISOString()}] ${level.toUpperCase()}`;
+    const ctxStr = ctx && Object.keys(ctx).length > 0 ? " " + JSON.stringify(ctx) : "";
+    const line = `${prefix} ${msg}${ctxStr}`;
+    if (level === "error") console.error(line);
+    else if (level === "warn") console.warn(line);
+    else console.log(line);
+    onProgress?.({ type: "olympics.log", level, message: msg, ctx });
+  };
+}
+
+/* ─── Model lifecycle (v1 API) ───────────────────────────────────────── */
+
 /**
- * Load a model into LM Studio for Olympics testing.
- * Uses v1 API `POST /api/v1/models/load` with small context to minimize VRAM.
+ * Wait until LM Studio responds to a tiny health check. After load LM
+ * Studio могут несколько секунд готовить кэш — без ping-а первый chat
+ * получает spurious timeout.
  */
-async function lmsLoadModel(lmsUrl: string, modelKey: string, signal?: AbortSignal): Promise<boolean> {
+async function lmsWaitForReady(
+  lmsUrl: string,
+  modelKey: string,
+  log: OlympicsLogger,
+  timeoutMs = 15_000,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const t0 = Date.now();
+  let attempt = 0;
+  while (Date.now() - t0 < timeoutMs) {
+    if (signal?.aborted) return false;
+    attempt++;
+    try {
+      const r = await fetch(`${lmsUrl}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: modelKey,
+          messages: [{ role: "user", content: "ok" }],
+          max_tokens: 1,
+          temperature: 0,
+        }),
+        signal: AbortSignal.timeout(8_000),
+      });
+      if (r.ok) {
+        log("debug", `model ready after ${Date.now() - t0}ms (attempt ${attempt})`, { modelKey });
+        return true;
+      }
+    } catch { /* retry */ }
+    await new Promise((res) => setTimeout(res, 600));
+  }
+  log("warn", `model ready timeout after ${timeoutMs}ms`, { modelKey, attempts: attempt });
+  return false;
+}
+
+/**
+ * Load a model into LM Studio. Returns instance_id on success, null on
+ * failure. Uses small context (2048) to minimize VRAM footprint.
+ *
+ * CRITICAL: caller MUST unload via lmsUnloadModel after use, otherwise
+ * VRAM accumulates until BSOD (we hit 0x000000FD on RTX 5090 with 6 models).
+ */
+async function lmsLoadModel(
+  lmsUrl: string,
+  modelKey: string,
+  log: OlympicsLogger,
+  signal?: AbortSignal,
+): Promise<{ ok: true; instanceId: string; loadTimeMs: number } | { ok: false; reason: string }> {
+  const t0 = Date.now();
+  const ctrl = new AbortController();
+  const timeoutId = setTimeout(() => ctrl.abort(), 180_000);
+  const onAbort = (): void => ctrl.abort();
+  signal?.addEventListener("abort", onAbort);
+  log("info", "loading model", { modelKey, contextLength: 2048 });
+  telemetry.logEvent({ type: "olympics.model_lifecycle", phase: "load_start", modelKey });
   try {
     const r = await fetch(`${lmsUrl}/api/v1/models/load`, {
       method: "POST",
@@ -868,24 +953,178 @@ async function lmsLoadModel(lmsUrl: string, modelKey: string, signal?: AbortSign
         flash_attention: true,
         echo_load_config: false,
       }),
-      signal: signal ?? AbortSignal.timeout(120_000),
+      signal: ctrl.signal,
     });
-    return r.ok;
-  } catch {
+    const loadTimeMs = Date.now() - t0;
+    if (!r.ok) {
+      const txt = await r.text().catch(() => "");
+      log("error", `load failed HTTP ${r.status}`, { modelKey, body: txt.slice(0, 200), loadTimeMs });
+      telemetry.logEvent({
+        type: "olympics.model_lifecycle",
+        phase: "load_fail",
+        modelKey,
+        durationMs: loadTimeMs,
+        error: `HTTP ${r.status}: ${txt.slice(0, 200)}`,
+      });
+      return { ok: false, reason: `HTTP ${r.status}: ${txt.slice(0, 200)}` };
+    }
+    const j = (await r.json().catch(() => null)) as { instance_id?: string; status?: string } | null;
+    const instanceId = j?.instance_id ?? modelKey;
+    log("info", `loaded in ${loadTimeMs}ms`, { modelKey, instanceId });
+    telemetry.logEvent({ type: "olympics.model_lifecycle", phase: "load_ok", modelKey, instanceId, durationMs: loadTimeMs });
+    return { ok: true, instanceId, loadTimeMs };
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    log("error", "load threw", { modelKey, reason, loadTimeMs: Date.now() - t0 });
+    telemetry.logEvent({
+      type: "olympics.model_lifecycle",
+      phase: "load_fail",
+      modelKey,
+      durationMs: Date.now() - t0,
+      error: reason,
+    });
+    return { ok: false, reason };
+  } finally {
+    clearTimeout(timeoutId);
+    signal?.removeEventListener("abort", onAbort);
+  }
+}
+
+/** Unload a model — best-effort with timeout + logging. */
+async function lmsUnloadModel(
+  lmsUrl: string,
+  instanceId: string,
+  log: OlympicsLogger,
+): Promise<boolean> {
+  const t0 = Date.now();
+  try {
+    const r = await fetch(`${lmsUrl}/api/v1/models/unload`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ instance_id: instanceId }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    const durationMs = Date.now() - t0;
+    if (r.ok) {
+      log("info", `unloaded in ${durationMs}ms`, { instanceId });
+      telemetry.logEvent({ type: "olympics.model_lifecycle", phase: "unload_ok", modelKey: instanceId, instanceId, durationMs });
+      return true;
+    }
+    log("warn", `unload returned HTTP ${r.status}`, { instanceId, durationMs });
+    telemetry.logEvent({
+      type: "olympics.model_lifecycle",
+      phase: "unload_fail",
+      modelKey: instanceId,
+      instanceId,
+      durationMs,
+      error: `HTTP ${r.status}`,
+    });
+    return false;
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    log("warn", "unload threw (best-effort)", { instanceId, reason });
+    telemetry.logEvent({
+      type: "olympics.model_lifecycle",
+      phase: "unload_fail",
+      modelKey: instanceId,
+      instanceId,
+      durationMs: Date.now() - t0,
+      error: reason,
+    });
     return false;
   }
 }
 
-/** Unload a model after Olympics testing to free VRAM. */
-async function lmsUnloadModel(lmsUrl: string, instanceId: string): Promise<void> {
+/**
+ * Health check — поднимает ли вообще LM Studio? Используем ДО загрузки
+ * каждой модели чтобы не упереться в crashed server.
+ */
+async function lmsHealthCheck(lmsUrl: string, log: OlympicsLogger): Promise<boolean> {
   try {
-    await fetch(`${lmsUrl}/api/v1/models/unload`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ instance_id: instanceId }),
-      signal: AbortSignal.timeout(10_000),
+    const r = await fetch(`${lmsUrl}/api/v1/models`, { signal: AbortSignal.timeout(5_000) });
+    if (!r.ok) {
+      log("warn", `health check HTTP ${r.status}`);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    log("error", "health check failed — LM Studio may have crashed", {
+      reason: e instanceof Error ? e.message : String(e),
     });
-  } catch { /* best-effort */ }
+    return false;
+  }
+}
+
+/**
+ * Estimate model VRAM footprint from sizeBytes + 30% overhead для KV
+ * cache, activations, и runtime метаданных (эмпирическое правило для
+ * llama.cpp с context=2048).
+ */
+function estimateModelVramBytes(info: LmsModelInfo): number {
+  if (info.sizeBytes > 0) {
+    return Math.round(info.sizeBytes * 1.3);
+  }
+  /* Fallback: оценка из paramsString. */
+  if (info.paramsString) {
+    const m = info.paramsString.match(/([\d.]+)\s*B/i);
+    if (m) {
+      const params = Number(m[1]);
+      const bpw = info.quantization?.bits_per_weight ?? 4;
+      return Math.round(params * 1e9 * bpw / 8 * 1.3);
+    }
+  }
+  return 0;
+}
+
+async function lmsLoadedInstanceIdsForModel(
+  lmsUrl: string,
+  modelKey: string,
+  log: OlympicsLogger,
+): Promise<string[]> {
+  try {
+    const infos = await lmsListModelsV1(lmsUrl);
+    const info = infos.find((m) => m.key === modelKey);
+    return (info?.loadedInstances ?? [])
+      .map((x) => x.id)
+      .filter((id) => typeof id === "string" && id.length > 0);
+  } catch (e) {
+    log("warn", "failed to refresh loaded instances", {
+      modelKey,
+      reason: e instanceof Error ? e.message : String(e),
+    });
+    return [];
+  }
+}
+
+async function lmsUnloadAllInstancesForModel(
+  lmsUrl: string,
+  modelKey: string,
+  log: OlympicsLogger,
+  knownInstanceIds: string[] = [],
+): Promise<number> {
+  const fromRefresh = await lmsLoadedInstanceIdsForModel(lmsUrl, modelKey, log);
+  const ids = [...new Set([...knownInstanceIds, ...fromRefresh])];
+  let unloaded = 0;
+
+  if (ids.length > 0) {
+    telemetry.logEvent({
+      type: "olympics.model_lifecycle",
+      phase: "cleanup",
+      modelKey,
+      instanceId: ids.join(","),
+    });
+  }
+
+  for (const id of ids) {
+    if (await lmsUnloadModel(lmsUrl, id, log)) unloaded++;
+  }
+
+  if (ids.length === 0) {
+    log("debug", "no loaded instances to unload", { modelKey });
+  } else {
+    log("info", "model instance cleanup finished", { modelKey, requested: ids.length, unloaded });
+  }
+  return unloaded;
 }
 
 interface ChatResp {
@@ -1180,6 +1419,21 @@ function makeCacheKey(models: string[], disciplineIds: string[]): string {
   return [...models].sort().join("|") + "@@" + [...disciplineIds].sort().join("|");
 }
 
+function makeModelFingerprint(infos: LmsModelInfo[]): string {
+  return infos
+    .map((m) => [
+      m.key,
+      m.paramsString ?? "",
+      m.sizeBytes || 0,
+      m.architecture || "",
+      m.capabilities.vision ? "vision" : "",
+      m.capabilities.reasoning ? "reasoning" : "",
+      m.capabilities.trained_for_tool_use ? "tools" : "",
+    ].join(":"))
+    .sort()
+    .join("|");
+}
+
 /** Очистить кэш результатов олимпиады (IPC: arena:clear-olympics-cache). */
 export function clearOlympicsCache(): void {
   _olympicsCache = null;
@@ -1234,6 +1488,9 @@ function bradleyTerryMLE(
 export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsReport> {
   const lmsUrl = opts.lmsUrl ?? DEFAULT_LMS_URL;
   const t0 = Date.now();
+  const log = makeLogger(opts.onProgress);
+
+  log("info", "Olympics starting", { lmsUrl });
 
   let allModelInfos: LmsModelInfo[];
   try {
@@ -1241,6 +1498,8 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
   } catch (e) {
     throw new Error(`LM Studio офлайн (${lmsUrl}): ${e instanceof Error ? e.message : e}`);
   }
+
+  log("info", `found ${allModelInfos.length} LLM models in catalog`);
 
   const visionCapableKeys = new Set(
     allModelInfos.filter((m) => m.capabilities.vision).map((m) => m.key),
@@ -1266,15 +1525,22 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
     );
   }
 
+  log("info", `selected ${models.length} models for Olympics`, {
+    models,
+    visionCount: visionCapableKeys.size,
+    reasoningCount: reasoningCapableKeys.size,
+  });
+
   let targetDisciplines = opts.disciplines
     ? OLYMPICS_DISCIPLINES.filter((d) => opts.disciplines!.includes(d.id) || opts.disciplines!.includes(d.role))
     : OLYMPICS_DISCIPLINES;
-  if (opts.roles && opts.roles.length > 0) {
+  if (opts.roles) {
     const wantRoles = new Set(opts.roles);
     targetDisciplines = targetDisciplines.filter((d) => wantRoles.has(d.role));
   }
-  const cacheKey = makeCacheKey(models, targetDisciplines.map((d) => d.id));
+  const cacheKey = makeCacheKey(models, targetDisciplines.map((d) => d.id)) + "@@" + makeModelFingerprint(selectedInfos);
   if (_olympicsCache && _olympicsCache.key === cacheKey) {
+    log("info", "cache hit — returning cached report");
     opts.onProgress?.({ type: "olympics.done", durationMs: 0 });
     return { ..._olympicsCache.report, totalDurationMs: 0 };
   }
@@ -1290,78 +1556,152 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
     throw new Error(`Нет ни одной дисциплины (запрошено: ${opts.disciplines?.join(", ") ?? "—"})`);
   }
 
-  /* Auto-load models that aren't loaded yet (v1 API feature). */
-  const modelsWeLoaded: string[] = [];
-  for (const info of selectedInfos) {
-    if (opts.signal?.aborted) throw new Error("Olympics aborted");
-    if (info.loadedInstances.length === 0) {
-      opts.onProgress?.({
-        type: "olympics.model.done", discipline: "__load__", model: info.key,
-        score: 0, durationMs: 0, ok: true, error: undefined,
-      });
-      const loaded = await lmsLoadModel(lmsUrl, info.key, opts.signal);
-      if (loaded) {
-        modelsWeLoaded.push(info.key);
-      }
+  /* ────────────────────────────────────────────────────────────────────
+     SEQUENTIAL LOAD → TEST → UNLOAD  (fixes BSOD 0x000000FD)
+
+     Previous approach loaded ALL models at once, exhausting VRAM+RAM
+     and crashing the OS with page file congestion.
+
+     New approach: first clean selected loaded instances, then for each
+     model we
+       1. Load it
+       2. Run ALL disciplines for that model
+       3. Unload it immediately to free VRAM
+       4. Health-check LM Studio before loading next model
+
+     This means max 1 selected model loaded at a time. Results are
+     accumulated per-discipline across models and matched into pairwise
+     results at the end.
+     ──────────────────────────────────────────────────────────────────── */
+
+  const initiallyLoadedSelected = selectedInfos.filter((m) => m.loadedInstances.length > 0);
+  if (initiallyLoadedSelected.length > 0) {
+    log("warn", "cleaning selected pre-loaded models before Olympics", {
+      models: initiallyLoadedSelected.map((m) => ({
+        key: m.key,
+        instances: m.loadedInstances.map((x) => x.id),
+        estimatedGB: Number((estimateModelVramBytes(m) / 1024 / 1024 / 1024).toFixed(2)),
+      })),
+    });
+    opts.onProgress?.({
+      type: "olympics.vram_guard",
+      action: "cleanup_preloaded_selected_models",
+      estimatedGB: Number(
+        (initiallyLoadedSelected.reduce((sum, m) => sum + estimateModelVramBytes(m), 0) / 1024 / 1024 / 1024).toFixed(2),
+      ),
+      limitGB: 0,
+    });
+    for (const info of initiallyLoadedSelected) {
+      await lmsUnloadAllInstancesForModel(
+        lmsUrl,
+        info.key,
+        log,
+        info.loadedInstances.map((x) => x.id),
+      );
     }
+    await new Promise((res) => setTimeout(res, 2_000));
   }
 
   opts.onProgress?.({ type: "olympics.start", models, disciplines: disciplines.map((d) => d.id) });
+  telemetry.logEvent({ type: "olympics.run", phase: "start", models, disciplines: disciplines.map((d) => d.id) });
 
-  const results: OlympicsDisciplineResult[] = [];
-  for (const d of disciplines) {
+  /* Accumulate per-discipline results across the model loop. */
+  const disciplineResults = new Map<string, OlympicsModelResult[]>();
+  for (const d of disciplines) disciplineResults.set(d.id, []);
+
+  let skippedModels = 0;
+
+  for (const modelInfo of selectedInfos) {
     if (opts.signal?.aborted) break;
-    opts.onProgress?.({ type: "olympics.discipline.start", discipline: d.id, role: d.role });
 
-    /* Vision discipline: only test vision-capable models. */
-    const isVisionDiscipline = d.role === "vision" && !!d.imageUrl;
-    const disciplineModels = isVisionDiscipline
-      ? models.filter((m) => visionCapableKeys.has(m))
-      : models;
+    const modelKey = modelInfo.key;
+    let instanceId: string | null = null;
 
-    if (disciplineModels.length === 0) {
-      results.push({
-        discipline: d.id, role: d.role, description: d.description,
-        perModel: [], matches: [], champion: null, optimum: null,
-      });
-      opts.onProgress?.({ type: "olympics.discipline.done", discipline: d.id, champion: null });
+    /* ── Step 1: Load model ── */
+    if (!await lmsHealthCheck(lmsUrl, log)) {
+      log("error", "LM Studio не отвечает — пропускаем модель", { modelKey });
+      skippedModels++;
       continue;
     }
 
-    const perModel: OlympicsModelResult[] = [];
-    for (const m of disciplineModels) {
-      if (opts.signal?.aborted) break;
-
-      const useReasoning = reasoningCapableKeys.has(m) && d.role === "crystallizer";
-      const r = await lmsChat(lmsUrl, m, d.system, d.user, {
-        temperature: useReasoning ? 0.6 : 0.2,
-        maxTokens: d.maxTokens,
-        timeoutMs: opts.perDisciplineTimeoutMs ?? 90_000,
-        signal: opts.signal,
-        imageUrl: d.imageUrl,
-      });
-      const s = r.ok ? d.score(r.content) : 0;
-      const efficiency = r.durationMs > 0 ? (s * 1000) / r.durationMs : 0;
-      perModel.push({
-        model: m,
-        weightClass: classifyWeight(m, modelInfoMap.get(m)?.paramsString),
-        score: s,
-        durationMs: r.durationMs,
-        ok: r.ok,
-        tokens: r.totalTokens,
-        sample: r.content.slice(0, 240).replace(/\s+/g, " "),
-        error: r.error,
-        efficiency,
-      });
-      opts.onProgress?.({ type: "olympics.model.done", discipline: d.id, model: m, score: s, durationMs: r.durationMs, ok: r.ok, error: r.error });
+    opts.onProgress?.({ type: "olympics.model.loading", model: modelKey });
+    const loadResult = await lmsLoadModel(lmsUrl, modelKey, log, opts.signal);
+    if (!loadResult.ok) {
+      log("warn", `не удалось загрузить — чистим возможный поздний load и пропускаем`, { modelKey, reason: loadResult.reason });
+      await lmsUnloadAllInstancesForModel(lmsUrl, modelKey, log);
+      opts.onProgress?.({ type: "olympics.model.load_failed", model: modelKey, reason: loadResult.reason });
+      skippedModels++;
+      continue;
     }
+    instanceId = loadResult.instanceId;
+    opts.onProgress?.({ type: "olympics.model.loaded", model: modelKey, loadTimeMs: loadResult.loadTimeMs });
+
+    await lmsWaitForReady(lmsUrl, modelKey, log, 12_000, opts.signal);
+
+    /* ── Step 2: Run ALL disciplines for this model ── */
+    try {
+      for (const d of disciplines) {
+        if (opts.signal?.aborted) break;
+
+        const isVisionDiscipline = d.role === "vision" && !!d.imageUrl;
+        if (isVisionDiscipline && !visionCapableKeys.has(modelKey)) continue;
+
+        opts.onProgress?.({ type: "olympics.discipline.start", discipline: d.id, role: d.role });
+
+        const useReasoning = reasoningCapableKeys.has(modelKey) && d.role === "crystallizer";
+        const r = await lmsChat(lmsUrl, modelKey, d.system, d.user, {
+          temperature: useReasoning ? 0.6 : 0.2,
+          maxTokens: d.maxTokens,
+          timeoutMs: opts.perDisciplineTimeoutMs ?? 90_000,
+          signal: opts.signal,
+          imageUrl: d.imageUrl,
+        });
+        const s = r.ok ? d.score(r.content) : 0;
+        const efficiency = r.durationMs > 0 ? (s * 1000) / r.durationMs : 0;
+        const result: OlympicsModelResult = {
+          model: modelKey,
+          weightClass: classifyWeight(modelKey, modelInfo.paramsString),
+          score: s,
+          durationMs: r.durationMs,
+          ok: r.ok,
+          tokens: r.totalTokens,
+          sample: r.content.slice(0, 240).replace(/\s+/g, " "),
+          error: r.error,
+          efficiency,
+        };
+        disciplineResults.get(d.id)!.push(result);
+
+        log("debug", `${d.id} → ${modelKey}: score=${s.toFixed(2)} ${r.durationMs}ms`, {
+          ok: r.ok, tokens: r.totalTokens,
+        });
+        opts.onProgress?.({
+          type: "olympics.model.done", discipline: d.id, model: modelKey,
+          score: s, durationMs: r.durationMs, ok: r.ok, error: r.error,
+        });
+      }
+
+    /* ── Step 3: Always unload model to free VRAM ── */
+    } finally {
+      await lmsUnloadAllInstancesForModel(lmsUrl, modelKey, log, instanceId ? [instanceId] : []);
+      opts.onProgress?.({ type: "olympics.model.unloaded", model: modelKey });
+      await new Promise((res) => setTimeout(res, 1500));
+    }
+  }
+
+  if (skippedModels > 0) {
+    log("warn", `skipped ${skippedModels} models due to load failures`);
+  }
+
+  /* ── Build discipline results with pairwise matches ── */
+  const results: OlympicsDisciplineResult[] = [];
+  for (const d of disciplines) {
+    const perModel = disciplineResults.get(d.id) ?? [];
 
     const matches: OlympicsMatchResult[] = [];
-    for (let i = 0; i < disciplineModels.length; i++) {
-      for (let j = i + 1; j < disciplineModels.length; j++) {
-        const A = perModel.find((p) => p.model === disciplineModels[i])!;
-        const B = perModel.find((p) => p.model === disciplineModels[j])!;
-        if (!A || !B) continue;
+    for (let i = 0; i < perModel.length; i++) {
+      for (let j = i + 1; j < perModel.length; j++) {
+        const A = perModel[i];
+        const B = perModel[j];
         const draw = Math.abs(A.score - B.score) < 0.05;
         const winner = draw ? null : A.score > B.score ? A.model : B.model;
         matches.push({
@@ -1387,11 +1727,6 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
 
     results.push({ discipline: d.id, role: d.role, description: d.description, perModel, matches, champion, optimum });
     opts.onProgress?.({ type: "olympics.discipline.done", discipline: d.id, champion });
-  }
-
-  /* Unload models we loaded just for Olympics. */
-  for (const key of modelsWeLoaded) {
-    await lmsUnloadModel(lmsUrl, key);
   }
 
   /* Медальный зачёт. */
@@ -1481,6 +1816,22 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
   }
 
   const totalDurationMs = Date.now() - t0;
+
+  log("info", `Olympics finished in ${(totalDurationMs / 1000).toFixed(1)}s`, {
+    modelsRun: models.length - skippedModels,
+    skippedModels,
+    disciplineCount: results.length,
+    goldWinners: medals.filter((m) => m.gold > 0).map((m) => m.model),
+  });
+  telemetry.logEvent({
+    type: "olympics.run",
+    phase: "done",
+    models,
+    disciplines: disciplines.map((d) => d.id),
+    durationMs: totalDurationMs,
+    skippedModels,
+  });
+
   opts.onProgress?.({ type: "olympics.done", durationMs: totalDurationMs });
 
   const modelCapabilities: Record<string, OlympicsModelCapabilities> = {};

@@ -124,9 +124,18 @@ export function registerArenaIpc(): void {
     if (activeOlympicsCtrl) {
       throw new Error("Олимпиада уже идёт. Подожди или нажми «Отмена».");
     }
+    const lock = globalLlmLock.isBusy();
+    if (lock.busy) {
+      globalLlmLock.recordSkip(lock.reasons);
+      throw new Error(`LM Studio сейчас занята: ${lock.reasons.join("; ")}. Останови импорт/оценку и запусти Олимпиаду снова.`);
+    }
     const args = (payload && typeof payload === "object" ? payload : {}) as Record<string, unknown>;
     const ctrl = new AbortController();
     activeOlympicsCtrl = ctrl;
+    const unregisterOlympicsProbe = globalLlmLock.registerProbe("olympics", () => ({
+      busy: true,
+      reason: "Olympics model calibration is running",
+    }));
 
     const win = BrowserWindow.fromWebContents(e.sender);
     const send = (channel: string, data: unknown): void => {
@@ -146,6 +155,7 @@ export function registerArenaIpc(): void {
       });
       return report;
     } finally {
+      unregisterOlympicsProbe();
       activeOlympicsCtrl = null;
     }
   });

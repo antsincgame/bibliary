@@ -513,6 +513,18 @@ async function runOlympicsAndShow() {
       const e = ev;
       if (e.type === "olympics.start") {
         appendOlympicsLog(logEl, t("models.olympics.progress.start", { models: e.models?.length ?? 0, disciplines: e.disciplines?.length ?? 0 }));
+      } else if (e.type === "olympics.vram_guard") {
+        const gb = Number(e.estimatedGB ?? 0).toFixed(1);
+        appendOlympicsLog(logEl, `⚠ VRAM guard: ${e.action} (${gb} GB)`, "mid");
+      } else if (e.type === "olympics.model.loading") {
+        appendOlympicsLog(logEl, `⇢ loading ${e.model}...`, "info");
+      } else if (e.type === "olympics.model.loaded") {
+        const dur = ((e.loadTimeMs ?? 0) / 1000).toFixed(1);
+        appendOlympicsLog(logEl, `  loaded ${e.model} (${dur}s)`, "mid");
+      } else if (e.type === "olympics.model.unloaded") {
+        appendOlympicsLog(logEl, `  unloaded ${e.model}`, "info");
+      } else if (e.type === "olympics.model.load_failed") {
+        appendOlympicsLog(logEl, `✗ load failed ${e.model}: ${String(e.reason ?? "").slice(0, 80)}`, "bad");
       } else if (e.type === "olympics.discipline.start") {
         appendOlympicsLog(logEl, `▶ ${t("models.olympics.progress.discipline", { discipline: e.discipline })}`);
       } else if (e.type === "olympics.model.done") {
@@ -541,6 +553,15 @@ async function runOlympicsAndShow() {
   const roles = [];
   for (const cb of roleChecks) {
     if (cb.checked) roles.push(cb.getAttribute("data-role"));
+  }
+  if (roles.length === 0) {
+    const msg = "Выбери хотя бы одну роль для Олимпиады";
+    appendOlympicsLog(logEl, `✗ ${msg}`, "bad");
+    showToast(msg, "error");
+    olympicsBusy = false;
+    setOlympicsButtons(false);
+    if (typeof unsub === "function") unsub();
+    return;
   }
 
   try {
