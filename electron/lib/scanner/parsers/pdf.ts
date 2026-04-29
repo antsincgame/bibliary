@@ -6,6 +6,7 @@ import { parsePdfInWorker, isWorkerPdfEnabled } from "./pdf-worker-host.js";
 import { getPdfjsStandardFontDataUrl } from "../pdfjs-node.js";
 import { isLowValueBookTitle, pickBestBookTitle } from "../../library/title-heuristics.js";
 import { tryParsePdfWithInspector } from "./pdf-inspector-parser.js";
+import { tryParsePdfWithEdgeParse } from "./edgeparse-parser.js";
 
 /**
  * Жёсткие потолки памяти для PDF parser — защита от OOM на огромных книгах.
@@ -150,16 +151,16 @@ async function parsePdf(filePath: string, opts: ParseOptions = {}): Promise<Pars
  * OCR enabled, или worker не загрузился. Также этот же код вызывается
  * ИЗ worker'а — поэтому он чистый, без AbortSignal-привязки к main.
  *
- * Пайплайн (Apr 2026):
- *   1. OOM-guard по размеру файла.
- *   2. pdf-inspector (Rust/NAPI) — primary path:
- *      - 30-100x быстрее pdfjs на TextBased PDF
- *      - детектит таблицы и колонки (pdfjs не умеет)
- *      - возвращает готовый markdown с layout
- *   3. Если pdf-inspector сообщил "Scanned"/"ImageBased" — пропускаем
- *      pdfjs полностью и идём в OCR. Экономия минут на больших сканах.
- *   4. Если pdf-inspector упал/не доступен — fallback на pdfjs (текущий
- *      путь), без потери функциональности.
+ * Пайплайн (Apr 2026) — трёхуровневый каскад:
+ *   0. OOM-guard по размеру файла.
+ *   1. pdf-inspector (Rust/lopdf, ~200ms) — primary:
+ *      таблицы, колонки, markdown с layout.
+ *   2. edgeparse (Rust/XY-Cut++, ~10s) — secondary:
+ *      reading order, table border/cluster detection.
+ *   3. pdfjs-dist (JS, emergency) — legacy fallback для
+ *      encrypted/corrupt PDF и edge cases.
+ *   OCR: если Stage 1 сообщил "Scanned"/"ImageBased" — стадии 2-3
+ *   пропускаются, идём прямо в OCR через rasterisePdfPages.
  */
 export async function parsePdfMain(filePath: string, opts: ParseOptions = {}): Promise<ParseResult> {
   // OOM-guard #1: отказ до чтения, если файл превышает MAX_PDF_FILE_BYTES.
@@ -178,31 +179,47 @@ export async function parsePdfMain(filePath: string, opts: ParseOptions = {}): P
     };
   }
 
-  /* Stage 0 — pdf-inspector primary path.
-     Не throws: возвращает status "ok" / "scanned" / "fallback" / "skipped".
-     Опт-аут через ENV `BIBLIARY_PDF_INSPECTOR=0` (на случай если у конкретной
-     книги inspector ломается, а пользователь хочет принудительный pdfjs). */
+  /* ── Stage 0 — pdf-inspector primary path (Rust/lopdf, ~200ms) ── */
   const inspectorEnabled = process.env.BIBLIARY_PDF_INSPECTOR !== "0";
   let inspectorScanWarning: string | null = null;
+  let needEdgeparseFallback = false;
   if (inspectorEnabled) {
     const outcome = await tryParsePdfWithInspector(filePath, opts);
     if (outcome.status === "ok" && outcome.result) {
-      /* OCR не нужен — inspector извлёк текст. Возвращаем как есть. */
       return outcome.result;
     }
     if (outcome.status === "scanned") {
-      /* Skip pdfjs entirely — мы знаем что текста нет. Идём прямо в OCR
-         (через тот же allParagraphs.length === 0 → OCR блок ниже).
-         Но pdfjs всё равно нужен для metadata (Title, Author, ISBN из info)
-         и outline. Сделаем lightweight pdfjs run с ТОЛЬКО metadata, без
-         page-by-page text — экономим время. */
       inspectorScanWarning = outcome.reason ?? "pdf-inspector: scanned PDF, OCR required";
-    } else if (outcome.status === "fallback" && outcome.reason) {
-      /* Зафиксируем причину в warnings полностью прошедшего pdfjs-парсера
-         ниже — не теряем диагностику. */
-      inspectorScanWarning = `pdf-inspector fallback: ${outcome.reason}`;
+    } else if (outcome.status === "fallback" || outcome.status === "skipped") {
+      inspectorScanWarning = outcome.reason
+        ? `pdf-inspector ${outcome.status}: ${outcome.reason}`
+        : null;
+      needEdgeparseFallback = true;
+    }
+  } else {
+    needEdgeparseFallback = true;
+  }
+
+  /* ── Stage 1 — edgeparse secondary path (Rust/XY-Cut++, ~10s) ── */
+  const edgeparseEnabled = process.env.BIBLIARY_EDGEPARSE !== "0";
+  let edgeparseWarning: string | null = null;
+  if (needEdgeparseFallback && edgeparseEnabled) {
+    const epOutcome = await tryParsePdfWithEdgeParse(filePath, opts);
+    if (epOutcome.status === "ok" && epOutcome.result) {
+      if (inspectorScanWarning) {
+        epOutcome.result.metadata.warnings = [
+          inspectorScanWarning,
+          ...(epOutcome.result.metadata.warnings ?? []),
+        ];
+      }
+      return epOutcome.result;
+    }
+    if (epOutcome.reason) {
+      edgeparseWarning = `edgeparse ${epOutcome.status}: ${epOutcome.reason}`;
     }
   }
+
+  /* ── Stage 2 — pdfjs-dist emergency fallback (JS, slowest) ── */
 
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const buf = await fs.readFile(filePath);
@@ -355,11 +372,11 @@ export async function parsePdfMain(filePath: string, opts: ParseOptions = {}): P
     );
   }
 
-  /* Зафиксируем причину pdf-inspector fallback — даже если эту книгу
-     успешно распарсил pdfjs, оставим аудит-след в warnings чтобы видеть
-     паттерны проблемных PDF (для будущих фиксов в pdf-inspector). */
   if (inspectorScanWarning !== null && !skipTextLayer) {
     warnings.push(inspectorScanWarning);
+  }
+  if (edgeparseWarning) {
+    warnings.push(edgeparseWarning);
   }
 
   let ocrAppliedPages = 0;

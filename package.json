@@ -10,7 +10,7 @@
   "scripts": {
     "inventory": "tsx scripts/inventory.ts",
     "validate-batch": "tsx scripts/validate-batch.ts",
-    "postinstall": "npx @electron/rebuild --only better-sqlite3 --force 2>nul || echo [postinstall] @electron/rebuild skipped (OK for non-Electron use)",
+    "postinstall": "node scripts/fix-edgeparse-native.cjs && npx @electron/rebuild --only better-sqlite3 --force 2>nul || echo [postinstall] @electron/rebuild skipped (OK for non-Electron use)",
     "electron:clean": "node --input-type=commonjs -e \"try{require('fs').rmSync('dist-electron',{recursive:true,force:true})}catch{}\"",
     "electron:compile": "npm run electron:clean && tsc -p tsconfig.electron.json && node scripts/prepare-electron.js",
     "electron:dev": "npx @electron/rebuild --only better-sqlite3 --force 2>nul || echo ok && npm run electron:compile && electron dist-electron/main.js",
@@ -55,6 +55,7 @@
     "7z-bin": "^0.0.8",
     "7zip-bin": "^5.2.0",
     "better-sqlite3": "^12.9.0",
+    "edgeparse": "^0.2.3",
     "fast-xml-parser": "^4.5.1",
     "fastest-levenshtein": "^1.0.16",
     "jszip": "^3.10.1",

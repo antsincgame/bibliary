@@ -37,6 +37,11 @@ asarUnpack:
   - "node_modules/7z-bin/**/*"
   - "node_modules/7zip-bin/**/*"
   - "node_modules/@firecrawl/pdf-inspector/**/*"
+  - "node_modules/edgeparse/dist/**/*"
+  - "node_modules/edgeparse/npm/edgeparse-node.win32-x64-msvc.node"
+  - "node_modules/edgeparse/npm/win32-x64-msvc/**/*"
+  - "node_modules/edgeparse/package.json"
+  - "node_modules/edgeparse-win32-x64-msvc/**/*"
 extraMetadata:
   type: commonjs
 afterPack: scripts/afterPack.js
