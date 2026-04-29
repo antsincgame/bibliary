@@ -350,6 +350,22 @@ function renderRoles(roleMap, loaded, downloaded) {
 // Layout
 // ---------------------------------------------------------------------------
 
+function buildHwStrip() {
+  /* Компактная полоска с железом: свёрнута по умолчанию,
+     разворачивается кликом на toggles. Пользователь знает своё железо —
+     информация полезна, но не должна занимать экран. */
+  const details = el("details", { class: "mp-hw-details" }, [
+    el("summary", { class: "mp-hw-summary" }, [
+      el("span", { id: "mp-hw-text", class: "mp-hw-text" }, t("models.hardware.loading")),
+    ]),
+    el("div", { class: "mp-hw-expanded" }, [
+      el("div", { id: "mp-hw-reco", class: "mp-hw-reco" }, ""),
+      el("button", { id: "mp-hw-refresh", class: "btn btn-ghost btn-sm", type: "button" }, t("models.hardware.rescan")),
+    ]),
+  ]);
+  return el("div", { class: "mp-hw-strip" }, [details]);
+}
+
 function buildLayout() {
   return el("div", { class: "models-page" }, [
     el("div", { class: "mp-header" }, [
@@ -365,13 +381,11 @@ function buildLayout() {
       el("p", { class: "mp-header-sub" }, t("models.header.sub_compact")),
     ]),
 
-    el("div", { class: "mp-hw-strip" }, [
-      el("div", { class: "mp-hw-copy" }, [
-        el("div", { id: "mp-hw-text", class: "mp-hw-text" }, t("models.hardware.loading")),
-        el("div", { id: "mp-hw-reco", class: "mp-hw-reco" }, ""),
-      ]),
-      el("button", { id: "mp-hw-refresh", class: "btn btn-ghost btn-sm", type: "button" }, t("models.hardware.rescan")),
-    ]),
+    /* Олимпиада — НАВЕРХУ: это главная точка входа для автонастройки. */
+    buildOlympicsCard(),
+
+    /* Железо — компактно, свёрнуто, не занимает место. */
+    buildHwStrip(),
 
     el("div", { class: "mp-toast-area" }),
 
@@ -391,8 +405,6 @@ function buildLayout() {
       el("p", { class: "mp-card-sub" }, t("models.header.sub_simple")),
       el("div", { id: "mp-roles", class: "mp-roles-list mp-roles-list-compact" }, t("models.card.loading")),
     ]),
-
-    buildOlympicsCard(),
   ]);
 }
 
@@ -421,9 +433,19 @@ function buildOlympicsCard() {
         onclick: () => void cancelOlympics(),
       }, t("models.olympics.cancel")),
     ]),
-    el("div", { id: "mp-olympics-progress", class: "mp-olympics-progress" }, ""),
+    /* Лог-панель: накапливает все события турнира (не только последнее). */
+    el("div", { id: "mp-olympics-log", class: "mp-olympics-log", style: "display:none" }, ""),
     el("div", { id: "mp-olympics-results", class: "mp-olympics-results" }, ""),
   ]);
+}
+
+/** Добавляет строку в лог олимпиады (накопительный, не перезаписывает). */
+function appendOlympicsLog(logEl, text, level = "info") {
+  if (!logEl) return;
+  logEl.style.display = "";
+  const entry = el("div", { class: `mp-olympics-log-entry mp-olympics-log-${level}` }, text);
+  logEl.appendChild(entry);
+  logEl.scrollTop = logEl.scrollHeight;
 }
 
 async function runOlympicsAndShow() {
@@ -434,36 +456,44 @@ async function runOlympicsAndShow() {
   }
   olympicsBusy = true;
   setOlympicsButtons(true);
-  const progressEl = pageRoot?.querySelector("#mp-olympics-progress");
+  const logEl = pageRoot?.querySelector("#mp-olympics-log");
   const resultsEl = pageRoot?.querySelector("#mp-olympics-results");
-  if (progressEl) progressEl.textContent = t("models.olympics.starting");
+  if (logEl) { clear(logEl); logEl.style.display = "none"; }
   if (resultsEl) clear(resultsEl);
+  appendOlympicsLog(logEl, t("models.olympics.starting"));
 
   let unsub = null;
   if (typeof window.api.arena.onOlympicsProgress === "function") {
     unsub = window.api.arena.onOlympicsProgress((ev) => {
-      if (!progressEl || !ev || typeof ev !== "object") return;
+      if (!ev || typeof ev !== "object") return;
       const e = ev;
       if (e.type === "olympics.start") {
-        progressEl.textContent = t("models.olympics.progress.start", { models: e.models?.length ?? 0, disciplines: e.disciplines?.length ?? 0 });
+        appendOlympicsLog(logEl, t("models.olympics.progress.start", { models: e.models?.length ?? 0, disciplines: e.disciplines?.length ?? 0 }));
       } else if (e.type === "olympics.discipline.start") {
-        progressEl.textContent = t("models.olympics.progress.discipline", { discipline: e.discipline });
+        appendOlympicsLog(logEl, `▶ ${t("models.olympics.progress.discipline", { discipline: e.discipline })}`);
       } else if (e.type === "olympics.model.done") {
         const score = Math.round((e.score ?? 0) * 100);
         const dur = ((e.durationMs ?? 0) / 1000).toFixed(1);
-        progressEl.textContent = `${e.discipline} · ${e.model} → ${score}/100 (${dur}s)`;
+        const ok = e.ok !== false;
+        const icon = score >= 70 ? "✓" : score >= 40 ? "~" : "✗";
+        const level = score >= 70 ? "good" : score >= 40 ? "mid" : "bad";
+        const errorHint = e.error ? ` — ${e.error.slice(0, 60)}` : "";
+        appendOlympicsLog(logEl, `  ${icon} ${e.model} → ${score}/100  (${dur}s)${errorHint}`, ok ? level : "bad");
+      } else if (e.type === "olympics.discipline.done") {
+        const champStr = e.champion ? ` 🏆 ${e.champion}` : " — нет чемпиона";
+        appendOlympicsLog(logEl, `  ${champStr}`, e.champion ? "good" : "bad");
       }
     });
   }
 
   try {
     const report = await window.api.arena.runOlympics({});
-    if (progressEl) progressEl.textContent = t("models.olympics.done", { ms: ((report.totalDurationMs ?? 0) / 1000).toFixed(1) });
+    appendOlympicsLog(logEl, t("models.olympics.done", { ms: ((report.totalDurationMs ?? 0) / 1000).toFixed(1) }), "good");
     renderOlympicsReport(report);
     showToast(t("models.olympics.success"), "success");
   } catch (e) {
-    if (progressEl) progressEl.textContent = "";
     const msg = errMsg(e);
+    appendOlympicsLog(logEl, `✗ ${msg}`, "bad");
     showToast(t("models.olympics.failed", { reason: msg }), "error");
     if (resultsEl) resultsEl.appendChild(el("div", { class: "mp-error" }, msg));
   } finally {
@@ -490,51 +520,115 @@ function setOlympicsButtons(running) {
   if (cancelBtn) cancelBtn.style.display = running ? "" : "none";
 }
 
+/** Человекочитаемое имя pref-ключа для UI. */
+function prefKeyLabel(k) {
+  const MAP = {
+    extractorModel:  "Кристаллизатор",
+    judgeModel:      "Критик",
+    evaluatorModel:  "Оценщик книг",
+    translatorModel: "Переводчик",
+  };
+  return MAP[k] ?? k;
+}
+
 function renderOlympicsReport(report) {
   const root = pageRoot?.querySelector("#mp-olympics-results");
   if (!root) return;
   clear(root);
 
+  /* ── Warnings (мало моделей / рекомендации по загрузке) ── */
+  const warnings = report.warnings ?? [];
+  const availCount = report.availableModelCount ?? 0;
+  const usedCount  = (report.models ?? []).length;
+
+  if (warnings.length > 0) {
+    const warnMsgs = warnings.map((w) => {
+      if (w === "few_models_1") return t("models.olympics.warning.only1", { count: usedCount, avail: availCount });
+      if (w === "few_models_2") return t("models.olympics.warning.only2", { count: usedCount, avail: availCount });
+      if (w === "recommend_download") return t("models.olympics.warning.recommend_download");
+      if (w.startsWith("all_failed:")) return t("models.olympics.warning.all_failed", { discipline: w.slice(11) });
+      return w;
+    });
+    const warnBox = el("div", { class: "mp-olympics-warning" }, [
+      el("div", { class: "mp-olympics-warning-title" }, "⚠ " + t("models.olympics.warning.title")),
+      ...warnMsgs.map((m) => el("div", { class: "mp-olympics-warning-msg" }, m)),
+      /* Подсказка по загрузке моделей — только если мало кандидатов */
+      (availCount < 4 || usedCount < 3)
+        ? el("div", { class: "mp-olympics-warning-hint" }, [
+            el("span", {}, t("models.olympics.warning.download_hint")),
+            el("a", {
+              href: "https://lmstudio.ai/models",
+              target: "_blank",
+              class: "mp-link",
+            }, "lmstudio.ai/models"),
+            el("span", {}, t("models.olympics.warning.download_hint2")),
+          ])
+        : null,
+    ].filter(Boolean));
+    root.appendChild(warnBox);
+  }
+
+  /* ── Медальный зачёт ── */
   const medalsBox = el("div", { class: "mp-olympics-medals" }, [
     el("h3", {}, t("models.olympics.leaderboard")),
-    ...((report.medals ?? []).map((row) =>
-      el("div", { class: "mp-olympics-medal-row" }, [
+    ...((report.medals ?? []).map((row, i) => {
+      const icon = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "  ";
+      return el("div", { class: "mp-olympics-medal-row" }, [
+        el("span", { class: "mp-olympics-medals-rank" }, icon),
         el("span", { class: "mp-olympics-medal-model" }, row.model),
-        el("span", { class: "mp-olympics-medals-cell" }, `🥇${row.gold} 🥈${row.silver} 🥉${row.bronze}`),
+        el("span", { class: "mp-olympics-medals-cell" }, `${row.gold}🥇 ${row.silver}🥈 ${row.bronze}🥉`),
         el("span", { class: "mp-olympics-medals-time" }, `${(row.totalDurationMs / 1000).toFixed(1)}s`),
-      ])
-    )),
+      ]);
+    })),
   ]);
   root.appendChild(medalsBox);
 
+  /* ── Результаты по дисциплинам ── */
   const disciplines = el("div", { class: "mp-olympics-disciplines" }, [
     el("h3", {}, t("models.olympics.disciplines")),
     ...((report.disciplines ?? []).map((d) => {
       const sorted = [...(d.perModel ?? [])].sort((a, b) => b.score - a.score);
       const podium = ["🥇", "🥈", "🥉"];
       return el("div", { class: "mp-olympics-discipline" }, [
-        el("div", { class: "mp-olympics-discipline-title" }, `${d.discipline} (${d.role})`),
+        el("div", { class: "mp-olympics-discipline-title" }, `${d.discipline}`),
+        el("div", { class: "mp-olympics-discipline-role" }, `роль: ${d.role}`),
         el("div", { class: "mp-olympics-discipline-desc" }, d.description ?? ""),
-        ...sorted.map((p, i) =>
-          el("div", { class: "mp-olympics-discipline-row" },
-            `${podium[i] ?? "  "} ${p.model} — ${Math.round(p.score * 100)}/100  (${(p.durationMs / 1000).toFixed(1)}s)`
-          ),
-        ),
+        ...sorted.map((p, i) => {
+          const score = Math.round(p.score * 100);
+          const level = score >= 70 ? "good" : score >= 40 ? "mid" : "bad";
+          const errHint = p.error ? ` ✗ ${p.error.slice(0, 50)}` : "";
+          const effHint = p.efficiency > 0 ? ` · eff ${p.efficiency.toFixed(1)}` : "";
+          /* Показываем sample ответа при достаточном score */
+          const sampleEl = (p.sample && score >= 30)
+            ? el("div", { class: "mp-olympics-discipline-sample" }, `"${p.sample.slice(0, 120)}…"`)
+            : null;
+          return el("div", { class: `mp-olympics-discipline-row mp-olympics-row-${level}` }, [
+            el("span", {}, `${podium[i] ?? "  "} ${p.model} — ${score}/100  (${(p.durationMs / 1000).toFixed(1)}s)${effHint}${errHint}`),
+            sampleEl,
+          ].filter(Boolean));
+        }),
       ]);
     })),
   ]);
   root.appendChild(disciplines);
 
+  /* ── Рекомендации ── */
   const recs = report.recommendations ?? {};
   const byScore = report.recommendationsByScore ?? {};
+  const roleReasons = report.roleReasons ?? [];
   const recsKeys = Object.keys(recs);
   const byScoreKeys = Object.keys(byScore);
+
   if (recsKeys.length === 0 && byScoreKeys.length === 0) {
     root.appendChild(el("div", { class: "mp-olympics-no-recs" }, t("models.olympics.no_recommendations")));
     return;
   }
 
-  /* Две колонки: ОПТИМУМ (бабушкин выбор) и ЧЕМПИОН (максимальное качество). */
+  /* Строим карту prefKey → reason для быстрого доступа. */
+  const reasonMap = {};
+  for (const r of roleReasons) reasonMap[r.prefKey] = r;
+
+  /* Две колонки: ОПТИМУМ и ЧЕМПИОН. */
   const recsBox = el("div", { class: "mp-olympics-recs" }, [
     el("h3", {}, t("models.olympics.recommendations")),
     el("p", { class: "mp-card-sub" }, t("models.olympics.recommendations_hint_v2")),
@@ -543,7 +637,18 @@ function renderOlympicsReport(report) {
       el("div", { class: "mp-olympics-recs-col" }, [
         el("div", { class: "mp-olympics-recs-col-title" }, t("models.olympics.optimum.title")),
         el("div", { class: "mp-olympics-recs-col-sub" }, t("models.olympics.optimum.sub")),
-        ...recsKeys.map((k) => el("div", { class: "mp-olympics-rec-row" }, `${k}: ${recs[k]}`)),
+        ...recsKeys.map((k) => {
+          const reason = reasonMap[k];
+          return el("div", { class: "mp-olympics-rec-entry" }, [
+            el("div", { class: "mp-olympics-rec-row" }, [
+              el("span", { class: "mp-olympics-rec-role" }, prefKeyLabel(k)),
+              el("span", { class: "mp-olympics-rec-model" }, recs[k]),
+            ]),
+            reason?.optimumReason
+              ? el("div", { class: "mp-olympics-rec-reason" }, `↳ ${reason.optimumReason}`)
+              : null,
+          ].filter(Boolean));
+        }),
         el("button", {
           class: "btn btn-primary",
           type: "button",
@@ -554,7 +659,18 @@ function renderOlympicsReport(report) {
       el("div", { class: "mp-olympics-recs-col" }, [
         el("div", { class: "mp-olympics-recs-col-title" }, t("models.olympics.champion.title")),
         el("div", { class: "mp-olympics-recs-col-sub" }, t("models.olympics.champion.sub")),
-        ...byScoreKeys.map((k) => el("div", { class: "mp-olympics-rec-row" }, `${k}: ${byScore[k]}`)),
+        ...byScoreKeys.map((k) => {
+          const reason = reasonMap[k];
+          return el("div", { class: "mp-olympics-rec-entry" }, [
+            el("div", { class: "mp-olympics-rec-row" }, [
+              el("span", { class: "mp-olympics-rec-role" }, prefKeyLabel(k)),
+              el("span", { class: "mp-olympics-rec-model" }, byScore[k]),
+            ]),
+            reason?.championReason
+              ? el("div", { class: "mp-olympics-rec-reason" }, `↳ ${reason.championReason}`)
+              : null,
+          ].filter(Boolean));
+        }),
         el("button", {
           class: "btn btn-ghost",
           type: "button",
@@ -596,6 +712,7 @@ export function mountModels(root) {
   const hwBtn = root.querySelector("#mp-hw-refresh");
   if (hwBtn) hwBtn.addEventListener("click", () => void refreshHardware(true).then(() => renderHardwareStrip()));
 
+  /* hw-refresh теперь внутри <details>, поэтому подписываемся через делегирование */
   void refreshHardware(false).then(() => refresh());
 
   if (typeof window.api.preferences?.onChanged === "function") {

@@ -100,6 +100,26 @@ export interface OlympicsMedalRow {
   totalDurationMs: number;
 }
 
+/**
+ * Причина выбора модели для роли — показывается в UI рядом с рекомендацией.
+ * Содержит человекочитаемое объяснение откуда взялся оптимум/чемпион.
+ */
+export interface OlympicsRoleReason {
+  /** pref-key роли (extractorModel / judgeModel / ...) */
+  prefKey: string;
+  /** Лучшая дисциплина, где выбрана optimum-модель */
+  optimumDiscipline?: string;
+  /** Модель-оптимум и краткое объяснение (score, efficiency) */
+  optimumModel?: string;
+  optimumReason?: string;
+  /** Лучшая дисциплина, где выбран champion */
+  championDiscipline?: string;
+  optimumScore?: number;
+  championModel?: string;
+  championScore?: number;
+  championReason?: string;
+}
+
 export interface OlympicsReport {
   generatedAt: string;
   lmsUrl: string;
@@ -115,6 +135,15 @@ export interface OlympicsReport {
   recommendations: Record<string, string>;
   /** Pure-CHAMPION-рекомендации (победившие по score любой ценой). */
   recommendationsByScore: Record<string, string>;
+  /** Причины выбора для каждой роли — объяснение в UI. */
+  roleReasons: OlympicsRoleReason[];
+  /**
+   * Предупреждения: мало моделей, нет чемпиона и т.д.
+   * Показываются в UI под кнопкой и в результатах.
+   */
+  warnings: string[];
+  /** Сколько моделей доступно в LM Studio до фильтрации (для UX «скачай больше»). */
+  availableModelCount: number;
   totalDurationMs: number;
 }
 
@@ -420,6 +449,10 @@ export function pickModelsForOlympics(
 
   const filtered = eligible.filter((m) => wantClasses.has(classifyWeight(m)));
   if (filtered.length === 0) {
+    /* Защита от бесконечной рекурсии: если уже расширили до xs/s/m или
+       eligible пуст — возвращаем что есть (может быть []), не рекурсим. */
+    const isWideSearch = wantClasses.has("xs") && wantClasses.has("s") && wantClasses.has("m");
+    if (isWideSearch || eligible.length === 0) return eligible.slice(0, maxModels);
     /* Fallback: если в нужном классе нет моделей, добираем из ближайшего. */
     return pickModelsForOlympics(all, undefined, maxModels, ["xs", "s", "m"]);
   }
@@ -594,14 +627,86 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
 
   /* Авто-рекомендации:
        primary  → optimum (score/время) — это и есть «бабушкин выбор»
-       byScore  → champion (max score)  — для тех, кто хочет «лучшее любой ценой» */
+       byScore  → champion (max score)  — для тех, кто хочет «лучшее любой ценой»
+
+     ВАЖНО: одна роль может участвовать в нескольких дисциплинах
+     (crystallizer — в 3 дисциплинах). Старый код брал последнюю по порядку
+     дисциплины — это случайный выбор. Новый код берёт ЛУЧШУЮ по efficiency
+     (для optimum) и по score (для champion). */
   const recommendations: Record<string, string> = {};
   const recommendationsByScore: Record<string, string> = {};
+
+  /* Трекинг лучшей дисциплины для каждой роли. */
+  const roleOptimumBest: Record<string, { model: string; efficiency: number; discipline: string; score: number }> = {};
+  const roleChampionBest: Record<string, { model: string; score: number; discipline: string }> = {};
+
   for (const r of results) {
     const prefKey = roleToPrefKey(r.role);
     if (!prefKey) continue;
-    if (r.optimum)  recommendations[prefKey]        = r.optimum;
-    if (r.champion) recommendationsByScore[prefKey] = r.champion;
+
+    if (r.optimum) {
+      const modelResult = r.perModel.find((p) => p.model === r.optimum);
+      const eff = modelResult?.efficiency ?? 0;
+      const sc = modelResult?.score ?? 0;
+      const prev = roleOptimumBest[prefKey];
+      if (!prev || eff > prev.efficiency) {
+        roleOptimumBest[prefKey] = { model: r.optimum, efficiency: eff, discipline: r.discipline, score: sc };
+      }
+    }
+    if (r.champion) {
+      const modelResult = r.perModel.find((p) => p.model === r.champion);
+      const sc = modelResult?.score ?? 0;
+      const prev = roleChampionBest[prefKey];
+      if (!prev || sc > prev.score) {
+        roleChampionBest[prefKey] = { model: r.champion, score: sc, discipline: r.discipline };
+      }
+    }
+  }
+
+  for (const [k, v] of Object.entries(roleOptimumBest)) recommendations[k] = v.model;
+  for (const [k, v] of Object.entries(roleChampionBest)) recommendationsByScore[k] = v.model;
+
+  /* Причины выбора — для UI («почему эта модель?»). */
+  const roleReasons: OlympicsRoleReason[] = [];
+  const allPrefKeys = new Set([...Object.keys(roleOptimumBest), ...Object.keys(roleChampionBest)]);
+  for (const prefKey of allPrefKeys) {
+    const opt = roleOptimumBest[prefKey];
+    const champ = roleChampionBest[prefKey];
+    const reason: OlympicsRoleReason = { prefKey };
+    if (opt) {
+      reason.optimumModel    = opt.model;
+      reason.optimumDiscipline = opt.discipline;
+      reason.optimumScore    = opt.score;
+      const pct = Math.round(opt.score * 100);
+      const effStr = opt.efficiency.toFixed(1);
+      reason.optimumReason   = `score ${pct}/100, efficiency ${effStr} (${opt.discipline})`;
+    }
+    if (champ) {
+      reason.championModel   = champ.model;
+      reason.championDiscipline = champ.discipline;
+      reason.championScore   = champ.score;
+      const pct = Math.round(champ.score * 100);
+      reason.championReason  = `score ${pct}/100 in ${champ.discipline}`;
+    }
+    roleReasons.push(reason);
+  }
+
+  /* Предупреждения — показываются в UI. */
+  const warnings: string[] = [];
+  if (models.length === 1) {
+    warnings.push("few_models_1");
+  } else if (models.length === 2) {
+    warnings.push("few_models_2");
+  }
+  const allWithoutEmbed = allModels.filter((m) => !/embed/i.test(m));
+  if (allWithoutEmbed.length < 4) {
+    warnings.push("recommend_download");
+  }
+  /* Дисциплины где все модели провалились. */
+  for (const r of results) {
+    if (!r.champion && !r.optimum) {
+      warnings.push(`all_failed:${r.discipline}`);
+    }
   }
 
   const totalDurationMs = Date.now() - t0;
@@ -616,6 +721,9 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
     medals,
     recommendations,
     recommendationsByScore,
+    roleReasons,
+    warnings,
+    availableModelCount: allModels.length,
     totalDurationMs,
   };
 }

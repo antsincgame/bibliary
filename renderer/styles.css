@@ -6551,23 +6551,95 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
 }
 
 
+/* ── Hardware strip — compact collapsible ── */
+.mp-hw-strip { margin-bottom: 4px; }
+.mp-hw-details { border: 1px solid var(--border, #2a2a2a); border-radius: 6px; padding: 0; }
+.mp-hw-details[open] { padding-bottom: 8px; }
+.mp-hw-summary {
+  display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+  cursor: pointer; list-style: none; font-size: 12px;
+  color: var(--text-secondary); user-select: none;
+}
+.mp-hw-summary::-webkit-details-marker { display: none; }
+.mp-hw-summary::before { content: "▶"; font-size: 9px; transition: transform 0.15s; }
+.mp-hw-details[open] > .mp-hw-summary::before { transform: rotate(90deg); }
+.mp-hw-text { font-family: var(--font-mono, monospace); font-size: 11px; }
+.mp-hw-expanded { padding: 4px 10px 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mp-hw-reco { font-size: 11px; color: var(--text-secondary); flex: 1; }
+
 /* ── Olympics card ── */
-.mp-olympics-card { margin-top: 12px; }
+.mp-olympics-card { margin-top: 0; margin-bottom: 8px; }
 .mp-olympics-actions { display: flex; gap: 8px; margin-bottom: 8px; }
-.mp-olympics-progress { font-family: var(--font-mono, monospace); font-size: 12px; color: var(--text-secondary); min-height: 18px; margin-bottom: 8px; }
 .mp-olympics-results { display: flex; flex-direction: column; gap: 16px; }
 .mp-olympics-medals h3, .mp-olympics-disciplines h3, .mp-olympics-recs h3 { margin: 0 0 8px; font-size: 13px; }
-.mp-olympics-medal-row { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; padding: 6px 8px; border-bottom: 1px solid var(--border, #2a2a2a); align-items: center; }
+
+/* Медальный зачёт */
+.mp-olympics-medal-row {
+  display: grid; grid-template-columns: 20px 1fr auto auto;
+  gap: 10px; padding: 5px 8px; border-bottom: 1px solid var(--border, #2a2a2a); align-items: center;
+}
 .mp-olympics-medal-row:nth-child(2) { background: rgba(255, 215, 0, 0.06); }
-.mp-olympics-medal-model { font-family: var(--font-mono, monospace); font-size: 12px; }
-.mp-olympics-medals-cell { font-size: 13px; white-space: nowrap; }
+.mp-olympics-medal-row:nth-child(3) { background: rgba(192, 192, 192, 0.05); }
+.mp-olympics-medals-rank { font-size: 14px; text-align: center; }
+.mp-olympics-medal-model { font-family: var(--font-mono, monospace); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-olympics-medals-cell { font-size: 12px; white-space: nowrap; }
 .mp-olympics-medals-time { font-size: 11px; color: var(--text-secondary); white-space: nowrap; }
+
+/* Дисциплины */
 .mp-olympics-discipline { padding: 8px 0; border-bottom: 1px solid var(--border, #2a2a2a); }
 .mp-olympics-discipline-title { font-weight: 600; font-size: 12px; }
+.mp-olympics-discipline-role { font-size: 10px; color: var(--text-secondary); margin-bottom: 2px; }
 .mp-olympics-discipline-desc { font-size: 11px; color: var(--text-secondary); margin-bottom: 6px; }
-.mp-olympics-discipline-row { font-family: var(--font-mono, monospace); font-size: 11px; padding: 2px 0; }
+.mp-olympics-discipline-row { font-family: var(--font-mono, monospace); font-size: 11px; padding: 2px 0; display: flex; flex-direction: column; }
+.mp-olympics-row-good { color: #6ee7a0; }
+.mp-olympics-row-mid  { color: #fbbf24; }
+.mp-olympics-row-bad  { color: var(--text-secondary); }
+.mp-olympics-discipline-sample { font-size: 10px; color: var(--text-secondary); font-style: italic; padding-left: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Лог олимпиады — накопительный список событий */
+.mp-olympics-log {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  max-height: 160px;
+  overflow-y: auto;
+  background: rgba(0,0,0,0.2);
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.mp-olympics-log-entry { padding: 1px 0; }
+.mp-olympics-log-good { color: #6ee7a0; }
+.mp-olympics-log-mid  { color: #fbbf24; }
+.mp-olympics-log-bad  { color: #f87171; }
+.mp-olympics-log-info { color: var(--text-secondary); }
+
+/* Предупреждения об ограниченном числе моделей */
+.mp-olympics-warning {
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: 6px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mp-olympics-warning-title { font-weight: 600; font-size: 12px; color: #fbbf24; }
+.mp-olympics-warning-msg  { font-size: 11px; color: var(--text-secondary); }
+.mp-olympics-warning-hint { font-size: 11px; color: var(--text-secondary); margin-top: 4px; display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+.mp-link { color: #60a5fa; text-decoration: none; }
+.mp-link:hover { text-decoration: underline; }
+
+/* Рекомендации */
 .mp-olympics-recs { background: rgba(56, 142, 60, 0.08); border: 1px solid rgba(56, 142, 60, 0.3); padding: 12px; border-radius: 6px; }
-.mp-olympics-rec-row { font-family: var(--font-mono, monospace); font-size: 12px; padding: 2px 0; }
+.mp-olympics-rec-entry { margin-bottom: 4px; }
+.mp-olympics-rec-row { display: flex; align-items: center; gap: 8px; }
+.mp-olympics-rec-role  { font-size: 11px; color: var(--text-secondary); width: 110px; flex-shrink: 0; }
+.mp-olympics-rec-model { font-family: var(--font-mono, monospace); font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-olympics-rec-reason { font-size: 10px; color: var(--text-secondary); padding-left: 4px; font-style: italic; }
 .mp-olympics-no-recs { font-size: 12px; color: var(--text-secondary); font-style: italic; }
 .mp-error { color: var(--accent-error, #f87171); font-size: 12px; padding: 8px; }
 
