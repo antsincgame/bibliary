@@ -6643,9 +6643,95 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
 .mp-olympics-no-recs { font-size: 12px; color: var(--text-secondary); font-style: italic; }
 .mp-error { color: var(--accent-error, #f87171); font-size: 12px; padding: 8px; }
 
-/* ── Olympics: champion vs optimum two-column ── */
+/* ── Olympics: options (testAll + class selector) ── */
+.mp-olympics-options {
+  display: flex; gap: 16px; flex-wrap: wrap;
+  background: rgba(0,0,0,0.15); border: 1px solid var(--border, #2a2a2a);
+  border-radius: 6px; padding: 8px 10px; margin-bottom: 8px;
+  font-size: 11px;
+}
+.mp-olympics-option {
+  display: flex; align-items: center; gap: 6px;
+  cursor: pointer; user-select: none;
+}
+.mp-olympics-option input[type="checkbox"] { cursor: pointer; }
+.mp-olympics-option-hint { color: var(--text-secondary); font-size: 10px; }
+.mp-olympics-select {
+  background: var(--bg, #1a1a1a); color: var(--text, #e0e0e0);
+  border: 1px solid var(--border, #2a2a2a);
+  padding: 3px 6px; border-radius: 4px; font-size: 11px;
+}
+
+/* ── Olympics: champion vs optimum two-column (legacy, sub) ── */
 .mp-olympics-recs-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
 .mp-olympics-recs-col { background: rgba(0,0,0,0.15); border: 1px solid var(--border, #2a2a2a); border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
 .mp-olympics-recs-col:first-child { border-color: rgba(56, 142, 60, 0.4); background: rgba(56, 142, 60, 0.06); }
 .mp-olympics-recs-col-title { font-weight: 600; font-size: 13px; }
 .mp-olympics-recs-col-sub { font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
+
+/* ── Olympics: per-role recommendation cards ── */
+.mp-olympics-recs-header {
+  display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px;
+}
+.mp-olympics-apply-buttons {
+  display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px;
+}
+.mp-olympics-role-card {
+  background: rgba(0,0,0,0.15);
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.mp-olympics-role-header {
+  display: flex; align-items: center; gap: 8px;
+  border-bottom: 1px solid var(--border, #2a2a2a);
+  padding-bottom: 6px;
+}
+.mp-olympics-role-icon { font-size: 16px; }
+.mp-olympics-role-name { font-weight: 600; font-size: 13px; flex: 1; }
+.mp-olympics-role-disciplines { font-size: 10px; color: var(--text-secondary); }
+.mp-olympics-role-top {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.mp-olympics-role-row {
+  display: grid;
+  grid-template-columns: 22px 1fr auto auto auto;
+  gap: 8px;
+  align-items: center;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  padding: 2px 0;
+}
+.mp-olympics-role-rank { font-size: 13px; }
+.mp-olympics-role-model { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-olympics-role-stats { color: var(--text-secondary); white-space: nowrap; }
+.mp-olympics-tag {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+}
+.mp-olympics-tag-champion { background: rgba(255, 215, 0, 0.2); color: #fbbf24; }
+.mp-olympics-tag-optimum  { background: rgba(56, 142, 60, 0.25); color: #6ee7a0; }
+.mp-olympics-role-why {
+  font-size: 11px;
+  background: rgba(56, 142, 60, 0.06);
+  border-left: 2px solid rgba(56, 142, 60, 0.4);
+  padding: 6px 10px;
+  border-radius: 0 4px 4px 0;
+  margin-top: 4px;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.mp-olympics-why-row { display: flex; gap: 8px; }
+.mp-olympics-why-label { font-weight: 600; flex-shrink: 0; }
+.mp-olympics-why-text  { color: var(--text-secondary); }
+.mp-olympics-why-hint  { font-size: 10px; color: #6ee7a0; font-style: italic; }
+.mp-olympics-role-no-winner {
+  font-size: 11px;
+  color: #f87171;
+  font-style: italic;
+  padding: 4px 0;
+}

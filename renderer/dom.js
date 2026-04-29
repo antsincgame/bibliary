@@ -9,6 +9,15 @@
  * @param {Record<string, unknown>} [attrs]
  * @param {Node|string|Array<Node|string|null|undefined>} [children]
  */
+/* Atrributes which are HTML boolean — `disabled="false"` в HTML равнозначно
+   `disabled` (т.е. true). Это известная грабля DOM API. Чтобы `disabled: false`
+   реально означало "включено", для этих ключей при false НЕ выставляем атрибут,
+   при true выставляем без значения. */
+const BOOLEAN_ATTRS = new Set([
+  "disabled", "checked", "hidden", "readonly", "required",
+  "selected", "multiple", "autofocus", "open",
+]);
+
 export function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
@@ -18,6 +27,9 @@ export function el(tag, attrs = {}, children = []) {
     else if (k === "html") node.innerHTML = String(v);
     else if (k.startsWith("on") && typeof v === "function") {
       node.addEventListener(k.slice(2), /** @type {EventListener} */ (v));
+    } else if (BOOLEAN_ATTRS.has(k)) {
+      if (v === false || v === "false" || v === 0) continue;
+      node.setAttribute(k, "");
     } else {
       node.setAttribute(k, String(v));
     }

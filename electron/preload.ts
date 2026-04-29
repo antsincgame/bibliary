@@ -294,7 +294,13 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.invoke("arena:set-config", partial),
     getLockStatus: (): Promise<{ busy: boolean; reasons: string[] }> =>
       ipcRenderer.invoke("arena:get-lock-status"),
-    runOlympics: (opts?: { models?: string[]; disciplines?: string[]; maxModels?: number }): Promise<unknown> =>
+    runOlympics: (opts?: {
+      models?: string[];
+      disciplines?: string[];
+      maxModels?: number;
+      weightClasses?: string[];
+      testAll?: boolean;
+    }): Promise<unknown> =>
       ipcRenderer.invoke("arena:run-olympics", opts ?? {}),
     cancelOlympics: (): Promise<boolean> => ipcRenderer.invoke("arena:cancel-olympics"),
     applyOlympicsRecommendations: (payload: { recommendations: Record<string, string> }): Promise<unknown> =>

@@ -31,15 +31,18 @@ export interface OlympicsOptions {
   models?: string[];
   /** Идентификаторы дисциплин для прогона. По умолчанию — все. */
   disciplines?: string[];
-  /** Максимум моделей при авто-выборе. Default 4. */
+  /** Максимум моделей при авто-выборе. Default 6. */
   maxModels?: number;
   /** Таймаут на одну дисциплину для одной модели. Default 90 сек. */
   perDisciplineTimeoutMs?: number;
   /**
-   * Фильтр по весовой категории. По умолчанию `"s"` — самый безопасный
-   * для слабого железа. Передай `["s", "m"]` чтобы прогнать обе категории.
+   * Фильтр по весовой категории. По умолчанию `["s","m"]` — стандарт
+   * качества для большинства ролей. Передай `["s","m","l"]` если железо
+   * позволяет (16GB+ VRAM).
    */
   weightClasses?: WeightClass[];
+  /** Тестировать ВСЕ доступные модели (игнорирует weightClasses + maxModels). */
+  testAll?: boolean;
   /** Прогресс-каллбэк. */
   onProgress?: (e: OlympicsEvent) => void;
   /** Abort. */
@@ -76,9 +79,22 @@ export interface OlympicsMatchResult {
   draw: boolean;
 }
 
+/**
+ * Все роли пайплайна Bibliary, для которых есть смысл калибровать модель.
+ * Список синхронизирован с PIPELINE_ROLES в renderer/models/models-page.js
+ * и pref-ключами в preferences-store.
+ */
+export type OlympicsRole =
+  | "crystallizer"
+  | "evaluator"
+  | "translator"
+  | "judge"
+  | "lang_detector"
+  | "ukrainian_specialist";
+
 export interface OlympicsDisciplineResult {
   discipline: string;
-  role: "crystallizer" | "evaluator" | "translator" | "judge";
+  role: OlympicsRole;
   description: string;
   perModel: OlympicsModelResult[];
   matches: OlympicsMatchResult[];
@@ -89,6 +105,34 @@ export interface OlympicsDisciplineResult {
    * от score чемпиона. Это «не сильнейшая, а та, что нужна на практике».
    */
   optimum: string | null;
+}
+
+/**
+ * Агрегат для одной РОЛИ по нескольким её дисциплинам — основа выбора модели.
+ * Для каждой модели усредняются результаты по всем дисциплинам этой роли.
+ */
+export interface OlympicsRoleAggregate {
+  role: OlympicsRole;
+  prefKey: string;
+  disciplines: string[];
+  /** Усреднённые показатели каждой модели по всем дисциплинам этой роли. */
+  perModel: Array<{
+    model: string;
+    avgScore: number;        // 0..1
+    minScore: number;        // 0..1 — худшее из дисциплин (показывает стабильность)
+    avgDurationMs: number;
+    avgEfficiency: number;
+    coverage: number;        // 0..1 — доля дисциплин где score > 0.3
+    okCount: number;
+    totalCount: number;
+  }>;
+  /** Лучшая по avgScore (стабильное качество во всех дисциплинах). */
+  champion: string | null;
+  /** Лучшая по efficiency среди acceptable (avgScore ≥ 70% от champion). */
+  optimum: string | null;
+  /** Текстовое объяснение почему именно эта модель — для UI. */
+  championReason: string | null;
+  optimumReason: string | null;
 }
 
 export interface OlympicsMedalRow {
@@ -127,6 +171,11 @@ export interface OlympicsReport {
   /** Карта model → весовая категория (для UI и анализа). */
   modelWeightClass: Record<string, WeightClass>;
   disciplines: OlympicsDisciplineResult[];
+  /**
+   * Агрегаты по ролям — основа рекомендаций. Каждая роль здесь
+   * собирает все свои дисциплины и усредняет per-model результаты.
+   */
+  roleAggregates: OlympicsRoleAggregate[];
   medals: OlympicsMedalRow[];
   /**
    * Авто-рекомендации: ключ — pref-name (extractorModel/judgeModel/...),
@@ -144,6 +193,8 @@ export interface OlympicsReport {
   warnings: string[];
   /** Сколько моделей доступно в LM Studio до фильтрации (для UX «скачай больше»). */
   availableModelCount: number;
+  /** Сколько дисциплин запущено (для UI и i18n-сабтайтла). */
+  disciplineCount: number;
   totalDurationMs: number;
 }
 
@@ -151,12 +202,28 @@ export interface OlympicsReport {
 
 interface Discipline {
   id: string;
-  role: OlympicsDisciplineResult["role"];
+  role: OlympicsRole;
   description: string;
   system: string;
   user: string;
   score(answer: string): number;
   maxTokens: number;
+  /** Краткое объяснение почему этот тест важен для роли (для UI explain). */
+  whyImportant?: string;
+}
+
+/* Helper: безопасный парсинг JSON с очисткой markdown-обёрток. */
+function tryParseJson(answer: string): unknown | null {
+  const cleaned = answer
+    .replace(/```(?:json)?\s*/gi, "")
+    .replace(/```\s*$/g, "")
+    .replace(/^[^{[]*/, "")
+    .replace(/[^}\]]*$/, "");
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    return null;
+  }
 }
 
 export const OLYMPICS_DISCIPLINES: Discipline[] = [
@@ -164,6 +231,8 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
     id: "crystallizer-rover",
     role: "crystallizer",
     description: "Извлечь факты + сущности (наша роль delta-extractor).",
+    whyImportant:
+      "Кристаллизатор — основа dataset-генерации. Тест проверяет: 1) валидность JSON-структуры; 2) полноту извлечения (4 факта в источнике); 3) корректную типизацию сущностей; 4) отсутствие галлюцинаций.",
     system:
       "You extract structured knowledge from text. Output ONLY valid JSON: " +
       '{"facts":[string],"entities":[{"name":string,"type":string}]}.',
@@ -174,26 +243,56 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
       'NASA\'s Jet Propulsion Laboratory operates the mission."',
     maxTokens: 384,
     score: (a) => {
-      const cleaned = a.replace(/^[^{]*/, "").replace(/[^}]*$/, "");
-      try {
-        const parsed: unknown = JSON.parse(cleaned);
-        const obj = parsed as { facts?: unknown[]; entities?: unknown[] };
-        if (!Array.isArray(obj.facts) || !Array.isArray(obj.entities)) return 0.2;
-        const ej = JSON.stringify(parsed).toLowerCase();
-        let s = 0.4;
-        if (obj.facts.length >= 3) s += 0.15;
-        if (obj.entities.length >= 3) s += 0.15;
-        if (ej.includes("mars")) s += 0.1;
-        if (ej.includes("nasa")) s += 0.1;
-        if (/2012/.test(ej)) s += 0.1;
-        return Math.min(1, s);
-      } catch { return 0.0; }
+      const parsed = tryParseJson(a);
+      if (!parsed || typeof parsed !== "object") return 0;
+      const obj = parsed as { facts?: unknown[]; entities?: unknown[] };
+      if (!Array.isArray(obj.facts) || !Array.isArray(obj.entities)) return 0.15;
+
+      let s = 0.2;
+      const factCount = obj.facts.length;
+      /* В источнике 4 ключевых факта: дата, место, источник питания, оператор.
+         Точная полнота: 4+ → +0.15, 3 → +0.10, 2 → +0.05, 1 → 0. */
+      if (factCount >= 4) s += 0.15;
+      else if (factCount === 3) s += 0.10;
+      else if (factCount === 2) s += 0.05;
+
+      const entCount = obj.entities.length;
+      /* Ожидаемые сущности: Curiosity, Mars, Gale Crater, NASA, JPL, plutonium-238 (6).
+         Достаточно 4+ для зачёта. */
+      if (entCount >= 4) s += 0.15;
+      else if (entCount >= 3) s += 0.10;
+      else if (entCount >= 2) s += 0.05;
+
+      const allText = JSON.stringify(parsed).toLowerCase();
+      /* Конкретные факты-якоря — каждый по +0.075. */
+      if (allText.includes("mars")) s += 0.075;
+      if (allText.includes("nasa") || allText.includes("jpl") || allText.includes("jet propulsion")) s += 0.075;
+      if (/\b2012\b|august\s*6/.test(allText)) s += 0.075;
+      if (allText.includes("gale crater") || allText.includes("gale")) s += 0.075;
+      if (allText.includes("plutonium") || allText.includes("rtg") || allText.includes("radioisotope")) s += 0.075;
+      if (allText.includes("curiosity")) s += 0.075;
+
+      /* Штрафы за галлюцинации (фактов, которых нет в источнике): */
+      if (/spirit|opportunity|perseverance/.test(allText)) s -= 0.15; /* другие роверы */
+      if (/2003|2008|2020|2021/.test(allText)) s -= 0.15; /* неверные годы */
+
+      /* Штраф за пустые/мусорные сущности. */
+      const validEntities = obj.entities.filter((e: unknown) => {
+        if (!e || typeof e !== "object") return false;
+        const en = e as { name?: unknown; type?: unknown };
+        return typeof en.name === "string" && en.name.length >= 2 && typeof en.type === "string";
+      });
+      if (entCount > 0 && validEntities.length / entCount < 0.5) s -= 0.15;
+
+      return Math.max(0, Math.min(1, s));
     },
   },
   {
     id: "evaluator-clrs",
     role: "evaluator",
-    description: "Оценить классику CS-литературы (наша роль book-evaluator).",
+    description: "Оценить классику CS-литературы (high-end).",
+    whyImportant:
+      "CLRS — общепризнанная классика, эталон оценки 9-10. Если модель ставит ≤6 — она недооценивает референсы и засорит датасет шумовыми книгами. Тест на «верхнюю планку».",
     system:
       "You evaluate book quality. Score 0-10 (10 = excellent technical reference). " +
       'Output ONLY JSON: {"score":number,"reasoning":string}.',
@@ -203,21 +302,68 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
       "Year: 4th ed. 2022. Pages: 1312. Used by top universities worldwide.",
     maxTokens: 256,
     score: (a) => {
-      const cleaned = a.replace(/^[^{]*/, "").replace(/[^}]*$/, "");
-      try {
-        const parsed = JSON.parse(cleaned) as { score?: number; reasoning?: string };
-        if (typeof parsed.score !== "number") return 0.1;
-        if (typeof parsed.reasoning !== "string" || parsed.reasoning.length < 20) return 0.4;
-        if (parsed.score >= 8 && parsed.score <= 10) return 1.0;
-        if (parsed.score >= 6) return 0.7;
-        return 0.3;
-      } catch { return 0.0; }
+      const parsed = tryParseJson(a) as { score?: number; reasoning?: string } | null;
+      if (!parsed || typeof parsed.score !== "number") return 0;
+
+      let s = 0;
+      /* CLRS — общепризнанная 9-10. Узкое окно. */
+      if (parsed.score >= 9 && parsed.score <= 10)      s += 0.6;
+      else if (parsed.score === 8)                       s += 0.4;
+      else if (parsed.score === 7)                       s += 0.2;
+      else                                                s += 0.0; /* недооценка классики — серьёзный fail */
+
+      if (typeof parsed.reasoning === "string") {
+        const r = parsed.reasoning.toLowerCase();
+        if (r.length >= 30) s += 0.15;
+        if (r.length >= 80) s += 0.05;
+        /* Содержательное обоснование: упомянул хотя бы 1 ключевой факт. */
+        if (/algorithm|алгоритм|computer science|cs|university|универс|reference|стандарт/.test(r)) s += 0.10;
+        if (/clrs|cormen|leiserson|rivest|stein/.test(r)) s += 0.10;
+      }
+
+      return Math.max(0, Math.min(1, s));
+    },
+  },
+  {
+    id: "evaluator-noise",
+    role: "evaluator",
+    description: "Отсеять шумовую книгу (low-end).",
+    whyImportant:
+      "Без проверки на «нижнюю планку» оценщик пропустит мотивашки и поваренные книги в технический датасет. Тест проверяет, что модель ставит 1-3 за non-CS noise.",
+    system:
+      "You evaluate book quality for a TECHNICAL knowledge base. Score 0-10. " +
+      'Output ONLY JSON: {"score":number,"reasoning":string}.',
+    user:
+      'Book: "10 Days to a Better You: Manifest Your Dreams Through Crystal Energy". ' +
+      "Topics: chakras, manifestation, positive thinking. " +
+      "Year: 2024. Pages: 89. Self-published.",
+    maxTokens: 200,
+    score: (a) => {
+      const parsed = tryParseJson(a) as { score?: number; reasoning?: string } | null;
+      if (!parsed || typeof parsed.score !== "number") return 0;
+
+      let s = 0;
+      /* Шум для технической базы знаний — должно быть 1-3. */
+      if (parsed.score >= 1 && parsed.score <= 3)        s += 0.6;
+      else if (parsed.score === 4 || parsed.score === 0) s += 0.3;
+      else if (parsed.score === 5)                        s += 0.15;
+      else                                                s += 0.0; /* ≥6 — модель пропускает шум */
+
+      if (typeof parsed.reasoning === "string" && parsed.reasoning.length >= 20) s += 0.2;
+      if (typeof parsed.reasoning === "string") {
+        const r = parsed.reasoning.toLowerCase();
+        if (/non[\s-]?technical|self[\s-]?help|mot|noise|шум|нетехни|self[\s-]?publ|low\s*qual/.test(r)) s += 0.2;
+      }
+
+      return Math.max(0, Math.min(1, s));
     },
   },
   {
     id: "translator-uk-ru",
     role: "translator",
-    description: "Перевод украинского (наша новая роль).",
+    description: "Перевод UK→RU с техническими терминами.",
+    whyImportant:
+      "Переводчик должен: 1) полностью убрать укр.буквы (іїєґ); 2) сохранить точно «O(V + E)» и обозначения; 3) дать живой русский, не машинный кальк. Без этих свойств — мусор в датасете.",
     system:
       "You are a professional translator. Translate to Russian. " +
       "Preserve technical terms and numbers exactly. Output ONLY the translation.",
@@ -228,21 +374,81 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
     maxTokens: 256,
     score: (a) => {
       const lower = a.toLowerCase();
-      const techPreserved = lower.includes("o(v + e)") || lower.includes("o(v+e)");
-      const noUkraine = !/[іїєґ]/.test(a) || (a.match(/[іїєґ]/g)?.length ?? 0) < 3;
-      const hasRussian = /[а-я]/.test(a);
+      const ukChars = (a.match(/[іїєґІЇЄҐ]/g)?.length ?? 0);
+      const ruChars = (a.match(/[а-яА-Я]/g)?.length ?? 0);
+      const totalText = a.replace(/[^а-яёїєґіА-ЯЁЇЄҐІ]/gi, "").length;
+
       let s = 0;
-      if (hasRussian) s += 0.3;
-      if (techPreserved) s += 0.3;
-      if (noUkraine) s += 0.2;
-      if (lower.includes("обход") || lower.includes("поиск")) s += 0.2;
-      return Math.min(1, s);
+      /* 1. Полное русскоязычие — украинские буквы должны исчезнуть. */
+      if (totalText >= 30 && ruChars / totalText >= 0.95 && ukChars === 0) s += 0.30;
+      else if (ukChars <= 2)                                                s += 0.15;
+      else if (ukChars <= 5)                                                s += 0.05;
+
+      /* 2. Сохранение технических обозначений — точная буквенная копия. */
+      if (lower.includes("o(v + e)") || lower.includes("o(v+e)")) s += 0.25;
+      else if (lower.includes("o(v") && lower.includes("e)"))      s += 0.10;
+
+      /* 3. Аббревиатура DFS — must be preserved. */
+      if (a.includes("DFS")) s += 0.15;
+
+      /* 4. Корректные русские термины (не калька). */
+      if (/обход|обходит/.test(lower))       s += 0.10;
+      if (/поиск\s+в\s+глубин/.test(lower))   s += 0.10;
+      if (/(сложность|время|complexity)/.test(lower)) s += 0.05;
+      if (/(дерев|корн|ветв|узел|узл)/.test(lower))    s += 0.05;
+
+      /* Штрафы. */
+      if (lower.length < 50)                  s -= 0.20;
+      if (lower.length > 600)                 s -= 0.10; /* раздул, не должен быть в N раз длиннее */
+      if (/обходить|починаючи|якомога/.test(a)) s -= 0.15; /* остаточные укр.слова — кальки */
+
+      return Math.max(0, Math.min(1, s));
+    },
+  },
+  {
+    id: "ukrainian-uk-write",
+    role: "ukrainian_specialist",
+    description: "Написать связный текст на украинском.",
+    whyImportant:
+      "Украинская роль активируется когда исходник на укр. Тест: модель должна СОЗДАТЬ грамотный укр.текст, не подменив на русский и сохранив укр.орфографию (іїєґ).",
+    system:
+      "Ти — мовний спеціаліст з української. Пиши лише українською мовою. " +
+      "Дотримуйся української орфографії (літери і, ї, є, ґ).",
+    user:
+      "Поясни одним абзацом (3-4 речення), що таке алгоритм Дейкстри: " +
+      "де застосовується, яка складність, які обмеження.",
+    maxTokens: 320,
+    score: (a) => {
+      const ukChars = (a.match(/[іїєґІЇЄҐ]/g)?.length ?? 0);
+      const ruOnly  = (a.match(/[ыэъ]/gi)?.length ?? 0); /* буквы которых нет в укр. */
+      const len = a.replace(/\s+/g, " ").trim().length;
+
+      let s = 0;
+      /* Реальное укр.письмо: должны быть і/ї/є. */
+      if (ukChars >= 5)         s += 0.35;
+      else if (ukChars >= 2)    s += 0.20;
+      else                       s += 0.0; /* нет укр.букв — провал */
+
+      /* Не русский. */
+      if (ruOnly === 0)         s += 0.20;
+      else if (ruOnly <= 2)     s += 0.10;
+      else                       s -= 0.20;
+
+      /* Содержательность. */
+      if (len >= 100 && len <= 800) s += 0.15;
+      if (/дейкстр/i.test(a))         s += 0.10;
+      if (/(граф|шлях|відстан|вершин)/i.test(a)) s += 0.10;
+      if (/o\([^)]+\)|складніст|n\^?2|log\s*n/i.test(a)) s += 0.10;
+
+      return Math.max(0, Math.min(1, s));
     },
   },
   {
     id: "judge-bst",
     role: "judge",
-    description: "Сравнить два ответа (наша роль arena-judge).",
+    description: "Сравнить два ответа: правильный = A.",
+    whyImportant:
+      "Судья оценивает качество ответов на арене. Тест на anti-bias-A: правильный ответ — A. Если модель отвечает наугад — score будет 0.5 на двух тестах вместе.",
     system:
       "You are a strict but fair judge. Compare two answers. Output ONLY the letter A or B.",
     user:
@@ -252,10 +458,30 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
       "Which is correct? A or B?",
     maxTokens: 16,
     score: (a) => {
-      const t = a.trim().toUpperCase();
-      if (/^A\b/.test(t) || /^['"]?A['"]?$/.test(t)) return 1.0;
-      if (/^B\b/.test(t)) return 0.0;
-      if (t.includes("A") && !t.includes("B")) return 0.7;
+      const t = a.trim().toUpperCase().replace(/[^A-Z]/g, "");
+      if (t.startsWith("A")) return 1.0;
+      if (t.startsWith("B")) return 0.0;
+      return 0.2;
+    },
+  },
+  {
+    id: "judge-async",
+    role: "judge",
+    description: "Сравнить два ответа: правильный = B (anti-A bias).",
+    whyImportant:
+      "Парный тест к judge-bst — здесь правильный ответ B, чтобы выявить bias-A (склонность судьи всегда говорить «A»). Стабильно good-судья наберёт 1.0 в обоих тестах.",
+    system:
+      "You are a strict but fair judge. Compare two answers. Output ONLY the letter A or B.",
+    user:
+      "Question: In Python, what does `await` do in an async function?\n\n" +
+      "Answer A: It blocks the entire program until the awaited operation completes.\n\n" +
+      "Answer B: It pauses the current coroutine and yields control to the event loop until the awaitable resolves.\n\n" +
+      "Which is correct? A or B?",
+    maxTokens: 16,
+    score: (a) => {
+      const t = a.trim().toUpperCase().replace(/[^A-Z]/g, "");
+      if (t.startsWith("B")) return 1.0;
+      if (t.startsWith("A")) return 0.0;
       return 0.2;
     },
   },
@@ -332,20 +558,40 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
   },
 
   {
-    /* Lang detection — должно быть быстро, для роли lang_detector. */
-    id: "lang-detect-mixed",
-    role: "judge", /* решение как «pick: ru | uk | en» — это judge */
-    description: "Определить язык текста (наша роль lang_detector).",
+    id: "lang-detect-uk",
+    role: "lang_detector",
+    description: "Различить украинский от русского (анти-bias на кириллицу).",
+    whyImportant:
+      "Lang-detector часто путает UK и RU из-за общей кириллицы. Этот тест вылавливает модели которые при виде кириллицы отвечают «ru». Использование таких моделей сломает украинский pipeline.",
     system:
-      "You detect language. Output ONLY a single word: ru, uk, en, or de.",
+      "You detect language. Output ONLY a single word: ru, uk, en, or de. No punctuation.",
     user:
-      "Text: 'Алгоритм пошуку в глибину обходить дерево'. What language?",
+      "Text: 'Алгоритм пошуку в глибину обходить дерево, починаючи з кореня'. What language?",
     maxTokens: 8,
     score: (a) => {
       const t = a.trim().toLowerCase().replace(/[^a-z]/g, "");
-      if (t === "uk") return 1.0;
-      if (t.startsWith("uk")) return 0.85;
-      if (t === "ru") return 0.2; /* частая ошибка из-за кириллицы */
+      if (t === "uk")          return 1.0;
+      if (t.startsWith("uk"))  return 0.85;
+      if (t === "ru")          return 0.0; /* серьёзная ошибка для пайплайна */
+      if (t === "ukrainian")   return 0.85;
+      return 0.1;
+    },
+  },
+  {
+    id: "lang-detect-en",
+    role: "lang_detector",
+    description: "Распознать английский (контроль).",
+    whyImportant:
+      "Контрольный тест: english не должен вызывать проблем. Если и здесь модель промахивается — она сломана.",
+    system:
+      "You detect language. Output ONLY a single word: ru, uk, en, or de. No punctuation.",
+    user:
+      "Text: 'The depth-first search algorithm traverses the tree starting from the root'. What language?",
+    maxTokens: 8,
+    score: (a) => {
+      const t = a.trim().toLowerCase().replace(/[^a-z]/g, "");
+      if (t === "en" || t === "english") return 1.0;
+      if (t.startsWith("en"))             return 0.85;
       return 0.0;
     },
   },
@@ -438,14 +684,18 @@ export function classifyWeight(modelKey: string): WeightClass {
 export function pickModelsForOlympics(
   all: string[],
   explicit?: string[],
-  maxModels = 4,
+  maxModels = 6,
   weightClasses?: WeightClass[],
+  testAll = false,
 ): string[] {
   const eligible = all.filter((m) => !/embed/i.test(m));
   if (explicit && explicit.length > 0) return eligible.filter((m) => explicit.includes(m));
 
-  /* Default = только S — безопасно даже на слабом железе. */
-  const wantClasses = new Set<WeightClass>(weightClasses ?? ["s"]);
+  /* Режим «тестировать ВСЕ» — для пользователей, которые знают своё железо. */
+  if (testAll) return eligible;
+
+  /* Default = S+M — стандартный диапазон для большинства ролей пайплайна. */
+  const wantClasses = new Set<WeightClass>(weightClasses ?? ["s", "m"]);
 
   const filtered = eligible.filter((m) => wantClasses.has(classifyWeight(m)));
   if (filtered.length === 0) {
@@ -467,7 +717,7 @@ export function pickModelsForOlympics(
     if (lower.includes("ministral") || lower.includes("mistral")) s += 1;
     if (lower.includes("instruct") || lower.includes("-it")) s += 2;
     if (lower.includes("coder")) s -= 1; /* код-специалист: не идёт на translator */
-    if (lower.includes("abliterated")) s -= 5; /* uncensored — не для еverydays */
+    if (lower.includes("abliterated")) s -= 5; /* uncensored — не для everydays */
     return s;
   };
   const ranked = [...filtered].sort((a, b) => score(b) - score(a));
@@ -486,14 +736,121 @@ export function pickModelsForOlympics(
   return picked;
 }
 
-function roleToPrefKey(role: string): string | null {
+function roleToPrefKey(role: OlympicsRole): string | null {
   switch (role) {
-    case "crystallizer": return "extractorModel";
-    case "judge":        return "judgeModel";
-    case "evaluator":    return "evaluatorModel";
-    case "translator":   return "translatorModel";
-    default:             return null;
+    case "crystallizer":         return "extractorModel";
+    case "judge":                return "judgeModel";
+    case "evaluator":            return "evaluatorModel";
+    case "translator":           return "translatorModel";
+    case "lang_detector":        return "langDetectorModel";
+    case "ukrainian_specialist": return "ukrainianSpecialistModel";
+    default:                      return null;
   }
+}
+
+/**
+ * Считает per-role aggregates: для каждой роли усредняет результаты её
+ * дисциплин по каждой модели. Это и есть основа корректного выбора —
+ * одна дисциплина даёт случайный сигнал, среднее по 2-3 даёт надёжный.
+ */
+function buildRoleAggregates(results: OlympicsDisciplineResult[]): OlympicsRoleAggregate[] {
+  const byRole = new Map<OlympicsRole, OlympicsDisciplineResult[]>();
+  for (const r of results) {
+    const list = byRole.get(r.role) ?? [];
+    list.push(r);
+    byRole.set(r.role, list);
+  }
+
+  const aggregates: OlympicsRoleAggregate[] = [];
+  for (const [role, disciplineResults] of byRole.entries()) {
+    const prefKey = roleToPrefKey(role);
+    if (!prefKey) continue;
+
+    const modelStats = new Map<string, {
+      scores: number[];
+      durations: number[];
+      effs: number[];
+      okCount: number;
+      total: number;
+    }>();
+
+    for (const dr of disciplineResults) {
+      for (const p of dr.perModel) {
+        const e = modelStats.get(p.model) ?? { scores: [], durations: [], effs: [], okCount: 0, total: 0 };
+        e.scores.push(p.score);
+        e.durations.push(p.durationMs);
+        e.effs.push(p.efficiency);
+        if (p.ok) e.okCount++;
+        e.total++;
+        modelStats.set(p.model, e);
+      }
+    }
+
+    const perModel = [...modelStats.entries()].map(([model, e]) => {
+      const avgScore = e.scores.reduce((a, b) => a + b, 0) / e.scores.length;
+      const minScore = Math.min(...e.scores);
+      const avgDurationMs = e.durations.reduce((a, b) => a + b, 0) / e.durations.length;
+      const avgEfficiency = e.effs.reduce((a, b) => a + b, 0) / e.effs.length;
+      const coverage = e.scores.filter((s) => s >= 0.3).length / e.scores.length;
+      return {
+        model,
+        avgScore,
+        minScore,
+        avgDurationMs,
+        avgEfficiency,
+        coverage,
+        okCount: e.okCount,
+        totalCount: e.total,
+      };
+    });
+
+    /* Champion = лучший по avgScore (стабильное качество); тай-брейк по avgDurationMs. */
+    const sortedByQuality = [...perModel].sort((a, b) => {
+      if (Math.abs(a.avgScore - b.avgScore) > 0.03) return b.avgScore - a.avgScore;
+      return a.avgDurationMs - b.avgDurationMs;
+    });
+    const champion = sortedByQuality[0] && sortedByQuality[0].avgScore > 0.3
+      ? sortedByQuality[0].model
+      : null;
+    const championStats = champion ? perModel.find((p) => p.model === champion) : null;
+
+    /* Optimum = лучший по efficiency среди acceptable (avgScore ≥ 70% champion). */
+    let optimum: string | null = null;
+    let optimumStats: typeof perModel[0] | null = null;
+    if (championStats && championStats.avgScore > 0.3) {
+      const cutoff = championStats.avgScore * 0.7;
+      const acceptable = perModel.filter((p) => p.avgScore >= cutoff);
+      const sortedByEff = [...acceptable].sort((a, b) => b.avgEfficiency - a.avgEfficiency);
+      optimum = sortedByEff[0]?.model ?? null;
+      optimumStats = sortedByEff[0] ?? null;
+    }
+
+    /* Текстовое объяснение — учитывает специфику роли. */
+    const dn = disciplineResults.length;
+    const championReason = championStats
+      ? `avg ${(championStats.avgScore * 100).toFixed(0)}/100 across ${dn} test${dn > 1 ? "s" : ""}` +
+        ` · min ${(championStats.minScore * 100).toFixed(0)}` +
+        ` · ${(championStats.avgDurationMs / 1000).toFixed(1)}s avg`
+      : null;
+    const optimumReason = optimumStats
+      ? `avg ${(optimumStats.avgScore * 100).toFixed(0)}/100, ` +
+        `${(optimumStats.avgEfficiency).toFixed(1)} eff, ` +
+        `${(optimumStats.avgDurationMs / 1000).toFixed(1)}s — best speed/quality balance`
+      : null;
+
+    aggregates.push({
+      role,
+      prefKey,
+      disciplines: disciplineResults.map((d) => d.discipline),
+      perModel: perModel.sort((a, b) => b.avgScore - a.avgScore),
+      champion,
+      optimum,
+      championReason,
+      optimumReason,
+    });
+  }
+
+  return aggregates;
 }
 
 export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsReport> {
@@ -512,9 +869,10 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
     opts.models,
     opts.maxModels,
     opts.weightClasses,
+    opts.testAll,
   );
   if (models.length < 2) {
-    const wc = (opts.weightClasses ?? ["s"]).join(",");
+    const wc = (opts.weightClasses ?? ["s", "m"]).join(",");
     throw new Error(
       `Нужно минимум 2 модели в весовых классах [${wc}]. Найдено: ${models.length}. ` +
       `Доступно в LM Studio: ${allModels.join(", ")}. ` +
@@ -625,87 +983,58 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
       return b.totalScore - a.totalScore;
     });
 
-  /* Авто-рекомендации:
-       primary  → optimum (score/время) — это и есть «бабушкин выбор»
-       byScore  → champion (max score)  — для тех, кто хочет «лучшее любой ценой»
+  /* ── Per-role aggregation (новая архитектура) ──
+     Старый код выбирал "лучшую дисциплину" среди всех с этой ролью —
+     это шумный сигнал. Новый код для каждой модели усредняет результаты
+     по всем дисциплинам роли и берёт стабильно лучшую. */
+  const roleAggregates = buildRoleAggregates(results);
 
-     ВАЖНО: одна роль может участвовать в нескольких дисциплинах
-     (crystallizer — в 3 дисциплинах). Старый код брал последнюю по порядку
-     дисциплины — это случайный выбор. Новый код берёт ЛУЧШУЮ по efficiency
-     (для optimum) и по score (для champion). */
   const recommendations: Record<string, string> = {};
   const recommendationsByScore: Record<string, string> = {};
-
-  /* Трекинг лучшей дисциплины для каждой роли. */
-  const roleOptimumBest: Record<string, { model: string; efficiency: number; discipline: string; score: number }> = {};
-  const roleChampionBest: Record<string, { model: string; score: number; discipline: string }> = {};
-
-  for (const r of results) {
-    const prefKey = roleToPrefKey(r.role);
-    if (!prefKey) continue;
-
-    if (r.optimum) {
-      const modelResult = r.perModel.find((p) => p.model === r.optimum);
-      const eff = modelResult?.efficiency ?? 0;
-      const sc = modelResult?.score ?? 0;
-      const prev = roleOptimumBest[prefKey];
-      if (!prev || eff > prev.efficiency) {
-        roleOptimumBest[prefKey] = { model: r.optimum, efficiency: eff, discipline: r.discipline, score: sc };
-      }
-    }
-    if (r.champion) {
-      const modelResult = r.perModel.find((p) => p.model === r.champion);
-      const sc = modelResult?.score ?? 0;
-      const prev = roleChampionBest[prefKey];
-      if (!prev || sc > prev.score) {
-        roleChampionBest[prefKey] = { model: r.champion, score: sc, discipline: r.discipline };
-      }
-    }
-  }
-
-  for (const [k, v] of Object.entries(roleOptimumBest)) recommendations[k] = v.model;
-  for (const [k, v] of Object.entries(roleChampionBest)) recommendationsByScore[k] = v.model;
-
-  /* Причины выбора — для UI («почему эта модель?»). */
   const roleReasons: OlympicsRoleReason[] = [];
-  const allPrefKeys = new Set([...Object.keys(roleOptimumBest), ...Object.keys(roleChampionBest)]);
-  for (const prefKey of allPrefKeys) {
-    const opt = roleOptimumBest[prefKey];
-    const champ = roleChampionBest[prefKey];
-    const reason: OlympicsRoleReason = { prefKey };
-    if (opt) {
-      reason.optimumModel    = opt.model;
-      reason.optimumDiscipline = opt.discipline;
-      reason.optimumScore    = opt.score;
-      const pct = Math.round(opt.score * 100);
-      const effStr = opt.efficiency.toFixed(1);
-      reason.optimumReason   = `score ${pct}/100, efficiency ${effStr} (${opt.discipline})`;
+
+  for (const agg of roleAggregates) {
+    if (agg.optimum)  recommendations[agg.prefKey]        = agg.optimum;
+    if (agg.champion) recommendationsByScore[agg.prefKey] = agg.champion;
+
+    const reason: OlympicsRoleReason = { prefKey: agg.prefKey };
+    if (agg.optimum) {
+      const stats = agg.perModel.find((p) => p.model === agg.optimum);
+      reason.optimumModel = agg.optimum;
+      reason.optimumScore = stats?.avgScore;
+      reason.optimumReason = agg.optimumReason ?? undefined;
+      reason.optimumDiscipline = agg.disciplines.join(" + ");
     }
-    if (champ) {
-      reason.championModel   = champ.model;
-      reason.championDiscipline = champ.discipline;
-      reason.championScore   = champ.score;
-      const pct = Math.round(champ.score * 100);
-      reason.championReason  = `score ${pct}/100 in ${champ.discipline}`;
+    if (agg.champion) {
+      const stats = agg.perModel.find((p) => p.model === agg.champion);
+      reason.championModel = agg.champion;
+      reason.championScore = stats?.avgScore;
+      reason.championReason = agg.championReason ?? undefined;
+      reason.championDiscipline = agg.disciplines.join(" + ");
     }
     roleReasons.push(reason);
   }
 
   /* Предупреждения — показываются в UI. */
   const warnings: string[] = [];
-  if (models.length === 1) {
-    warnings.push("few_models_1");
-  } else if (models.length === 2) {
-    warnings.push("few_models_2");
-  }
+  if (models.length === 1)        warnings.push("few_models_1");
+  else if (models.length === 2)   warnings.push("few_models_2");
+  else if (models.length === 3)   warnings.push("few_models_3");
+
   const allWithoutEmbed = allModels.filter((m) => !/embed/i.test(m));
-  if (allWithoutEmbed.length < 4) {
-    warnings.push("recommend_download");
-  }
+  if (allWithoutEmbed.length < 4) warnings.push("recommend_download");
+
   /* Дисциплины где все модели провалились. */
   for (const r of results) {
     if (!r.champion && !r.optimum) {
       warnings.push(`all_failed:${r.discipline}`);
+    }
+  }
+
+  /* Роли без рекомендации — отдельно. */
+  for (const agg of roleAggregates) {
+    if (!agg.champion && !agg.optimum) {
+      warnings.push(`role_no_winner:${agg.role}`);
     }
   }
 
@@ -718,12 +1047,14 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
     models,
     modelWeightClass,
     disciplines: results,
+    roleAggregates,
     medals,
     recommendations,
     recommendationsByScore,
     roleReasons,
     warnings,
     availableModelCount: allModels.length,
+    disciplineCount: results.length,
     totalDurationMs,
   };
 }

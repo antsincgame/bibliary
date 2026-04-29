@@ -138,6 +138,8 @@ export function registerArenaIpc(): void {
         models: Array.isArray(args.models) ? (args.models as string[]) : undefined,
         disciplines: Array.isArray(args.disciplines) ? (args.disciplines as string[]) : undefined,
         maxModels: typeof args.maxModels === "number" ? args.maxModels : undefined,
+        weightClasses: Array.isArray(args.weightClasses) ? (args.weightClasses as Array<"xs"|"s"|"m"|"l"|"xl"|"unknown">) : undefined,
+        testAll: args.testAll === true,
         signal: ctrl.signal,
         onProgress: (ev) => send("arena:olympics-progress", ev),
       });
@@ -161,7 +163,11 @@ export function registerArenaIpc(): void {
     if (!recs || typeof recs !== "object") throw new Error("recommendations отсутствуют");
 
     /* Whitelist: только эти ключи разрешено применять. */
-    const ALLOWED = new Set(["extractorModel", "judgeModel", "evaluatorModel", "translatorModel", "visionModelKey"]);
+    const ALLOWED = new Set([
+      "extractorModel", "judgeModel", "evaluatorModel", "translatorModel",
+      "visionModelKey",
+      "langDetectorModel", "ukrainianSpecialistModel",
+    ]);
     const filtered: Partial<Preferences> = {};
     for (const [k, v] of Object.entries(recs)) {
       if (ALLOWED.has(k) && typeof v === "string" && v.trim().length > 0) {

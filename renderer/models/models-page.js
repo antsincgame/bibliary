@@ -418,6 +418,27 @@ function buildOlympicsCard() {
   return el("section", { class: "mp-card mp-card-compact mp-olympics-card" }, [
     el("h2", { class: "mp-card-title" }, t("models.olympics.title")),
     el("p", { class: "mp-card-sub" }, t("models.olympics.sub")),
+    /* Опции: режим testAll + размах класса */
+    el("div", { class: "mp-olympics-options" }, [
+      el("label", { class: "mp-olympics-option" }, [
+        el("input", { id: "mp-olympics-testall", type: "checkbox" }),
+        el("span", {}, t("models.olympics.option.test_all")),
+        el("span", { class: "mp-olympics-option-hint" }, t("models.olympics.option.test_all_hint")),
+      ]),
+      el("label", { class: "mp-olympics-option" }, [
+        el("span", {}, t("models.olympics.option.weight_classes")),
+        (() => {
+          const sel = el("select", { id: "mp-olympics-classes", class: "mp-olympics-select" }, [
+            el("option", { value: "s,m" }, "S+M (1–12B) — стандарт"),
+            el("option", { value: "s" }, "Только S (1–5B) — слабое железо"),
+            el("option", { value: "m,l" }, "M+L (5–30B) — сильное железо"),
+            el("option", { value: "s,m,l" }, "S+M+L — широкий охват"),
+          ]);
+          sel.value = "s,m";
+          return sel;
+        })(),
+      ]),
+    ]),
     el("div", { class: "mp-olympics-actions" }, [
       el("button", {
         id: "mp-olympics-run",
@@ -486,8 +507,15 @@ async function runOlympicsAndShow() {
     });
   }
 
+  /* Считываем опции из UI. */
+  const testAllEl = pageRoot?.querySelector("#mp-olympics-testall");
+  const classesEl = pageRoot?.querySelector("#mp-olympics-classes");
+  const testAll = testAllEl?.checked === true;
+  const wcStr = classesEl?.value ?? "s,m";
+  const weightClasses = wcStr.split(",").map((s) => s.trim()).filter(Boolean);
+
   try {
-    const report = await window.api.arena.runOlympics({});
+    const report = await window.api.arena.runOlympics({ testAll, weightClasses });
     appendOlympicsLog(logEl, t("models.olympics.done", { ms: ((report.totalDurationMs ?? 0) / 1000).toFixed(1) }), "good");
     renderOlympicsReport(report);
     showToast(t("models.olympics.success"), "success");
@@ -523,12 +551,27 @@ function setOlympicsButtons(running) {
 /** Человекочитаемое имя pref-ключа для UI. */
 function prefKeyLabel(k) {
   const MAP = {
-    extractorModel:  "Кристаллизатор",
-    judgeModel:      "Критик",
-    evaluatorModel:  "Оценщик книг",
-    translatorModel: "Переводчик",
+    extractorModel:           "Кристаллизатор",
+    judgeModel:               "Критик",
+    evaluatorModel:           "Оценщик книг",
+    translatorModel:          "Переводчик",
+    langDetectorModel:        "Определитель языка",
+    ukrainianSpecialistModel: "Украинская модель",
   };
   return MAP[k] ?? k;
+}
+
+/** Иконка роли для UI. */
+function roleIcon(prefKey) {
+  const MAP = {
+    extractorModel:           "💎",
+    judgeModel:               "⚖️",
+    evaluatorModel:           "📚",
+    translatorModel:          "🌐",
+    langDetectorModel:        "🔤",
+    ukrainianSpecialistModel: "🇺🇦",
+  };
+  return MAP[prefKey] ?? "🤖";
 }
 
 function renderOlympicsReport(report) {
@@ -545,8 +588,10 @@ function renderOlympicsReport(report) {
     const warnMsgs = warnings.map((w) => {
       if (w === "few_models_1") return t("models.olympics.warning.only1", { count: usedCount, avail: availCount });
       if (w === "few_models_2") return t("models.olympics.warning.only2", { count: usedCount, avail: availCount });
+      if (w === "few_models_3") return t("models.olympics.warning.only3", { count: usedCount, avail: availCount });
       if (w === "recommend_download") return t("models.olympics.warning.recommend_download");
       if (w.startsWith("all_failed:")) return t("models.olympics.warning.all_failed", { discipline: w.slice(11) });
+      if (w.startsWith("role_no_winner:")) return `Роль «${w.slice(15)}» — нет уверенного победителя.`;
       return w;
     });
     const warnBox = el("div", { class: "mp-olympics-warning" }, [
@@ -612,10 +657,10 @@ function renderOlympicsReport(report) {
   ]);
   root.appendChild(disciplines);
 
-  /* ── Рекомендации ── */
+  /* ── Рекомендации (по ролям) ── */
   const recs = report.recommendations ?? {};
   const byScore = report.recommendationsByScore ?? {};
-  const roleReasons = report.roleReasons ?? [];
+  const aggregates = report.roleAggregates ?? [];
   const recsKeys = Object.keys(recs);
   const byScoreKeys = Object.keys(byScore);
 
@@ -624,63 +669,87 @@ function renderOlympicsReport(report) {
     return;
   }
 
-  /* Строим карту prefKey → reason для быстрого доступа. */
-  const reasonMap = {};
-  for (const r of roleReasons) reasonMap[r.prefKey] = r;
-
-  /* Две колонки: ОПТИМУМ и ЧЕМПИОН. */
-  const recsBox = el("div", { class: "mp-olympics-recs" }, [
+  const recsHeader = el("div", { class: "mp-olympics-recs-header" }, [
     el("h3", {}, t("models.olympics.recommendations")),
     el("p", { class: "mp-card-sub" }, t("models.olympics.recommendations_hint_v2")),
-
-    el("div", { class: "mp-olympics-recs-cols" }, [
-      el("div", { class: "mp-olympics-recs-col" }, [
-        el("div", { class: "mp-olympics-recs-col-title" }, t("models.olympics.optimum.title")),
-        el("div", { class: "mp-olympics-recs-col-sub" }, t("models.olympics.optimum.sub")),
-        ...recsKeys.map((k) => {
-          const reason = reasonMap[k];
-          return el("div", { class: "mp-olympics-rec-entry" }, [
-            el("div", { class: "mp-olympics-rec-row" }, [
-              el("span", { class: "mp-olympics-rec-role" }, prefKeyLabel(k)),
-              el("span", { class: "mp-olympics-rec-model" }, recs[k]),
-            ]),
-            reason?.optimumReason
-              ? el("div", { class: "mp-olympics-rec-reason" }, `↳ ${reason.optimumReason}`)
-              : null,
-          ].filter(Boolean));
-        }),
-        el("button", {
-          class: "btn btn-primary",
-          type: "button",
-          disabled: recsKeys.length === 0,
-          onclick: () => void applyRecommendations(recs),
-        }, t("models.olympics.apply.optimum")),
-      ]),
-      el("div", { class: "mp-olympics-recs-col" }, [
-        el("div", { class: "mp-olympics-recs-col-title" }, t("models.olympics.champion.title")),
-        el("div", { class: "mp-olympics-recs-col-sub" }, t("models.olympics.champion.sub")),
-        ...byScoreKeys.map((k) => {
-          const reason = reasonMap[k];
-          return el("div", { class: "mp-olympics-rec-entry" }, [
-            el("div", { class: "mp-olympics-rec-row" }, [
-              el("span", { class: "mp-olympics-rec-role" }, prefKeyLabel(k)),
-              el("span", { class: "mp-olympics-rec-model" }, byScore[k]),
-            ]),
-            reason?.championReason
-              ? el("div", { class: "mp-olympics-rec-reason" }, `↳ ${reason.championReason}`)
-              : null,
-          ].filter(Boolean));
-        }),
-        el("button", {
-          class: "btn btn-ghost",
-          type: "button",
-          disabled: byScoreKeys.length === 0,
-          onclick: () => void applyRecommendations(byScore),
-        }, t("models.olympics.apply.champion")),
-      ]),
+    el("div", { class: "mp-olympics-apply-buttons" }, [
+      el("button", {
+        class: "btn btn-primary",
+        type: "button",
+        disabled: recsKeys.length === 0,
+        onclick: () => void applyRecommendations(recs),
+      }, `⭐ ${t("models.olympics.apply.optimum")} (${recsKeys.length})`),
+      el("button", {
+        class: "btn btn-ghost",
+        type: "button",
+        disabled: byScoreKeys.length === 0,
+        onclick: () => void applyRecommendations(byScore),
+      }, `🏆 ${t("models.olympics.apply.champion")} (${byScoreKeys.length})`),
     ]),
   ]);
-  root.appendChild(recsBox);
+  root.appendChild(recsHeader);
+
+  /* По одной карточке на роль. Внутри — top-3 модели + объяснение, какая
+     стала optimum/champion и почему. */
+  for (const agg of aggregates) {
+    const top = (agg.perModel ?? []).slice(0, 3);
+    const optimumStats = agg.optimum ? agg.perModel.find((p) => p.model === agg.optimum) : null;
+    const championStats = agg.champion ? agg.perModel.find((p) => p.model === agg.champion) : null;
+
+    const card = el("div", { class: "mp-olympics-role-card" }, [
+      el("div", { class: "mp-olympics-role-header" }, [
+        el("span", { class: "mp-olympics-role-icon" }, roleIcon(agg.prefKey)),
+        el("span", { class: "mp-olympics-role-name" }, prefKeyLabel(agg.prefKey)),
+        el("span", { class: "mp-olympics-role-disciplines" },
+          `${(agg.disciplines ?? []).length} ${t("models.olympics.role.tests")}`),
+      ]),
+
+      /* Top-3 модели со средними показателями */
+      el("div", { class: "mp-olympics-role-top" },
+        top.map((p, i) => {
+          const podium = ["🥇", "🥈", "🥉"][i] ?? "  ";
+          const score = Math.round(p.avgScore * 100);
+          const minScore = Math.round(p.minScore * 100);
+          const isChamp = p.model === agg.champion;
+          const isOpt = p.model === agg.optimum;
+          const tags = [];
+          if (isChamp) tags.push(el("span", { class: "mp-olympics-tag mp-olympics-tag-champion" }, "ЧЕМПИОН"));
+          if (isOpt) tags.push(el("span", { class: "mp-olympics-tag mp-olympics-tag-optimum" }, "ОПТИМУМ"));
+          const level = score >= 70 ? "good" : score >= 40 ? "mid" : "bad";
+          return el("div", { class: `mp-olympics-role-row mp-olympics-row-${level}` }, [
+            el("span", { class: "mp-olympics-role-rank" }, podium),
+            el("span", { class: "mp-olympics-role-model" }, p.model),
+            el("span", { class: "mp-olympics-role-stats" },
+              `${score}/100 (min ${minScore}) · ${(p.avgDurationMs / 1000).toFixed(1)}s`),
+            ...tags,
+          ]);
+        })
+      ),
+
+      /* Объяснение «почему» */
+      (agg.optimumReason || agg.championReason)
+        ? el("div", { class: "mp-olympics-role-why" }, [
+            optimumStats && agg.optimumReason
+              ? el("div", { class: "mp-olympics-why-row" }, [
+                  el("span", { class: "mp-olympics-why-label" }, "⭐ Оптимум:"),
+                  el("span", { class: "mp-olympics-why-text" }, agg.optimumReason),
+                ])
+              : null,
+            championStats && agg.championReason && agg.champion !== agg.optimum
+              ? el("div", { class: "mp-olympics-why-row" }, [
+                  el("span", { class: "mp-olympics-why-label" }, "🏆 Чемпион:"),
+                  el("span", { class: "mp-olympics-why-text" }, agg.championReason),
+                ])
+              : null,
+            agg.champion === agg.optimum && agg.optimumReason
+              ? el("div", { class: "mp-olympics-why-hint" }, "Чемпион = Оптимум — лучшая по качеству И по скорости.")
+              : null,
+          ].filter(Boolean))
+        : el("div", { class: "mp-olympics-role-no-winner" },
+            "Нет уверенного победителя — все модели не справились с этой ролью."),
+    ]);
+    root.appendChild(card);
+  }
 }
 
 async function applyRecommendations(recs) {
