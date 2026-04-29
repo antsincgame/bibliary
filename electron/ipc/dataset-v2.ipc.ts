@@ -343,6 +343,9 @@ async function runExtraction(
                 applicability: delta.applicability,
                 auraFlags: delta.auraFlags,
                 tags: delta.tags,
+                /* Топологические связи (S→P→O) — для графового поиска
+                 * и фильтрации по предикатам типа "depends_on", "refutes". */
+                relations: delta.relations,
                 bookSourcePath: delta.bookSourcePath,
                 acceptedAt: delta.acceptedAt,
               },

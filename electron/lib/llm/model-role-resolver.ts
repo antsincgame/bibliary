@@ -2,11 +2,16 @@
  * Model Role Resolver — единая точка резолва "роль → modelKey".
  *
  * РОЛИ:
- *   crystallizer    — extractor для dataset-v2 (delta knowledge extraction)
- *   judge           — критик генераций / pre-flight оценка
- *   vision_meta     — извлечение метаданных книги из обложки
- *   vision_ocr      — vision-based OCR страниц книг
- *   evaluator       — book pre-flight evaluator (quality scoring)
+ *   crystallizer          — extractor для dataset-v2 (delta knowledge extraction)
+ *   judge                 — критик генераций / pre-flight оценка
+ *   vision_meta           — извлечение метаданных книги из обложки (JSON)
+ *   vision_ocr            — vision-based OCR страниц книг (plain text)
+ *   vision_illustration   — описание иллюстраций для индексации в Qdrant
+ *                           (тематический контекст главы → описание для RAG)
+ *   evaluator             — book pre-flight evaluator (quality scoring)
+ *   ukrainian_specialist  — украинский писатель (для генерации/перевода UK)
+ *   lang_detector         — детект языка фрагмента (production: regex first)
+ *   translator            — двунаправленный перевод (en↔ru, uk→ru)
  *
  * ЦЕПОЧКА РЕЗОЛВА (для каждой роли):
  *   1. preference:   prefs[<role>Model] (явный выбор пользователя)
@@ -16,8 +21,13 @@
  *   5. null:         ни одной загруженной модели
  *
  * CAPABILITY FILTERING:
- *   Для ролей vision_meta/vision_ocr из кандидатов отбрасываются модели без
- *   `vision: true`.
+ *   Для ролей vision_meta / vision_ocr / vision_illustration из кандидатов
+ *   отбрасываются модели без `vision: true`.
+ *
+ * BACKWARD COMPAT:
+ *   Если у роли нет своего prefs[<role>Model], резолвер ВНУТРЕННЕ читает
+ *   общий `visionModelKey` (для всех vision_*). Так пользователь, не успевший
+ *   разделить настройки, получает рабочую модель — без падения.
  *
  * КЭШ:
  *   Резолвед результаты кешируются в памяти на `prefs.modelRoleCacheTtlMs`
@@ -33,6 +43,7 @@ export type ModelRole =
   | "judge"
   | "vision_meta"
   | "vision_ocr"
+  | "vision_illustration"
   | "evaluator"
   | "ukrainian_specialist"
   | "lang_detector"
@@ -62,6 +73,7 @@ const ROLE_REQUIRED_CAPS: Record<ModelRole, Capability[]> = {
   judge: [],
   vision_meta: ["vision"],
   vision_ocr: ["vision"],
+  vision_illustration: ["vision"],
   evaluator: [],
   ukrainian_specialist: [],
   lang_detector: [],
@@ -77,6 +89,7 @@ const ROLE_PREFERRED_CAPS: Record<ModelRole, Capability[]> = {
   judge: [],
   vision_meta: ["vision"],
   vision_ocr: ["vision"],
+  vision_illustration: ["vision"],
   evaluator: [],
   ukrainian_specialist: [],
   lang_detector: [],
@@ -85,28 +98,53 @@ const ROLE_PREFERRED_CAPS: Record<ModelRole, Capability[]> = {
 
 /**
  * Какой preferences ключ хранит явный выбор пользователя для роли.
+ *
+ * Vision-роли разделены на три pref-ключа: visionMetaModel,
+ * visionOcrModel, visionIllustrationModel — у каждой задачи своя оптимальная
+ * модель (для обложек важна структурированность JSON, для OCR — точность
+ * текста, для иллюстраций — описательность). Backward compat: если у роли
+ * не задана своя pref — резолвер падает на общий `visionModelKey`.
  */
 const ROLE_PREF_KEY: Record<ModelRole, string> = {
   crystallizer: "extractorModel",
   judge: "judgeModel",
-  vision_meta: "visionModelKey",
-  vision_ocr: "visionModelKey",
+  vision_meta: "visionMetaModel",
+  vision_ocr: "visionOcrModel",
+  vision_illustration: "visionIllustrationModel",
   evaluator: "evaluatorModel",
   ukrainian_specialist: "ukrainianSpecialistModel",
   lang_detector: "langDetectorModel",
   translator: "translatorModel",
 };
 
+/**
+ * Backward-compat: если у vision-роли пустой prefs[<role>Model] — пробуем
+ * общий ключ, чтобы существующие пользователи не получили nullable резолв.
+ */
+const ROLE_LEGACY_PREF_KEY: Partial<Record<ModelRole, string>> = {
+  vision_meta: "visionModelKey",
+  vision_ocr: "visionModelKey",
+  vision_illustration: "visionModelKey",
+};
+
 /** CSV ключ для fallback chain. null = нет fallback chain. */
 const ROLE_FALLBACKS_PREF_KEY: Record<ModelRole, string | null> = {
   crystallizer: "extractorModelFallbacks",
   judge: "judgeModelFallbacks",
-  vision_meta: "visionModelFallbacks",
-  vision_ocr: "visionModelFallbacks",
+  vision_meta: "visionMetaFallbacks",
+  vision_ocr: "visionOcrFallbacks",
+  vision_illustration: "visionIllustrationFallbacks",
   evaluator: "evaluatorModelFallbacks",
   ukrainian_specialist: "ukrainianSpecialistModelFallbacks",
   lang_detector: "langDetectorModelFallbacks",
   translator: "translatorModelFallbacks",
+};
+
+/** Backward-compat: общий fallback chain для vision-ролей. */
+const ROLE_LEGACY_FALLBACKS_KEY: Partial<Record<ModelRole, string>> = {
+  vision_meta: "visionModelFallbacks",
+  vision_ocr: "visionModelFallbacks",
+  vision_illustration: "visionModelFallbacks",
 };
 
 interface CacheEntry {
@@ -177,7 +215,7 @@ class ModelRoleResolverImpl {
     const loaded = await deps.listLoaded();
     const eligible = filterByCaps(loaded, ROLE_REQUIRED_CAPS[role]);
 
-    /* 1. Явный выбор пользователя */
+    /* 1. Явный выбор пользователя — сначала роль-специфичный pref. */
     const prefKey = ROLE_PREF_KEY[role];
     const prefVal = (prefs as Record<string, unknown>)[prefKey];
     if (typeof prefVal === "string" && prefVal.trim()) {
@@ -185,15 +223,37 @@ class ModelRoleResolverImpl {
       if (eligible.some((m) => m.modelKey === wanted)) {
         return { modelKey: wanted, source: "preference" };
       }
-      /* Пользователь выбрал модель, но её сейчас нет в loaded или нет нужной
-         capability. Не делаем silent fallback — продолжаем цепочку, но
-         помечаем usedFallback=true. */
     }
 
-    /* 2. Fallback list (CSV) */
+    /* 1b. Backward-compat: для новых vision-ролей читаем legacy
+     *     `visionModelKey`, если своего pref нет/не загружен. */
+    const legacyPrefKey = ROLE_LEGACY_PREF_KEY[role];
+    if (legacyPrefKey) {
+      const legacyVal = (prefs as Record<string, unknown>)[legacyPrefKey];
+      if (typeof legacyVal === "string" && legacyVal.trim()) {
+        const wanted = legacyVal.trim();
+        if (eligible.some((m) => m.modelKey === wanted)) {
+          return { modelKey: wanted, source: "preference", usedFallback: true };
+        }
+      }
+    }
+
+    /* 2. Fallback list (CSV) — роль-специфичный, потом legacy. */
     const fbKey = ROLE_FALLBACKS_PREF_KEY[role];
     if (fbKey) {
       const fbVal = (prefs as Record<string, unknown>)[fbKey];
+      if (typeof fbVal === "string" && fbVal.trim()) {
+        const candidates = fbVal.split(",").map((s) => s.trim()).filter(Boolean);
+        for (const c of candidates) {
+          if (eligible.some((m) => m.modelKey === c)) {
+            return { modelKey: c, source: "fallback_list", usedFallback: true };
+          }
+        }
+      }
+    }
+    const legacyFbKey = ROLE_LEGACY_FALLBACKS_KEY[role];
+    if (legacyFbKey) {
+      const fbVal = (prefs as Record<string, unknown>)[legacyFbKey];
       if (typeof fbVal === "string" && fbVal.trim()) {
         const candidates = fbVal.split(",").map((s) => s.trim()).filter(Boolean);
         for (const c of candidates) {
@@ -282,6 +342,7 @@ export function listAllRoles(): RoleMeta[] {
     "judge",
     "vision_meta",
     "vision_ocr",
+    "vision_illustration",
     "evaluator",
     "ukrainian_specialist",
     "lang_detector",

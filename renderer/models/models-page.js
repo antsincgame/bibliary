@@ -668,6 +668,9 @@ function roleIcon(prefKey) {
     langDetectorModel:        "🔤",
     ukrainianSpecialistModel: "🇺🇦",
     visionModelKey:           "👁️",
+    visionMetaModel:          "📖",
+    visionOcrModel:           "🖨️",
+    visionIllustrationModel:  "🖼️",
   };
   return MAP[prefKey] ?? "🤖";
 }
@@ -680,8 +683,90 @@ const ALL_ROLES = [
   { role: "translator",           label: "🌐 Переводчик" },
   { role: "lang_detector",        label: "🔤 Язык" },
   { role: "ukrainian_specialist", label: "🇺🇦 Укр." },
-  { role: "vision",               label: "👁️ Vision" },
+  { role: "vision",               label: "👁️ Vision (legacy)" },
+  { role: "vision_meta",          label: "📖 Vision: обложки" },
+  { role: "vision_ocr",           label: "🖨️ Vision: OCR страниц" },
+  { role: "vision_illustration",  label: "🖼️ Vision: иллюстрации" },
 ];
+
+/**
+ * Литературные названия для ролей (для табов).
+ * Технически точные, но человекочитаемые.
+ */
+const ROLE_HUMAN_LABEL = {
+  crystallizer:         { icon: "💎", title: "Кристаллизатор знаний", subtitle: "извлечение фактов и связей" },
+  evaluator:            { icon: "📚", title: "Литературный критик", subtitle: "оценка качества книги" },
+  judge:                { icon: "⚖️", title: "Судья",               subtitle: "выбор лучшего ответа" },
+  translator:           { icon: "🌐", title: "Переводчик",          subtitle: "межъязыковая адаптация" },
+  lang_detector:        { icon: "🔤", title: "Лингвист-детектор",   subtitle: "определение языка" },
+  ukrainian_specialist: { icon: "🇺🇦", title: "Знаток украинского", subtitle: "генерация на укр." },
+  vision:               { icon: "👁️", title: "Зрение (общее)",     subtitle: "legacy" },
+  vision_meta:          { icon: "📖", title: "Хранитель обложек",   subtitle: "метаданные книги" },
+  vision_ocr:           { icon: "🖨️", title: "Распознаватель текста", subtitle: "OCR сканированных страниц" },
+  vision_illustration:  { icon: "🖼️", title: "Иллюстратор",         subtitle: "описание картинок" },
+};
+
+/**
+ * Литературные названия дисциплин: short — короткий заголовок таба-вкладки;
+ * long — полное название для содержимого аккордеона.
+ *
+ * Стиль: «спортивная номинация древней Греции в современной обработке».
+ * Технически точно — но можно понять без чтения кода.
+ */
+const DISCIPLINE_HUMAN = {
+  /* — Кристаллизатор — */
+  "crystallizer-rover":              { short: "Марсоход",          long: "Извлечение фактов о миссии Curiosity" },
+  "crystallizer-deep-extract":       { short: "Аполлон-11",        long: "Глубокое извлечение знаний из длинного исторического текста" },
+  "crystallizer-production-delta":   { short: "Боевая схема",      long: "Извлечение DeltaKnowledge точно по продакшн-схеме (essence + cipher + relations)" },
+  "crystallizer-ru-mendeleev":       { short: "Менделеев",         long: "Извлечение знаний из русскоязычного текста (периодический закон)" },
+  "code-summary-cpp":                { short: "Чтец C++",          long: "Резюме сложного C++ кода (sidecar describer)" },
+  "html-extract":                    { short: "Чтец HTML",         long: "Извлечение текста из захламлённого HTML" },
+
+  /* — Оценщик — */
+  "evaluator-clrs":                  { short: "CLRS",              long: "Оценка эталона CLRS — должна быть высокой (8-10)" },
+  "evaluator-noise":                 { short: "Шум",               long: "Оценка мусорного фрагмента — должна быть низкой (0-2)" },
+  "evaluator-midrange":              { short: "Серединка",         long: "Оценка средней книги — должна быть в диапазоне 4-6" },
+  "evaluator-ru-classic":            { short: "Русская классика",  long: "Оценка русскоязычной классики (Ландау-Лифшиц)" },
+  "evaluator-nuanced":               { short: "Двойственность",    long: "Взвешенная оценка неоднозначной книги (плюсы + минусы)" },
+
+  /* — Переводчик — */
+  "translator-uk-ru":                { short: "Укр → Рус",         long: "Перевод украинского технического текста на русский" },
+  "translator-en-ru":                { short: "Англ → Рус",        long: "Перевод английского технического текста на русский (главный путь импорта)" },
+  "translator-ru-en":                { short: "Рус → Англ",        long: "Перевод русского научного текста на английский" },
+
+  /* — Знаток украинского — */
+  "ukrainian-uk-write":              { short: "Письмо",            long: "Создание связного текста на украинском с правильной орфографией" },
+
+  /* — Судья — */
+  "judge-bst":                       { short: "BST",               long: "Выбор правильного ответа о сложности BST (A-вариант)" },
+  "judge-async":                     { short: "Async",             long: "Выбор правильного ответа об async/await (B-вариант — антибиас)" },
+
+  /* — Детектор языка — */
+  "lang-detect-uk":                  { short: "Современный укр.",  long: "Распознавание современного украинского технического текста" },
+  "lang-detect-uk-shevchenko":       { short: "Шевченко",          long: "Распознавание классического укр. (Шевченко, архаичные формы)" },
+  "lang-detect-uk-library":          { short: "Библиотечный укр.", long: "Распознавание укр. в реальных библиотечных текстах" },
+  "lang-detect-en":                  { short: "Английский",        long: "Контрольная проверка распознавания английского" },
+  "lang-detect-ru":                  { short: "Русский",           long: "Контрольная проверка: не путает ли русский с украинским" },
+
+  /* — Зрение — */
+  "vision-describe-shapes":          { short: "Геометрия",         long: "Базовый sanity-check: видит ли модель цвет и форму" },
+  "vision_meta-strict-json":         { short: "Строгий JSON",      long: "Дисциплина формата: vision-модель возвращает чистый JSON без prose" },
+  "vision_ocr-plain-text":           { short: "Plain text",        long: "Дисциплина формата: OCR должен дать чистый текст без markdown/JSON" },
+  "vision_illustration-with-context":{ short: "С контекстом",      long: "Описание иллюстрации с привязкой к теме главы (для RAG-индекса)" },
+};
+
+/**
+ * Получить литературное название дисциплины по её id.
+ * Если маппинга нет — fallback на сам id.
+ */
+function disciplineHuman(id) {
+  return DISCIPLINE_HUMAN[id] || { short: id, long: id };
+}
+
+/** Литературное название роли. */
+function roleHuman(role) {
+  return ROLE_HUMAN_LABEL[role] || { icon: "🤖", title: role, subtitle: "" };
+}
 
 function renderOlympicsReport(report) {
   const root = pageRoot?.querySelector("#mp-olympics-results");
@@ -753,41 +838,146 @@ function renderOlympicsReport(report) {
   ]);
   root.appendChild(medalsBox);
 
-  /* ── Результаты по дисциплинам ── */
-  const disciplines = el("div", { class: "mp-olympics-disciplines" }, [
-    el("h3", {}, t("models.olympics.disciplines")),
-    ...((report.disciplines ?? []).map((d) => {
-      const sorted = [...(d.perModel ?? [])].sort((a, b) => {
-        if (Math.abs(a.score - b.score) > 0.005) return b.score - a.score;
-        return a.durationMs - b.durationMs; /* тайbreaker: быстрее лучше */
-      });
-      const podium = ["🥇", "🥈", "🥉"];
-      const titleChildren = [`${d.discipline}`];
-      if (d.thinkingFriendly) {
-        titleChildren.push(el("span", { class: "mp-olympics-thinking-badge", title: "Дисциплина оптимизирована для thinking-моделей: efficiency не штрафует за время reasoning-блока" }, " 🧠 thinking-friendly"));
-      }
-      return el("div", { class: "mp-olympics-discipline" }, [
-        el("div", { class: "mp-olympics-discipline-title" }, titleChildren),
-        el("div", { class: "mp-olympics-discipline-role" }, `роль: ${d.role}`),
-        el("div", { class: "mp-olympics-discipline-desc" }, d.description ?? ""),
-        ...sorted.map((p, i) => {
-          const score = Math.round(p.score * 100);
-          const level = score >= 70 ? "good" : score >= 40 ? "mid" : "bad";
-          const errHint = p.error ? ` ✗ ${p.error.slice(0, 50)}` : "";
-          const effHint = p.efficiency > 0 ? ` · eff ${p.efficiency.toFixed(1)}` : "";
-          /* Показываем sample ответа при достаточном score */
-          const sampleEl = (p.sample && score >= 30)
-            ? el("div", { class: "mp-olympics-discipline-sample" }, `"${p.sample.slice(0, 120)}…"`)
-            : null;
-          return el("div", { class: `mp-olympics-discipline-row mp-olympics-row-${level}` }, [
-            el("span", {}, `${podium[i] ?? "  "} ${p.model} — ${score}/100  (${(p.durationMs / 1000).toFixed(1)}s)${effHint}${errHint}`),
-            sampleEl,
-          ].filter(Boolean));
-        }),
-      ]);
-    })),
-  ]);
-  root.appendChild(disciplines);
+  /* ── Результаты по дисциплинам ──
+   *
+   * UI: <details> ─ табы по ролям ─ <details> per discipline.
+   *
+   *   ▶ Результаты испытаний (свёрнут по умолчанию)
+   *      [💎 Кристаллизатор] [📚 Критик] [⚖️ Судья] [🌐 Переводчик] ...
+   *      ┌──────────────────────────────────────────┐
+   *      │ ▶ Марсоход — Извлечение фактов Curiosity │
+   *      │ ▶ Аполлон-11 — Глубокое извлечение       │
+   *      │ ▼ Боевая схема — DeltaKnowledge          │
+   *      │     🥇 model-A — 95/100 (1.7s) eff 0.5   │
+   *      │     🥈 model-B — 90/100 (2.5s) eff 0.4   │
+   *      └──────────────────────────────────────────┘
+   */
+  const allDisciplines = report.disciplines ?? [];
+
+  /* Группируем дисциплины по роли. */
+  const byRole = new Map();
+  for (const d of allDisciplines) {
+    if (!byRole.has(d.role)) byRole.set(d.role, []);
+    byRole.get(d.role).push(d);
+  }
+
+  const disciplinesRoot = el("details", { class: "mp-olympics-disciplines" });
+  disciplinesRoot.appendChild(
+    el("summary", { class: "mp-olympics-disciplines-summary" }, [
+      el("span", {}, t("models.olympics.disciplines")),
+      el("span", { class: "mp-olympics-disciplines-count" }, ` (${allDisciplines.length} испытаний)`),
+    ]),
+  );
+
+  /* Внутренний контейнер контента (показывается при раскрытии details). */
+  const inner = el("div", { class: "mp-olympics-disciplines-inner" });
+
+  /* ── Табы по ролям ── */
+  const tabsBar = el("div", { class: "mp-olympics-tabs", role: "tablist" });
+  const panels = el("div", { class: "mp-olympics-tabs-panels" });
+  const roleKeys = [...byRole.keys()];
+
+  /** Отрисовка одной дисциплины как раскрывающегося аккордеона. */
+  function renderDiscipline(d) {
+    const sorted = [...(d.perModel ?? [])].sort((a, b) => {
+      if (Math.abs(a.score - b.score) > 0.005) return b.score - a.score;
+      return a.durationMs - b.durationMs;
+    });
+    const podium = ["🥇", "🥈", "🥉"];
+    const human = disciplineHuman(d.discipline);
+    /* Краткая статистика для свёрнутого вида: лучший score, count моделей. */
+    const top = sorted[0];
+    const topScore = top ? Math.round(top.score * 100) : 0;
+    const summaryStat = top
+      ? ` — лучший: ${topScore}/100 (${top.model})`
+      : ` — нет результатов`;
+
+    const summaryChildren = [
+      el("span", { class: "mp-olympics-discipline-tab-short" }, human.short),
+      el("span", { class: "mp-olympics-discipline-tab-long" }, ` · ${human.long}`),
+      el("span", { class: "mp-olympics-discipline-tab-stat" }, summaryStat),
+    ];
+    if (d.thinkingFriendly) {
+      summaryChildren.push(el(
+        "span",
+        {
+          class: "mp-olympics-thinking-badge",
+          title: "Дисциплина оптимизирована для thinking-моделей: efficiency не штрафует за время reasoning-блока",
+        },
+        " 🧠 thinking-friendly",
+      ));
+    }
+
+    const det = el("details", { class: "mp-olympics-discipline" }, [
+      el("summary", { class: "mp-olympics-discipline-summary" }, summaryChildren),
+      el("div", { class: "mp-olympics-discipline-meta" }, [
+        el("span", { class: "mp-olympics-discipline-id" }, `id: ${d.discipline}`),
+        d.description ? el("span", { class: "mp-olympics-discipline-desc" }, ` · ${d.description}`) : null,
+      ].filter(Boolean)),
+      ...sorted.map((p, i) => {
+        const score = Math.round(p.score * 100);
+        const level = score >= 70 ? "good" : score >= 40 ? "mid" : "bad";
+        const errHint = p.error ? ` ✗ ${p.error.slice(0, 50)}` : "";
+        const effHint = p.efficiency > 0 ? ` · eff ${p.efficiency.toFixed(1)}` : "";
+        const sampleEl = (p.sample && score >= 30)
+          ? el("div", { class: "mp-olympics-discipline-sample" }, `"${p.sample.slice(0, 120)}…"`)
+          : null;
+        return el("div", { class: `mp-olympics-discipline-row mp-olympics-row-${level}` }, [
+          el("span", {}, `${podium[i] ?? "  "} ${p.model} — ${score}/100  (${(p.durationMs / 1000).toFixed(1)}s)${effHint}${errHint}`),
+          sampleEl,
+        ].filter(Boolean));
+      }),
+    ]);
+    return det;
+  }
+
+  /** Активировать вкладку по индексу. */
+  let activeTabIdx = 0;
+  const tabButtons = [];
+  const tabPanels = [];
+
+  function setActiveTab(idx) {
+    activeTabIdx = idx;
+    for (let i = 0; i < tabButtons.length; i++) {
+      tabButtons[i].classList.toggle("active", i === idx);
+      tabButtons[i].setAttribute("aria-selected", i === idx ? "true" : "false");
+      tabPanels[i].style.display = i === idx ? "" : "none";
+    }
+  }
+
+  roleKeys.forEach((role, idx) => {
+    const ds = byRole.get(role);
+    const human = roleHuman(role);
+    const btn = el("button", {
+      class: "mp-olympics-tab",
+      type: "button",
+      role: "tab",
+      title: human.subtitle,
+    }, [
+      el("span", { class: "mp-olympics-tab-icon" }, human.icon),
+      el("span", { class: "mp-olympics-tab-title" }, ` ${human.title}`),
+      el("span", { class: "mp-olympics-tab-count" }, ` (${ds.length})`),
+    ]);
+    btn.addEventListener("click", () => setActiveTab(idx));
+    tabsBar.appendChild(btn);
+    tabButtons.push(btn);
+
+    const panel = el("div", {
+      class: "mp-olympics-tab-panel",
+      role: "tabpanel",
+    }, [
+      el("div", { class: "mp-olympics-tab-panel-subtitle" }, human.subtitle),
+      ...ds.map(renderDiscipline),
+    ]);
+    panels.appendChild(panel);
+    tabPanels.push(panel);
+  });
+
+  inner.appendChild(tabsBar);
+  inner.appendChild(panels);
+  disciplinesRoot.appendChild(inner);
+  if (tabButtons.length > 0) setActiveTab(0);
+  root.appendChild(disciplinesRoot);
 
   /* ── Рекомендации (по ролям) ── */
   const recs = report.recommendations ?? {};

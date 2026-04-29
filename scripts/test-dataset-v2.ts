@@ -65,6 +65,10 @@ function mockDeltaPayload(overrides: Record<string, unknown> = {}): Record<strin
     applicability: "Prefer domain events for cache busting on user-visible entities.",
     auraFlags: ["authorship", "specialization"],
     tags: ["cache", "invalidation"],
+    relations: [
+      { subject: "cache", predicate: "invalidated_by", object: "domain_event" },
+      { subject: "TTL_policy", predicate: "lags_behind", object: "event_driven_invalidation" },
+    ],
     ...overrides,
   };
 }

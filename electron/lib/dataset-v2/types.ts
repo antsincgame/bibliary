@@ -48,6 +48,30 @@ export const AURA_FLAGS: readonly AuraFlag[] = [
   "authorship", "specialization", "revision", "causality",
 ] as const;
 
+/* ─────────────── Topology: Subject → Predicate → Object triple ─────────────── */
+
+/**
+ * Топологическое отношение между двумя концептами/сущностями главы.
+ * Минимум 1 на чанк — это ключ к графовому поиску и связной выдаче датасета.
+ *
+ * predicate — это ОТНОШЕНИЕ, не глагол-связка. Запрещено: "is", "was", "has".
+ * Разрешено: "designed_by", "predates", "depends_on", "refutes", "extends",
+ * "applies_to", "caused_by", "translates_to", "evolved_into", "specializes",
+ * "uses", "contradicts", "proven_by", "instance_of", "part_of", "limits", и т.п.
+ *
+ * Пример: {"subject":"Saturn V","predicate":"designed_by","object":"Wernher von Braun"}
+ */
+export const TopologyRelationSchema = z.object({
+  subject: z.string().min(2).max(120),
+  predicate: z.string().min(3).max(60).refine(
+    (v) => !/^(is|was|are|were|has|have|had|be|been|will|would|do|does|did)$/i.test(v.trim()),
+    { message: "predicate must be a concrete relation, not a copula (is/was/has/...)" },
+  ),
+  object: z.string().min(2).max(120),
+});
+
+export type TopologyRelation = z.infer<typeof TopologyRelationSchema>;
+
 /* ─────────────── DeltaKnowledge — единый выходной тип ─────────────── */
 
 export const DeltaKnowledgeSchema = z.object({
@@ -59,6 +83,16 @@ export const DeltaKnowledgeSchema = z.object({
   applicability: z.string().max(500).default(""),
   auraFlags: z.array(z.enum(["authorship", "specialization", "revision", "causality"])).min(2).max(4),
   tags: z.array(z.string().min(1).max(40)).min(1).max(10),
+  /**
+   * Топология: 1-8 троек subject→predicate→object между ключевыми сущностями
+   * чанка. Это превращает плоский датасет в граф знаний — позволяет искать
+   * связи "X depends_on Y", строить knowledge maps, выявлять противоречия.
+   * Минимум 1 связь обязательна (модель должна выделить хотя бы одну).
+   *
+   * NB: для backward-compat существующих записей в Qdrant без relations
+   * предусмотрена отдельная legacy-схема `DeltaKnowledgeLegacySchema` ниже.
+   */
+  relations: z.array(TopologyRelationSchema).min(1).max(8),
 });
 
 export interface DeltaKnowledge extends z.infer<typeof DeltaKnowledgeSchema> {
@@ -69,6 +103,17 @@ export interface DeltaKnowledge extends z.infer<typeof DeltaKnowledgeSchema> {
   chapterIndex: number;
   acceptedAt: string;
 }
+
+/**
+ * Legacy schema (без relations) — только для безопасного чтения старых
+ * записей из Qdrant. Новые записи ВСЕГДА должны проходить
+ * `DeltaKnowledgeSchema` с обязательным `relations`.
+ *
+ * Использовать при миграции / экспорте старых датасетов.
+ */
+export const DeltaKnowledgeLegacySchema = DeltaKnowledgeSchema.omit({ relations: true }).extend({
+  relations: z.array(TopologyRelationSchema).optional(),
+});
 
 /* ─────────────── Backward-compat: re-export assertValidCollectionName ─────────────── */
 

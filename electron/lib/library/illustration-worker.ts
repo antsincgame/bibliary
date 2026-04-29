@@ -21,6 +21,8 @@
 import { promises as fs } from "fs";
 import * as path from "path";
 import { pickVisionModels } from "../llm/vision-meta.js";
+import { modelRoleResolver } from "../llm/model-role-resolver.js";
+import { getPreferencesStore } from "../preferences/store.js";
 
 /** Minimum score (exclusive) for a semantic illustration to be kept in CAS. */
 const SEMANTIC_SCORE_THRESHOLD = 5;
@@ -46,14 +48,29 @@ export interface SemanticTriageResult {
 }
 
 /**
- * Step B prompt: score 0-10 + description.
- * Covers are allowed to be score 1-2 — they are always kept (not skipped).
+ * Step B prompt builder: score 0-10 + description.
+ *
+ * Принимает КОНТЕКСТ книги (title, chapter) — без него описание получается
+ * generic: "a red rectangle". С контекстом модель привязывает иллюстрацию
+ * к теме главы: "a red rectangular block — likely a memory page diagram".
+ *
+ * Это ключ для тематического vector search в Qdrant: описание без контекста
+ * не даёт результатов на запрос «найди диаграмму memory hierarchy».
  */
-const SEMANTIC_TRIAGE_PROMPT = `Rate the informational value of this image from a technical or non-fiction book.
+function buildSemanticTriagePrompt(ctx: { bookTitle?: string; chapterTitle?: string } = {}): string {
+  const title = ctx.bookTitle?.trim();
+  const chapter = ctx.chapterTitle?.trim();
+  const contextBlock = (title || chapter)
+    ? `Book context (use this to interpret the image — anchor your description to the topic):\n` +
+      (title   ? `- Book: "${title}"\n` : "") +
+      (chapter ? `- Chapter: "${chapter}"\n` : "") + "\n"
+    : "";
+
+  return `${contextBlock}Rate the informational value of this image from a technical or non-fiction book.
 Return JSON only (no extra text):
 {
   "score": <integer 0-10>,
-  "description": "<one or two sentences describing exactly what the image shows>"
+  "description": "<1-2 sentences. If the chapter context is provided above, anchor the description to the chapter topic when plausible.>"
 }
 
 Scoring guide:
@@ -65,67 +82,95 @@ Scoring guide:
 9-10 — technical architecture diagram, flowchart, UML, graph, chart, mathematical formula
 
 Respond with valid JSON only. No markdown.`;
+}
 
 /**
  * Step B: Send one image to Vision LLM for Semantic Triage.
  * Returns { score, description } or null on failure.
+ *
+ * Если передан `fallbackModelKeys` — при ошибке/timeout первой модели
+ * пробует следующие из списка. Возвращает первый успешный результат.
  */
 async function analyzeImageWithVision(
   imageBuffer: Buffer,
   mimeType: string,
   modelKey: string,
+  ctx: { bookTitle?: string; chapterTitle?: string } = {},
   signal?: AbortSignal,
+  fallbackModelKeys: string[] = [],
+  perModelTimeoutMs: number = 30_000,
 ): Promise<SemanticTriageResult | null> {
-  try {
-    const { getLmStudioUrl: getUrl } = await import("../endpoints/index.js");
-    const baseUrl = await getUrl();
-    const body = {
-      model: modelKey,
-      temperature: 0,
-      max_tokens: 400,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: SEMANTIC_TRIAGE_PROMPT },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:${mimeType};base64,${imageBuffer.toString("base64")}`,
+  const candidates = [modelKey, ...fallbackModelKeys].filter(Boolean);
+  const prompt = buildSemanticTriagePrompt(ctx);
+
+  for (const candidate of candidates) {
+    try {
+      const { getLmStudioUrl: getUrl } = await import("../endpoints/index.js");
+      const baseUrl = await getUrl();
+      const body = {
+        model: candidate,
+        temperature: 0,
+        max_tokens: 400,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:${mimeType};base64,${imageBuffer.toString("base64")}`,
+                },
               },
-            },
-          ],
-        },
-      ],
-    };
+            ],
+          },
+        ],
+      };
 
-    const resp = await fetch(`${baseUrl}/v1/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal,
-    });
+      /* Combine external abort signal with our per-model timeout. */
+      const timeoutCtl = new AbortController();
+      const timer = setTimeout(() => timeoutCtl.abort(), perModelTimeoutMs);
+      const onExternalAbort = () => timeoutCtl.abort();
+      signal?.addEventListener("abort", onExternalAbort);
 
-    if (!resp.ok) return null;
+      let resp: Response;
+      try {
+        resp = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: timeoutCtl.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", onExternalAbort);
+      }
 
-    const json = (await resp.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const raw = json.choices?.[0]?.message?.content ?? "";
-    const parsed = extractJsonFromResponse(raw);
-    if (!parsed) return null;
+      if (!resp.ok) continue; /* try next model */
 
-    const score = typeof parsed.score === "number" ? Math.round(Math.max(0, Math.min(10, parsed.score))) : null;
-    if (score === null) return null;
+      const json = (await resp.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      const raw = json.choices?.[0]?.message?.content ?? "";
+      const parsed = extractJsonFromResponse(raw);
+      if (!parsed) continue;
 
-    return {
-      score,
-      description: typeof parsed.description === "string" ? parsed.description.trim() : "",
-    };
-  } catch {
-    return null;
+      const score = typeof parsed.score === "number"
+        ? Math.round(Math.max(0, Math.min(10, parsed.score)))
+        : null;
+      if (score === null) continue;
+
+      return {
+        score,
+        description: typeof parsed.description === "string" ? parsed.description.trim() : "",
+      };
+    } catch {
+      /* timeout / network — try next model */
+      if (signal?.aborted) return null; /* but stop if user aborted */
+    }
   }
+  return null;
 }
 
 function extractJsonFromResponse(raw: string): Record<string, unknown> | null {
@@ -181,12 +226,44 @@ export async function processIllustrations(
 
   if (entries.length === 0) return { processed: 0, skipped: 0, errors: 0 };
 
-  const models = await pickVisionModels();
-  if (models.length === 0) {
-    onProgress?.("No vision models loaded — skipping illustration analysis");
-    return { processed: 0, skipped: 0, errors: 0 };
+  /* Resolve vision_illustration role (с фолбэком на legacy visionModelKey
+   * через model-role-resolver). Если ничего не нашлось — fallback на
+   * pickVisionModels() для backward-compat. */
+  let modelKey: string | null = null;
+  let fallbackModelKeys: string[] = [];
+  try {
+    const resolved = await modelRoleResolver.resolve("vision_illustration");
+    if (resolved) modelKey = resolved.modelKey;
+    /* Дополнительные кандидаты из CSV-fallback prefs (для retry в worker). */
+    const prefs = await getPreferencesStore().getAll();
+    const fbCsv = prefs.visionIllustrationFallbacks?.trim() || prefs.visionModelFallbacks?.trim() || "";
+    if (fbCsv) {
+      fallbackModelKeys = fbCsv.split(",").map((s) => s.trim()).filter((k) => k && k !== modelKey);
+    }
+  } catch {
+    /* resolver упал — попробуем legacy путь */
   }
-  const modelKey = models[0].modelKey;
+  if (!modelKey) {
+    const models = await pickVisionModels();
+    if (models.length === 0) {
+      onProgress?.("No vision models loaded — skipping illustration analysis");
+      return { processed: 0, skipped: 0, errors: 0 };
+    }
+    modelKey = models[0]!.modelKey;
+    /* Доп. кандидаты из всех загруженных vision-моделей. */
+    fallbackModelKeys = models.slice(1).map((m) => m.modelKey);
+  }
+
+  /* Контекст книги для тематических описаний — извлекаем title из имени
+   * директории книги (book layout: data/library/<sanitized-title>/). */
+  const bookTitle = inferBookTitleFromDir(bookDir);
+
+  /* Feature-flagged CLIP indexing — отдельный шаг D после triage. */
+  let clipIndexingEnabled = false;
+  try {
+    const prefs = await getPreferencesStore().getAll();
+    clipIndexingEnabled = !!prefs.imageVectorIndexEnabled;
+  } catch { /* default disabled */ }
 
   let processed = 0;
   let skipped = 0;
@@ -229,7 +306,14 @@ export async function processIllustrations(
       const buffer = await fs.readFile(blobPath);
       onProgress?.(`[Semantic Triage] ${entry.id} (${entry.bytes} bytes) via ${modelKey}`);
 
-      const triage = await analyzeImageWithVision(buffer, entry.mimeType, modelKey, signal);
+      const triage = await analyzeImageWithVision(
+        buffer,
+        entry.mimeType,
+        modelKey,
+        { bookTitle: bookTitle ?? undefined, chapterTitle: entry.caption ?? undefined },
+        signal,
+        fallbackModelKeys,
+      );
 
       if (!triage) {
         errors++;
@@ -256,6 +340,31 @@ export async function processIllustrations(
         if (bookMd && triage.description) {
           bookMd = enrichMarkdownAltText(bookMd, entry.id, triage.description);
           mdModified = true;
+        }
+
+        // Step D: CLIP image vector indexing (feature-flagged).
+        // Failure here is NON-FATAL — illustration is still saved with text desc.
+        if (clipIndexingEnabled && entry.sha256) {
+          try {
+            const { ensureIllustrationsCollection, indexIllustration } = await import(
+              "../qdrant/illustrations-index.js"
+            );
+            await ensureIllustrationsCollection();
+            await indexIllustration(blobPath, {
+              bookSourcePath: bookDir,
+              bookTitle: bookTitle ?? "",
+              sha256: entry.sha256,
+              mimeType: entry.mimeType,
+              score: triage.score,
+              description: triage.description,
+              caption: entry.caption ?? undefined,
+              illustrationId: entry.id,
+            });
+            onProgress?.(`[CLIP Index] ${entry.id} indexed in bibliary_illustrations`);
+          } catch (clipErr) {
+            const msg = clipErr instanceof Error ? clipErr.message : String(clipErr);
+            onProgress?.(`[CLIP Index] ${entry.id} failed (non-fatal): ${msg.slice(0, 120)}`);
+          }
         }
       }
     } catch {
@@ -310,6 +419,18 @@ async function findBookMdFile(bookDir: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Извлечь читаемый title книги из имени её каталога. Имя — sanitised title
+ * (см. library-store), напр. "Cormen-Algorithms_3rd_Edition_2009". Превращаем
+ * подчёркивания/тире в пробелы и обрезаем суффикс года/edition heuristically.
+ */
+function inferBookTitleFromDir(bookDir: string): string | null {
+  const base = path.basename(bookDir).replace(/[_\-]+/g, " ").trim();
+  if (!base) return null;
+  /* Strip trailing 4-digit year. */
+  return base.replace(/\s+\d{4}\s*$/, "").trim() || base;
 }
 
 async function findBlobFile(blobsRoot: string, sha256: string): Promise<string | null> {

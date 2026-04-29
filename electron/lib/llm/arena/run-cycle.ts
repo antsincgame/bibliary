@@ -10,6 +10,7 @@ import { getPreferencesStore, type Preferences } from "../../preferences/store.j
 import { modelRoleResolver, getRolePrefKey, type ModelRole } from "../model-role-resolver.js";
 import { recordMatch, readRatingsFile, recordCycleError, type ArenaRatingsFile } from "./ratings-store.js";
 import { getGoldenForRole, type GoldenPrompt } from "./golden-prompts.js";
+import { JUDGE_SYSTEM_PROMPT } from "./role-prompts.js";
 import { globalLlmLock } from "../global-llm-lock.js";
 
 const MAX_JUDGE_CONTEXT_CHARS = 4_000;
@@ -149,7 +150,7 @@ async function decideWinner(
           {
             model: judge.modelKey,
             messages: [
-              { role: "system", content: "You are a fair evaluator. Output only A or B." },
+              { role: "system", content: JUDGE_SYSTEM_PROMPT },
               { role: "user", content: prompt },
             ],
             sampling: { temperature: 0, top_p: 0.5, max_tokens: JUDGE_MAX_TOKENS, top_k: JUDGE_TOP_K, min_p: 0, presence_penalty: 0 },

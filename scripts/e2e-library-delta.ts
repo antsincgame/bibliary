@@ -250,6 +250,7 @@ async function main(): Promise<void> {
                       applicability: delta.applicability,
                       auraFlags: delta.auraFlags,
                       tags: delta.tags,
+                      relations: delta.relations,
                       bookSourcePath: delta.bookSourcePath,
                       acceptedAt: delta.acceptedAt,
                     },

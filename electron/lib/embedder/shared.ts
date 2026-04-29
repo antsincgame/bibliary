@@ -63,7 +63,7 @@ function ensureSharpDllPath(): void {
  * в BIBLIARY_DATA_DIR/models — чтобы данные portable-версии жили рядом с .exe,
  * а не разбросано по профилю пользователя Windows.
  */
-function configureTransformersCache(): void {
+export function configureTransformersCache(): void {
   const dataDir = process.env.BIBLIARY_DATA_DIR?.trim();
   if (!dataDir) return;
   const modelsDir = path.join(dataDir, "models");

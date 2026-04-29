@@ -7,6 +7,7 @@
  */
 
 import type { ModelRole } from "../model-role-resolver.js";
+import { JUDGE_SYSTEM_PROMPT } from "./role-prompts.js";
 
 export interface GoldenPrompt {
   id: string;
@@ -19,9 +20,7 @@ export interface GoldenPrompt {
 export const JUDGE_GOLDEN: GoldenPrompt = {
   id: "judge-v1",
   role: "judge",
-  system:
-    "You are a strict but fair judge. Compare two short answers and decide which is more accurate, " +
-    "concise, and helpful. Output ONLY the letter A or B, no explanation.",
+  system: JUDGE_SYSTEM_PROMPT,
   user:
     "Question: What is the time complexity of inserting into a balanced BST?\n\n" +
     "Answer A: O(log n) average and worst case, because the tree stays balanced.\n\n" +

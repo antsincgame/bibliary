@@ -1,0 +1,42 @@
+feat: топологическое извлечение + vision split + CLIP image search
+
+Engineer-Researcher sprint по запросу: «генерация чанков + промпты для
+топологического извлечения, тесты под роли, векторный поиск по картинкам».
+
+Слой 1 — Топология знаний:
+- DeltaKnowledgeSchema: relations [{S,P,O}] обязательное поле (1-8 троек)
+- TopologyRelationSchema: запрет copula-предикатов (is/was/has)
+- electron/defaults/prompts/{delta-knowledge-extractor,chapter-thesis}.md
+  созданы (CoST + AURA + few-shot + relations)
+- arena/role-prompts.ts: единый JUDGE/LANG_DETECT/TRANSLATE_* (3+5+1 -> 1)
+- crystallizer-production-delta — тестирует ТОЧНУЮ боевую DeltaKnowledge
+- translator-en-ru / translator-ru-en с negative examples
+
+Слой 2 — Vision split на 3 роли:
+- ModelRole + prefs: vision_meta / vision_ocr / vision_illustration
+- Backward-compat: legacy visionModelKey как fallback
+- Олимпиада: vision_meta-strict-json, vision_ocr-plain-text,
+  vision_illustration-with-context
+- illustration-worker: контекст книги/главы в промпт + 30s timeout +
+  fallback на список моделей
+
+Слой 3 — CLIP мультимодальный поиск:
+- embedder/image-embedder.ts: Xenova/clip-vit-base-patch32, 512-dim,
+  L2-normalised, embedImage + embedTextForImage в одном пространстве
+- qdrant/illustrations-index.ts: коллекция bibliary_illustrations,
+  searchByText / searchByImage, детерминированные UUID-ids
+- imageVectorIndexEnabled prefs flag (default false — экономит RAM)
+- Step D в illustration-worker: опциональная CLIP-индексация
+
+UI: разворачивающиеся результаты + табы по ролям:
+- «Результаты испытаний» -> details разворачивающийся блок
+- Дисциплины сгруппированы по ролям -> табы с человеческими названиями
+  (Кристаллизатор знаний / Литературный критик / Судья / ...)
+- Каждая дисциплина — details со спортивной номинацией
+  (Марсоход / Аполлон-11 / Боевая схема / Менделеев / ...)
+- 3 новые vision-роли в ALL_ROLES + иконки
+
+Verification:
+- tsc -p tsconfig.electron.json --noEmit: pass
+- ReadLints: clean
+- Backward compat: DeltaKnowledgeLegacySchema для чтения старых записей

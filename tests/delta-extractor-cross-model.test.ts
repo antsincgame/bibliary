@@ -44,6 +44,10 @@ function validDeltaJson(): string {
     applicability: "",
     auraFlags: ["authorship", "specialization"],
     tags: ["entropy"],
+    /* Топологические связи (обязательные с v2 schema). */
+    relations: [
+      { subject: "entropy", predicate: "measures", object: "disorder" },
+    ],
   });
 }
 

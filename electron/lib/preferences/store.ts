@@ -125,7 +125,35 @@ export const PreferencesSchema = z.object({
   extractorModelFallbacks: z.string().default(""),
   judgeModelFallbacks: z.string().default(""),
   evaluatorModelFallbacks: z.string().default(""),
+  /**
+   * Legacy общий fallback для всех vision-ролей. Используется если конкретные
+   * visionMetaFallbacks/visionOcrFallbacks/visionIllustrationFallbacks пустые.
+   */
   visionModelFallbacks: z.string().default(""),
+
+  // -- Vision-роли (split: meta / ocr / illustration). Каждая опционально --
+  /** Модель для извлечения метаданных книги с обложки. Пусто = legacy visionModelKey. */
+  visionMetaModel: z.string().default(""),
+  visionMetaFallbacks: z.string().default(""),
+  /** Модель для OCR сканированных страниц (DJVU/scanned PDF). Пусто = legacy visionModelKey. */
+  visionOcrModel: z.string().default(""),
+  visionOcrFallbacks: z.string().default(""),
+  /**
+   * Модель для описания иллюстраций (для индексации в Qdrant как RAG-контент).
+   * Здесь важна способность писать связное тематическое описание с привязкой
+   * к контексту главы. Пусто = legacy visionModelKey.
+   */
+  visionIllustrationModel: z.string().default(""),
+  visionIllustrationFallbacks: z.string().default(""),
+  /**
+   * Включить CLIP-векторизацию иллюстраций для multimodal-поиска.
+   * При включении: после vision-triage иллюстрация дополнительно индексируется
+   * в Qdrant-коллекции `bibliary_illustrations` через CLIP image encoder
+   * (Xenova/clip-vit-base-patch32, ~600MB, скачивается один раз).
+   * Это даёт image-to-image и text-to-image поиск по картинкам книг.
+   * Default false — экономит RAM на слабых машинах.
+   */
+  imageVectorIndexEnabled: z.boolean().default(false),
 
   // -- Language-specialist roles --
   /** Модель, которая хорошо работает с украинским (Aya, Llama-3-uk, Qwen-uk и т.п.). Пусто = не используется. */

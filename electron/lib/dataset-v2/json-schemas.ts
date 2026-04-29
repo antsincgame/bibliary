@@ -14,7 +14,10 @@ export function buildDeltaKnowledgeResponseFormat(allowedDomains: string[]): Res
       strict: true,
       schema: {
         type: "object",
-        required: ["domain", "chapterContext", "essence", "cipher", "proof", "auraFlags", "tags"],
+        required: [
+          "domain", "chapterContext", "essence", "cipher", "proof",
+          "auraFlags", "tags", "relations",
+        ],
         additionalProperties: false,
         properties: {
           domain: { type: "string", enum: [...allowedDomains] },
@@ -37,6 +40,23 @@ export function buildDeltaKnowledgeResponseFormat(allowedDomains: string[]): Res
             minItems: 1,
             maxItems: 10,
             items: { type: "string", minLength: 1, maxLength: 40 },
+          },
+          /* Топологические связи: Subject → Predicate → Object.
+           * Минимум 1 — обязательно для графового представления знаний. */
+          relations: {
+            type: "array",
+            minItems: 1,
+            maxItems: 8,
+            items: {
+              type: "object",
+              required: ["subject", "predicate", "object"],
+              additionalProperties: false,
+              properties: {
+                subject: { type: "string", minLength: 2, maxLength: 120 },
+                predicate: { type: "string", minLength: 3, maxLength: 60 },
+                object: { type: "string", minLength: 2, maxLength: 120 },
+              },
+            },
           },
         },
       },
