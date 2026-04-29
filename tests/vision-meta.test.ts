@@ -48,17 +48,36 @@ test("[vision-meta] pickVisionModel respects preferredModelKey override (exact)"
   assert.equal(r!.modelKey, "llava-1.6-mistral-7b");
 });
 
-test("[vision-meta] pickVisionModel respects partial preferredModelKey", async () => {
+test("[vision-meta] pickVisionModel rejects partial preferredModelKey (no silent substitution)", async () => {
+  /* Если юзер указал «llava», но в loaded только полное имя «llava-1.6-mistral-7b»
+     или ничего похожего — мы НЕ подменяем выбор молча. До 2026-04 здесь шёл
+     substring-fallback, что приводило к запуску чужой модели вместо выбранной
+     юзером в Settings → Models. */
   const picker = makeListLoaded(["qwen/qwen3-vl-8b", "llava-1.6-mistral-7b"]);
   const r = await pickVisionModel({ preferredModelKey: "llava", listLoadedImpl: picker });
-  assert.ok(r);
-  assert.equal(r!.modelKey, "llava-1.6-mistral-7b");
+  assert.equal(r, null, "partial substring must NOT match; pref must be exact");
 });
 
-test("[vision-meta] pickVisionModels returns preferred first, then all vision fallbacks", async () => {
+test("[vision-meta] pickVisionModels with exact preferred returns ONLY that model (no fallback chain)", async () => {
+  /* Когда пользователь явно выбрал модель и она загружена — список содержит
+     только её. Никаких «дополнительных vision семейств следом» — это
+     раньше позволяло перебирать чужие модели после фейла предпочитаемой. */
   const picker = makeListLoaded(["qwen/qwen3-vl-8b", "llava-1.6-mistral-7b", "pixtral-12b", "text-only"]);
-  const r = await pickVisionModels({ preferredModelKey: "llava", listLoadedImpl: picker });
-  assert.deepEqual(r.map((m) => m.modelKey), ["llava-1.6-mistral-7b", "qwen/qwen3-vl-8b", "pixtral-12b"]);
+  const r = await pickVisionModels({ preferredModelKey: "llava-1.6-mistral-7b", listLoadedImpl: picker });
+  assert.deepEqual(r.map((m) => m.modelKey), ["llava-1.6-mistral-7b"]);
+});
+
+test("[vision-meta] pickVisionModels with preferred-not-loaded returns empty (no silent substitution)", async () => {
+  const picker = makeListLoaded(["qwen/qwen3-vl-8b", "pixtral-12b"]);
+  const r = await pickVisionModels({ preferredModelKey: "missing-vision-model", listLoadedImpl: picker });
+  assert.deepEqual(r, []);
+});
+
+test("[vision-meta] pickVisionModels without preferred returns full vision auto-list", async () => {
+  const picker = makeListLoaded(["qwen/qwen3-vl-8b", "llava-1.6-mistral-7b", "pixtral-12b", "text-only"]);
+  const r = await pickVisionModels({ listLoadedImpl: picker });
+  /* Все vision-модели в порядке VISION_FAMILY_PRIORITY (qwen3-vl выше). */
+  assert.deepEqual(r.map((m) => m.modelKey).sort(), ["llava-1.6-mistral-7b", "pixtral-12b", "qwen/qwen3-vl-8b"]);
 });
 
 test("[vision-meta] extractMetadataFromCover graceful skip when no vision model loaded", async () => {

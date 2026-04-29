@@ -398,6 +398,7 @@ export async function convertBookToMarkdown(
     ocrEnabled: opts.ocrEnabled === true,
     djvuOcrProvider: opts.djvuOcrProvider,
     ocrLanguages: opts.ocrLanguages,
+    visionModelKey: opts.visionModelKey,
     signal: opts.signal,
   });
   /* OCR auto-fallback: если парсер вернул 0 секций, пробуем OCR независимо от
@@ -408,6 +409,7 @@ export async function convertBookToMarkdown(
       ocrEnabled: true, ocrAccuracy: "accurate", ocrPdfDpi: 200,
       djvuOcrProvider: opts.djvuOcrProvider,
       ocrLanguages: opts.ocrLanguages,
+      visionModelKey: opts.visionModelKey,
       signal: opts.signal,
     });
   }

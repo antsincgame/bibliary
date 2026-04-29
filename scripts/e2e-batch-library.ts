@@ -1196,7 +1196,10 @@ async function main(): Promise<void> {
      --evaluator-model "qwen3.6-35b-a3b". */
   let evaluatorModel: string | null = args.evaluatorModel;
   if (!evaluatorModel && !args.skipEvaluate) {
-    evaluatorModel = await pickEvaluatorModel();
+    /* e2e-режим: разрешаем автозагрузку модели с диска — здесь нет UI и
+       пользователь явно согласился отдать LM Studio под скрипт. В app
+       impport-флоу это поведение запрещено по умолчанию. */
+    evaluatorModel = await pickEvaluatorModel({ allowAutoLoad: true });
   }
   if (!args.skipEvaluate && !evaluatorModel) {
     fatal(`Evaluator model not pickable; pass --evaluator-model or --skip-evaluate.`);

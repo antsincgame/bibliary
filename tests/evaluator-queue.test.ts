@@ -499,6 +499,76 @@ test("evaluator-queue bootstrap resets stuck 'evaluating' rows back to 'imported
   assert.doesNotMatch(md, /status: evaluating/, "frontmatter no longer says evaluating");
 });
 
+test("evaluator-queue passes prefs.evaluatorModel into pickEvaluatorModel (no silent substitution)", async (t) => {
+  /* Регрессия 2026-04: до фикса очередь игнорировала Settings → Models →
+     Evaluator и шла в pickEvaluatorModel БЕЗ хинтов, который выбирал
+     «самую мощную» через скоринг + автоматически догружал её через
+     loadModel(gpuOffload=max). Это приводило к выбору модели, которой
+     нет в списке Settings, и к freeze ОС из-за двух больших LLM в VRAM. */
+  const env = await setupTestEnv();
+  t.after(env.cleanup);
+
+  const book = makeBookFile(env.libraryRoot, "7777777777777777", "Book Prefs");
+  await writeBookMarkdown(env.libraryRoot, book.meta, book.mdPath);
+  upsertBook(book.meta, book.mdPath);
+
+  let receivedOpts: { preferred?: string; fallbacks?: string[]; allowAutoLoad?: boolean } | null = null;
+  let usedModel = "";
+  _setEvaluatorDepsForTests({
+    readEvaluatorPrefs: async () => ({
+      preferred: "user-selected-model",
+      fallbacks: ["fallback-a", "fallback-b"],
+    }),
+    pickEvaluatorModel: async (opts) => {
+      receivedOpts = opts ?? null;
+      /* Эмулируем поведение нового pickEvaluatorModel: preferred есть и в loaded
+         → возвращаем его. */
+      return opts?.preferred ?? null;
+    },
+    evaluateBook: async (_s, o) => {
+      usedModel = o.model;
+      return makeFakeEvaluation(70);
+    },
+  });
+
+  enqueueBook(book.meta.id);
+  await waitForIdle();
+
+  assert.ok(receivedOpts, "pickEvaluatorModel received options");
+  assert.equal(receivedOpts!.preferred, "user-selected-model");
+  assert.deepEqual(receivedOpts!.fallbacks, ["fallback-a", "fallback-b"]);
+  assert.equal(receivedOpts!.allowAutoLoad, false, "auto-load запрещён в evaluator-queue по умолчанию");
+  assert.equal(usedModel, "user-selected-model", "evaluateBook получил выбранную в Settings модель");
+});
+
+test("evaluator-queue marks book failed with descriptive reason when preferred model not loaded", async (t) => {
+  const env = await setupTestEnv();
+  t.after(env.cleanup);
+
+  const book = makeBookFile(env.libraryRoot, "8888888888888888", "Book Prefs Missing");
+  await writeBookMarkdown(env.libraryRoot, book.meta, book.mdPath);
+  upsertBook(book.meta, book.mdPath);
+
+  _setEvaluatorDepsForTests({
+    readEvaluatorPrefs: async () => ({ preferred: "ghost-model", fallbacks: [] }),
+    /* pickEvaluatorModel реально посмотрит loaded и вернёт null —
+       allowAutoLoad=false запрещает скрытую загрузку чужой модели. */
+    pickEvaluatorModel: async () => null,
+    evaluateBook: async () => {
+      throw new Error("evaluateBook must NOT be called when no model selected");
+    },
+  });
+
+  enqueueBook(book.meta.id);
+  await waitForIdle();
+
+  const cached = getBookById(book.meta.id);
+  assert.equal(cached?.status, "failed");
+  const warnings = (cached?.warnings ?? []).join("\n");
+  assert.match(warnings, /ghost-model/, "warning упоминает выбранную пользователем модель");
+  assert.match(warnings, /not loaded/i);
+});
+
 test("setEvaluatorModel overrides pickEvaluatorModel result", async (t) => {
   const env = await setupTestEnv();
   t.after(env.cleanup);

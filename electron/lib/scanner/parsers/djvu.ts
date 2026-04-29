@@ -89,6 +89,7 @@ async function ocrDjvuPages(
           languages: opts.ocrLanguages ?? [],
           signal: opts.signal,
           mimeType: "image/png",
+          modelKey: opts.visionModelKey,
         })
         : await recognizeImageBuffer(
           new Uint8Array(pngBuffer.buffer, pngBuffer.byteOffset, pngBuffer.byteLength),

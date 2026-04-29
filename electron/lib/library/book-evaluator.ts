@@ -348,26 +348,54 @@ async function scoreModel(
 }
 
 /**
- * Авто-выбор лучшей модели для эпистемологической эвалюации книг.
+ * Опции выбора модели для evaluator.
  *
- * АЛГОРИТМ ПОИСКА (Iter 7+):
- *   1. Соберём кандидатов: union(loaded, downloaded), отбросим embedders.
- *   2. Для каждого скорим через `scoreModel()` -- использует curated-models.json
- *      теги (flagship/thinking-heavy/...) + эвристики имени (qwen3.5+/magistral/glm-4)
- *      + linear bias по размеру параметров (35b > 27b > 4b).
- *   3. Выбираем топ-1 по score, тiebreaker -- sizeBytes.
- *   4. Если топ не загружен -- loadModel() с TTL=900s (15 мин hold).
- *   5. Возвращаем modelKey (или null если ничего нет / загрузка упала).
+ * `preferred` и `fallbacks` приходят из preferences (Settings → Models →
+ * Evaluator + CSV fallbacks). Когда юзер выбрал конкретную модель, мы ОБЯЗАНЫ
+ * её использовать, не подменяя на «самую мощную» по эвристическому скорингу.
  *
- * Это даёт жирную thinking-модель типа `qwen/qwen3.6-35b-a3b` (flagship +
- * thinking-heavy + 35b params = 1535 score), а не первую попавшуюся 4b.
- *
- * Контракт: не бросает наружу — при любой неожиданной ошибке (в т.ч. в scoreModel)
- * возвращает null, чтобы evaluator-queue пометила книгу как «no LLM», а не ловила throw.
+ * `allowAutoLoad` управляет агрессивной догрузкой моделей с диска. По
+ * умолчанию ВЫКЛЮЧЕНА: загрузка второй большой LLM (gpuOffload=max) поверх
+ * уже занятой VRAM в момент импорта тысячи файлов уже однажды повесила
+ * Windows. Включается явно только в e2e-сценариях, где free VRAM проверена.
  */
-export async function pickEvaluatorModel(): Promise<string | null> {
+export interface PickEvaluatorModelOptions {
+  /** Явно выбранная пользователем модель (preferences.evaluatorModel). */
+  preferred?: string;
+  /** CSV-fallbacks (preferences.evaluatorModelFallbacks, уже распарсенный). */
+  fallbacks?: string[];
+  /**
+   * Разрешить вызов `loadModel(...)` если ни один кандидат не загружен.
+   * Default: false. Опасно при импорте — может вытолкнуть текущую модель
+   * из VRAM или вызвать swap-thrashing вплоть до freeze ОС.
+   */
+  allowAutoLoad?: boolean;
+  /** DI hook для тестов — подменить `listLoaded()`. */
+  listLoadedImpl?: typeof listLoaded;
+  /** DI hook для тестов — подменить `listDownloaded()`. */
+  listDownloadedImpl?: typeof listDownloaded;
+  /** DI hook для тестов — подменить `loadModel()`. */
+  loadModelImpl?: typeof loadModel;
+}
+
+/**
+ * Выбор модели для эвалюации книги.
+ *
+ * Порядок приоритетов:
+ *   1. `opts.preferred` (если в loaded) — выбор пользователя сильнее любой эвристики.
+ *   2. Любая модель из `opts.fallbacks` (если в loaded).
+ *   3. Скоринг loaded-моделей (curated tags + heuristics) — топ-1.
+ *   4. Только если `allowAutoLoad === true`: скоринг loaded ∪ downloaded
+ *      и `loadModel` топа (старое поведение). По умолчанию выключено.
+ *
+ * Контракт: никогда не throw — при любой ошибке возвращает `null`, чтобы
+ * evaluator-queue корректно пометил книгу как «no LLM».
+ */
+export async function pickEvaluatorModel(
+  opts: PickEvaluatorModelOptions = {},
+): Promise<string | null> {
   try {
-    return await pickEvaluatorModelUnsafe();
+    return await pickEvaluatorModelUnsafe(opts);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[book-evaluator] pickEvaluatorModel:", msg);
@@ -375,11 +403,35 @@ export async function pickEvaluatorModel(): Promise<string | null> {
   }
 }
 
-async function pickEvaluatorModelUnsafe(): Promise<string | null> {
-  const [loaded, downloaded] = await Promise.all([listLoaded(), listDownloaded()]);
+async function pickEvaluatorModelUnsafe(
+  opts: PickEvaluatorModelOptions,
+): Promise<string | null> {
+  const allowAutoLoad = opts.allowAutoLoad === true;
+  const listLoadedFn = opts.listLoadedImpl ?? listLoaded;
+  const listDownloadedFn = opts.listDownloadedImpl ?? listDownloaded;
+  const loadModelFn = opts.loadModelImpl ?? loadModel;
+
+  const loaded = await listLoadedFn();
   const loadedKeys = new Set(loaded.map((m) => m.modelKey));
 
-  /* Union -- модель может быть и loaded, и downloaded; разные источники. */
+  /* 1. Явно выбранная пользователем модель. */
+  const preferred = opts.preferred?.trim();
+  if (preferred && loadedKeys.has(preferred)) {
+    return preferred;
+  }
+
+  /* 2. CSV fallbacks. Берём первый, который реально в loaded. */
+  for (const candidate of opts.fallbacks ?? []) {
+    const trimmed = candidate.trim();
+    if (trimmed && loadedKeys.has(trimmed)) {
+      return trimmed;
+    }
+  }
+
+  /* Дальше — авто-выбор. Ограничиваемся только loaded моделями, если
+     allowAutoLoad=false: НИКАКОЙ незаметной догрузки чужих моделей. */
+  const downloaded = allowAutoLoad ? await listDownloadedFn() : [];
+
   const candidates = new Map<string, { sizeBytes: number; arch?: string }>();
   for (const m of loaded) candidates.set(m.modelKey, { sizeBytes: 0 });
   for (const m of downloaded) {
@@ -387,14 +439,12 @@ async function pickEvaluatorModelUnsafe(): Promise<string | null> {
     candidates.set(m.modelKey, { sizeBytes: m.sizeBytes ?? prev?.sizeBytes ?? 0, arch: m.architecture });
   }
 
-  /* Отсев embedders. */
   const llmKeys = [...candidates.entries()]
     .filter(([key, info]) => !isEmbedder(info.arch, key))
     .map(([key, info]) => ({ key, sizeBytes: info.sizeBytes }));
 
   if (llmKeys.length === 0) return null;
 
-  /* Скорим параллельно. */
   const scored = await Promise.all(
     llmKeys.map((c) => scoreModel(c.key, loadedKeys, c.sizeBytes)),
   );
@@ -403,20 +453,22 @@ async function pickEvaluatorModelUnsafe(): Promise<string | null> {
   const top = scored[0];
   if (!top) return null;
 
-  /* Уже загружено -- мгновенно возвращаем. */
   if (top.isLoaded) return top.modelKey;
 
-  /* Не загружено -- автозагрузка через WS SDK. TTL 15 мин чтобы выдержать
-     многокниговый batch. gpuOffload=max -- максимум на GPU, остальное в RAM. */
+  /* Не загружено и auto-load запрещён — отказ. Лучше пустой результат и
+     явный warning «no evaluator model loaded», чем скрытая догрузка
+     35b-модели поверх уже занятой VRAM. */
+  if (!allowAutoLoad) return null;
+
+  /* Старое поведение для e2e: WS-загрузка топа с TTL 15 мин, gpuOffload=max. */
   try {
-    const handle = await loadModel(top.modelKey, { ttlSec: 900, gpuOffload: "max" });
+    const handle = await loadModelFn(top.modelKey, { ttlSec: 900, gpuOffload: "max" });
     return handle.modelKey;
   } catch {
-    /* Топ не влез (нехватка VRAM) -- пробуем второй кандидат, потом третий. */
     for (const alt of scored.slice(1, 4)) {
       if (alt.isLoaded) return alt.modelKey;
       try {
-        const handle = await loadModel(alt.modelKey, { ttlSec: 900, gpuOffload: "max" });
+        const handle = await loadModelFn(alt.modelKey, { ttlSec: 900, gpuOffload: "max" });
         return handle.modelKey;
       } catch { /* try next */ }
     }

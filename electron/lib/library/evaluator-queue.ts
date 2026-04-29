@@ -24,7 +24,11 @@
 import { promises as fs } from "fs";
 import { EventEmitter } from "events";
 import { getBookById, getBooksByIds, streamBookIdsByStatus, upsertBook } from "./cache-db.js";
-import { evaluateBook as evaluateBookImpl, pickEvaluatorModel as pickEvaluatorModelImpl } from "./book-evaluator.js";
+import {
+  evaluateBook as evaluateBookImpl,
+  pickEvaluatorModel as pickEvaluatorModelImpl,
+  type PickEvaluatorModelOptions,
+} from "./book-evaluator.js";
 import { buildSurrogate } from "./surrogate-builder.js";
 import {
   parseFrontmatter,
@@ -46,16 +50,42 @@ import type { EvaluationResult } from "./types.js";
  */
 interface EvaluatorDeps {
   evaluateBook: (surrogate: string, opts: { model: string; signal: AbortSignal }) => Promise<EvaluationResult>;
-  pickEvaluatorModel: () => Promise<string | null>;
+  pickEvaluatorModel: (opts?: PickEvaluatorModelOptions) => Promise<string | null>;
   readFile: (p: string) => Promise<string>;
   writeFile: (p: string, content: string) => Promise<void>;
+  /**
+   * Читает hints из preferences для evaluator-модели. Лениво обёрнуто, чтобы
+   * тесты могли подменить без поднятия preferences-стора. По умолчанию идёт
+   * в `getPreferencesStore().getAll()`; если стор не инициализирован
+   * (тестовая среда) — возвращает пустой объект (тесты, у которых нет prefs,
+   * остаются на старом auto-pick поведении через `pickEvaluatorModel`).
+   */
+  readEvaluatorPrefs: () => Promise<{ preferred?: string; fallbacks?: string[] }>;
+}
+
+async function defaultReadEvaluatorPrefs(): Promise<{ preferred?: string; fallbacks?: string[] }> {
+  try {
+    const { getPreferencesStore } = await import("../preferences/store.js");
+    const prefs = await getPreferencesStore().getAll();
+    const preferred = prefs.evaluatorModel?.trim() || undefined;
+    const fallbacks = (prefs.evaluatorModelFallbacks ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    return { preferred, fallbacks };
+  } catch {
+    /* PreferencesStore не инициализирован (например, в юнит-тестах без
+       initPreferencesStore) — поведение как раньше: чистый auto-pick. */
+    return {};
+  }
 }
 
 const defaultDeps: EvaluatorDeps = {
   evaluateBook: (s, o) => evaluateBookImpl(s, o),
-  pickEvaluatorModel: () => pickEvaluatorModelImpl(),
+  pickEvaluatorModel: (opts) => pickEvaluatorModelImpl(opts),
   readFile: (p) => fs.readFile(p, "utf-8"),
   writeFile: (p, c) => fs.writeFile(p, c, "utf-8"),
+  readEvaluatorPrefs: defaultReadEvaluatorPrefs,
 };
 
 let deps: EvaluatorDeps = defaultDeps;
@@ -436,14 +466,33 @@ async function evaluateOneInSlot(bookId: string, slot: SlotState): Promise<void>
       ? `# METADATA HINTS (from filename, frontmatter, and text scan — use these as strong clues)\n${metaHints.join("\n")}\n\n${surrogate.surrogate}`
       : surrogate.surrogate;
 
-    /* 3. Pick model. Override has priority. */
-    const model = modelOverride ?? (await deps.pickEvaluatorModel());
+    /* 3. Pick model. Приоритеты:
+         a) `modelOverride` (выставленный через `setEvaluatorModel`) — явный
+            runtime override из IPC.
+         b) `prefs.evaluatorModel` + CSV fallbacks из Settings → Models —
+            то, что выбрал пользователь в UI. До 2026-04 этот выбор
+            игнорировался и `pickEvaluatorModel` шёл в эвристический
+            скоринг + автозагрузку — что приводило к выбору «самой мощной»
+            модели и попытке догрузить её поверх занятой VRAM
+            (вплоть до freeze ОС).
+         c) Чистый auto-pick — только если ни a, ни b не сработали и
+            хотя бы одна loaded LLM есть.
+       `allowAutoLoad: false` запрещает скрытую загрузку моделей с диска. */
+    const evaluatorPrefs = await deps.readEvaluatorPrefs();
+    const model = modelOverride ?? (await deps.pickEvaluatorModel({
+      preferred: evaluatorPrefs.preferred,
+      fallbacks: evaluatorPrefs.fallbacks,
+      allowAutoLoad: false,
+    }));
     if (!model) {
-      const failed: BookCatalogMeta = { ...meta, status: "failed", warnings: [...(meta.warnings ?? []), "evaluator: no LLM loaded"] };
+      const reason = evaluatorPrefs.preferred
+        ? `evaluator: selected model "${evaluatorPrefs.preferred}" not loaded in LM Studio`
+        : "evaluator: no LLM loaded";
+      const failed: BookCatalogMeta = { ...meta, status: "failed", warnings: [...(meta.warnings ?? []), reason] };
       upsertBook(failed, meta.mdPath);
       await persistFrontmatter(failed, meta.mdPath, md);
       totalFailed += 1;
-      emit({ type: "evaluator.failed", bookId, title: slot.title, error: "no LLM loaded" });
+      emit({ type: "evaluator.failed", bookId, title: slot.title, error: reason });
       return;
     }
 

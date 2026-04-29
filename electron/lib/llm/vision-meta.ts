@@ -174,12 +174,17 @@ function extractJson(raw: string): string | null {
 }
 
 /**
- * Динамически выбирает vision-модель из загруженных в LM Studio.
- * Приоритет:
- *   1. Явный override `preferredModelKey` (из preferences.visionModelKey).
- *   2. Первая loaded модель с vision-маркером в имени.
+ * Динамически выбирает vision-модели из загруженных в LM Studio.
  *
- * Возвращает null если vision-модель не загружена — caller сделает graceful skip.
+ * Приоритеты:
+ *   1. `preferredModelKey` ТОЧНО есть в loaded → возвращаем массив длины 1
+ *      с этой моделью, других НЕ добавляем. Юзер выбрал — юзер знает.
+ *   2. `preferredModelKey` задан, но НЕ загружен → пустой массив.
+ *      Caller получит graceful "vision model not loaded" и не вызовет
+ *      случайно другую vision-модель (раньше тут был partial-substring
+ *      match, который молча подменял выбор пользователя).
+ *   3. `preferredModelKey` пуст → авто-список всех vision-моделей,
+ *      отсортированный по `VISION_FAMILY_PRIORITY`.
  */
 export interface PickVisionModelOptions {
   preferredModelKey?: string;
@@ -197,36 +202,27 @@ export async function pickVisionModels(opts: PickVisionModelOptions = {}): Promi
   }
   if (loaded.length === 0) return [];
 
-  const out: Array<{ modelKey: string }> = [];
-  const seen = new Set<string>();
-  const add = (modelKey: string | undefined): void => {
-    if (!modelKey || seen.has(modelKey)) return;
-    out.push({ modelKey });
-    seen.add(modelKey);
-  };
-
-  /* Override: пользователь зафиксировал конкретную модель в preferences.
-     Если она реально загружена — используем; иначе log-уровневый fallback. */
   const preferred = opts.preferredModelKey?.trim();
   if (preferred && preferred.length > 0) {
     const exact = loaded.find((m) => m.modelKey === preferred);
-    if (exact) add(exact.modelKey);
-    /* Override указан, но не загружен — паттерн-матч на случай частичного ввода. */
-    const partial = loaded.find((m) => m.modelKey.toLowerCase().includes(preferred.toLowerCase()));
-    if (partial) add(partial.modelKey);
+    if (exact) return [{ modelKey: exact.modelKey }];
+    /* Pref задан, но не загружен — отказываемся подменять. Caller получит
+       пустой массив и graceful warning, а не «случайно похожая» модель. */
+    return [];
   }
 
-  /* Auto-detect: все loaded модели с vision-маркером, отсортированные по
-     VISION_FAMILY_PRIORITY (qwen3-vl → qwen2.5-vl → internvl → ...).
-     Если первая не поняла язык обложки или вернула неполные title/author/year,
-     caller попробует следующую по приоритету. */
+  /* Auto-detect: все loaded модели с vision-маркером, по приоритету семейств. */
   const detected = loaded
     .filter((m) => looksLikeVisionModel(m.modelKey))
     .sort((a, b) => visionFamilyPriority(a.modelKey) - visionFamilyPriority(b.modelKey));
-  for (const model of detected) {
-    add(model.modelKey);
-  }
 
+  const out: Array<{ modelKey: string }> = [];
+  const seen = new Set<string>();
+  for (const model of detected) {
+    if (seen.has(model.modelKey)) continue;
+    seen.add(model.modelKey);
+    out.push({ modelKey: model.modelKey });
+  }
   return out;
 }
 

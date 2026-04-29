@@ -70,6 +70,13 @@ export interface ParseOptions {
   djvuRenderDpi?: number;
   /** Optional OpenRouter key for vision-llm OCR backend. */
   openrouterApiKey?: string;
+  /**
+   * Явно выбранный modelKey для vision-OCR (preferences.visionModelKey).
+   * Пробрасывается в `recognizeWithVisionLlm`. Если задан, но модель не
+   * загружена в LM Studio — vision-OCR откажется работать с пустым результатом
+   * вместо подмены на любую другую vision-модель.
+   */
+  visionModelKey?: string;
   /** Caller-side abort. Honoured by long-running parsers (PDF OCR). */
   signal?: AbortSignal;
 }
