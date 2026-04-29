@@ -281,35 +281,53 @@ export async function processIllustrations(
 
   let mdModified = false;
 
-  for (const entry of entries) {
-    if (signal?.aborted) break;
+  /* Параллельный pool — vision-LLM запросы к LM Studio могут идти 3-5
+   * одновременно (ограничено GPU/CPU memory pressure, но не CPU-bound).
+   * Без pool: 100 картинок × 6 сек = 10 минут. С pool=4: ≈2.5 мин.
+   *
+   * Защита: locking bookMd / mdModified / counters через async ticks
+   * (single-threaded JS — race-free для счётчиков, но enrichMarkdownAltText
+   * читает и пишет одну переменную bookMd, поэтому делаем этот шаг
+   * последовательно через mdQueue). */
+  const VISION_PARALLELISM = 4;
+
+  /* Сериализуем только md-патчинг — остальные шаги (vision call, qdrant index)
+   * полностью независимые по entries. */
+  let mdSerial: Promise<void> = Promise.resolve();
+  const serializeMd = (op: () => void): Promise<void> => {
+    const next = mdSerial.then(() => { op(); });
+    mdSerial = next.catch(() => {}); /* не залипаем на ошибке */
+    return next;
+  };
+
+  async function processOneEntry(entry: typeof entries[number]): Promise<void> {
+    if (signal?.aborted) return;
     // Skip already-analysed entries
     if (entry.score !== null && entry.score !== undefined) {
       processed++;
-      continue;
+      return;
     }
 
     // sha256 must be present (blob must exist) unless entry is already skipped
     if (!entry.sha256) {
       entry.skipped = true;
       skipped++;
-      continue;
+      return;
     }
 
     const blobPath = await findBlobFile(blobsRoot, entry.sha256);
     if (!blobPath) {
       errors++;
-      continue;
+      return;
     }
 
     try {
-      const buffer = await fs.readFile(blobPath);
       onProgress?.(`[Semantic Triage] ${entry.id} (${entry.bytes} bytes) via ${modelKey}`);
 
       const triage = await analyzeImageWithVision(
-        buffer,
+        await fs.readFile(blobPath),
         entry.mimeType,
-        modelKey,
+        modelKey!,
         { bookTitle: bookTitle ?? undefined, chapterTitle: entry.caption ?? undefined },
         signal,
         fallbackModelKeys,
@@ -317,7 +335,7 @@ export async function processIllustrations(
 
       if (!triage) {
         errors++;
-        continue;
+        return;
       }
 
       entry.score = triage.score;
@@ -338,12 +356,43 @@ export async function processIllustrations(
         onProgress?.(`[Semantic Triage] ${entry.id} score=${triage.score} — enriching markdown`);
 
         if (bookMd && triage.description) {
-          bookMd = enrichMarkdownAltText(bookMd, entry.id, triage.description);
-          mdModified = true;
+          await serializeMd(() => {
+            bookMd = enrichMarkdownAltText(bookMd!, entry.id, triage.description);
+            mdModified = true;
+          });
         }
 
-        // Step D: CLIP image vector indexing (feature-flagged).
-        // Failure here is NON-FATAL — illustration is still saved with text desc.
+        // Step D: E5 text-vector indexing — ВСЕГДА (default-on).
+        //
+        // E5-модель уже загружена для основной коллекции книг, поэтому это
+        // даёт нам поиск «найди иллюстрации про cache hierarchy» без новых
+        // зависимостей. Failure NON-FATAL — иллюстрация всё равно сохраняется
+        // в book.md и illustrations.json.
+        if (entry.sha256 && triage.description && triage.description.trim().length >= 5) {
+          try {
+            const { ensureIllustrationsTextCollection, indexIllustrationDescription } = await import(
+              "../qdrant/illustrations-text-index.js"
+            );
+            await ensureIllustrationsTextCollection();
+            await indexIllustrationDescription({
+              bookSourcePath: bookDir,
+              bookTitle: bookTitle ?? "",
+              sha256: entry.sha256,
+              score: triage.score,
+              description: triage.description,
+              caption: entry.caption ?? undefined,
+              illustrationId: entry.id,
+            });
+            onProgress?.(`[E5 Index] ${entry.id} indexed in bibliary_illustrations_text`);
+          } catch (e5Err) {
+            const msg = e5Err instanceof Error ? e5Err.message : String(e5Err);
+            onProgress?.(`[E5 Index] ${entry.id} failed (non-fatal): ${msg.slice(0, 120)}`);
+          }
+        }
+
+        // Step E: CLIP image vector indexing — ОПЦИОНАЛЬНО (feature-flagged).
+        // Включается prefs.imageVectorIndexEnabled когда нужен визуальный
+        // поиск, который E5 over description не покрывает.
         if (clipIndexingEnabled && entry.sha256) {
           try {
             const { ensureIllustrationsCollection, indexIllustration } = await import(
@@ -371,6 +420,27 @@ export async function processIllustrations(
       errors++;
     }
   }
+
+  /* Простой in-process pool без новых зависимостей. */
+  async function runPool(items: typeof entries, parallelism: number): Promise<void> {
+    let cursor = 0;
+    async function worker(): Promise<void> {
+      while (cursor < items.length) {
+        if (signal?.aborted) return;
+        const idx = cursor++;
+        const item = items[idx];
+        if (!item) return;
+        await processOneEntry(item);
+      }
+    }
+    const workers = Array.from({ length: Math.min(parallelism, items.length) }, () => worker());
+    await Promise.all(workers);
+  }
+
+  await runPool(entries, VISION_PARALLELISM);
+  /* Финальная синхронизация md-очереди — гарантирует что bookMd зафиксирован
+   * до записи на диск. */
+  await mdSerial;
 
   // Persist illustrations.json with scores and descriptions
   try {

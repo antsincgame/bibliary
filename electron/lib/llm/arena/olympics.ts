@@ -948,6 +948,9 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
       "де застосовується, яка складність, які обмеження.",
     maxTokens: 320,
     score: (a) => {
+      const trimmed = a.trim();
+      if (trimmed.length < 10) return 0; /* пустой/слишком короткий ответ */
+
       const ukChars = (a.match(/[іїєґІЇЄҐ]/g)?.length ?? 0);
       const ruOnly  = (a.match(/[ыэъ]/gi)?.length ?? 0); /* буквы которых нет в укр. */
       const len = a.replace(/\s+/g, " ").trim().length;
@@ -959,9 +962,9 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
       else                       s += 0.0; /* нет укр.букв — провал */
 
       /* Не русский. */
-      if (ruOnly === 0)         s += 0.20;
-      else if (ruOnly <= 2)     s += 0.10;
-      else                       s -= 0.20;
+      if (ruOnly === 0 && ukChars >= 1) s += 0.20; /* «нет ru-букв» поощряем только если есть укр. */
+      else if (ruOnly <= 2)             s += 0.10;
+      else                              s -= 0.20;
 
       /* Содержательность. */
       if (len >= 100 && len <= 800) s += 0.15;
@@ -987,9 +990,10 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
     maxTokens: 16,
     score: (a) => {
       const t = a.trim().toUpperCase().replace(/[^A-Z]/g, "");
+      if (t.length === 0) return 0;             /* пустой ответ — не «случайно угадал» */
       if (t.startsWith("A")) return 1.0;
       if (t.startsWith("B")) return 0.0;
-      return 0.2;
+      return 0.05;                               /* мусор — почти ноль */
     },
   },
   {
@@ -1007,9 +1011,10 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
     maxTokens: 16,
     score: (a) => {
       const t = a.trim().toUpperCase().replace(/[^A-Z]/g, "");
+      if (t.length === 0) return 0;
       if (t.startsWith("B")) return 1.0;
       if (t.startsWith("A")) return 0.0;
-      return 0.2;
+      return 0.05;
     },
   },
 
@@ -1114,13 +1119,16 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
       "<footer>(c) 2024</footer></body></html>",
     maxTokens: 256,
     score: (a) => {
-      const lower = a.toLowerCase();
+      const t = a.trim();
+      if (t.length < 10) return 0; /* пустой/мусорный ответ */
+      const lower = t.toLowerCase();
       let s = 0;
-      if (!a.includes("<")) s += 0.25; /* нет tags — хорошо */
-      if (!lower.includes("<script") && !lower.includes("<style")) s += 0.15;
-      if (lower.includes("binary search") || lower.includes("бинарн")) s += 0.25;
-      if (lower.includes("o(log n)") || lower.includes("o(log")) s += 0.2;
-      if (!lower.includes("menu") && !lower.includes("(c) 2024")) s += 0.15; /* убрал navigation/footer */
+      if (!t.includes("<")) s += 0.20; /* нет tags — хорошо */
+      if (!lower.includes("<script") && !lower.includes("<style")) s += 0.10;
+      if (lower.includes("binary search") || lower.includes("бинарн")) s += 0.30;
+      if (lower.includes("o(log n)") || lower.includes("o(log")) s += 0.20;
+      if (!lower.includes("menu") && !lower.includes("(c) 2024")) s += 0.10; /* убрал navigation/footer */
+      if (/sorted\s+array|halv|range|sort/.test(lower)) s += 0.10;
       return Math.min(1, s);
     },
   },
@@ -1329,7 +1337,7 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
 
       /* Главный сигнал: картинка БЕЗ текста — модель должна сказать NO_TEXT. */
       if (/no[_\s]?text/i.test(t)) s += 0.50;
-      else if (t.length === 0)     s += 0.20; /* допустимо: пустой ответ */
+      else if (t.length === 0)     s += 0.05; /* пустой ответ — допустимо но не идеал */
 
       /* === ШТРАФЫ за нарушение формата === */
       if (a.includes("```")) s -= 0.30; /* markdown fences */
@@ -1396,6 +1404,152 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
       /* Слишком короткое (<30 chars) или раздуто (>700) */
       if (a.length < 30) s -= 0.20;
       if (a.length > 800) s -= 0.10;
+
+      return Math.max(0, Math.min(1, s));
+    },
+  },
+
+  /* ─── Crystallizer: chapter-thesis (AURA filter) ─────────────────────
+   * Заявленный в плане crystallizer-aura — производственный chapter-thesis prompt.
+   * Не схема знаний с фактами/relations, а краткий тезис главы (≤200 chars).
+   * Это вход в pipeline AURA-фильтра: тезис главы используется при scoring
+   * delta-knowledge как "в каком контексте мы извлекаем факт?" */
+  {
+    id: "crystallizer-aura",
+    role: "crystallizer",
+    thinkingFriendly: true, /* выделение главной мысли = reasoning */
+    description: "Сгенерировать тезис главы для AURA-фильтра.",
+    whyImportant:
+      "Boevoy chapter_thesis prompt — каждая глава импорта проходит через эту операцию. " +
+      "Если модель пишет «в этой главе говорится о...», вместо одного содержательного " +
+      "предложения — AURA-фильтр получает шум, и delta-extractor хуже отбирает факты.",
+    system:
+      "Извлеки одно содержательное предложение — тезис главы. " +
+      "Без префикса «В этой главе...», без markdown, без JSON. " +
+      "Строго одно предложение, ≤200 символов, заканчивается точкой.",
+    user:
+      "Глава: «Кэш-иерархия в современных процессорах».\n\n" +
+      "Современные процессоры используют многоуровневую систему кэшей (L1, L2, L3) " +
+      "для уменьшения латентности доступа к памяти. L1-кэш разделён на инструкции и " +
+      "данные, имеет размер 32-64 КБ на ядро и латентность 4-5 циклов. L2 общий на " +
+      "ядро, 256КБ-1МБ. L3 разделяемый между всеми ядрами, до 64 МБ. Когерентность " +
+      "поддерживается протоколом MESI или его расширениями. Промах L1 стоит ~10 циклов, " +
+      "промах L3 — ~200 циклов, обращение в DRAM — 300+ циклов.\n\n" +
+      "Тезис главы:",
+    maxTokens: 100,
+    score: (a) => {
+      const cleaned = stripThinkingBlock(a).trim();
+      let s = 0;
+
+      /* Длина: 1 предложение 50-200 chars. */
+      if (cleaned.length >= 30 && cleaned.length <= 200) s += 0.30;
+      else if (cleaned.length > 0 && cleaned.length <= 250) s += 0.15;
+
+      /* Одно предложение (одна точка в конце, не больше 2 точек total). */
+      const dots = (cleaned.match(/[.!?]/g) || []).length;
+      if (dots === 1 && /[.!?]$/.test(cleaned)) s += 0.20;
+      else if (dots <= 2) s += 0.10;
+
+      /* Содержательность: тематика главы. */
+      const lower = cleaned.toLowerCase();
+      if (/кэш|cache/.test(lower)) s += 0.15;
+      if (/иерархи|hierarch|многоуров|уровн/.test(lower)) s += 0.10;
+      if (/процессор|cpu|латентн|память|memory/.test(lower)) s += 0.10;
+
+      /* === Штрафы === */
+      if (/^в\s+этой\s+главе|^эта\s+глава|^the\s+chapter|^this\s+chapter/i.test(cleaned)) s -= 0.40;
+      if (/говорится|описыва|посвящ|рассматрив/i.test(cleaned)) s -= 0.10; /* meta-обёртки */
+      if (cleaned.includes("```")) s -= 0.15;
+      if (/^\s*\{/.test(cleaned)) s -= 0.30; /* JSON вместо текста */
+      if (cleaned.split("\n").length > 2) s -= 0.15; /* multi-line */
+
+      return Math.max(0, Math.min(1, s));
+    },
+  },
+
+  /* ─── Vision_meta: cover EN — обложка с английским заголовком ────────
+   * Production: книги в библиотеке на английском нуждаются в извлечении
+   * заголовка/автора/года из обложки. Здесь fixture минимальный (red rect),
+   * но мы проверяем способность модели выдавать чистый JSON под английский
+   * mental model. */
+  {
+    id: "vision_meta-cover-en",
+    role: "vision_meta",
+    description: "Vision-meta cover (English schema) → strict JSON metadata.",
+    whyImportant:
+      "Английские книги в библиотеке — основной поток. Модель должна выдавать " +
+      "metadata schema {title, author, year, language='en'} строго в JSON, " +
+      "без prose. Тест на формат — критичен для каталога.",
+    system:
+      "You are a book-cover analyzer. Output STRICT JSON only. NO prose, NO markdown.\n" +
+      "Schema: {\"title\":string|null,\"author\":string|null,\"year\":number|null,\"language\":\"en\"|\"ru\"|\"uk\"|\"unknown\",\"confidence\":0.0-1.0}",
+    user: "Analyze this book cover and output the JSON metadata.",
+    imageUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFAAAAAeCAIAAAA0IQ7mAAAAUklEQVR4nO3PwQkAIAwEweu/MrvSjxVIArLZ5d4hk2QNW9Yek2B6gukJpieYXjM4eV/XR4JrzwsWLFhw7UeCa88LZoP/SzA9wfQE0xNM74JH7QAkJZohvhUzSwAAAABJRU5ErkJggg==",
+    maxTokens: 128,
+    score: (a) => {
+      const parsed = tryParseJson(a);
+      if (!parsed || typeof parsed !== "object") return 0;
+      const obj = parsed as Record<string, unknown>;
+      let s = 0;
+
+      /* Структура: 5 полей по схеме. */
+      if ("title" in obj) s += 0.15;
+      if ("author" in obj) s += 0.15;
+      if ("year" in obj) s += 0.10;
+      if (typeof obj.language === "string" &&
+          ["en", "ru", "uk", "unknown"].includes(obj.language)) s += 0.20;
+      if (typeof obj.confidence === "number" && obj.confidence >= 0 && obj.confidence <= 1) s += 0.10;
+
+      /* Сема: на красном квадрате честная модель должна сказать "не вижу обложки".
+       * Хороший знак — title=null, language=unknown, confidence низкая. */
+      if (obj.title === null || obj.title === "") s += 0.10;
+      if (obj.language === "unknown") s += 0.10;
+      if (typeof obj.confidence === "number" && obj.confidence < 0.5) s += 0.05;
+
+      /* === Штрафы === */
+      if (a.includes("```")) s -= 0.20;
+      if (/^[\s\S]{0,30}\{/.test(a) && !/^\{/.test(a.trim())) s -= 0.10;
+
+      return Math.max(0, Math.min(1, s));
+    },
+  },
+
+  /* ─── Vision_meta: cover RU — обложка с русскоязычным mental model ────
+   * Зеркало предыдущего теста для русских книг — проверяет что модель не
+   * ломается на не-латинском. */
+  {
+    id: "vision_meta-cover-ru",
+    role: "vision_meta",
+    description: "Vision-meta cover (русская обложка) → строгий JSON metadata.",
+    whyImportant:
+      "Русские книги — половина библиотеки. Модель должна понимать русский " +
+      "system prompt и возвращать JSON metadata. Несовместимые модели лучше " +
+      "выявить здесь, чем после импорта 5000 книг.",
+    system:
+      "Ты анализатор книжных обложек. Выводи СТРОГО JSON. БЕЗ prose, БЕЗ markdown.\n" +
+      "Схема: {\"title\":string|null,\"author\":string|null,\"year\":number|null,\"language\":\"ru\"|\"en\"|\"uk\"|\"unknown\",\"confidence\":0.0-1.0}",
+    user: "Проанализируй обложку и выведи JSON с метаданными.",
+    imageUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFAAAAAeCAIAAAA0IQ7mAAAAUklEQVR4nO3PwQkAIAwEweu/MrvSjxVIArLZ5d4hk2QNW9Yek2B6gukJpieYXjM4eV/XR4JrzwsWLFhw7UeCa88LZoP/SzA9wfQE0xNM74JH7QAkJZohvhUzSwAAAABJRU5ErkJggg==",
+    maxTokens: 128,
+    score: (a) => {
+      const parsed = tryParseJson(a);
+      if (!parsed || typeof parsed !== "object") return 0;
+      const obj = parsed as Record<string, unknown>;
+      let s = 0;
+
+      if ("title" in obj) s += 0.15;
+      if ("author" in obj) s += 0.15;
+      if ("year" in obj) s += 0.10;
+      if (typeof obj.language === "string" &&
+          ["ru", "en", "uk", "unknown"].includes(obj.language)) s += 0.20;
+      if (typeof obj.confidence === "number" && obj.confidence >= 0 && obj.confidence <= 1) s += 0.10;
+
+      if (obj.title === null || obj.title === "") s += 0.10;
+      if (obj.language === "unknown") s += 0.10;
+      if (typeof obj.confidence === "number" && obj.confidence < 0.5) s += 0.05;
+
+      if (a.includes("```")) s -= 0.20;
+      if (/^[\s\S]{0,30}\{/.test(a) && !/^\{/.test(a.trim())) s -= 0.10;
 
       return Math.max(0, Math.min(1, s));
     },

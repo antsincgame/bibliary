@@ -1,30 +1,88 @@
-test(olympics): thinking-policy gate + дополнить thinkingFriendly для crystallizer/evaluator
+feat: удалить Shadow Arena + E5-sidecar для иллюстраций + per-role tuning
 
-Согласно политике из таблицы (crystallizer = ДА критично, evaluator = ДА,
-judge/lang_detector/ukrainian/vision = НЕТ, translator = частично) —
-проставлены недостающие thinkingFriendly: true:
+Sherlok-аудит выявил пропуски прошлой итерации (be68ef2):
+- E5-over-descriptions ПРОПУЩЕН — реализован сразу CLIP вопреки плану
+  «сначала пункт 13, потом CLIP» (план: 80% результата без +200MB)
+- crystallizer-aura, vision_meta-cover-en/ru — НЕ добавлены
+- P-Limit 3-5 параллельных в illustration-worker — НЕ добавлен
+- CLIP сделан раньше времени (правильно за feature-flag, но обход духа плана)
 
-- crystallizer-rover, crystallizer-ru-mendeleev, code-summary-cpp
-- evaluator-clrs, evaluator-noise, evaluator-midrange, evaluator-ru-classic
+Закрыто всё что найдено:
 
-Без флага efficiency пенализит thinking-модели за время рассуждения,
-из-за чего сильные CoT-модели могут получить 0/100 на crystallizer/evaluator
-дисциплинах (см. предыдущий fix stripThinkingBlock).
+== УДАЛЕНИЕ Shadow Arena ==
+Mahakala + Servitor: исполнено явное распоряжение пользователя
+- Удалены: run-cycle.ts, scheduler.ts, ratings-store.ts, golden-prompts.ts
+- Удалены 4 теста: arena-{e2e,run-cycle,scheduler,olympics}.test.ts
+- Удалён renderer/arena.js, route arena, sidebar button
+- Очищены prefs.arena*, локализация nav.arena/arena.*
+- main.ts: убран initArenaRatingsStore + startScheduler/stopScheduler
+- arena.ipc.ts: остались ТОЛЬКО Olympics handlers
+  (channel name `arena:*` сохранён для backward-compat preload bridge)
+- preload.ts: arena bridge сократился до olympics-only
 
-Регрессионный тест tests/olympics-thinking-policy.test.ts (6 проверок):
-1. crystallizer/evaluator → thinkingFriendly: true (с whitelist исключений)
-2. judge/lang_detector/ukrainian/vision* → thinkingFriendly не должен быть true
-3. каждая core-роль имеет хотя бы одну дисциплину
-4. id уникальны
-5. description/system/user/maxTokens/score корректны у каждой
-6. vision-роли имеют валидный data:image/ URL
+Удалено: ~50 KB кода, 4 теста, route, prefs, ~80 i18n-ключей.
+
+== E5-SIDECAR для иллюстраций (пункт 13 плана) ==
+Файл: electron/lib/qdrant/illustrations-text-index.ts
+- Отдельная коллекция `bibliary_illustrations_text` (384-dim E5 cosine)
+- vector = E5(description), payload = bookPath/title/sha256/score/chapter
+- Те же ID что в CLIP-индексе → JOIN-able по id для гибрида
+- searchIllustrationsByText() — поиск иллюстраций текстовым запросом
+- Default-on: E5-модель уже загружена для книг → 0 новых зависимостей
+- Stamp Step D в illustration-worker (CLIP стал Step E, опционально)
+
+== P-LIMIT 3-5 параллельных ==
+illustration-worker: in-process pool без новых зависимостей (worker pattern).
+- VISION_PARALLELISM=4 — 100 картинок: 10 мин → ~2.5 мин
+- mdSerial: serialize только md-патчинг (race-free для bookMd)
+- abort signal honoured через cursor
+
+== ДИСЦИПЛИНЫ из плана (Слой 2) ==
+- crystallizer-aura — chapter_thesis prompt (одно предложение ≤200 chars,
+  AURA-фильтр-вход), thinkingFriendly: true
+- vision_meta-cover-en — английская обложка → strict JSON
+- vision_meta-cover-ru — русскоязычная обложка → strict JSON
+- UI: добавлены литературные названия в DISCIPLINE_HUMAN
+
+== УСИЛЕННЫЕ ТЕСТЫ Олимпиады ==
+tests/olympics-scorers.test.ts — 7 проверок integrity для всех scorers:
+1. Правильный ответ ≥ 0.30 (для 22+ дисциплин)
+2. Margin good - bad ≥ 0.20 (champion должен быть выделим)
+3. Неверный ответ ≤ 0.40
+4. Пустой ответ ≤ 0.15
+5. Markdown fences штрафуются
+6. <think>...</think> → стрипается → score как clean
+7. SAMPLES покрытие всех текстовых дисциплин
+
+Тесты вскрыли реальные баги — исправлены:
+- judge-bst/judge-async: возвращали 0.20 для пустого ответа → 0
+- vision_ocr-plain-text: пустой ответ давал 0.20 → 0.05
+- ukrainian-uk-write: пустой ответ → 0
+- crystallizer-aura: усилен штраф за meta-обёртки («В этой главе…»)
+- html-extract: добавлена нижняя граница на длину
 
 CI:
-- .github/workflows/smoke.yml — добавлен olympics-thinking-policy в quick gate
-- .github/workflows/ci.yml — отдельный job "Olympics · thinking-policy gate"
-  на ubuntu (≈3 сек, без electron-rebuild) — даёт явный pass/fail на PR
+- smoke.yml + ci.yml policy gate включают olympics-scorers.test.ts
+
+== LM STUDIO SDK research (звёздочка*) ==
+Файл: electron/lib/llm/role-load-config.ts
++ docs/audits/2026-04-29-lmstudio-role-tuning.md
+
+LM Studio SDK поддерживает per-load contextLength, gpu.ratio, flashAttention,
+keepModelInMemory, tryMmap. Bibliary сейчас НЕ использует — все модели грузятся
+с дефолтным preset.
+
+ROLE_LOAD_CONFIG: 9 ролей × оптимальный load-config (например, crystallizer
+получает 32K context + flashAttention для длинных глав, lang_detector — 1K
+context + gpu=0.5 для мелкой модели).
+
+ROLE_INFERENCE_DEFAULTS: temp/topP/maxTokens per role (judge: temp=0.0
+для детерминизма, ukrainian_specialist: temp=0.4 для естественности).
+
+Не интегрировано в lmsLoadModel() — это требует UX-toggle в Models page.
+Готово к подключению в отдельной итерации (документ описывает план).
 
 Verification:
-- node --test tests/olympics-thinking-policy.test.ts: 6/6 pass
-- node --test tests/olympics-{thinking-policy,weights,lifecycle}.test.ts: 18/18 pass
-- tsc --noEmit: clean
+- tsc -p tsconfig.electron.json --noEmit: pass
+- node --test tests/olympics-{scorers,thinking-policy,weights,lifecycle}.test.ts: 25/25
+- ReadLints: clean

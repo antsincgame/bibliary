@@ -270,28 +270,8 @@ contextBridge.exposeInMainWorld("api", {
   },
 
   arena: {
-    getRatings: (): Promise<{
-      roles: Record<string, Record<string, number>>;
-      lastCycleAt?: string;
-      lastError?: string;
-    }> => ipcRenderer.invoke("arena:get-ratings"),
-    runCycle: (opts?: { roles?: string[]; manual?: boolean; bypassLock?: boolean }): Promise<{
-      ok: boolean;
-      message: string;
-      skipped?: boolean;
-      skipReasons?: string[];
-      perRole?: Array<{
-        role: string;
-        matches: number;
-        results: string[];
-        ratings: Record<string, number>;
-        skipped?: string;
-      }>;
-    }> => ipcRenderer.invoke("arena:run-cycle", opts),
-    resetRatings: (): Promise<unknown> => ipcRenderer.invoke("arena:reset-ratings"),
-    getConfig: (): Promise<Record<string, unknown>> => ipcRenderer.invoke("arena:get-config"),
-    setConfig: (partial: Record<string, unknown>): Promise<Record<string, unknown>> =>
-      ipcRenderer.invoke("arena:set-config", partial),
+    /* Shadow Arena (Elo + golden prompts) удалена в apr 2026.
+     * Bridge оставляет имя `arena` для backward-compat с models-page.js. */
     getLockStatus: (): Promise<{ busy: boolean; reasons: string[] }> =>
       ipcRenderer.invoke("arena:get-lock-status"),
     runOlympics: (opts?: {

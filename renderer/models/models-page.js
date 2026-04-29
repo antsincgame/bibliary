@@ -718,6 +718,7 @@ const DISCIPLINE_HUMAN = {
   "crystallizer-rover":              { short: "Марсоход",          long: "Извлечение фактов о миссии Curiosity" },
   "crystallizer-deep-extract":       { short: "Аполлон-11",        long: "Глубокое извлечение знаний из длинного исторического текста" },
   "crystallizer-production-delta":   { short: "Боевая схема",      long: "Извлечение DeltaKnowledge точно по продакшн-схеме (essence + cipher + relations)" },
+  "crystallizer-aura":               { short: "Тезис главы",       long: "Извлечь тезис главы для AURA-фильтра (одно предложение, ≤200 chars)" },
   "crystallizer-ru-mendeleev":       { short: "Менделеев",         long: "Извлечение знаний из русскоязычного текста (периодический закон)" },
   "code-summary-cpp":                { short: "Чтец C++",          long: "Резюме сложного C++ кода (sidecar describer)" },
   "html-extract":                    { short: "Чтец HTML",         long: "Извлечение текста из захламлённого HTML" },
@@ -751,6 +752,8 @@ const DISCIPLINE_HUMAN = {
   /* — Зрение — */
   "vision-describe-shapes":          { short: "Геометрия",         long: "Базовый sanity-check: видит ли модель цвет и форму" },
   "vision_meta-strict-json":         { short: "Строгий JSON",      long: "Дисциплина формата: vision-модель возвращает чистый JSON без prose" },
+  "vision_meta-cover-en":            { short: "Обложка EN",        long: "JSON-метаданные обложки английской книги" },
+  "vision_meta-cover-ru":            { short: "Обложка RU",        long: "JSON-метаданные обложки русскоязычной книги" },
   "vision_ocr-plain-text":           { short: "Plain text",        long: "Дисциплина формата: OCR должен дать чистый текст без markdown/JSON" },
   "vision_illustration-with-context":{ short: "С контекстом",      long: "Описание иллюстрации с привязкой к теме главы (для RAG-индекса)" },
 };

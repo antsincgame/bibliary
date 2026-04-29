@@ -170,13 +170,6 @@ export const PreferencesSchema = z.object({
   /** Авто-переводить книги на украинском (и схожих языках) при ingest. */
   translateNonRussianBooks: z.boolean().default(true),
 
-  // -- Arena (shadow model calibration) --
-  arenaEnabled: z.boolean().default(false),
-  arenaUseLlmJudge: z.boolean().default(false),
-  arenaAutoPromoteWinner: z.boolean().default(false),
-  arenaMatchPairsPerCycle: z.number().int().min(1).max(10).default(3),
-  arenaCycleIntervalMs: z.number().int().min(60_000).max(86_400_000).default(3_600_000),
-
   // -- Model role resolver --
   /**
    * TTL кэша resolved role → modelKey в memory. 0 = no cache (всегда заново).

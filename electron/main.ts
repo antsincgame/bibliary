@@ -27,8 +27,6 @@ import { SHUTDOWN_FLUSH_TIMEOUT_MS } from "./lib/resilience/constants";
 import { getWindowsParentExecutablePath, resolveAppDataDir } from "./lib/app-data-dir.js";
 import { closeCacheDb } from "./lib/library/cache-db.js";
 import { killAllSynthChildren } from "./ipc/dataset-v2.ipc.js";
-import { initArenaRatingsStore } from "./lib/llm/arena/ratings-store.js";
-import { startScheduler, stopScheduler } from "./lib/llm/arena/scheduler.js";
 import { resolveBlobFromUrl, getBlobsRoot } from "./lib/library/library-store.js";
 import { resolveLibraryRoot } from "./lib/library/paths.js";
 
@@ -195,7 +193,6 @@ if (!gotLock) {
     /* Sync Marker feature flag from preferences to ENV so marker-sidecar.ts
        can read it synchronously without a preferences store dependency. */
     syncMarkerEnvFromPrefs(prefs.useMarkerExtractor);
-    initArenaRatingsStore(dataDir);
     /* Resolve endpoints from preferences once and propagate the result
        into the live QDRANT_URL binding. Without this, modules that
        import { QDRANT_URL } at module-init read the env-only value. */
@@ -211,7 +208,6 @@ if (!gotLock) {
     registerAssetProtocol();
     startWatchdog(() => mainWindow);
     registerAllIpcHandlers(() => mainWindow);
-    void startScheduler();
     void bootstrapLibrarySubsystem(() => mainWindow);
     createWindow();
   });
@@ -226,7 +222,6 @@ if (!gotLock) {
     const subsystems: [string, () => void][] = [
       ["triggerAppShutdown", triggerAppShutdown],
       ["stopWatchdog", stopWatchdog],
-      ["stopArenaScheduler", stopScheduler],
       ["abortAllIngests", () => abortAllIngests("app-quit")],
       ["abortAllDatasetV2", () => abortAllDatasetV2("app-quit")],
       ["killAllSynthChildren", killAllSynthChildren],

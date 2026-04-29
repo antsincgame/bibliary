@@ -3,19 +3,17 @@ import { mountDocs } from "./docs.js";
 import { mountLibrary, isLibraryBusy } from "./library.js";
 import { mountCrystal, isCrystalBusy } from "./dataset-v2.js";
 import { mountDatasets } from "./datasets.js";
-import { mountArena, unmountArena } from "./arena.js";
 import { mountSettings } from "./settings.js";
 import { applyI18n, getLocale, setLocale, listLocales, onLocaleChange, t } from "./i18n.js";
 import { mountResilienceBar } from "./components/resilience-bar.js";
 import { openWelcomeWizard } from "./components/welcome-wizard.js";
 
-const ROUTES = ["models", "library", "crystal", "datasets", "arena", "docs", "settings"];
+const ROUTES = ["models", "library", "crystal", "datasets", "docs", "settings"];
 const REMOUNT_ON_LOCALE = new Set([
   "library",
   "crystal",
   "datasets",
   "models",
-  "arena",
   "docs",
   "settings",
 ]);
@@ -26,7 +24,6 @@ function mountRoute(name) {
   else if (name === "crystal") mountCrystal(document.getElementById("crystal-root"));
   else if (name === "datasets") mountDatasets(document.getElementById("datasets-root"));
   else if (name === "models") mountModels(document.getElementById("models-root"));
-  else if (name === "arena") mountArena(document.getElementById("arena-root"));
   else if (name === "docs") mountDocs(document.getElementById("docs-root"));
   else if (name === "settings") mountSettings(document.getElementById("settings-root"));
   mounted.add(name);
@@ -34,7 +31,6 @@ function mountRoute(name) {
 
 function unmountRoute(name) {
   if (name === "models") unmountModels();
-  else if (name === "arena") unmountArena();
 }
 
 function showRoute(name) {
