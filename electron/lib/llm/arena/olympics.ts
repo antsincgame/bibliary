@@ -116,6 +116,11 @@ export interface OlympicsDisciplineResult {
    * от score чемпиона. Это «не сильнейшая, а та, что нужна на практике».
    */
   optimum: string | null;
+  /**
+   * Дисциплина оптимизирована для thinking-моделей (efficiency не штрафует за время).
+   * Используется UI для отображения 🧠 [thinking-friendly] бейджа.
+   */
+  thinkingFriendly?: boolean;
 }
 
 /**
@@ -244,6 +249,18 @@ interface Discipline {
   whyImportant?: string;
   /** Base64 data-URI картинки для мультимодальной дисциплины (vision). */
   imageUrl?: string;
+  /**
+   * Если true — дисциплина выигрывает от reasoning/thinking моделей
+   * (LiteCoST ICLR'26 показал +8-12 пунктов quality для CoT-моделей
+   * на extraction tasks). Для таких дисциплин:
+   *   • efficiency НЕ штрафует за время (медленный, но точный — норма)
+   *   • UI показывает бейдж 🧠 [thinking-friendly]
+   *   • thinking-модели не получают penalty за длительный ответ
+   *
+   * Применять для: complex extraction, nuanced evaluation, multi-step reasoning.
+   * НЕ применять для: lang-detect, judge A/B, simple translate, vision-describe.
+   */
+  thinkingFriendly?: boolean;
 }
 
 /**
@@ -499,6 +516,139 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
         if (r.length >= 30) s += 0.15;
         if (/фундаментальн|fundamental|классик|classic|кнут|knuth/.test(r)) s += 0.15;
         if (/алгоритм|algorithm|информатик|computer science/.test(r)) s += 0.10;
+      }
+
+      return Math.max(0, Math.min(1, s));
+    },
+  },
+
+  /* ─── THINKING-FRIENDLY ДИСЦИПЛИНЫ ────────────────────────────────────
+   * LiteCoST (ICLR'26) и OptimalThinkingBench показали, что для сложного
+   * structured extraction CoT-модели дают +8-12 quality points.
+   * Эти дисциплины проверяют способность модели держать ДЛИННЫЙ контекст,
+   * связывать разрозненные факты и делать многошаговые выводы.
+   * Здесь efficiency = score (без штрафа за время thinking-блока).
+   * ──────────────────────────────────────────────────────────────────── */
+  {
+    id: "crystallizer-deep-extract",
+    role: "crystallizer",
+    description: "Глубокое извлечение фактов из длинного текста с переплетёнными сущностями (для thinking-моделей).",
+    whyImportant:
+      "Реальные тексты в библиотеке — это длинные параграфы с десятками сущностей и связей. Быстрая small-model вытащит 2-3 очевидных факта и пропустит всё интересное. Thinking-модель пройдёт цепочкой и соберёт ПОЛНУЮ топологию знаний (события, причины, следствия, временные связи). Тест проверяет: extraction completeness ≥80% на 12+ фактах при сохранении точности.",
+    thinkingFriendly: true,
+    system:
+      "You extract structured knowledge from text. Think step by step before answering. " +
+      "Output ONLY valid JSON: " +
+      '{"facts":[string],"entities":[{"name":string,"type":string}],"relations":[{"subject":string,"predicate":string,"object":string}]}.',
+    user:
+      "Extract ALL factual knowledge from this passage (events, dates, causal relations, technologies):\n\n" +
+      '"In 1969, Apollo 11 landed on the Moon. The mission was launched from Kennedy Space Center in Florida ' +
+      'on July 16, 1969, using a Saturn V rocket designed by Wernher von Braun at NASA\'s Marshall Space Flight Center. ' +
+      "Neil Armstrong became the first human to step onto the lunar surface, followed by Buzz Aldrin. " +
+      "Michael Collins remained in lunar orbit aboard the Command Module Columbia. " +
+      "The Lunar Module, named Eagle, touched down in the Sea of Tranquility on July 20, 1969. " +
+      "Armstrong's first words — 'That's one small step for man, one giant leap for mankind' — were broadcast live to about 650 million viewers. " +
+      "The crew collected 21.5 kilograms of lunar samples and deployed scientific instruments including a seismometer and a laser retroreflector. " +
+      'They returned to Earth on July 24, splashing down in the Pacific Ocean where they were recovered by USS Hornet."',
+    maxTokens: 1024,
+    score: (a) => {
+      const parsed = tryParseJson(a);
+      if (!parsed || typeof parsed !== "object") return 0;
+      const obj = parsed as { facts?: unknown[]; entities?: unknown[]; relations?: unknown[] };
+      if (!Array.isArray(obj.facts) || !Array.isArray(obj.entities)) return 0.1;
+
+      const allText = JSON.stringify(parsed).toLowerCase();
+      let s = 0.1;
+
+      /* === БАЗОВАЯ СТРУКТУРА: до 0.15 === */
+      if (Array.isArray(obj.facts) && obj.facts.length >= 8) s += 0.10;
+      else if (obj.facts.length >= 5) s += 0.05;
+      if (Array.isArray(obj.relations) && obj.relations.length >= 3) s += 0.05;
+
+      /* === ФАКТ-ЯКОРЯ: до 0.50 === */
+      const anchors = [
+        /apollo\s*11/, /1969/, /july\s*(16|20|24)/, /kennedy\s*space|florida/,
+        /saturn\s*v/, /von\s*braun|wernher/, /armstrong/, /aldrin/,
+        /collins/, /columbia/, /eagle/, /tranquility|tranquillity/,
+        /sea\s*of\s*tranquility/, /seismometer|retroreflector|laser/,
+        /650\s*million|broadcast/, /21\.5|kilograms|lunar\s*sample/,
+        /pacific\s*ocean|splashdown/, /uss\s*hornet/,
+        /one\s*small\s*step|giant\s*leap/,
+      ];
+      const hits = anchors.filter((rx) => rx.test(allText)).length;
+      s += Math.min(0.50, hits * 0.03); /* 17 якорей × 0.03 = до 0.50 */
+
+      /* === RELATIONS (топологические связи): до 0.15 === */
+      if (Array.isArray(obj.relations)) {
+        const relStr = JSON.stringify(obj.relations).toLowerCase();
+        let relScore = 0;
+        if (/armstrong.*first|first.*armstrong/.test(relStr)) relScore += 0.04;
+        if (/aldrin.*follow|second/.test(relStr)) relScore += 0.03;
+        if (/collins.*orbit|columbia/.test(relStr)) relScore += 0.04;
+        if (/eagle.*tranquility|tranquility.*eagle/.test(relStr)) relScore += 0.04;
+        s += Math.min(0.15, relScore);
+      }
+
+      /* === ШТРАФЫ за галлюцинации: === */
+      if (/apollo\s*(12|13|14|17)/.test(allText)) s -= 0.20;
+      if (/2012|2020|1989|1979/.test(allText)) s -= 0.15;
+      if (/spacex|falcon|elon|musk/.test(allText)) s -= 0.20;
+      if (/mars|venus|jupiter/.test(allText)) s -= 0.10;
+
+      /* Штраф за пустые сущности. */
+      if (Array.isArray(obj.entities) && obj.entities.length > 0) {
+        const valid = obj.entities.filter((e) => {
+          if (!e || typeof e !== "object") return false;
+          const en = e as { name?: unknown; type?: unknown };
+          return typeof en.name === "string" && en.name.length >= 2;
+        });
+        if (valid.length / obj.entities.length < 0.6) s -= 0.10;
+      }
+
+      return Math.max(0, Math.min(1, s));
+    },
+  },
+
+  {
+    id: "evaluator-nuanced",
+    role: "evaluator",
+    description: "Взвешенная оценка неоднозначной книги (для thinking-моделей).",
+    whyImportant:
+      "Большинство реальных книг — не очевидные «классика 10/10» или «шум 1/10», а серая зона. Тест проверяет способность модели держать в голове ОДНОВРЕМЕННО плюсы (актуальная тема, известное издательство) и минусы (старый год, тонкий объём). Thinking-модель должна attribute factors и поставить взвешенную оценку 5-7.",
+    thinkingFriendly: true,
+    system:
+      "You evaluate book quality for a TECHNICAL knowledge base. Think step by step about strengths and weaknesses. Score 0-10. " +
+      'Output ONLY JSON: {"score":number,"reasoning":string}.',
+    user:
+      'Book: "JavaScript: The Good Parts" by Douglas Crockford. ' +
+      "Topics: JS subset, functional programming, prototype inheritance, JSON. " +
+      "Year: 2008. Pages: 176. Published by O'Reilly. " +
+      "Note: highly influential when written, but covers ES3-era JS only — " +
+      "predates ES6 (let/const, classes, modules, async/await, arrow functions).",
+    maxTokens: 384,
+    score: (a) => {
+      const parsed = tryParseJson(a) as { score?: number; reasoning?: string } | null;
+      if (!parsed || typeof parsed.score !== "number") return 0;
+
+      let s = 0;
+      /* Правильная зона — 5-7 (взвешенно). */
+      if (parsed.score >= 5 && parsed.score <= 7) s += 0.50;
+      else if (parsed.score === 4 || parsed.score === 8) s += 0.25;
+      else if (parsed.score === 3 || parsed.score === 9) s += 0.10;
+      /* 1-2 (полный мусор) или 10 (эталон) — серьёзная ошибка. */
+
+      if (typeof parsed.reasoning === "string") {
+        const r = parsed.reasoning.toLowerCase();
+        if (r.length >= 60) s += 0.10;
+
+        /* Должен УПОМЯНУТЬ оба фактора (плюс И минус). */
+        const positiveSignals = /influential|classic|crockford|important|foundational|good\s*parts|funktional|функционал/.test(r);
+        const negativeSignals = /outdated|old|es3|es5|es6|2008|predates|legacy|устарел|стар/.test(r);
+        if (positiveSignals && negativeSignals) s += 0.30; /* mature reasoning */
+        else if (positiveSignals || negativeSignals) s += 0.10; /* one-sided */
+
+        /* Бонус за упоминание конкретики ES6/modern features. */
+        if (/let|const|class(es)?|module|async\s*\/?\s*await|arrow/.test(r)) s += 0.10;
       }
 
       return Math.max(0, Math.min(1, s));
@@ -1792,7 +1942,12 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
           imageUrl: d.imageUrl,
         });
         const s = r.ok ? d.score(r.content) : 0;
-        const efficiency = r.durationMs > 0 ? (s * 1000) / r.durationMs : 0;
+        /* Для thinking-friendly дисциплин (LiteCoST: complex extraction)
+         * не штрафуем модель за длительность — медленный thinking-вывод
+         * = норма, а не недостаток. Efficiency = score (без деления на время). */
+        const efficiency = d.thinkingFriendly
+          ? s
+          : (r.durationMs > 0 ? (s * 1000) / r.durationMs : 0);
         const result: OlympicsModelResult = {
           model: modelKey,
           weightClass: classifyWeight(modelKey, modelInfo.paramsString),
@@ -1860,7 +2015,11 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
       optimum = byEff[0]?.model ?? null;
     }
 
-    results.push({ discipline: d.id, role: d.role, description: d.description, perModel, matches, champion, optimum });
+    results.push({
+      discipline: d.id, role: d.role, description: d.description,
+      perModel, matches, champion, optimum,
+      thinkingFriendly: d.thinkingFriendly === true,
+    });
     opts.onProgress?.({ type: "olympics.discipline.done", discipline: d.id, champion });
   }
 

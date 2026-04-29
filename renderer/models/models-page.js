@@ -762,8 +762,12 @@ function renderOlympicsReport(report) {
         return a.durationMs - b.durationMs; /* тайbreaker: быстрее лучше */
       });
       const podium = ["🥇", "🥈", "🥉"];
+      const titleChildren = [`${d.discipline}`];
+      if (d.thinkingFriendly) {
+        titleChildren.push(el("span", { class: "mp-olympics-thinking-badge", title: "Дисциплина оптимизирована для thinking-моделей: efficiency не штрафует за время reasoning-блока" }, " 🧠 thinking-friendly"));
+      }
       return el("div", { class: "mp-olympics-discipline" }, [
-        el("div", { class: "mp-olympics-discipline-title" }, `${d.discipline}`),
+        el("div", { class: "mp-olympics-discipline-title" }, titleChildren),
         el("div", { class: "mp-olympics-discipline-role" }, `роль: ${d.role}`),
         el("div", { class: "mp-olympics-discipline-desc" }, d.description ?? ""),
         ...sorted.map((p, i) => {

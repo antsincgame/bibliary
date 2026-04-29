@@ -6,8 +6,9 @@ release/
 .cache/
 *.blockmap
 
-# IDE / AI local config
-.claude/
+# IDE / AI local config — ignore everything inside .claude/ EXCEPT rules/
+.claude/*
+!.claude/rules/
 .git-commit-msg.tmp
 
 # Debug diagnostic artifacts
