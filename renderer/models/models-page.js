@@ -490,23 +490,27 @@ function buildOlympicsCard() {
           const logEl = pageRoot?.querySelector("#mp-olympics-log");
           const toggleBtn = pageRoot?.querySelector("#mp-olympics-debug-toggle");
           if (logEl) logEl.style.display = olympicsDebugVisible ? "" : "none";
-          if (toggleBtn) toggleBtn.textContent = olympicsDebugVisible ? "🔽 Скрыть логи" : "📋 Логи дебага";
+          if (toggleBtn) toggleBtn.textContent = olympicsDebugVisible ? "🔽 Скрыть протокол" : "📜 Протокол игр";
         },
-      }, "📋 Логи дебага"),
+      }, "📜 Протокол игр"),
     ]),
   ]);
 }
 
-/** Добавляет строку в лог олимпиады (накопительный, не перезаписывает). */
+/** Добавляет строку в протокол Олимпиады (накопительный).
+ *  Панель всегда показывается когда есть контент — это живой репортаж для пользователя. */
 function appendOlympicsLog(logEl, text, level = "info") {
   if (!logEl) return;
-  if (olympicsDebugVisible) logEl.style.display = "";
+  logEl.style.display = "";
+  olympicsDebugVisible = true;
+  const toggleBtn = pageRoot?.querySelector("#mp-olympics-debug-toggle");
+  if (toggleBtn) toggleBtn.textContent = "🔽 Скрыть протокол";
   const entry = el("div", { class: `mp-olympics-log-entry mp-olympics-log-${level}` }, text);
   logEl.appendChild(entry);
   logEl.scrollTop = logEl.scrollHeight;
 }
 
-/** Полный сброс видимого UI олимпиады: логи + результаты → чистый экран. */
+/** Полный сброс видимого UI олимпиады: протокол + результаты → чистый экран. */
 function resetOlympicsUI() {
   const logEl = pageRoot?.querySelector("#mp-olympics-log");
   const resultsEl = pageRoot?.querySelector("#mp-olympics-results");
@@ -514,7 +518,7 @@ function resetOlympicsUI() {
   if (resultsEl) clear(resultsEl);
   olympicsDebugVisible = false;
   const toggleBtn = pageRoot?.querySelector("#mp-olympics-debug-toggle");
-  if (toggleBtn) toggleBtn.textContent = "📋 Логи дебага";
+  if (toggleBtn) toggleBtn.textContent = "📜 Протокол игр";
 }
 
 async function runOlympicsAndShow() {
@@ -536,32 +540,44 @@ async function runOlympicsAndShow() {
       if (!ev || typeof ev !== "object") return;
       const e = ev;
       if (e.type === "olympics.start") {
-        appendOlympicsLog(logEl, t("models.olympics.progress.start", { models: e.models?.length ?? 0, disciplines: e.disciplines?.length ?? 0 }));
+        const n = e.models?.length ?? 0;
+        const d = e.disciplines?.length ?? 0;
+        appendOlympicsLog(logEl, `⚡ На арену выходят ${n} участников. Впереди ${d} испытаний. Да начнутся Игры!`, "mid");
       } else if (e.type === "olympics.vram_guard") {
         const gb = Number(e.estimatedGB ?? 0).toFixed(1);
-        appendOlympicsLog(logEl, `⚠ VRAM guard: ${e.action} (${gb} GB)`, "mid");
+        appendOlympicsLog(logEl, `⚠ Служитель арены: памяти немного (${gb} ГБ), проверяем участников по одному.`, "mid");
       } else if (e.type === "olympics.model.loading") {
-        appendOlympicsLog(logEl, `⇢ loading ${e.model}...`, "info");
+        appendOlympicsLog(logEl, `🏃 Участник «${e.model}» выходит на дорожку...`, "info");
       } else if (e.type === "olympics.model.loaded") {
         const dur = ((e.loadTimeMs ?? 0) / 1000).toFixed(1);
-        appendOlympicsLog(logEl, `  loaded ${e.model} (${dur}s)`, "mid");
+        appendOlympicsLog(logEl, `  ✅ «${e.model}» занял место на арене (вышел за ${dur}с)`, "mid");
       } else if (e.type === "olympics.model.unloaded") {
-        appendOlympicsLog(logEl, `  unloaded ${e.model}`, "info");
+        appendOlympicsLog(logEl, `  🚪 «${e.model}» уходит с арены. Благодарим за участие!`, "info");
       } else if (e.type === "olympics.model.load_failed") {
-        appendOlympicsLog(logEl, `✗ load failed ${e.model}: ${String(e.reason ?? "").slice(0, 80)}`, "bad");
+        const reason = String(e.reason ?? "").slice(0, 80);
+        appendOlympicsLog(logEl, `  ❌ «${e.model}» не вышел на арену — ${reason}`, "bad");
       } else if (e.type === "olympics.discipline.start") {
-        appendOlympicsLog(logEl, `▶ ${t("models.olympics.progress.discipline", { discipline: e.discipline })}`);
+        appendOlympicsLog(logEl, `🏛 Испытание «${e.discipline}» — участники встают на старт!`, "mid");
       } else if (e.type === "olympics.model.done") {
         const score = Math.round((e.score ?? 0) * 100);
         const dur = ((e.durationMs ?? 0) / 1000).toFixed(1);
         const ok = e.ok !== false;
-        const icon = score >= 70 ? "✓" : score >= 40 ? "~" : "✗";
-        const level = score >= 70 ? "good" : score >= 40 ? "mid" : "bad";
-        const errorHint = e.error ? ` — ${e.error.slice(0, 60)}` : "";
-        appendOlympicsLog(logEl, `  ${icon} ${e.model} → ${score}/100  (${dur}s)${errorHint}`, ok ? level : "bad");
+        const errorHint = e.error ? ` (${e.error.slice(0, 60)})` : "";
+        let icon, msg, level;
+        if (score >= 70) {
+          icon = "🥇"; msg = "блестящий результат"; level = "good";
+        } else if (score >= 40) {
+          icon = "🏅"; msg = "держится достойно"; level = "mid";
+        } else {
+          icon = "😓"; msg = "не его сегодня день"; level = "bad";
+        }
+        appendOlympicsLog(logEl, `  ${icon} «${e.model}» — ${msg}! ${score}/100  (${dur}с)${errorHint}`, ok ? level : "bad");
       } else if (e.type === "olympics.discipline.done") {
-        const champStr = e.champion ? ` 🏆 ${e.champion}` : " — нет чемпиона";
-        appendOlympicsLog(logEl, `  ${champStr}`, e.champion ? "good" : "bad");
+        if (e.champion) {
+          appendOlympicsLog(logEl, `  🌿 Лавровый венок: «${e.champion}» — победитель этого испытания!`, "good");
+        } else {
+          appendOlympicsLog(logEl, `  😞 В этом испытании достойного победителя не нашлось.`, "bad");
+        }
       }
     });
   }
