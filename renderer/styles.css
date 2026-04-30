@@ -6827,6 +6827,98 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
 }
 .btn-xs { font-size: 10px; padding: 2px 8px; opacity: 0.6; }
 .btn-xs:hover { opacity: 1; }
+.btn-lg { font-size: 14px; padding: 10px 22px; font-weight: 600; }
+
+/* ── Olympics: новый минималистичный главный экран ── */
+.mp-olympics-card .mp-olympics-actions {
+  /* Большая главная кнопка + рядом мелкие технические. */
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  padding: 4px 0 12px; margin: 0;
+}
+.mp-olympics-card .mp-olympics-actions #mp-olympics-run {
+  /* Главная кнопка визуально доминирует. */
+  flex: 0 0 auto; min-width: 220px;
+}
+.mp-olympics-card .mp-olympics-actions .btn-xs {
+  /* Технические кнопки уезжают вправо. */
+  margin-left: auto;
+}
+.mp-olympics-card .mp-olympics-actions .btn-xs + .btn-xs {
+  margin-left: 4px;
+}
+
+/* ── Olympics: блок Advanced (свёрнут) ── */
+.mp-olympics-advanced {
+  margin-top: 14px;
+  padding: 8px 10px;
+  border: 1px dashed var(--border, #2a2a2a);
+  border-radius: 6px;
+  background: rgba(0,0,0,0.10);
+}
+.mp-olympics-advanced[open] { background: rgba(0,0,0,0.18); }
+.mp-olympics-advanced-summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-secondary);
+  user-select: none;
+  list-style: none;
+}
+.mp-olympics-advanced-summary::-webkit-details-marker { display: none; }
+.mp-olympics-advanced-summary::before {
+  content: "▶ ";
+  display: inline-block;
+  margin-right: 4px;
+  font-size: 9px;
+  transition: transform 0.15s;
+  color: var(--text-secondary);
+}
+.mp-olympics-advanced[open] > .mp-olympics-advanced-summary::before {
+  transform: rotate(90deg);
+}
+.mp-olympics-advanced-hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin: 6px 0 10px;
+}
+.mp-olympics-advanced .mp-olympics-option {
+  margin: 4px 0;
+}
+.mp-olympics-roles-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 4px;
+  margin-top: 6px;
+}
+.mp-olympics-roles-hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin: 2px 0 4px;
+  font-style: italic;
+}
+
+/* ── Olympics: profile export/import row ── */
+.mp-olympics-profile-row {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  margin-top: 12px; padding-top: 10px;
+  border-top: 1px dashed var(--border, #2a2a2a);
+}
+
+/* ── Olympics: единая кнопка "Распределить роли" ── */
+.mp-olympics-distribute-label { font-weight: 600; }
+.mp-olympics-distribute-count { color: rgba(255,255,255,0.7); font-weight: 400; margin-left: 4px; }
+.mp-olympics-champion-badge { margin: 0 4px; }
+
+/* ── Roles: visual feedback "✓ сохранено" ── */
+.mp-role-control { display: flex; align-items: center; gap: 6px; }
+.mp-role-saved-tick {
+  color: #4ade80;
+  font-weight: 700;
+  font-size: 13px;
+  transition: opacity 0.4s ease;
+  user-select: none;
+  min-width: 12px;
+}
 
 /* ── Olympics: champion vs optimum two-column (legacy, sub) ── */
 .mp-olympics-recs-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }

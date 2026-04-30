@@ -256,6 +256,27 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.on("preferences:changed", listener);
       return () => ipcRenderer.removeListener("preferences:changed", listener);
     },
+    /** Получить готовый профиль (whitelisted ключи) для скачивания blob'ом. */
+    getProfile: (): Promise<{
+      schema: string;
+      exportedAt: string;
+      app: { name: string; version?: string };
+      profile: Record<string, unknown>;
+    }> => ipcRenderer.invoke("preferences:get-profile"),
+    /** Экспорт профиля через нативный Save dialog. */
+    exportProfile: (): Promise<{ path: string | null }> =>
+      ipcRenderer.invoke("preferences:export-profile"),
+    /** Импорт профиля через нативный Open dialog. */
+    importProfile: (): Promise<{
+      path: string | null;
+      appliedKeys: string[];
+      prefs: Record<string, unknown>;
+    }> => ipcRenderer.invoke("preferences:import-profile"),
+    /** Применить уже распарсенный профиль (для drag&drop или undo). */
+    applyProfile: (profile: Record<string, unknown>): Promise<{
+      appliedKeys: string[];
+      prefs: Record<string, unknown>;
+    }> => ipcRenderer.invoke("preferences:apply-profile", profile),
   },
 
   modelRoles: {

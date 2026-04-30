@@ -225,6 +225,15 @@ export const PreferencesSchema = z.object({
    */
   olympicsTestAll: z.boolean().default(false),
 
+  /**
+   * Если true — после успешного прогона Олимпиады авто-применяется «чемпион»
+   * (модель с максимальным score). По умолчанию false — применяется «оптимум»
+   * (лучшее соотношение качество/скорость, часто в 2-3 раза быстрее чемпиона).
+   *
+   * Включай только если важно максимальное качество и не важна скорость.
+   */
+  olympicsUseChampion: z.boolean().default(false),
+
 });
 
 export type Preferences = z.infer<typeof PreferencesSchema>;

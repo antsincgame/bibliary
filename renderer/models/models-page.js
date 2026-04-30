@@ -329,16 +329,25 @@ function renderRoles(roleMap, loaded, downloaded) {
       select.appendChild(opt);
     }
 
+    /* Visual-feedback: галочка "✓" появляется на 2 секунды после сохранения,
+     * чтобы пользователь видел, что выбор записался в дефолтный профиль. */
+    const savedTick = el("span", { class: "mp-role-saved-tick", style: "opacity:0" }, "✓");
+
     select.addEventListener("change", () => {
       const val = select.value || null;
       void window.api.preferences
         .set({ [entry.prefKey]: val })
-        .then(() => showToast(
-          val
-            ? t("models.toast.role_saved", { role: label, model: val })
-            : t("models.toast.role_auto", { role: label }),
-          "success"
-        ))
+        .then(() => {
+          showToast(
+            val
+              ? t("models.toast.role_saved", { role: label, model: val })
+              : t("models.toast.role_auto", { role: label }),
+            "success",
+          );
+          /* Мигнуть галочкой возле дропдауна. */
+          savedTick.style.opacity = "1";
+          setTimeout(() => { savedTick.style.opacity = "0"; }, 2000);
+        })
         .catch((err) => showToast(t("models.toast.role_save_failed", { msg: errMsg(err) })));
     });
 
@@ -347,7 +356,7 @@ function renderRoles(roleMap, loaded, downloaded) {
         el("span", { class: "mp-role-label" }, label),
         help ? el("span", { class: "mp-role-help" }, help) : null,
       ].filter(Boolean)),
-      select,
+      el("div", { class: "mp-role-control" }, [select, savedTick]),
     ]));
   }
 }
@@ -421,105 +430,44 @@ function buildLayout() {
 let olympicsBusy = false;
 let olympicsDebugVisible = false;
 
+/**
+ * Простой helper: создать чекбокс, привязанный к pref-ключу. Загружает текущее
+ * значение из preferences, при изменении сохраняет обратно. Без миганий.
+ *
+ * @param {string} prefKey — ключ в preferences (boolean)
+ * @param {string=} domId  — id для DOM (опционально)
+ */
+function bindPrefCheckbox(prefKey, domId) {
+  const cb = el("input", domId ? { id: domId, type: "checkbox" } : { type: "checkbox" });
+  if (window.api?.preferences?.getAll) {
+    void window.api.preferences.getAll().then((prefs) => {
+      cb.checked = prefs?.[prefKey] === true;
+    }).catch(() => { /* ignore */ });
+  }
+  cb.addEventListener("change", () => {
+    if (window.api?.preferences?.set) {
+      void window.api.preferences.set({ [prefKey]: cb.checked });
+    }
+  });
+  return cb;
+}
+
+/**
+ * Карточка Олимпиады. Главный экран — простой и понятный («для бабушек»):
+ *   — большая кнопка «Запустить Олимпиаду»
+ *   — после прогона: медальный зачёт + рекомендации (роли применяются автоматически)
+ *   — все сложные опции спрятаны в `<details>` Advanced.
+ */
 function buildOlympicsCard() {
   return el("section", { class: "mp-card mp-card-compact mp-olympics-card" }, [
     el("h2", { class: "mp-card-title" }, t("models.olympics.title")),
     el("p", { class: "mp-card-sub" }, t("models.olympics.sub")),
-    /* Опции: режим testAll + размах класса + per-role tuning */
-    el("div", { class: "mp-olympics-options" }, [
-      el("label", { class: "mp-olympics-option" }, [
-        (() => {
-          const cb = el("input", { id: "mp-olympics-testall", type: "checkbox" });
-          if (window.api?.preferences?.getAll) {
-            void window.api.preferences.getAll().then((prefs) => {
-              cb.checked = prefs?.olympicsTestAll === true;
-            }).catch(() => { /* ignore */ });
-          }
-          cb.addEventListener("change", () => {
-            if (window.api?.preferences?.set) {
-              void window.api.preferences.set({ olympicsTestAll: cb.checked });
-            }
-          });
-          return cb;
-        })(),
-        el("span", {}, t("models.olympics.option.test_all")),
-        el("span", { class: "mp-olympics-option-hint" }, t("models.olympics.option.test_all_hint")),
-      ]),
-      el("label", { class: "mp-olympics-option" }, [
-        el("span", {}, t("models.olympics.option.weight_classes")),
-        (() => {
-          const sel = el("select", { id: "mp-olympics-classes", class: "mp-olympics-select" }, [
-            el("option", { value: "s,m" }, "S+M (1–12B) — стандарт"),
-            el("option", { value: "s" }, "Только S (1–5B) — слабое железо"),
-            el("option", { value: "m,l" }, "M+L (5–30B) — сильное железо"),
-            el("option", { value: "s,m,l" }, "S+M+L — широкий охват"),
-          ]);
-          sel.value = "s,m";
-          if (window.api?.preferences?.getAll) {
-            void window.api.preferences.getAll().then((prefs) => {
-              const saved = typeof prefs?.olympicsWeightClasses === "string" ? prefs.olympicsWeightClasses : "s,m";
-              if (saved && sel.querySelector(`option[value="${saved}"]`)) sel.value = saved;
-            }).catch(() => { /* ignore */ });
-          }
-          sel.addEventListener("change", () => {
-            if (window.api?.preferences?.set) {
-              void window.api.preferences.set({ olympicsWeightClasses: sel.value });
-            }
-          });
-          return sel;
-        })(),
-      ]),
-      el("label", { class: "mp-olympics-option" }, [
-        (() => {
-          const cb = el("input", { id: "mp-olympics-role-tuning", type: "checkbox" });
-          if (window.api?.preferences?.getAll) {
-            void window.api.preferences.getAll().then((prefs) => {
-              cb.checked = prefs?.olympicsRoleLoadConfigEnabled === true;
-            }).catch(() => { /* ignore */ });
-          }
-          cb.addEventListener("change", () => {
-            if (window.api?.preferences?.set) {
-              void window.api.preferences.set({ olympicsRoleLoadConfigEnabled: cb.checked });
-            }
-          });
-          return cb;
-        })(),
-        el("span", {}, t("models.olympics.option.role_tuning")),
-        el("span", { class: "mp-olympics-option-hint" }, t("models.olympics.option.role_tuning_hint")),
-      ]),
-      el("label", { class: "mp-olympics-option" }, [
-        (() => {
-          const cb = el("input", { id: "mp-olympics-use-sdk", type: "checkbox" });
-          if (window.api?.preferences?.getAll) {
-            void window.api.preferences.getAll().then((prefs) => {
-              cb.checked = prefs?.olympicsUseLmsSDK === true;
-            }).catch(() => { /* ignore */ });
-          }
-          cb.addEventListener("change", () => {
-            if (window.api?.preferences?.set) {
-              void window.api.preferences.set({ olympicsUseLmsSDK: cb.checked });
-            }
-          });
-          return cb;
-        })(),
-        el("span", {}, t("models.olympics.option.use_sdk")),
-        el("span", { class: "mp-olympics-option-hint" }, t("models.olympics.option.use_sdk_hint")),
-      ]),
-    ]),
-    /* Per-role checkboxes — позволяют запускать только нужные роли */
-    el("div", { class: "mp-olympics-roles" }, [
-      el("span", { class: "mp-olympics-roles-label" }, "Роли:"),
-      ...ALL_ROLES.map((r) =>
-        el("label", { class: "mp-olympics-role-check" }, [
-          el("input", { type: "checkbox", "data-role": r.role, checked: true }),
-          el("span", {}, r.label),
-        ])
-      ),
-    ]),
+
+    /* ── Главная зона: только большие кнопки. Никаких чекбоксов. ── */
     el("div", { class: "mp-olympics-actions" }, [
       el("button", {
         id: "mp-olympics-run",
-        class: "btn btn-primary",
+        class: "btn btn-primary btn-lg",
         type: "button",
         onclick: () => void runOlympicsAndShow(),
       }, t("models.olympics.run")),
@@ -530,12 +478,6 @@ function buildOlympicsCard() {
         style: "display:none",
         onclick: () => void cancelOlympics(),
       }, t("models.olympics.cancel")),
-    ]),
-    /* Лог-панель: скрыта по умолчанию, показывается кнопкой "Логи дебага". */
-    el("div", { id: "mp-olympics-log", class: "mp-olympics-log", style: "display:none" }, ""),
-    el("div", { id: "mp-olympics-results", class: "mp-olympics-results" }, ""),
-    /* Кнопки управления: очистка кэша + переключатель debug-логов */
-    el("div", { class: "mp-olympics-cache-row" }, [
       el("button", {
         class: "btn btn-ghost btn-xs",
         type: "button",
@@ -560,7 +502,177 @@ function buildOlympicsCard() {
         },
       }, "📜 Протокол игр"),
     ]),
+
+    /* Лог-панель: скрыта по умолчанию, появляется в процессе турнира. */
+    el("div", { id: "mp-olympics-log", class: "mp-olympics-log", style: "display:none" }, ""),
+
+    /* Зона результатов (медальный зачёт + рекомендации). Заполняется после прогона. */
+    el("div", { id: "mp-olympics-results", class: "mp-olympics-results" }, ""),
+
+    /* ── Advanced: всё, что нужно редко. Свёрнуто по умолчанию. ── */
+    buildOlympicsAdvanced(),
   ]);
+}
+
+/**
+ * Расширенные настройки Олимпиады — свёрнутый <details>.
+ * Содержит:
+ *   — переключатель «оптимум / чемпион» для авто-применения после турнира
+ *   — фильтры (класс моделей, тестировать все)
+ *   — экспертные тумблеры (per-role tuning, SDK)
+ *   — выбор ролей для турнира (галочки)
+ *   — экспорт/импорт профиля
+ */
+function buildOlympicsAdvanced() {
+  return el("details", { class: "mp-olympics-advanced" }, [
+    el("summary", { class: "mp-olympics-advanced-summary" }, t("models.olympics.advanced")),
+    el("p", { class: "mp-olympics-advanced-hint" }, t("models.olympics.advanced.hint")),
+
+    /* — Авто-применение: оптимум (по умолчанию) или чемпион — */
+    el("label", { class: "mp-olympics-option" }, [
+      bindPrefCheckbox("olympicsUseChampion", "mp-olympics-use-champion"),
+      el("span", {}, t("models.olympics.advanced.use_champion")),
+      el("span", { class: "mp-olympics-option-hint" }, t("models.olympics.advanced.use_champion_hint")),
+    ]),
+
+    /* — Фильтр класса + testAll — */
+    el("label", { class: "mp-olympics-option" }, [
+      bindPrefCheckbox("olympicsTestAll", "mp-olympics-testall"),
+      el("span", {}, t("models.olympics.option.test_all")),
+      el("span", { class: "mp-olympics-option-hint" }, t("models.olympics.option.test_all_hint")),
+    ]),
+    el("label", { class: "mp-olympics-option" }, [
+      el("span", {}, t("models.olympics.option.weight_classes")),
+      (() => {
+        const sel = el("select", { id: "mp-olympics-classes", class: "mp-olympics-select" }, [
+          el("option", { value: "s,m" }, "S+M (1–12B) — стандарт"),
+          el("option", { value: "s" }, "Только S (1–5B) — слабое железо"),
+          el("option", { value: "m,l" }, "M+L (5–30B) — сильное железо"),
+          el("option", { value: "s,m,l" }, "S+M+L — широкий охват"),
+        ]);
+        sel.value = "s,m";
+        if (window.api?.preferences?.getAll) {
+          void window.api.preferences.getAll().then((prefs) => {
+            const saved = typeof prefs?.olympicsWeightClasses === "string" ? prefs.olympicsWeightClasses : "s,m";
+            if (saved && sel.querySelector(`option[value="${saved}"]`)) sel.value = saved;
+          }).catch(() => { /* ignore */ });
+        }
+        sel.addEventListener("change", () => {
+          if (window.api?.preferences?.set) {
+            void window.api.preferences.set({ olympicsWeightClasses: sel.value });
+          }
+        });
+        return sel;
+      })(),
+    ]),
+
+    /* — Экспертные тумблеры — */
+    el("label", { class: "mp-olympics-option" }, [
+      bindPrefCheckbox("olympicsRoleLoadConfigEnabled", "mp-olympics-role-tuning"),
+      el("span", {}, t("models.olympics.option.role_tuning")),
+      el("span", { class: "mp-olympics-option-hint" }, t("models.olympics.option.role_tuning_hint")),
+    ]),
+    el("label", { class: "mp-olympics-option" }, [
+      bindPrefCheckbox("olympicsUseLmsSDK", "mp-olympics-use-sdk"),
+      el("span", {}, t("models.olympics.option.use_sdk")),
+      el("span", { class: "mp-olympics-option-hint" }, t("models.olympics.option.use_sdk_hint")),
+    ]),
+
+    /* — Какие роли тестировать (по умолчанию: все) — */
+    el("div", { class: "mp-olympics-roles" }, [
+      el("span", { class: "mp-olympics-roles-label" }, t("models.olympics.advanced.roles_label")),
+      el("p", { class: "mp-olympics-roles-hint" }, t("models.olympics.advanced.roles_hint")),
+      el("div", { class: "mp-olympics-roles-grid" },
+        ALL_ROLES.map((r) =>
+          el("label", { class: "mp-olympics-role-check" }, [
+            el("input", { type: "checkbox", "data-role": r.role, checked: true }),
+            el("span", {}, r.label),
+          ])
+        ),
+      ),
+    ]),
+
+    /* — Профиль: экспорт / импорт — */
+    el("div", { class: "mp-olympics-profile-row" }, [
+      el("button", {
+        class: "btn btn-ghost btn-sm",
+        type: "button",
+        title: t("models.olympics.advanced.export_hint"),
+        onclick: () => void exportProfileViaDialog(),
+      }, t("models.olympics.advanced.export")),
+      el("button", {
+        class: "btn btn-ghost btn-sm",
+        type: "button",
+        title: t("models.olympics.advanced.import_hint"),
+        onclick: () => void importProfileViaDialog(),
+      }, t("models.olympics.advanced.import")),
+      el("button", {
+        class: "btn btn-ghost btn-xs",
+        type: "button",
+        title: "Скачать профиль как JSON-файл (без диалога)",
+        onclick: () => void downloadProfileAsBlob(),
+      }, "↓ JSON"),
+    ]),
+    el("p", { class: "mp-olympics-advanced-hint" }, t("models.olympics.advanced.export_hint")),
+  ]);
+}
+
+// ---------------------------------------------------------------------------
+// Profile export / import
+// ---------------------------------------------------------------------------
+
+/** Экспорт через нативный Save-dialog (preload → IPC → Electron dialog). */
+async function exportProfileViaDialog() {
+  if (!window.api?.preferences?.exportProfile) {
+    showToast("Экспорт профиля недоступен", "error");
+    return;
+  }
+  try {
+    const res = await window.api.preferences.exportProfile();
+    if (!res?.path) return;
+    showToast(t("models.olympics.advanced.export_done", { path: res.path }), "success");
+  } catch (e) {
+    showToast(errMsg(e), "error");
+  }
+}
+
+/** Импорт через нативный Open-dialog. */
+async function importProfileViaDialog() {
+  if (!window.api?.preferences?.importProfile) {
+    showToast("Импорт профиля недоступен", "error");
+    return;
+  }
+  try {
+    const res = await window.api.preferences.importProfile();
+    if (!res?.path) return;
+    showToast(t("models.olympics.advanced.import_done", { keys: String(res.appliedKeys.length) }), "success");
+    await refresh();
+  } catch (e) {
+    showToast(errMsg(e), "error");
+  }
+}
+
+/**
+ * Скачать профиль как JSON-blob — renderer-only путь без файлового диалога.
+ * Полезно когда у пользователя нет прав на запись или хочется быстро поделиться.
+ */
+async function downloadProfileAsBlob() {
+  if (!window.api?.preferences?.getProfile) return;
+  try {
+    const file = await window.api.preferences.getProfile();
+    const blob = new Blob([JSON.stringify(file, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().replace(/[:T]/g, "-").slice(0, 19);
+    a.href = url;
+    a.download = `bibliary-profile-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (e) {
+    showToast(errMsg(e), "error");
+  }
 }
 
 /** Добавляет строку в протокол Олимпиады (накопительный).
@@ -675,6 +787,10 @@ async function runOlympicsAndShow() {
     appendOlympicsLog(logEl, t("models.olympics.done", { ms: ((report.totalDurationMs ?? 0) / 1000).toFixed(1) }), "good");
     renderOlympicsReport(report);
     showToast(t("models.olympics.success"), "success");
+    /* ── Авто-применение ролей. По умолчанию применяется «оптимум» (лучшее
+     *    соотношение качества и скорости). В Advanced пользователь может
+     *    включить флаг "olympicsUseChampion" — тогда применится «чемпион». */
+    await autoApplyOlympicsRecommendations(report);
   } catch (e) {
     const msg = errMsg(e);
     const isAbort = msg.includes("aborted") || msg.includes("abort") || msg.includes("cancel");
@@ -741,15 +857,19 @@ function roleIcon(prefKey) {
   return MAP[prefKey] ?? "🤖";
 }
 
-/** Все роли для чекбоксов. */
+/**
+ * Роли для чекбоксов «какие роли тестировать в Олимпиаде».
+ * Должно совпадать с `PIPELINE_ROLES` (порядок важен — таб-бар результатов
+ * следует тому же порядку). Legacy `vision` намеренно убрана: новые
+ * vision_meta/vision_ocr/vision_illustration покрывают её полностью.
+ */
 const ALL_ROLES = [
   { role: "crystallizer",         label: "💎 Кристаллизатор" },
   { role: "evaluator",            label: "📚 Оценщик" },
   { role: "judge",                label: "⚖️ Судья" },
   { role: "translator",           label: "🌐 Переводчик" },
-  { role: "lang_detector",        label: "🔤 Язык" },
   { role: "ukrainian_specialist", label: "🇺🇦 Укр." },
-  { role: "vision",               label: "👁️ Vision (legacy)" },
+  { role: "lang_detector",        label: "🔤 Язык" },
   { role: "vision_meta",          label: "📖 Vision: обложки" },
   { role: "vision_ocr",           label: "🖨️ Vision: OCR страниц" },
   { role: "vision_illustration",  label: "🖼️ Vision: иллюстрации" },
@@ -1058,23 +1178,46 @@ function renderOlympicsReport(report) {
     return;
   }
 
+  /* Одна кнопка вместо двух: «Распределить роли». По умолчанию применяет
+   * «оптимум»; если в Advanced включён флаг `olympicsUseChampion` — применит
+   * «чемпиона». Auto-apply уже произошёл сразу после run (см. autoApplyOlympicsRecommendations).
+   * Эта кнопка нужна для повторного применения если пользователь поменял флаг
+   * или вручную правил роли и хочет вернуть рекомендации. */
+  let useChampion = false;
+  const champBadge = el("span", { class: "mp-olympics-champion-badge", style: "display:none" }, "🏆");
+  const distributeBtn = el("button", {
+    class: "btn btn-primary",
+    type: "button",
+    disabled: recsKeys.length === 0 && byScoreKeys.length === 0,
+    onclick: () => {
+      const target = useChampion ? byScore : recs;
+      void applyRecommendations(target);
+    },
+  }, [
+    el("span", { class: "mp-olympics-distribute-label" }, t("models.olympics.distribute")),
+    champBadge,
+    el("span", { class: "mp-olympics-distribute-count" },
+      ` (${(useChampion ? byScoreKeys : recsKeys).length})`),
+  ]);
+
+  /* Подхватываем актуальное значение флага useChampion из prefs. */
+  if (window.api?.preferences?.getAll) {
+    void window.api.preferences.getAll().then((prefs) => {
+      useChampion = prefs?.olympicsUseChampion === true;
+      const lbl = distributeBtn.querySelector(".mp-olympics-distribute-label");
+      const cnt = distributeBtn.querySelector(".mp-olympics-distribute-count");
+      if (lbl) lbl.textContent = useChampion
+        ? t("models.olympics.distribute_champion")
+        : t("models.olympics.distribute");
+      if (cnt) cnt.textContent = ` (${(useChampion ? byScoreKeys : recsKeys).length})`;
+      champBadge.style.display = useChampion ? "" : "none";
+    }).catch(() => { /* ignore */ });
+  }
+
   const recsHeader = el("div", { class: "mp-olympics-recs-header" }, [
     el("h3", {}, t("models.olympics.recommendations")),
-    el("p", { class: "mp-card-sub" }, t("models.olympics.recommendations_hint_v2")),
-    el("div", { class: "mp-olympics-apply-buttons" }, [
-      el("button", {
-        class: "btn btn-primary",
-        type: "button",
-        disabled: recsKeys.length === 0,
-        onclick: () => void applyRecommendations(recs),
-      }, `⭐ ${t("models.olympics.apply.optimum")} (${recsKeys.length})`),
-      el("button", {
-        class: "btn btn-ghost",
-        type: "button",
-        disabled: byScoreKeys.length === 0,
-        onclick: () => void applyRecommendations(byScore),
-      }, `🏆 ${t("models.olympics.apply.champion")} (${byScoreKeys.length})`),
-    ]),
+    el("p", { class: "mp-card-sub" }, t("models.olympics.distribute_after_run")),
+    el("div", { class: "mp-olympics-apply-buttons" }, [distributeBtn]),
   ]);
   root.appendChild(recsHeader);
 
@@ -1148,10 +1291,52 @@ async function applyRecommendations(recs) {
   if (!window.api?.arena?.applyOlympicsRecommendations) return;
   try {
     await window.api.arena.applyOlympicsRecommendations({ recommendations: recs });
-    showToast(t("models.olympics.applied"), "success");
+    showToast(t("models.olympics.distribute_done"), "success");
     void refresh();
   } catch (e) {
     showToast(errMsg(e), "error");
+  }
+}
+
+/**
+ * Авто-применение рекомендаций после успешного прогона Олимпиады.
+ *
+ * По умолчанию применяет «оптимум» (`report.recommendations`). Если в Advanced
+ * включён флаг `olympicsUseChampion` — применит «чемпиона»
+ * (`report.recommendationsByScore`).
+ *
+ * Сохраняется в preferences.json — следующий запуск приложения подхватит
+ * этот же набор моделей. Никаких ручных «сохранить» нажимать не нужно.
+ *
+ * @param {{ recommendations?: Record<string, string>; recommendationsByScore?: Record<string, string> }} report
+ */
+async function autoApplyOlympicsRecommendations(report) {
+  if (!window.api?.arena?.applyOlympicsRecommendations) return;
+
+  let useChampion = false;
+  if (window.api?.preferences?.getAll) {
+    try {
+      const prefs = await window.api.preferences.getAll();
+      useChampion = prefs?.olympicsUseChampion === true;
+    } catch { /* ignore — fallback to optimum */ }
+  }
+
+  const target = useChampion
+    ? (report.recommendationsByScore ?? {})
+    : (report.recommendations ?? {});
+  const keys = Object.keys(target);
+  if (keys.length === 0) return;
+
+  try {
+    await window.api.arena.applyOlympicsRecommendations({ recommendations: target });
+    showToast(
+      `${useChampion ? "🏆" : "⭐"} ${t("models.olympics.distribute_done")} (${keys.length})`,
+      "success",
+    );
+    void refresh();
+  } catch (e) {
+    /* Не показываем как fatal — пользователь увидит кнопку и сможет применить руками. */
+    console.warn("[models] auto-apply failed:", e);
   }
 }
 
