@@ -8,7 +8,7 @@ import { showAlert, showConfirm } from "../components/ui-dialog.js";
 import { CATALOG } from "./state.js";
 import { filterCatalog as filterCatalogPure, qualityClass, statusClass } from "./catalog-filter.js";
 import { fmtWords, fmtQuality } from "./format.js";
-import { guardAndCrystallize } from "./batch-actions.js";
+import { guardAndCrystallize, cancelBatchExtraction } from "./batch-actions.js";
 import { openBook } from "./reader.js";
 import { openTagCloudModal } from "./tag-cloud.js";
 import { displayBookTitle, displayBookAuthor, bookTitleTooltip } from "./display-meta.js";
@@ -207,7 +207,7 @@ function updateLoadMoreButton(root) {
     const tableWrap = root.querySelector(".lib-catalog-table-wrap");
     if (tableWrap) tableWrap.appendChild(btn);
   }
-  btn.textContent = t("library.catalog.btn.loadMore") || `\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0435\u0449\u0451 (${CATALOG.rows.length}/${CATALOG.total})`;
+  btn.textContent = `${t("library.catalog.btn.loadMore")} (${CATALOG.rows.length}/${CATALOG.total})`;
 }
 
 /** @param {HTMLElement} root */
@@ -479,12 +479,19 @@ export function buildCatalogBottomBar(root, deps) {
     onclick: () => void guardAndCrystallize(root, deps),
   }, t("library.catalog.btn.createChunks"));
 
+  const cancelBatchBtn = el("button", {
+    type: "button", class: "lib-btn lib-btn-danger lib-btn-cancel-batch",
+    title: t("library.catalog.batch.confirmCancel"),
+    style: "display: none",
+    onclick: () => void cancelBatchExtraction(),
+  }, t("library.catalog.btn.cancelBatch"));
+
   const batchSummary = el("span", { class: "lib-catalog-batch-summary" }, "");
 
   return el("div", { class: "lib-catalog-bottombar" }, [
     metaRow,
     el("div", { class: "lib-catalog-bottom-actions" }, [
-      selectAllBtn, clearBtn, reevaluateBtn, reparseBtn, deleteBtn, chunksBtn,
+      selectAllBtn, clearBtn, reevaluateBtn, reparseBtn, deleteBtn, chunksBtn, cancelBatchBtn,
     ]),
     batchSummary,
   ]);
