@@ -487,7 +487,7 @@ function buildOlympicsCard() {
             await window.api.arena.clearOlympicsCache();
           }
           resetOlympicsUI();
-          showToast("Кэш олимпиады очищен, экран готов к новому запуску", "success");
+          showToast(t("models.olympics.cache_cleared"), "success");
         },
       }, "🗑 Очистить кэш"),
       el("button", {
@@ -625,7 +625,7 @@ function buildOlympicsAdvanced() {
 /** Экспорт через нативный Save-dialog (preload → IPC → Electron dialog). */
 async function exportProfileViaDialog() {
   if (!window.api?.preferences?.exportProfile) {
-    showToast("Экспорт профиля недоступен", "error");
+    showToast(t("models.olympics.advanced.export_unavailable"), "error");
     return;
   }
   try {
@@ -640,7 +640,7 @@ async function exportProfileViaDialog() {
 /** Импорт через нативный Open-dialog. */
 async function importProfileViaDialog() {
   if (!window.api?.preferences?.importProfile) {
-    showToast("Импорт профиля недоступен", "error");
+    showToast(t("models.olympics.advanced.import_unavailable"), "error");
     return;
   }
   try {
@@ -814,7 +814,7 @@ async function cancelOlympics() {
   if (!window.api?.arena?.cancelOlympics) return;
   try {
     await window.api.arena.cancelOlympics();
-    showToast("Олимпиада отменена. Экран готов к новому запуску.", "success");
+    showToast(t("models.olympics.cancelled"), "success");
   } catch (e) {
     showToast(errMsg(e), "error");
   }
@@ -876,6 +876,10 @@ const ALL_ROLES = [
 /**
  * Литературные названия для ролей (для табов).
  * Технически точные, но человекочитаемые.
+ *
+ * Намеренно русские: страница Олимпиады стилизована под древнегреческий
+ * нарратив, и часть атмосферных описаний дисциплин не переводится через t().
+ * Если потребуется английская локаль — переписать на ключи `models.olympics.role.*`.
  */
 const ROLE_HUMAN_LABEL = {
   crystallizer:         { icon: "💎", title: "Кристаллизатор знаний", subtitle: "извлечение фактов и связей" },
