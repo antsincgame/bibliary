@@ -900,44 +900,29 @@ const ROLE_HUMAN_LABEL = {
 const DISCIPLINE_HUMAN = {
   /* — Кристаллизатор — */
   "crystallizer-rover":              { short: "Марсоход",          long: "Извлечение фактов о миссии Curiosity" },
-  "crystallizer-deep-extract":       { short: "Аполлон-11",        long: "Глубокое извлечение знаний из длинного исторического текста" },
   "crystallizer-production-delta":   { short: "Боевая схема",      long: "Извлечение DeltaKnowledge точно по продакшн-схеме (essence + cipher + relations)" },
-  "crystallizer-aura":               { short: "Тезис главы",       long: "Извлечь тезис главы для AURA-фильтра (одно предложение, ≤200 chars)" },
   "crystallizer-ru-mendeleev":       { short: "Менделеев",         long: "Извлечение знаний из русскоязычного текста (периодический закон)" },
-  "code-summary-cpp":                { short: "Чтец C++",          long: "Резюме сложного C++ кода (sidecar describer)" },
-  "html-extract":                    { short: "Чтец HTML",         long: "Извлечение текста из захламлённого HTML" },
 
   /* — Оценщик — */
   "evaluator-clrs":                  { short: "CLRS",              long: "Оценка эталона CLRS — должна быть высокой (8-10)" },
   "evaluator-noise":                 { short: "Шум",               long: "Оценка мусорного фрагмента — должна быть низкой (0-2)" },
-  "evaluator-midrange":              { short: "Серединка",         long: "Оценка средней книги — должна быть в диапазоне 4-6" },
-  "evaluator-ru-classic":            { short: "Русская классика",  long: "Оценка русскоязычной классики (Ландау-Лифшиц)" },
-  "evaluator-nuanced":               { short: "Двойственность",    long: "Взвешенная оценка неоднозначной книги (плюсы + минусы)" },
 
   /* — Переводчик — */
-  "translator-uk-ru":                { short: "Укр → Рус",         long: "Перевод украинского технического текста на русский" },
   "translator-en-ru":                { short: "Англ → Рус",        long: "Перевод английского технического текста на русский (главный путь импорта)" },
-  "translator-ru-en":                { short: "Рус → Англ",        long: "Перевод русского научного текста на английский" },
 
   /* — Знаток украинского — */
   "ukrainian-uk-write":              { short: "Письмо",            long: "Создание связного текста на украинском с правильной орфографией" },
 
   /* — Судья — */
   "judge-bst":                       { short: "BST",               long: "Выбор правильного ответа о сложности BST (A-вариант)" },
-  "judge-async":                     { short: "Async",             long: "Выбор правильного ответа об async/await (B-вариант — антибиас)" },
 
   /* — Детектор языка — */
   "lang-detect-uk":                  { short: "Современный укр.",  long: "Распознавание современного украинского технического текста" },
-  "lang-detect-uk-shevchenko":       { short: "Шевченко",          long: "Распознавание классического укр. (Шевченко, архаичные формы)" },
-  "lang-detect-uk-library":          { short: "Библиотечный укр.", long: "Распознавание укр. в реальных библиотечных текстах" },
   "lang-detect-en":                  { short: "Английский",        long: "Контрольная проверка распознавания английского" },
-  "lang-detect-ru":                  { short: "Русский",           long: "Контрольная проверка: не путает ли русский с украинским" },
 
   /* — Зрение — */
-  "vision-describe-shapes":          { short: "Геометрия",         long: "Базовый sanity-check: видит ли модель цвет и форму" },
   "vision_meta-strict-json":         { short: "Строгий JSON",      long: "Дисциплина формата: vision-модель возвращает чистый JSON без prose" },
   "vision_meta-cover-en":            { short: "Обложка EN",        long: "JSON-метаданные обложки английской книги" },
-  "vision_meta-cover-ru":            { short: "Обложка RU",        long: "JSON-метаданные обложки русскоязычной книги" },
   "vision_ocr-plain-text":           { short: "Plain text",        long: "Дисциплина формата: OCR должен дать чистый текст без markdown/JSON" },
   "vision_illustration-with-context":{ short: "С контекстом",      long: "Описание иллюстрации с привязкой к теме главы (для RAG-индекса)" },
 };
