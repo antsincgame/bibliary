@@ -4,6 +4,24 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.7] — 2026-05-01 — Olympics report persist + auto-restore
+
+### Added
+
+- **Olympics report автосохранение**: отчёт (медали, BT scores, дисциплины,
+  рекомендации, roleAggregates) сохраняется в `data/olympics-report.json`
+  после каждого успешного прогона. При перезапуске приложения — загружается
+  автоматически и отображается на вкладке Модели.
+- **IPC `arena:get-last-report`**: preload + main handler для загрузки
+  persisted отчёта из renderer.
+- **`arena:clear-olympics-cache`** теперь удаляет и файл на диске.
+
+### Fixed
+
+- **Результаты Olympics теряются при выходе**: ранее `_olympicsCache` хранился
+  только в памяти процесса — при перезапуске = null. Теперь: JSON на диске
+  + автовосстановление при mount Models page.
+
 ## [0.4.6] — 2026-05-01 — Auto-load pipeline + Import UX cleanup
 
 ### Added

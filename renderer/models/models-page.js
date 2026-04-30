@@ -26,6 +26,7 @@ import {
   buildHwStrip,
 } from "./models-hardware-status.js";
 import { buildOlympicsCard } from "./models-page-olympics-controls.js";
+import { renderOlympicsReport } from "./models-page-olympics-report.js";
 
 let refreshTimer = null;
 let preferencesUnsubscribe = null;
@@ -83,6 +84,16 @@ export function mountModels(root) {
   if (hwBtn) hwBtn.addEventListener("click", () => void refreshHardware(true).then(() => renderHardwareStrip()));
 
   void refreshHardware(false).then(() => refresh());
+
+  /* Restore last Olympics report from disk — user sees results even after
+   * app restart without re-running the tournament. */
+  if (typeof window.api?.arena?.getLastReport === "function") {
+    void window.api.arena.getLastReport().then((report) => {
+      if (report && typeof report === "object" && (report.medals || report.roleAggregates)) {
+        renderOlympicsReport(report);
+      }
+    }).catch(() => { /* no saved report — ok */ });
+  }
 
   if (typeof window.api.preferences?.onChanged === "function") {
     preferencesUnsubscribe = window.api.preferences.onChanged(() => {

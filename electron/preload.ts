@@ -311,6 +311,7 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.invoke("arena:run-olympics", opts ?? {}),
     cancelOlympics: (): Promise<boolean> => ipcRenderer.invoke("arena:cancel-olympics"),
     clearOlympicsCache: (): Promise<unknown> => ipcRenderer.invoke("arena:clear-olympics-cache"),
+    getLastReport: (): Promise<unknown> => ipcRenderer.invoke("arena:get-last-report"),
     applyOlympicsRecommendations: (payload: { recommendations: Record<string, string> }): Promise<unknown> =>
       ipcRenderer.invoke("arena:apply-olympics-recommendations", payload),
     onOlympicsProgress: (cb: (e: unknown) => void): (() => void) => {
