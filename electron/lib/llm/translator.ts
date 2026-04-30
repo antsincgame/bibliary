@@ -31,17 +31,6 @@ export interface TranslateOptions {
   onProgress?: (info: { chunkIndex: number; totalChunks: number }) => void;
 }
 
-export interface TranslateResult {
-  /** Полный переведённый текст (соединённые чанки через \n\n). */
-  text: string;
-  /** Сколько чанков переведено. */
-  chunksTranslated: number;
-  /** Использованная модель. */
-  modelKey: string;
-  /** Целевой язык. */
-  targetLang: TargetLang;
-}
-
 /** Маркер-разделитель параграфов для batch-перевода. Выбран так, что даже
  *  «капризные» модели не лезут его трогать — нет markdown-смысла, нет
  *  spacing-ловушек. */
@@ -101,77 +90,6 @@ export function splitForTranslation(text: string, chunkWords: number = DEFAULT_C
   }
   if (current.trim()) chunks.push(current.trim());
   return chunks;
-}
-
-/**
- * Переводит текст на целевой язык. Использует роль `translator` из
- * model-role-resolver. Если роль не настроена — кидает Error.
- */
-export async function translateText(
-  text: string,
-  opts: TranslateOptions = {},
-): Promise<TranslateResult> {
-  const prefs = await getPreferencesStore().getAll();
-  const targetLang: TargetLang = opts.targetLang ?? prefs.translatorTargetLang;
-
-  const resolved = await modelRoleResolver.resolve("translator");
-  if (!resolved) {
-    throw new Error(
-      "Translator model is not configured. Open «Models» and pick a translator (e.g. Qwen2.5, Aya 23, Gemma 2).",
-    );
-  }
-  const modelKey = resolved.modelKey;
-  const chunks = splitForTranslation(text, opts.chunkWords ?? DEFAULT_CHUNK_WORDS);
-  if (chunks.length === 0) {
-    return { text: "", chunksTranslated: 0, modelKey, targetLang };
-  }
-
-  const system = SYSTEM_PROMPTS[targetLang];
-  const sourceHint = opts.sourceLang ? `Source language: ${opts.sourceLang}.\n\n` : "";
-
-  /* Pool: один acquire на весь цикл чанков — модель удерживается между
-     вызовами, LRU не вытолкнет её даже если параллельно crystallizer
-     попросит свою. Если памяти мало — pool выгрузит самую старую. */
-  return getModelPool().withModel(
-    modelKey,
-    { role: "translator", ttlSec: 1800, gpuOffload: "max" },
-    async () => {
-      const translated: string[] = [];
-      for (let i = 0; i < chunks.length; i++) {
-        if (opts.signal?.aborted) {
-          throw new Error("Translation aborted");
-        }
-        const chunk = chunks[i]!;
-        const resp = await chatWithPolicy(
-          {
-            model: modelKey,
-            messages: [
-              { role: "system", content: system },
-              { role: "user", content: `${sourceHint}${chunk}` },
-            ],
-            sampling: {
-              temperature: 0.1,
-              top_p: 0.9,
-              top_k: 20,
-              min_p: 0,
-              presence_penalty: 0,
-              max_tokens: Math.max(1024, Math.ceil(chunk.length * 2)),
-            },
-          },
-          { externalSignal: opts.signal },
-        );
-        translated.push(resp.content.trim());
-        opts.onProgress?.({ chunkIndex: i + 1, totalChunks: chunks.length });
-      }
-
-      return {
-        text: translated.join("\n\n"),
-        chunksTranslated: chunks.length,
-        modelKey,
-        targetLang,
-      };
-    },
-  );
 }
 
 /**

@@ -62,21 +62,6 @@ export interface QdrantCollectionSpec {
   defaultSegmentNumber?: number;
   /** Scalar INT8 quantization (-75% RAM). Disabled by default. */
   quantization?: "none" | "scalar_int8";
-  /**
-   * Sparse vectors для hybrid (dense + BM25) search. Если true — коллекция
-   * создаётся с named sparse vector "bm25" (modifier: idf — Qdrant сам
-   * применит IDF при scoring). Также dense vector переходит в named formed
-   * "dense" чтобы prefetch RRF мог их различить.
-   *
-   * После активации — caller должен ВСЕГДА upsert'ить и dense, и sparse:
-   *   client.upsert(name, [{id, vector: {dense: [...], bm25: {indices, values}}}])
-   *
-   * Search через `searchHybridChunks()` из `electron/lib/rag/hybrid-search.ts`.
-   *
-   * Backward-compat: если false (default) — коллекция создаётся со старым
-   * unnamed vector — все существующие импорты и индексы работают как раньше.
-   */
-  sparseVectors?: boolean;
 }
 
 /**
@@ -113,19 +98,9 @@ export async function ensureQdrantCollection(
 
   const distance: QdrantDistance = spec.distance ?? "Cosine";
 
-  const body: Record<string, unknown> = spec.sparseVectors
-    ? {
-        /* Named vectors: dense + sparse в одной коллекции. Hybrid search
-           через prefetch + RRF. */
-        vectors: { dense: { size: spec.vectorSize, distance } },
-        sparse_vectors: {
-          bm25: { modifier: "idf" },
-        },
-      }
-    : {
-        /* Unnamed vector — backward compat для существующих коллекций. */
-        vectors: { size: spec.vectorSize, distance },
-      };
+  const body: Record<string, unknown> = {
+    vectors: { size: spec.vectorSize, distance },
+  };
 
   if (spec.hnsw) {
     const hnswConfig: Record<string, unknown> = {};

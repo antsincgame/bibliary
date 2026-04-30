@@ -145,17 +145,8 @@ export function registerQdrantIpc(): void {
         name: string;
         vectorSize?: number;
         distance?: "Cosine" | "Euclid" | "Dot";
-        /**
-         * Если true — коллекция создаётся как hybrid (named dense + sparse BM25 с
-         * server-side IDF). Это включает `searchHybridChunks` через `searchSmart`:
-         * BM25 ловит редкие токены (ISBN, имена, версии) — точные совпадения, которые
-         * dense embedder часто промахивает. RRF fusion и затем BGE-reranker.
-         *
-         * Без этого флага создаётся unnamed dense — обратно совместимо с legacy.
-         */
-        hybrid?: boolean;
       }
-    ): Promise<{ ok: boolean; error?: string; hybrid?: boolean }> => {
+    ): Promise<{ ok: boolean; error?: string }> => {
       try {
         if (!args) return { ok: false, error: "args required" };
         args = { ...args, name: parseOrThrow(CollectionNameSchema, args.name, "name") };
@@ -164,26 +155,7 @@ export function registerQdrantIpc(): void {
       }
       const size = args.vectorSize ?? EMBEDDING_DIM;
       const distance = args.distance ?? "Cosine";
-      const hybrid = args.hybrid === true;
       try {
-        if (hybrid) {
-          /* Через ensureQdrantCollection — включаем sparse + HNSW best-practice
-             конфиги + payload indexes (bookSourcePath, language). */
-          const { ensureQdrantCollection } = await import("../lib/qdrant/collection-config.js");
-          const res = await ensureQdrantCollection({
-            name: args.name,
-            vectorSize: size,
-            distance,
-            sparseVectors: true,
-            hnsw: { m: 24, ef_construct: 128 },
-            payloadIndexes: [
-              { field: "bookSourcePath", type: "keyword" },
-              { field: "domain", type: "keyword" },
-              { field: "language", type: "keyword" },
-            ],
-          });
-          return { ok: true, hybrid: res.created };
-        }
         const resp = await qdrantRaw(`${QDRANT_URL}/collections/${encodeURIComponent(args.name)}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -193,7 +165,7 @@ export function registerQdrantIpc(): void {
           const txt = await resp.text().catch(() => "");
           return { ok: false, error: `HTTP ${resp.status}: ${txt.slice(0, 240)}` };
         }
-        return { ok: true, hybrid: false };
+        return { ok: true };
       } catch (e) {
         return { ok: false, error: e instanceof Error ? e.message : String(e) };
       }
@@ -239,7 +211,7 @@ export function registerQdrantIpc(): void {
       try {
         let vector = args.vector;
         if (!vector && args.query) {
-          const { embedQuery } = await import("../lib/rag/index.js");
+          const { embedQuery } = await import("../lib/embedder/shared.js");
           vector = await embedQuery(args.query);
         }
         if (!vector) return [];
@@ -271,44 +243,6 @@ export function registerQdrantIpc(): void {
         return [];
       }
     }
-  );
-
-  /**
-   * Smart search: автоматически выбирает hybrid (dense+sparse+RRF+rerank) если
-   * коллекция создана с sparseVectors, иначе dense+rerank через
-   * searchRelevantChunks. См. `electron/lib/rag/hybrid-search.ts:searchSmart`.
-   *
-   * Возвращает поле `rerankScore` для UI (показывает что reranker применён).
-   * Используется из dataset-v2 UI (раздел Hybrid Search).
-   */
-  ipcMain.handle(
-    "qdrant:search-smart",
-    async (
-      _e,
-      args: {
-        collection: string;
-        query: string;
-        limit?: number;
-      },
-    ): Promise<Array<{ id: string; score: number; payload: Record<string, unknown>; rerankScore?: number }>> => {
-      if (!args || !args.collection || !args.query) return [];
-      try {
-        const collectionName = parseOrThrow(CollectionNameSchema, args.collection, "collection");
-        const prefs = await getPreferencesStore().getAll();
-        const limit = Math.max(1, Math.min(50, args.limit ?? prefs.qdrantSearchLimit));
-        const { searchSmart } = await import("../lib/rag/hybrid-search.js");
-        const results = await searchSmart(collectionName, args.query, limit, prefs.qdrantTimeoutMs);
-        return results.map((r) => ({
-          id: r.id,
-          score: r.score,
-          payload: r.payload,
-          ...(typeof r.rerankScore === "number" ? { rerankScore: r.rerankScore } : {}),
-        }));
-      } catch (e) {
-        console.error("[qdrant:search-smart]", e instanceof Error ? e.message : e);
-        return [];
-      }
-    },
   );
 
   ipcMain.handle(

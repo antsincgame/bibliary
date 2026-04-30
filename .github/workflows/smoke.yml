@@ -66,7 +66,4 @@ jobs:
           npx vitest run \
             tests/model-pool.test.ts \
             tests/qdrant-collection-config.test.ts \
-            tests/rag-reranker.test.ts \
-            tests/bm25-sparse.test.ts \
-            tests/hybrid-search-benchmark-self-check.test.ts \
             tests/illustration-semaphore.test.ts

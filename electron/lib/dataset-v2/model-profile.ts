@@ -98,11 +98,6 @@ async function loadCurated(): Promise<CuratedModel[]> {
   return [];
 }
 
-/** Тестовый хук — сбросить кеш (для unit-тестов). */
-export function clearModelProfileCache(): void {
-  CACHE.models = null;
-}
-
 /**
  * Подобрать профиль по modelKey. Сравнение строгое (modelKey === modelKey).
  *

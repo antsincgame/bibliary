@@ -261,43 +261,21 @@ async function runExtraction(
     const { fetchQdrantJson, QDRANT_URL } = await import("../lib/qdrant/http-client.js");
     const { EMBEDDING_DIM } = await import("../lib/scanner/embedding.js");
     const { ensureQdrantCollection } = await import("../lib/qdrant/collection-config.js");
-    const { bm25SparseVector } = await import("../lib/qdrant/bm25-sparse.js");
     console.log(`[extraction] Qdrant: ${QDRANT_URL} → collection "${targetCollection}" (dim=${EMBEDDING_DIM})`);
 
-    /* Пробуем понять, существует ли коллекция и какого она формата.
-       - Существующая legacy (unnamed) → используем unnamed upsert (back-compat).
-       - Существующая hybrid (named dense + sparse bm25) → используем hybrid upsert.
-       - Новая → создаём как HYBRID по умолчанию, чтобы наконец активировать
-         BM25 + RRF + BGE-rerank в продакшне.
-       Override через env BIBLIARY_DATASET_HYBRID=false (откат к unnamed). */
-    let collectionIsHybrid = false;
     try {
-      const info = await fetchQdrantJson<{
-        result: { config?: { params?: { sparse_vectors?: Record<string, unknown>; vectors?: unknown } } };
-      }>(`${QDRANT_URL}/collections/${targetCollection}`, { method: "GET", timeoutMs: 5_000 });
-      const sparse = info.result?.config?.params?.sparse_vectors;
-      collectionIsHybrid = !!sparse && typeof sparse === "object" && Object.keys(sparse).length > 0;
-      console.log(`[extraction] collection exists: hybrid=${collectionIsHybrid}`);
-    } catch (probeErr) {
-      /* Не существует — создаём. */
-      const wantHybrid = (process.env.BIBLIARY_DATASET_HYBRID ?? "true").toLowerCase() !== "false";
-      try {
-        await ensureQdrantCollection({
-          name: targetCollection,
-          vectorSize: EMBEDDING_DIM,
-          distance: "Cosine",
-          sparseVectors: wantHybrid,
-          hnsw: { m: 24, ef_construct: 128 },
-          payloadIndexes: [
-            { field: "bookSourcePath", type: "keyword" },
-            { field: "domain", type: "keyword" },
-          ],
-        });
-        collectionIsHybrid = wantHybrid;
-        console.log(`[extraction] collection created: hybrid=${collectionIsHybrid} (probe error: ${probeErr instanceof Error ? probeErr.message : probeErr})`);
-      } catch (createErr) {
-        console.warn(`[extraction] collection create failed (will try upsert anyway): ${createErr instanceof Error ? createErr.message : createErr}`);
-      }
+      await ensureQdrantCollection({
+        name: targetCollection,
+        vectorSize: EMBEDDING_DIM,
+        distance: "Cosine",
+        hnsw: { m: 24, ef_construct: 128 },
+        payloadIndexes: [
+          { field: "bookSourcePath", type: "keyword" },
+          { field: "domain", type: "keyword" },
+        ],
+      });
+    } catch (createErr) {
+      console.warn(`[extraction] collection create failed (will try upsert anyway): ${createErr instanceof Error ? createErr.message : createErr}`);
     }
 
     for (let ci = range.from; ci < Math.min(range.to, totalChapters); ci++) {
@@ -355,10 +333,6 @@ async function runExtraction(
       });
       warnings.push(...deltaRes.warnings);
 
-      /* Step 4 — upsert accepted deltas to Qdrant.
-         Формат vector зависит от типа коллекции:
-         - hybrid: { dense: [...], bm25: {indices, values} } — для searchHybridChunks
-         - legacy unnamed: [...] — для обратной совместимости. */
       for (const delta of deltaRes.accepted) {
         if (ctrl.signal.aborted) throw new Error("job aborted");
         let vector: number[];
@@ -371,20 +345,14 @@ async function runExtraction(
           stats.skipped++;
           continue;
         }
-        const upsertVector: unknown = collectionIsHybrid
-          ? {
-              dense: vector,
-              bm25: bm25SparseVector(`${delta.essence}\n${delta.cipher ?? ""}\n${delta.proof ?? ""}`),
-            }
-          : vector;
-        console.log(`[extraction] ✓ upsert → "${targetCollection}" id=${delta.id} domain=${delta.domain} tags=[${delta.tags.join(",")}] hybrid=${collectionIsHybrid}`);
+        console.log(`[extraction] ✓ upsert → "${targetCollection}" id=${delta.id} domain=${delta.domain} tags=[${delta.tags.join(",")}]`);
         await fetchQdrantJson(`${QDRANT_URL}/collections/${targetCollection}/points?wait=true`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             points: [{
               id: delta.id,
-              vector: upsertVector,
+              vector,
               payload: {
                 domain: delta.domain,
                 chapterContext: delta.chapterContext,

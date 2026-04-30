@@ -330,6 +330,3 @@ export async function chunkChapter(args: ChunkChapterArgs): Promise<SemanticChun
   console.log(`[chunker] ch${chapterIndex} result: ${chunks.length} chunks [${chunks.map(c => c.wordCount + "w").join(", ")}]`);
   return applyContextOverlap(chunks, overlap);
 }
-
-/** Exported for testing. */
-export const __testing__ = { splitByHeadings, findThematicBoundaries, cosine, wordCount, wordsOf };

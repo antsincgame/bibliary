@@ -6,7 +6,6 @@ import { DEFAULT_EMBED_MODEL, EMBEDDING_DIM, EMBED_MAX_INPUT_CHARS } from "./emb
 import { embedPassage } from "../embedder/shared.js";
 import { translateBookSections } from "../llm/translator.js";
 import { ensureQdrantCollection } from "../qdrant/collection-config.js";
-import { bm25SparseVector } from "../qdrant/bm25-sparse.js";
 
 const NON_RUSSIAN_BUT_TRANSLATABLE = /^(uk|be|kk|ky|tg)/i;
 
@@ -143,45 +142,14 @@ async function qdrantUpsertAdaptive(
   }
 }
 
-/**
- * Probe + create коллекцию. Новые коллекции создаются как hybrid (dense + BM25
- * sparse) по умолчанию. Существующие не трогаем.
- *
- * Возвращает `true` если коллекция hybrid (named dense + sparse bm25),
- * `false` если legacy unnamed.
- */
-async function ensureCollectionHybrid(
+async function ensureCollectionDense(
   url: string,
   collection: string,
-  apiKey: string | undefined,
-  signal?: AbortSignal,
-): Promise<boolean> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (apiKey) headers["api-key"] = apiKey;
-
-  const probe = await fetch(`${url}/collections/${encodeURIComponent(collection)}`, { headers, signal });
-  if (probe.ok) {
-    try {
-      const body = (await probe.json()) as {
-        result?: { config?: { params?: { sparse_vectors?: Record<string, unknown> } } };
-      };
-      const sparse = body.result?.config?.params?.sparse_vectors;
-      return !!sparse && typeof sparse === "object" && Object.keys(sparse).length > 0;
-    } catch {
-      return false;
-    }
-  }
-  if (probe.status !== 404) {
-    const txt = await probe.text().catch(() => "");
-    throw new Error(`qdrant probe ${probe.status}: ${txt.slice(0, 240)}`);
-  }
-
-  const wantHybrid = (process.env.BIBLIARY_INGEST_HYBRID ?? "true").toLowerCase() !== "false";
+): Promise<void> {
   await ensureQdrantCollection({
     name: collection,
     vectorSize: EMBEDDING_DIM,
     distance: "Cosine",
-    sparseVectors: wantHybrid,
     hnsw: { m: 24, ef_construct: 128 },
     payloadIndexes: [
       { field: "bookSourcePath", type: "keyword" },
@@ -190,7 +158,6 @@ async function ensureCollectionHybrid(
       { field: "language", type: "keyword" },
     ],
   }, url);
-  return wantHybrid;
 }
 
 export interface IngestResult {
@@ -255,9 +222,7 @@ export async function ingestBook(filePath: string, opts: IngestOptions): Promise
     return { bookTitle, totalChunks: 0, embedded: 0, upserted: 0, skipped: 0, warnings: parsed.metadata.warnings };
   }
 
-  const isHybrid = await ensureCollectionHybrid(
-    opts.qdrantUrl, opts.collection, opts.qdrantApiKey, opts.signal,
-  );
+  await ensureCollectionDense(opts.qdrantUrl, opts.collection);
 
   let processedSet = new Set<string>();
   if (opts.state) {
@@ -309,12 +274,9 @@ export async function ingestBook(filePath: string, opts: IngestOptions): Promise
       const truncated = c.text.length > EMBED_MAX_INPUT_CHARS ? c.text.slice(0, EMBED_MAX_INPUT_CHARS) : c.text;
       const denseVec = await embedPassage(truncated, model);
       embedded++;
-      const vector: unknown = isHybrid
-        ? { dense: denseVec, bm25: bm25SparseVector(c.text) }
-        : denseVec;
       buf.push({
         id: c.id,
-        vector,
+        vector: denseVec,
         payload: {
           bookTitle: c.bookTitle,
           bookAuthor: c.bookAuthor ?? null,

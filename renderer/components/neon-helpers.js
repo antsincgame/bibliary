@@ -4,9 +4,7 @@
  *
  * Reusable building blocks for Neon Wave Future design system:
  * - buildNeonHero()    -- hero section with sacred geometry background
- * - wrapSacredCard()   -- golden-bordered card with aura overlay
  * - neonDivider()      -- quantum gradient separator
- * - neonSpinner()      -- golden glow loading indicator
  */
 import { el } from "../dom.js";
 import { metatronCube, flowerOfLife, svgDataUrl } from "./sacred-geometry.js";
@@ -49,26 +47,7 @@ export function buildNeonHero({ title, subtitle, pattern = "metatron", actions }
   return hero;
 }
 
-/**
- * Wrap content nodes in a sacred-card container.
- * @param {Node|Node[]} children
- * @param {string} [extraClass]
- * @returns {HTMLElement}
- */
-export function wrapSacredCard(children, extraClass) {
-  const card = el("div", { class: `sacred-card${extraClass ? " " + extraClass : ""}` });
-  const list = Array.isArray(children) ? children : [children];
-  for (const c of list) if (c) card.appendChild(c);
-  return card;
-}
-
 /** Quantum gradient separator. */
 export function neonDivider() {
   return el("div", { class: "quantum-divider" });
 }
-
-/** Golden glow spinner for loading states. */
-export function neonSpinner() {
-  return el("div", { class: "glow-spinner" });
-}
-

@@ -26,9 +26,6 @@ const PROFILE_KEYS = [
   "ukrainianSpecialistModel", "ukrainianSpecialistModelFallbacks",
   "langDetectorModel", "langDetectorModelFallbacks",
   "visionModelKey", "visionModelFallbacks",
-  "visionMetaModel", "visionMetaFallbacks",
-  "visionOcrModel", "visionOcrFallbacks",
-  "visionIllustrationModel", "visionIllustrationFallbacks",
 ] as const satisfies readonly (keyof Preferences)[];
 
 /** Тип профиля: только whitelisted ключи. */

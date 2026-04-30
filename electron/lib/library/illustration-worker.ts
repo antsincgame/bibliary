@@ -238,9 +238,9 @@ export async function processIllustrations(
     if (resolved) modelKey = resolved.modelKey;
     /* Дополнительные кандидаты из CSV-fallback prefs (для retry в worker). */
     const prefs = await getPreferencesStore().getAll();
-    const fbCsv = prefs.visionIllustrationFallbacks?.trim() || prefs.visionModelFallbacks?.trim() || "";
+    const fbCsv = prefs.visionModelFallbacks?.trim() || "";
     if (fbCsv) {
-      fallbackModelKeys = fbCsv.split(",").map((s) => s.trim()).filter((k) => k && k !== modelKey);
+      fallbackModelKeys = fbCsv.split(",").map((s: string) => s.trim()).filter((k: string) => k && k !== modelKey);
     }
   } catch {
     /* resolver упал — попробуем legacy путь */
@@ -260,13 +260,6 @@ export async function processIllustrations(
    * bookDir — это author folder, поэтому title берём из exactPaths/book meta,
    * а basename(bookDir) используем только для legacy layout. */
   const bookTitle = exactPaths?.bookTitle ?? inferBookTitleFromDir(bookDir);
-
-  /* Feature-flagged CLIP indexing — отдельный шаг D после triage. */
-  let clipIndexingEnabled = false;
-  try {
-    const prefs = await getPreferencesStore().getAll();
-    clipIndexingEnabled = !!prefs.imageVectorIndexEnabled;
-  } catch { /* default disabled */ }
 
   let processed = 0;
   let skipped = 0;
@@ -367,57 +360,6 @@ export async function processIllustrations(
 
         // Step D: E5 text-vector indexing — ВСЕГДА (default-on).
         //
-        // E5-модель уже загружена для основной коллекции книг, поэтому это
-        // даёт нам поиск «найди иллюстрации про cache hierarchy» без новых
-        // зависимостей. Failure NON-FATAL — иллюстрация всё равно сохраняется
-        // в book.md и illustrations.json.
-        if (entry.sha256 && triage.description && triage.description.trim().length >= 5) {
-          try {
-            const { ensureIllustrationsTextCollection, indexIllustrationDescription } = await import(
-              "../qdrant/illustrations-text-index.js"
-            );
-            await ensureIllustrationsTextCollection();
-            await indexIllustrationDescription({
-              bookSourcePath: bookDir,
-              bookTitle: bookTitle ?? "",
-              sha256: entry.sha256,
-              score: triage.score,
-              description: triage.description,
-              caption: entry.caption ?? undefined,
-              illustrationId: entry.id,
-            });
-            onProgress?.(`[E5 Index] ${entry.id} indexed in bibliary_illustrations_text`);
-          } catch (e5Err) {
-            const msg = e5Err instanceof Error ? e5Err.message : String(e5Err);
-            onProgress?.(`[E5 Index] ${entry.id} failed (non-fatal): ${msg.slice(0, 120)}`);
-          }
-        }
-
-        // Step E: CLIP image vector indexing — ОПЦИОНАЛЬНО (feature-flagged).
-        // Включается prefs.imageVectorIndexEnabled когда нужен визуальный
-        // поиск, который E5 over description не покрывает.
-        if (clipIndexingEnabled && entry.sha256) {
-          try {
-            const { ensureIllustrationsCollection, indexIllustration } = await import(
-              "../qdrant/illustrations-index.js"
-            );
-            await ensureIllustrationsCollection();
-            await indexIllustration(blobPath, {
-              bookSourcePath: bookDir,
-              bookTitle: bookTitle ?? "",
-              sha256: entry.sha256,
-              mimeType: entry.mimeType,
-              score: triage.score,
-              description: triage.description,
-              caption: entry.caption ?? undefined,
-              illustrationId: entry.id,
-            });
-            onProgress?.(`[CLIP Index] ${entry.id} indexed in bibliary_illustrations`);
-          } catch (clipErr) {
-            const msg = clipErr instanceof Error ? clipErr.message : String(clipErr);
-            onProgress?.(`[CLIP Index] ${entry.id} failed (non-fatal): ${msg.slice(0, 120)}`);
-          }
-        }
       }
     } catch {
       errors++;

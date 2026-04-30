@@ -40,13 +40,3 @@ export const TRANSLATE_TO_RU_SYSTEM_PROMPT =
   "Output ONLY the translation. No commentary, no quotes, no explanations. " +
   "BAD: 'Here is the translation: ...' — never do this. " +
   "BAD: emitting Ukrainian letters (іїєґ) when target is Russian — never do this.";
-
-/**
- * Translator — English-direction.
- */
-export const TRANSLATE_TO_EN_SYSTEM_PROMPT =
-  "You are a professional translator. Translate the user's text into English. " +
-  "Preserve technical terms, proper names, code snippets, formulas and numbers exactly. " +
-  "Output ONLY the translation. No commentary, no quotes, no explanations. " +
-  "BAD: 'Here is the translation: ...' — never do this. " +
-  "BAD: leaving Cyrillic words untranslated when an English equivalent exists.";

@@ -15,7 +15,7 @@ import { selectForPreview } from "./preview.js";
 import { enqueueAndStart, cancelAll } from "./queue.js";
 
 export { renderPreview } from "./preview.js";
-export { loadCollections, loadPrefs };
+export { loadPrefs };
 
 function extBadge(ext) {
   const norm = String(ext || "").toLowerCase();
@@ -138,20 +138,6 @@ export function renderBooks(listEl, root) {
     const body = el("div", { class: "lib-group-body" });
     for (const b of books) body.appendChild(row(b, root));
     listEl.appendChild(el("div", { class: "lib-group" }, [head, body]));
-  }
-}
-
-async function loadCollections() {
-  try {
-    /** @type {string[]} */
-    const cols = await window.api.getCollections();
-    STATE.collections = cols;
-    if (!STATE.collection || !cols.includes(STATE.collection)) {
-      STATE.collection = cols[0] || "library";
-    }
-  } catch (_e) {
-    console.warn("[library] loadCollections failed:", _e);
-    STATE.collections = [];
   }
 }
 
@@ -307,14 +293,6 @@ export function buildLibrarySummary() {
     t("library.summary.queue") + " ",
     el("strong", { id: "lib-queue-count" }, "0"),
   ]);
-}
-
-export function buildOcrBadge() {
-  return STATE.prefs.ocrSupported
-    ? el("span", { class: "lib-ocr-badge lib-ocr-badge-ok", title: t("library.ocr.badge.ok.tooltip") },
-        t("library.ocr.badge.ok").replace("{platform}", STATE.prefs.ocrPlatform))
-    : el("span", { class: "lib-ocr-badge lib-ocr-badge-off", title: STATE.prefs.ocrReason || t("library.ocr.badge.off.tooltip") },
-        t("library.ocr.badge.off"));
 }
 
 /**

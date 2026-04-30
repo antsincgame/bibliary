@@ -69,14 +69,15 @@ export interface FallbackOptions<T> {
 }
 
 const PREF_KEYS: Record<ModelRole, { primary: string; fallback: string | null }> = {
-  crystallizer:         { primary: "extractorModel",          fallback: "extractorModelFallbacks" },
-  judge:                { primary: "judgeModel",              fallback: "judgeModelFallbacks" },
-  vision_meta:          { primary: "visionModelKey",          fallback: "visionModelFallbacks" },
-  vision_ocr:           { primary: "visionModelKey",          fallback: "visionModelFallbacks" },
-  evaluator:            { primary: "evaluatorModel",          fallback: "evaluatorModelFallbacks" },
+  crystallizer:         { primary: "extractorModel",           fallback: "extractorModelFallbacks" },
+  judge:                { primary: "judgeModel",               fallback: "judgeModelFallbacks" },
+  vision_meta:          { primary: "visionModelKey",           fallback: "visionModelFallbacks" },
+  vision_ocr:           { primary: "visionModelKey",           fallback: "visionModelFallbacks" },
+  vision_illustration:  { primary: "visionModelKey",           fallback: "visionModelFallbacks" },
+  evaluator:            { primary: "evaluatorModel",           fallback: "evaluatorModelFallbacks" },
   ukrainian_specialist: { primary: "ukrainianSpecialistModel", fallback: "ukrainianSpecialistModelFallbacks" },
-  lang_detector:        { primary: "langDetectorModel",       fallback: "langDetectorModelFallbacks" },
-  translator:           { primary: "translatorModel",         fallback: "translatorModelFallbacks" },
+  lang_detector:        { primary: "langDetectorModel",        fallback: "langDetectorModelFallbacks" },
+  translator:           { primary: "translatorModel",          fallback: "translatorModelFallbacks" },
 };
 
 /**

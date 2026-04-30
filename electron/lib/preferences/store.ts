@@ -20,13 +20,6 @@ export const PreferencesSchema = z.object({
   // -- RAG --
   ragTopK: z.number().int().min(1).max(100).default(15),
   ragScoreThreshold: z.number().min(0).max(1).default(0.55),
-  /**
-   * Включить cross-encoder rerank (BGE-reranker-large) поверх dense top-N.
-   * Cold-start модели ~5-15 сек, warm latency +2-3 сек на запрос. Качество
-   * +20-30% precision на технических запросах. Если железо слабое или
-   * пользователю нужен мгновенный ответ — выключи. По умолчанию включено.
-   */
-  ragRerankEnabled: z.boolean().default(true),
 
   // -- Scanner / Ingest --
   ingestParallelism: z.number().int().min(1).max(16).default(3),
@@ -132,26 +125,8 @@ export const PreferencesSchema = z.object({
   extractorModelFallbacks: z.string().default(""),
   judgeModelFallbacks: z.string().default(""),
   evaluatorModelFallbacks: z.string().default(""),
-  /**
-   * Legacy общий fallback для всех vision-ролей. Используется если конкретные
-   * visionMetaFallbacks/visionOcrFallbacks/visionIllustrationFallbacks пустые.
-   */
+  /** Fallback chain для vision-ролей (CSV modelKey1,modelKey2,...). */
   visionModelFallbacks: z.string().default(""),
-
-  // -- Vision-роли (split: meta / ocr / illustration). Каждая опционально --
-  /** Модель для извлечения метаданных книги с обложки. Пусто = legacy visionModelKey. */
-  visionMetaModel: z.string().default(""),
-  visionMetaFallbacks: z.string().default(""),
-  /** Модель для OCR сканированных страниц (DJVU/scanned PDF). Пусто = legacy visionModelKey. */
-  visionOcrModel: z.string().default(""),
-  visionOcrFallbacks: z.string().default(""),
-  /**
-   * Модель для описания иллюстраций (для индексации в Qdrant как RAG-контент).
-   * Здесь важна способность писать связное тематическое описание с привязкой
-   * к контексту главы. Пусто = legacy visionModelKey.
-   */
-  visionIllustrationModel: z.string().default(""),
-  visionIllustrationFallbacks: z.string().default(""),
   /**
    * Включить CLIP-векторизацию иллюстраций для multimodal-поиска.
    * При включении: после vision-triage иллюстрация дополнительно индексируется
@@ -277,7 +252,13 @@ export class FsPreferencesStore {
 
   async getAll(): Promise<Preferences> {
     const overrides = await this.readOverrides();
-    return { ...DEFAULTS, ...overrides };
+    const result = { ...DEFAULTS, ...overrides };
+
+    if (!result.visionModelKey) {
+      result.visionModelKey = await this.migrateLegacyVisionKey();
+    }
+
+    return result;
   }
 
   async get<K extends keyof Preferences>(key: K): Promise<Preferences[K]> {
@@ -308,6 +289,21 @@ export class FsPreferencesStore {
 
   invalidate(): void {
     this.cache = null;
+  }
+
+  /**
+   * Migration: read legacy split vision pref keys from raw JSON (bypassing Zod)
+   * and return the first non-empty one as the unified visionModelKey.
+   */
+  private async migrateLegacyVisionKey(): Promise<string> {
+    try {
+      const raw = await fs.readFile(this.file, "utf8");
+      const json = JSON.parse(raw) as { prefs?: Record<string, unknown> };
+      const p = json?.prefs ?? {};
+      return String(p.visionIllustrationModel || p.visionMetaModel || p.visionOcrModel || "");
+    } catch {
+      return "";
+    }
   }
 
   private async readOverrides(): Promise<Partial<Preferences>> {

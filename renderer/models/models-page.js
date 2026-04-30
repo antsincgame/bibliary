@@ -12,11 +12,12 @@ import {
 const REFRESH_MS = 8000;
 const TOAST_TTL_MS = 5000;
 
-/** Роли, отображаемые на странице моделей. */
+/** Роли, отображаемые на странице моделей.
+ * judge удалён — delta-extractor заменил отдельный judge-шаг 2 месяца назад.
+ * Сама дисциплина judge-bst остаётся в Olympics как sanity check. */
 const PIPELINE_ROLES = [
   "crystallizer",
   "evaluator",
-  "judge",
   "translator",
   "ukrainian_specialist",
   "lang_detector",
@@ -835,7 +836,7 @@ function prefKeyLabel(k) {
     translatorModel:          "Переводчик",
     langDetectorModel:        "Определитель языка",
     ukrainianSpecialistModel: "Украинская модель",
-    visionModelKey:           "Vision (OCR/обложки)",
+    visionModelKey:           "Vision (обложки / OCR / иллюстрации)",
   };
   return MAP[k] ?? k;
 }
@@ -850,9 +851,6 @@ function roleIcon(prefKey) {
     langDetectorModel:        "🔤",
     ukrainianSpecialistModel: "🇺🇦",
     visionModelKey:           "👁️",
-    visionMetaModel:          "📖",
-    visionOcrModel:           "🖨️",
-    visionIllustrationModel:  "🖼️",
   };
   return MAP[prefKey] ?? "🤖";
 }

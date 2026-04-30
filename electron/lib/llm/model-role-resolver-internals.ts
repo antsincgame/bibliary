@@ -10,6 +10,7 @@ export type ModelRole =
   | "judge"
   | "vision_meta"
   | "vision_ocr"
+  | "vision_illustration"
   | "evaluator"
   | "ukrainian_specialist"
   | "lang_detector"
@@ -30,6 +31,7 @@ export const ROLE_REQUIRED_CAPS_INTERNAL: Record<ModelRole, Capability[]> = {
   judge: [],
   vision_meta: ["vision"],
   vision_ocr: ["vision"],
+  vision_illustration: ["vision"],
   evaluator: [],
   ukrainian_specialist: [],
   lang_detector: [],

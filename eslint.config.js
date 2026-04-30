@@ -12,7 +12,6 @@ export default [
       "dist-portable/**",
       "out/**",
       "data/**",
-      "renderer/marked.umd.js", // vendor (3rd-party, не редактируем)
     ],
   },
   {
@@ -24,8 +23,6 @@ export default [
         ...globals.browser,
         // preload bridge (electron/preload.ts → contextBridge.exposeInMainWorld("api", …))
         api: "readonly",
-        // marked.umd.js устанавливает window.marked
-        marked: "readonly",
       },
     },
     rules: {

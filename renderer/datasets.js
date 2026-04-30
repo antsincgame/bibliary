@@ -8,8 +8,6 @@ import {
   recordDataset,
   onHistoryChange,
 } from "./datasets-history.js";
-import { buildHybridSearchPanel } from "./datasets/hybrid-search-panel.js";
-
 /**
  * Раздел «Датасеты» — простой список созданных датасетов с возможностью
  * посмотреть Q/A в человекочитаемом виде, поискать по тексту, открыть
@@ -505,10 +503,6 @@ export function mountDatasets(root) {
       buildList(),
       el("div", { class: "ds-detail", id: "ds-detail" }),
     ]),
-    /* Hybrid Search Panel — поиск по любой Qdrant-коллекции через
-       searchSmart (auto-detect: hybrid если коллекция поддерживает,
-       иначе dense+rerank). Доказательство end-to-end. */
-    buildHybridSearchPanel(),
   ]);
   root.append(layout);
 

@@ -24,11 +24,6 @@
  *   Для ролей vision_meta / vision_ocr / vision_illustration из кандидатов
  *   отбрасываются модели без `vision: true`.
  *
- * BACKWARD COMPAT:
- *   Если у роли нет своего prefs[<role>Model], резолвер ВНУТРЕННЕ читает
- *   общий `visionModelKey` (для всех vision_*). Так пользователь, не успевший
- *   разделить настройки, получает рабочую модель — без падения.
- *
  * КЭШ:
  *   Резолвед результаты кешируются в памяти на `prefs.modelRoleCacheTtlMs`
  *   (default 30 секунд). Кэш инвалидируется через `invalidate()` —
@@ -98,53 +93,31 @@ const ROLE_PREFERRED_CAPS: Record<ModelRole, Capability[]> = {
 
 /**
  * Какой preferences ключ хранит явный выбор пользователя для роли.
- *
- * Vision-роли разделены на три pref-ключа: visionMetaModel,
- * visionOcrModel, visionIllustrationModel — у каждой задачи своя оптимальная
- * модель (для обложек важна структурированность JSON, для OCR — точность
- * текста, для иллюстраций — описательность). Backward compat: если у роли
- * не задана своя pref — резолвер падает на общий `visionModelKey`.
+ * Все три vision-роли используют единый `visionModelKey`.
  */
 const ROLE_PREF_KEY: Record<ModelRole, string> = {
   crystallizer: "extractorModel",
   judge: "judgeModel",
-  vision_meta: "visionMetaModel",
-  vision_ocr: "visionOcrModel",
-  vision_illustration: "visionIllustrationModel",
+  vision_meta: "visionModelKey",
+  vision_ocr: "visionModelKey",
+  vision_illustration: "visionModelKey",
   evaluator: "evaluatorModel",
   ukrainian_specialist: "ukrainianSpecialistModel",
   lang_detector: "langDetectorModel",
   translator: "translatorModel",
 };
 
-/**
- * Backward-compat: если у vision-роли пустой prefs[<role>Model] — пробуем
- * общий ключ, чтобы существующие пользователи не получили nullable резолв.
- */
-const ROLE_LEGACY_PREF_KEY: Partial<Record<ModelRole, string>> = {
-  vision_meta: "visionModelKey",
-  vision_ocr: "visionModelKey",
-  vision_illustration: "visionModelKey",
-};
-
 /** CSV ключ для fallback chain. null = нет fallback chain. */
 const ROLE_FALLBACKS_PREF_KEY: Record<ModelRole, string | null> = {
   crystallizer: "extractorModelFallbacks",
   judge: "judgeModelFallbacks",
-  vision_meta: "visionMetaFallbacks",
-  vision_ocr: "visionOcrFallbacks",
-  vision_illustration: "visionIllustrationFallbacks",
+  vision_meta: "visionModelFallbacks",
+  vision_ocr: "visionModelFallbacks",
+  vision_illustration: "visionModelFallbacks",
   evaluator: "evaluatorModelFallbacks",
   ukrainian_specialist: "ukrainianSpecialistModelFallbacks",
   lang_detector: "langDetectorModelFallbacks",
   translator: "translatorModelFallbacks",
-};
-
-/** Backward-compat: общий fallback chain для vision-ролей. */
-const ROLE_LEGACY_FALLBACKS_KEY: Partial<Record<ModelRole, string>> = {
-  vision_meta: "visionModelFallbacks",
-  vision_ocr: "visionModelFallbacks",
-  vision_illustration: "visionModelFallbacks",
 };
 
 interface CacheEntry {
@@ -225,20 +198,7 @@ class ModelRoleResolverImpl {
       }
     }
 
-    /* 1b. Backward-compat: для новых vision-ролей читаем legacy
-     *     `visionModelKey`, если своего pref нет/не загружен. */
-    const legacyPrefKey = ROLE_LEGACY_PREF_KEY[role];
-    if (legacyPrefKey) {
-      const legacyVal = (prefs as Record<string, unknown>)[legacyPrefKey];
-      if (typeof legacyVal === "string" && legacyVal.trim()) {
-        const wanted = legacyVal.trim();
-        if (eligible.some((m) => m.modelKey === wanted)) {
-          return { modelKey: wanted, source: "preference", usedFallback: true };
-        }
-      }
-    }
-
-    /* 2. Fallback list (CSV) — роль-специфичный, потом legacy. */
+    /* 2. Fallback list (CSV). */
     const fbKey = ROLE_FALLBACKS_PREF_KEY[role];
     if (fbKey) {
       const fbVal = (prefs as Record<string, unknown>)[fbKey];
@@ -251,19 +211,6 @@ class ModelRoleResolverImpl {
         }
       }
     }
-    const legacyFbKey = ROLE_LEGACY_FALLBACKS_KEY[role];
-    if (legacyFbKey) {
-      const fbVal = (prefs as Record<string, unknown>)[legacyFbKey];
-      if (typeof fbVal === "string" && fbVal.trim()) {
-        const candidates = fbVal.split(",").map((s) => s.trim()).filter(Boolean);
-        for (const c of candidates) {
-          if (eligible.some((m) => m.modelKey === c)) {
-            return { modelKey: c, source: "fallback_list", usedFallback: true };
-          }
-        }
-      }
-    }
-
     /* 3. Auto-detect по preferred capabilities */
     const preferred = pickByPreferredCaps(eligible, ROLE_PREFERRED_CAPS[role]);
     if (preferred) {
@@ -330,10 +277,6 @@ export interface RoleMeta {
   fallbackKey: string | null;
   required: Capability[];
   preferred: Capability[];
-}
-
-export function getRolePrefKey(role: ModelRole): string {
-  return ROLE_PREF_KEY[role];
 }
 
 export function listAllRoles(): RoleMeta[] {

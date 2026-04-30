@@ -72,6 +72,9 @@ export function registerArenaIpc(): void {
         signal: ctrl.signal,
         onProgress: (ev) => send("arena:olympics-progress", ev),
       });
+      if (ctrl.signal.aborted) {
+        throw new Error("Olympics aborted by user");
+      }
       return report;
     } finally {
       unregisterOlympicsProbe();
@@ -102,7 +105,6 @@ export function registerArenaIpc(): void {
     const ALLOWED = new Set([
       "extractorModel", "judgeModel", "evaluatorModel", "translatorModel",
       "visionModelKey",
-      "visionMetaModel", "visionOcrModel", "visionIllustrationModel",
       "langDetectorModel", "ukrainianSpecialistModel",
     ]);
     const filtered: Partial<Preferences> = {};
