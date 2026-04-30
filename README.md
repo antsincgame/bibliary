@@ -1,157 +1,290 @@
 # Bibliary
 
-Vector knowledge base for UX, SEO, copywriting and UI design concepts.
-Stores expert knowledge as embeddings in Qdrant and serves it via RAG-augmented chat through LM Studio.
+> Персональная база знаний из книг. Загрузи тысячи PDF и DJVU — приложение само извлечёт из них принципы, идеи и факты, векторизует их и позволит искать по смыслу.
 
-## What's new in v2.7.0 (2026-04-24) — Library + Dataset Factory
+**Версия:** 0.2.8 · **Платформа:** Windows (portable .exe) · **Модели:** LM Studio (локально)
 
-Линия v2.7 закрыта одним релизом. Полный лог — [CHANGELOG.md](CHANGELOG.md).
+---
 
-- **File-System First Library** — `data/library/{id}/{original.{ext},book.md}` как
-  source of truth, SQLite (`bibliary-cache.db`) — rebuildable index.
-- **Pre-flight Evaluation** — Structural Surrogate (~3-4K слов) +
-  "Chief Epistemologist" LLM с CoT-парсером оценивает книгу за 10-30 сек **до**
-  тяжёлой crystallization. Пишет `quality_score`, `domain`, `tags`,
-  `is_fiction_or_water` в YAML frontmatter и SQLite-кэш.
-- **DataGrid Catalog UI** — компактная таблица с фильтрами Quality / Hide fiction;
-  пресеты Premium 86+ / Solid 70+ / Workable 50+; batch select + crystallize.
-- **Thematic Qdrant Collections** — `targetCollection` параметризован сквозь
-  pipeline: marketing / SEO / UX и т.п. изолированы от друг друга.
-- **Dataset Synthesis (Iter 8-9)** — `scripts/dataset-synth.ts` превращает
-  принятые концепты в ChatML JSONL; `--include-reasoning` сохраняет CoT для
-  R1-style premium distillation; **10 per-domain trainer prompts** с
-  longest-match keyword routing; `--list-presets` без LLM-вызова.
-- **Batch cancellation** — `dataset-v2:cancel-batch` корректно прерывает между
-  книгами; глобальные `unhandledRejection`/`uncaughtException` handlers и
-  per-book parse timeout (8 мин) в E2E пайплайне делают batch стабильным
-  даже на корявых PDF.
-- **Real Electron smoke-test** через `@playwright._electron` —
-  `npm run test:smoke` (~3 секунды; проверяет launch + preload + IPC shape).
-- **65 unit/integration тестов** (`npm test`) включая полный coverage
-  evaluator-queue (10 кейсов) и batch-runner (9 кейсов).
+## Что это такое
 
-### Migration
+Bibliary — десктопное Electron-приложение, которое превращает коллекцию книг в живую базу знаний. Вместо того чтобы читать книги вручную, вы указываете папку с файлами — программа парсит их, оценивает качество, извлекает структурированные знания с помощью локальных LLM и кладёт всё в векторную базу Qdrant. Потом по этой базе можно искать.
+
+**Для кого:** исследователи, аналитики, люди с большими книжными коллекциями, разработчики датасетов для дообучения LLM.
+
+---
+
+## Ключевые возможности
+
+### 📚 Библиотека
+- Импорт **PDF, DJVU, EPUB, DOCX, HTML, ZIP/RAR/7z** архивов с книгами
+- Автоматическое определение языка и дедупликация
+- OCR для сканированных PDF и DJVU (через системный OCR)
+- Трёхуровневый каскад парсинга: `pdf-inspector` → `edgeparse` → `pdfjs-dist`
+- Предварительная оценка книги (10–30 сек) перед тяжёлой обработкой — выбраковывает воду и беллетристику
+
+### 🧠 Извлечение знаний
+- **Кристаллизация** — LLM извлекает принципы, факты и связи из каждой главы
+- Топологическое извлечение: не просто факты, а граф событий → причин → следствий
+- Поддержка reasoning-моделей (Qwen3, GLM-4, DeepSeek-R1): автоматически убирает `<think>` блоки перед оценкой
+
+### 🔍 Поиск
+- Семантический поиск по векторам в Qdrant
+- Текстовый поиск по описаниям иллюстраций (E5-модель, 384-dims)
+- Поиск по изображениям — готово к подключению CLIP
+
+### 🏆 Олимпиада моделей
+- Автоматический турнир: каждая загруженная в LM Studio модель проходит ~29 испытаний по 10 ролям пайплайна
+- Роли: кристаллизатор, оценщик, судья, переводчик, детектор языка, украинский специалист, vision-роли
+- По итогам автоматически назначает лучшую модель на каждую роль
+- Поддержка LM Studio SDK: полный контроль GPU offload, контекст, flash attention для каждой роли
+
+### 📊 Датасеты
+- Генерация ChatML JSONL датасетов для дообучения LLM из накопленных знаний
+- T1/T2/T3 уровни сложности на каждый чанк
+- Поддержка reasoning-трейсов (R1-style)
+
+### 🔭 Поиск книг
+- BookHunter: автоматический поиск книг по названию и автору через открытые источники
+
+---
+
+## Архитектура
+
+```
+bibliary/
+├── electron/              # Main process (Node.js + Electron)
+│   ├── main.ts            # Точка входа, регистрация IPC
+│   ├── preload.ts         # Безопасный мост renderer ↔ main
+│   ├── ipc/               # IPC-обработчики (library, arena, dataset, qdrant...)
+│   └── lib/
+│       ├── library/       # Импорт, парсинг, хранилище книг
+│       ├── llm/           # LM Studio клиент, роли, Олимпиада
+│       │   └── arena/     # olympics.ts, disciplines.ts, scoring.ts, lms-client.ts
+│       ├── scanner/       # Парсеры форматов (PDF, DJVU, EPUB, HTML...)
+│       ├── embedder/      # Векторизация текста и изображений
+│       ├── qdrant/        # Клиент Qdrant, коллекции
+│       ├── dataset-v2/    # Пайплайн генерации датасетов
+│       ├── preferences/   # Настройки (Zod-схема, SQLite)
+│       └── resilience/    # Atomic-write, file-lock, watchdog, checkpoint
+├── renderer/              # Frontend (Vanilla JS, без фреймворков)
+│   ├── library/           # UI библиотеки и каталога
+│   ├── models/            # UI выбора моделей и Олимпиады
+│   ├── locales/           # Локализация (ru, en)
+│   └── styles.css
+├── tests/                 # 60+ unit и integration тестов
+│   └── smoke/             # Electron smoke-тесты через Playwright
+├── scripts/               # CLI утилиты и E2E тесты
+└── data/                  # Данные (библиотека, кэш, чекпоинты)
+    └── library/{id}/      # original.{ext} + book.md + metadata
+```
+
+### Поток данных
+
+```
+Папка с файлами
+      │
+      ▼
+  Импорт + парсинг (3-уровневый каскад)
+      │
+      ▼
+  Предоценка книги (LLM, ~30 сек) ─── плохое качество/вода → пропуск
+      │
+      ▼
+  Кристаллизация (LLM извлекает принципы по главам)
+      │
+      ▼
+  Векторизация (E5 + опционально CLIP для картинок)
+      │
+      ▼
+  Qdrant (коллекции по тематикам)
+      │
+      ▼
+  Семантический поиск
+```
+
+---
+
+## Требования
+
+| Компонент | Версия | Назначение |
+|-----------|--------|------------|
+| [LM Studio](https://lmstudio.ai/) | 0.3+ | Локальный инференс LLM |
+| [Qdrant](https://qdrant.tech/) | 1.7+ | Векторная база данных |
+| [Docker](https://www.docker.com/) | любая | Для запуска Qdrant |
+| Node.js | 18+ | Для сборки из исходников |
+| Windows | 10/11 x64 | Портабельная версия |
+
+**Минимальное железо:** 8 GB RAM, GPU не обязателен (но сильно ускоряет).  
+**Рекомендуемое:** 16 GB RAM, GPU с 6+ GB VRAM (для S/M-class моделей).
+
+---
+
+## Быстрый старт
+
+### Вариант 1: Портабельный .exe (рекомендуется)
+
+1. Скачайте `Bibliary 0.2.8.exe` из [Releases](https://github.com/antsincgame/bibliary/releases)
+2. Запустите LM Studio, загрузите любую модель
+3. Запустите Qdrant:
+   ```bash
+   docker run -p 6333:6333 qdrant/qdrant
+   ```
+4. Запустите `Bibliary 0.2.8.exe` — всё готово
+
+### Вариант 2: Из исходников
 
 ```bash
-npm install            # обновляет playwright + @electron/rebuild deps
-npm run electron:dev   # data/library/ создаётся при первом импорте книг
-```
+# Клонируем репозиторий
+git clone https://github.com/antsincgame/bibliary.git
+cd bibliary
 
-Полный roadmap — [docs/ROADMAP-TO-MVP.md](docs/ROADMAP-TO-MVP.md).
-Состояние проекта — [docs/STATE-OF-PROJECT.md](docs/STATE-OF-PROJECT.md).
-
-## Architecture
-
-```
-src/                   TypeScript core — embedding, loading, search, RAG chat
-electron/              Electron desktop app (main process, IPC, preload)
-electron/lib/
-  ├─ resilience/       Phase 2.5R — общая платформа отказоустойчивости
-  │                    (atomic-write, file-lock, checkpoint-store, telemetry,
-  │                     batch-coordinator, watchdog, lm-request-policy)
-  ├─ token/            TokenBudgetManager + JSON-Schema + ContextOverflowGuard
-  └─ prompts/          FsPromptStore (data/prompts/*.json/md, editable из UI)
-electron/defaults/     Bundled дефолтные prompts (копируются при первом запуске)
-renderer/              Frontend — HTML/CSS/JS chat UI
-renderer/components/   resume-banner, resilience-bar (UI Phase 2.5R)
-scripts/               CLI utilities (export, dedup, inventory)
-scripts/test-*.ts      Acceptance-tests resilience-блока (см. ниже)
-scripts/test-lib/      Mock LM Studio HTTP server для тестов
-data/concepts/         JSON concept files (the knowledge base)
-data/finetune/         Dataset workspace (chunks, batches, gold, checkpoints)
-data/telemetry.jsonl   Structured event log (rotating > 50 МБ)
-data/prompts/          User-editable prompts (mechanicus + dataset-roles)
-docs/RESILIENCE.md     Подробное описание Resilience Layer
-```
-
-См. [docs/RESILIENCE.md](docs/RESILIENCE.md) для полной картины Phase 2.5R.
-
-## Prerequisites
-
-- [Docker](https://docs.docker.com/get-docker/) (for Qdrant)
-- [LM Studio](https://lmstudio.ai/) (local LLM inference)
-- Node.js 20+
-
-## Quick start
-
-```bash
-# 1. Start Qdrant
-docker compose up -d
-
-# 2. Install dependencies
+# Устанавливаем зависимости
 npm install
 
-# 3. Create .env from template
+# Копируем конфиг
 cp .env.example .env
+# Отредактируйте .env если Qdrant или LM Studio запущены не на стандартных портах
 
-# 4. Initialize collection and load concepts
-npm run init
-npm run load -- data/concepts/some-file.json
-
-# 5. Search or chat
-npm run search -- "responsive navigation patterns"
-npm run chat
+# Запускаем в режиме разработки
+npm run electron:dev
 ```
 
-## Electron app
+### Конфигурация (.env)
+
+```env
+QDRANT_URL=http://localhost:6333      # URL Qdrant
+QDRANT_API_KEY=                       # API ключ (опционально)
+QDRANT_COLLECTION=concepts            # Имя коллекции по умолчанию
+LM_STUDIO_URL=http://localhost:1234   # URL LM Studio
+BIBLIARY_GOOGLE_BOOKS_API_KEY=        # Google Books API (опционально)
+```
+
+---
+
+## Использование
+
+### 1. Импорт книг
+
+Откройте раздел **Библиотека → Импорт**, укажите папку с книгами. Поддерживаются:
+- `PDF` — полнотекстовый и сканированный (OCR)
+- `DJVU` — только с OCR
+- `EPUB`, `DOCX`, `HTML`
+- `ZIP`, `RAR`, `7z` — архивы с книгами внутри
+
+Индикатор показывает текущий файл в процессе. Тяжёлые файлы (сканы) занимают дольше.
+
+### 2. Выбор моделей
+
+Откройте раздел **Модели**. Здесь два блока:
+
+**Роли пайплайна** — вручную назначьте модель на каждую роль:
+- `Кристаллизатор` — извлекает знания
+- `Оценщик` — оценивает качество книги
+- `Судья` — финальная оценка концептов
+- `Переводчик` — переводит концепты
+- `Детектор языка` — определяет язык текста
+- `Украинский специалист` — работа с украинскими текстами
+- `Vision (обложка/OCR/иллюстрации)` — анализ изображений
+
+**Олимпиада** — автоматический подбор лучшей модели на каждую роль:
+1. Загрузите в LM Studio несколько моделей
+2. Нажмите **Запустить Олимпиаду**
+3. Через 1–10 минут лучшие модели автоматически назначатся на роли
+
+Настройки Олимпиады сохраняются между сессиями.
+
+### 3. Кристаллизация
+
+После импорта выберите книги в каталоге и запустите **Кристаллизовать**. LLM прочитает каждую главу и извлечёт структурированные принципы, которые уйдут в Qdrant.
+
+### 4. Поиск
+
+Введите запрос в строку поиска. Поиск идёт по семантическому смыслу, не по ключевым словам.
+
+---
+
+## Разработка
 
 ```bash
-npm run electron:dev     # development
-npm run electron:build   # production build (.exe)
+# Запуск тестов
+npm test                    # все unit-тесты
+npm run test:smoke          # Electron smoke-тесты через Playwright
+npm run typecheck           # TypeScript проверка без компиляции
+npm run lint                # ESLint
+
+# Сборка
+npm run electron:build              # production build (installer)
+npm run electron:build-portable     # portable .exe
 ```
 
-## Dataset generator
+### Структура тестов
 
-Превращает `source-chunks.json` в JSONL-датасет (T1/T2/T3 на каждый chunk) для fine-tuning.
-
-```bash
-# UI (через Electron) или CLI:
-npx tsx scripts/generate-batch.ts --batch-size 15 --delay-ms 0 --few-shot 2 --context 32768
+```
+tests/
+├── smoke/                  # Electron smoke (запуск, IPC, preload)
+├── olympics-*.test.ts      # Олимпиада (scoring, lifecycle, SDK, thinking)
+├── library-*.test.ts       # Импорт, дедупликация, хранилище
+├── parsers-*.test.ts       # Форматы (PDF, HTML)
+├── delta-extractor-*.test.ts  # Извлечение знаний
+└── ...                     # 60+ тестов суммарно
 ```
 
-UI и CLI используют **общий engine** — `dataset-generator.ts` поверх Phase 2.5R платформы.
-Ключевые гарантии: per-chunk atomic save, mid-batch resume, watchdog при offline LM Studio,
-graceful shutdown с non-zero exit code при потере данных.
+### Ключевые модули
 
-Подробности — [docs/RESILIENCE.md](docs/RESILIENCE.md).
+| Файл | Назначение |
+|------|------------|
+| `electron/lib/llm/arena/olympics.ts` | Оркестрация Олимпиады |
+| `electron/lib/llm/arena/lms-client.ts` | LM Studio клиент (REST + SDK) |
+| `electron/lib/llm/arena/disciplines.ts` | Испытания и скоринг |
+| `electron/lib/library/import.ts` | Пайплайн импорта |
+| `electron/lib/scanner/parsers/` | Парсеры форматов |
+| `electron/lib/preferences/store.ts` | Настройки (Zod-схема) |
+| `electron/ipc/index.ts` | Регистрация IPC-обработчиков |
+| `renderer/models/models-page.js` | UI Моделей и Олимпиады |
+| `renderer/library.js` | UI Библиотеки |
 
-## Acceptance tests (Phase 2.5R)
+---
 
-```bash
-npx tsx scripts/test-platform.ts          # 12 — atomic, lock, checkpoint, telemetry
-npx tsx scripts/test-token.ts             # 16 — budget, GBNF schema, overflow-guard
-npx tsx scripts/test-resume-batch.ts      # 9  — startBatch, append, integrity recovery, race
-npx tsx scripts/test-graceful-shutdown.ts # 4  — flushAll ok / timeout / empty
-npx tsx scripts/test-watchdog.ts          # 5  — через mock LM Studio (~35s)
-npx tsx scripts/test-roles-shape.ts [N]   # требует живой LM Studio + загруженная модель
-```
+## Известные ограничения
 
-41 unit-тест без LM Studio + 1 интеграционный с живым LLM. Все скрипты возвращают exit 0
-при успехе, 1 при провале — пригодно для CI.
+- **Windows only** — портабельная сборка только под x64 Windows. macOS/Linux теоретически возможны из исходников, но не тестировались.
+- **LM Studio обязателен** — приложение не имеет встроенного инференса, работает только с локальным LM Studio.
+- **Qdrant обязателен** — без него поиск и кристаллизация недоступны. Достаточно запустить через Docker.
+- **OCR медленный** — сканированные DJVU/PDF с OCR обрабатываются медленно (минуты на книгу). Можно отключить OCR при импорте.
+- **CLIP поиск по картинкам** — функция в разработке, сейчас поиск по изображениям работает через текстовое описание (E5).
 
-## Data scripts
+---
 
-| Command | Description |
-|---------|-------------|
-| `npm run export` | Export all Qdrant points to `data/_export-all.json` |
-| `npm run duplicates` | Find near-duplicate concepts by vector similarity |
-| `npm run inventory` | Generate `data/_inventory.md` from exported data |
-| `npm run generate-batch` | CLI dataset generator (см. выше) |
-| `npm run validate-batch` | Валидация JSONL батча против схемы |
+## Changelog
 
-## Concept schema
+Полный список изменений: [CHANGELOG.md](CHANGELOG.md)
 
-Each concept is a JSON object validated by Zod:
+**v0.2.8** (2026-04-30)
+- Восстановлен пайплайн импорта (DJVU OCR не блокирует очередь)
+- Исправлен UI-баг: открытая книга больше не "следует" за пользователем при смене раздела
+- Добавлена real-time индикация файла в процессе (`file-start` фаза)
+- Синхронизированы роли пайплайна в UI Моделей (vision_meta, vision_ocr, vision_illustration)
+- Настройки Олимпиады сохраняются между сессиями
+- Исправлена утечка IPC-слушателей при переключении языка
 
-```json
-{
-  "principle": "Action-oriented rule (3-300 chars)",
-  "explanation": "MECHANICUS-encoded instruction (10-2000 chars)",
-  "domain": "ui | ux | web | mobile | seo | copy | perf | arch | research",
-  "tags": ["kebab-case", "specific", "subtopic"]
-}
-```
+**v0.2.7** (2026-04-29)
+- LM Studio SDK integration: per-role GPU offload, context, flash attention
+- Исправлен баг 0/100 для reasoning-моделей (Qwen3, GLM-4, DeepSeek-R1)
+- `stripThinkingBlock` поддерживает `<think>` и `<thinking>` теги
+- Масштабирование maxTokens для thinking-моделей (4x overhead)
+- Рефакторинг `olympics.ts` → 4 модуля
 
-## License
+---
 
-MIT
+## Лицензия
+
+MIT — используйте, форкайте, встраивайте.
+
+---
+
+## Автор
+
+Сделано с упрямством исследователя. Если у вас большая книжная коллекция и вы хотите из неё сделать что-то полезное — это инструмент для вас.
+
+[GitHub](https://github.com/antsincgame/bibliary) · Issues приветствуются
