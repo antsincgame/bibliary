@@ -2,7 +2,7 @@
 
 > Персональная база знаний из книг. Загрузи тысячи PDF и DJVU — приложение само извлечёт из них принципы, идеи и факты, векторизует их и позволит искать по смыслу.
 
-**Версия:** 0.3.0 · **Платформа:** Windows (portable .exe) · **Модели:** LM Studio (локально)
+**Версия:** 0.3.1 · **Платформа:** Windows (portable .exe) · **Модели:** LM Studio (локально)
 
 ---
 
@@ -124,13 +124,13 @@ bibliary/
 
 ### Вариант 1: Портабельный .exe (рекомендуется)
 
-1. Скачайте `Bibliary 0.3.0.exe` из [Releases](https://github.com/antsincgame/bibliary/releases)
+1. Скачайте `Bibliary 0.3.1.exe` из [Releases](https://github.com/antsincgame/bibliary/releases)
 2. Запустите LM Studio, загрузите любую модель
 3. Запустите Qdrant:
    ```bash
    docker run -p 6333:6333 qdrant/qdrant
    ```
-4. Запустите `Bibliary 0.3.0.exe` — всё готово
+4. Запустите `Bibliary 0.3.1.exe` — всё готово
 
 ### Вариант 2: Из исходников
 
@@ -259,6 +259,10 @@ tests/
 ## Changelog
 
 Полный список изменений: [CHANGELOG.md](CHANGELOG.md)
+
+**v0.3.1** (2026-04-30)
+- Code review: удалены 3 dead test-helper экспорта (`tokenizeForBM25`, `_resetPdfInspectorCacheForTests`, `parseFrontmatter` re-export из `evaluator-queue`)
+- Подчищены устаревшие комментарии после обрезки RAG/help-kb стека (`tokenize.ts`, `model-profile.ts`)
 
 **v0.3.0** (2026-04-30)
 - Удалён весь RAG/hybrid/BGE-rerank/BM25-sparse стек — поиск теперь dense-only через Qdrant

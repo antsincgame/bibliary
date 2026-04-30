@@ -65,7 +65,7 @@ const CACHE: { models: CuratedModel[] | null } = { models: null };
 
 /**
  * Несколько кандидатов на расположение bundled defaults — порядок важен.
- * Совпадает с paths из concept-extractor.ts / judge.ts для единого поиска.
+ * Используется единый список путей по всему пайплайну dataset-v2.
  */
 function curatedCandidates(): string[] {
   const candidates: string[] = [];

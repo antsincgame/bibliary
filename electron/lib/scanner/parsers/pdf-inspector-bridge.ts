@@ -73,7 +73,3 @@ export function getPdfInspectorLoadError(): string | null {
   return _cached?.reason ?? null;
 }
 
-/** Тестовый хук: сбросить мемоизацию между unit-тестами. */
-export function _resetPdfInspectorCacheForTests(): void {
-  _cached = null;
-}

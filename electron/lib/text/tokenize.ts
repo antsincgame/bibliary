@@ -1,17 +1,14 @@
 /**
  * Unified Unicode-aware text tokenization for Bibliary.
  *
- * Раньше в проекте было **3 разных реализации** одного приёма:
- *   - `electron/lib/library/import-candidate-filter.ts:tokenize` — min 3, Set
- *   - `scripts/e2e-bibliarifull-bundle-import.ts:tokenize` — локальный дубль
- *
- * Все три делали одно и то же:
+ * Раньше в проекте было несколько разных реализаций одного приёма
+ * (`import-candidate-filter`, e2e-скрипты). Все они делали одно и то же:
  *   1. lowercase
  *   2. split по `[^\p{L}\p{N}]+` (любые буквы и цифры из любого языка)
  *   3. фильтр по длине
  *
- * Решение: один низкоуровневый `unicodeTokenize(text, opts)` + три тонких
- * враппера-helper'а с дефолтами под use-case.
+ * Решение: один низкоуровневый `unicodeTokenize(text, opts)` + тонкие
+ * враппер-helper'ы с дефолтами под use-case.
  *
  * Свойства:
  *   - Multilingual из коробки (ru/en/uk/de/fr/中文/...)
@@ -68,14 +65,6 @@ export function unicodeTokenize(text: string, opts: TokenizeOptions = {}): strin
  */
 export function tokenizeToSet(text: string, opts: TokenizeOptions = {}): Set<string> {
   return new Set(unicodeTokenize(text, { minLen: 3, ...opts }));
-}
-
-/**
- * Compatibility re-export для bm25-sparse.ts (min=2 — нужно ловить "is", "to").
- * Возвращает массив с дубликатами (term frequency считается caller'ом).
- */
-export function tokenizeForBM25(text: string): string[] {
-  return unicodeTokenize(text, { minLen: 2, maxLen: 64, lowercase: true });
 }
 
 /**

@@ -679,6 +679,3 @@ export function _resetEvaluatorForTests(): void {
 export function _setEvaluatorDepsForTests(overrides: Partial<EvaluatorDeps>): void {
   deps = { ...deps, ...overrides };
 }
-
-/* Re-export parser helper -- удобно для тестов. */
-export { parseFrontmatter };
