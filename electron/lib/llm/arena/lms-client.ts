@@ -496,9 +496,17 @@ export async function lmsChat(
       usage?: { total_tokens?: number };
     };
     const choice = j.choices?.[0]?.message;
-    const raw = (choice?.content ?? choice?.reasoning_content ?? "").trim();
-    const content = opts.postProcess ? opts.postProcess(raw) : raw;
-    return { content, durationMs: Date.now() - t0, totalTokens: j.usage?.total_tokens ?? 0, ok: true };
+    /* `||` вместо `??`: thinking-модели (Qwen3, GLM-4) могут возвращать
+     * content="" и всё полезное в reasoning_content. `??` не спасает от "". */
+    const rawContent = (choice?.content || choice?.reasoning_content || "").trim();
+    /* Если postProcess (stripThinkingBlock) обнулил ответ, но reasoning_content
+     * содержит полезные данные — используем его как fallback. */
+    let processed = opts.postProcess ? opts.postProcess(rawContent) : rawContent;
+    if (!processed && rawContent !== processed) {
+      const rc = (choice?.reasoning_content || "").trim();
+      if (rc) processed = opts.postProcess ? opts.postProcess(rc) : rc;
+    }
+    return { content: processed, durationMs: Date.now() - t0, totalTokens: j.usage?.total_tokens ?? 0, ok: true };
   } catch (e) {
     return { content: "", durationMs: Date.now() - t0, totalTokens: 0, ok: false, error: e instanceof Error ? e.message : String(e) };
   } finally {

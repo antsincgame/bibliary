@@ -167,6 +167,151 @@ test("runOlympics: /api/v1/models/load body содержит ТОЛЬКО вал
   }
 });
 
+/* ── Regression: thinking-модели с content="" и reasoning_content ────────── */
+
+test("lmsChat: content='' + reasoning_content → использует reasoning_content (thinking model)", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/v1/chat/completions")) {
+      return Response.json({
+        choices: [{
+          message: {
+            content: "",
+            reasoning_content: '{"facts":["Mars landing"],"entities":[{"name":"Curiosity","type":"rover"}]}',
+          },
+        }],
+        usage: { total_tokens: 42 },
+      });
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as typeof fetch;
+
+  try {
+    const { lmsChat } = await import("../electron/lib/llm/arena/lms-client.ts");
+    const r = await lmsChat("http://test-lms", "thinking-model", "sys", "user", {});
+    assert.equal(r.ok, true);
+    assert.ok(r.content.length > 0, `content should not be empty, got: "${r.content}"`);
+    assert.ok(r.content.includes("Mars"), `reasoning_content should be used, got: "${r.content}"`);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("lmsChat: stripThinkingBlock empties content → falls back to reasoning_content", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/v1/chat/completions")) {
+      return Response.json({
+        choices: [{
+          message: {
+            content: "<think>I need to analyze this carefully...</think>",
+            reasoning_content: "A",
+          },
+        }],
+        usage: { total_tokens: 30 },
+      });
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as typeof fetch;
+
+  try {
+    const { lmsChat } = await import("../electron/lib/llm/arena/lms-client.ts");
+    const { stripThinkingBlock } = await import("../electron/lib/llm/arena/disciplines.ts");
+    const r = await lmsChat("http://test-lms", "thinking-model", "sys", "user", {
+      postProcess: stripThinkingBlock,
+    });
+    assert.equal(r.ok, true);
+    assert.equal(r.content, "A", `after strip+fallback should get "A", got: "${r.content}"`);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+/* ── Regression: thinking overhead multiplier для reasoning моделей ────── */
+
+test("runOlympics: reasoning model gets increased maxTokens (thinking overhead)", async () => {
+  clearOlympicsCache();
+  const chatMaxTokens: Map<string, number> = new Map();
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/api/v1/models") && (!init?.method || init.method === "GET")) {
+      return Response.json({
+        models: [{
+          key: "thinking-model-4b",
+          type: "llm",
+          publisher: "test",
+          display_name: "thinking-model-4b",
+          architecture: "qwen3",
+          quantization: { name: "Q4_K_M", bits_per_weight: 4 },
+          size_bytes: 2_000_000_000,
+          params_string: "4B",
+          loaded_instances: [],
+          max_context_length: 4096,
+          format: "gguf",
+          capabilities: { vision: false, trained_for_tool_use: false, reasoning: { allowed_options: ["on","off"], default: "on" } },
+          description: null,
+        }, {
+          key: "normal-model-4b",
+          type: "llm",
+          publisher: "test",
+          display_name: "normal-model-4b",
+          architecture: "gemma",
+          quantization: { name: "Q4_K_M", bits_per_weight: 4 },
+          size_bytes: 2_000_000_000,
+          params_string: "4B",
+          loaded_instances: [],
+          max_context_length: 4096,
+          format: "gguf",
+          capabilities: { vision: false, trained_for_tool_use: false },
+          description: null,
+        }],
+      });
+    }
+    if (url.endsWith("/api/v1/models/load")) {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { model?: string };
+      return Response.json({ instance_id: `inst-${body.model}` });
+    }
+    if (url.endsWith("/api/v1/models/unload")) return Response.json({ ok: true });
+    if (url.endsWith("/v1/chat/completions")) {
+      const bodyStr = typeof init?.body === "string" ? init.body : "{}";
+      const body = JSON.parse(bodyStr) as { max_tokens?: number; model?: string };
+      if (body.model && typeof body.max_tokens === "number") {
+        chatMaxTokens.set(body.model, body.max_tokens);
+      }
+      return Response.json({
+        choices: [{ message: { content: "A" } }],
+        usage: { total_tokens: 2 },
+      });
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as typeof fetch;
+
+  try {
+    await runOlympics({
+      models: ["thinking-model-4b", "normal-model-4b"],
+      disciplines: ["judge-bst"],
+      lmsUrl: "http://test-lms",
+    });
+
+    const thinkingMax = chatMaxTokens.get("thinking-model-4b");
+    const normalMax = chatMaxTokens.get("normal-model-4b");
+    assert.ok(thinkingMax !== undefined, `thinking model chat not found. Map keys: [${[...chatMaxTokens.keys()]}]`);
+    assert.ok(normalMax !== undefined, `normal model chat not found. Map keys: [${[...chatMaxTokens.keys()]}]`);
+    assert.ok(
+      thinkingMax! > normalMax!,
+      `thinking model maxTokens (${thinkingMax}) should be > normal (${normalMax})`,
+    );
+    assert.equal(normalMax, 16, "judge-bst base maxTokens=16");
+    assert.equal(thinkingMax, 64, "judge-bst × 4 overhead = 64");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("runOlympics treats an explicit empty role selection as no disciplines", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL) => {

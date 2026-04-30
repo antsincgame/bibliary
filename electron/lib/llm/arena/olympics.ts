@@ -595,25 +595,33 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
 
         opts.onProgress?.({ type: "olympics.discipline.start", discipline: d.id, role: d.role });
 
-        const useReasoning = reasoningCapableKeys.has(modelKey) && d.role === "crystallizer";
+        const isReasoning = reasoningCapableKeys.has(modelKey);
+        const useReasoning = isReasoning && d.role === "crystallizer";
         /* Per-role inference defaults — only when feature flag enabled.
          * Otherwise legacy: temp=0.6 для reasoning crystallizer, 0.2 иначе. */
         let temperature: number;
         let topP: number | undefined;
         if (roleLoadConfigEnabled && d.role !== "vision") {
           const inf = getRoleInferenceDefaults(d.role as ModelRole);
-          /* Reasoning models на crystallizer всё равно получают 0.6 для CoT —
-           * перебивает дисциплинарный default 0.1. */
           temperature = useReasoning ? Math.max(inf.temperature, 0.6) : inf.temperature;
           topP = inf.topP;
         } else {
           temperature = useReasoning ? 0.6 : 0.2;
           topP = undefined;
         }
+
+        /* Thinking/reasoning модели (Qwen3, GLM-4, DeepSeek-R1) вставляют
+         * <think>…</think> блок ПЕРЕД ответом, расходуя ~60-80% max_tokens.
+         * Без overhead модель с maxTokens=16 тратит ВСЕ токены на <think> и
+         * не успевает сгенерировать ответ → score=0. Множитель 4x даёт запас
+         * для thinking + полноценного ответа. */
+        const thinkingOverhead = isReasoning ? 4 : 1;
+        const effectiveMaxTokens = Math.min(d.maxTokens * thinkingOverhead, 4096);
+
         const r = await lmsChat(lmsUrl, modelKey, d.system, d.user, {
           temperature,
           topP,
-          maxTokens: d.maxTokens,
+          maxTokens: effectiveMaxTokens,
           timeoutMs: opts.perDisciplineTimeoutMs ?? 90_000,
           signal: opts.signal,
           imageUrl: d.imageUrl,
@@ -639,8 +647,13 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
         };
         disciplineResults.get(d.id)!.push(result);
 
-        log("debug", `${d.id} → ${modelKey}: score=${s.toFixed(2)} ${r.durationMs}ms`, {
-          ok: r.ok, tokens: r.totalTokens,
+        if (s === 0 && r.ok) {
+          log("warn", `${d.id} → ${modelKey}: score=0 при ok=true! content(${r.content.length}ch): "${r.content.slice(0, 120)}"`, {
+            tokens: r.totalTokens, isReasoning, effectiveMaxTokens, originalMaxTokens: d.maxTokens,
+          });
+        }
+        log("debug", `${d.id} → ${modelKey}: score=${s.toFixed(2)} ${r.durationMs}ms tokens=${r.totalTokens} content=${r.content.length}ch`, {
+          ok: r.ok, tokens: r.totalTokens, sample: r.content.slice(0, 80),
         });
         opts.onProgress?.({
           type: "olympics.model.done", discipline: d.id, model: modelKey,
