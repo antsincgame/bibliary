@@ -539,7 +539,7 @@ test("evaluator-queue passes prefs.evaluatorModel into pickEvaluatorModel (no si
   assert.ok(receivedOpts, "pickEvaluatorModel received options");
   assert.equal(receivedOpts!.preferred, "user-selected-model");
   assert.deepEqual(receivedOpts!.fallbacks, ["fallback-a", "fallback-b"]);
-  assert.equal(receivedOpts!.allowAutoLoad, false, "auto-load запрещён в evaluator-queue по умолчанию");
+  assert.equal(receivedOpts!.allowAutoLoad, true, "auto-load разрешён когда preferred модель задана (Olympics / Settings)");
   assert.equal(usedModel, "user-selected-model", "evaluateBook получил выбранную в Settings модель");
 });
 

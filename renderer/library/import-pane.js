@@ -18,10 +18,8 @@ import { showLibraryToast } from "./toast.js";
 import { buildLogPanel, hydrateLogSnapshot } from "./import-pane-log.js";
 import {
   importFromFolder,
-  importFolderAsBundle,
   importFromFiles,
   installImportDropHandlers,
-  scanFolderForDuplicates,
 } from "./import-pane-actions.js";
 
 export { pushImportPaneLog } from "./import-pane-log.js";
@@ -57,13 +55,6 @@ export function buildImportPane(deps) {
     class: "lib-btn lib-import-pick-files",
     onclick: () => importFromFiles(deps),
   }, t("library.import.btn.pickFiles"));
-
-  const bundleBtn = el("button", {
-    type: "button",
-    class: "lib-btn lib-import-pick-bundle",
-    title: t("library.import.btn.bundleHint"),
-    onclick: () => importFolderAsBundle(deps),
-  }, t("library.import.btn.bundle"));
 
   const pauseBtn = el("button", {
     type: "button",
@@ -130,21 +121,12 @@ export function buildImportPane(deps) {
 
   const evaluatorPanel = buildEvaluatorPanel();
 
-  const scanReportContainer = el("div", { class: "lib-scan-report" });
-
-  const scanBtn = el("button", {
-    type: "button",
-    class: "lib-btn lib-import-scan-folder",
-    onclick: () => scanFolderForDuplicates(status, scanReportContainer),
-  }, t("library.import.btn.scanFolder"));
-
   const body = el("div", { class: "lib-import-body" }, [
     dropzone,
-    el("div", { class: "lib-import-actions" }, [pickFolderBtn, pickFilesBtn, bundleBtn, scanBtn, pauseBtn, cancelBtn]),
+    el("div", { class: "lib-import-actions" }, [pickFolderBtn, pickFilesBtn, pauseBtn, cancelBtn]),
     opts,
     status,
     logPanel,
-    scanReportContainer,
     evaluatorPanel,
   ]);
 

@@ -411,10 +411,25 @@ export async function extractMetadataFromCover(
     return { ok: false, error: "empty image buffer" };
   }
 
-  const candidates = (await pickVisionModels({
+  let candidates = (await pickVisionModels({
     preferredModelKey: opts.modelKey,
     listLoadedImpl: opts.listLoadedImpl,
   })).slice(0, getMaxModelAttempts(opts.maxModelAttempts));
+
+  /* Lazy-load: если prefs содержит visionModelKey, но модель не загружена в
+   * LM Studio — попытаться загрузить. Решает проблему "Olympics записал prefs →
+   * import pipeline видит null → skip vision". */
+  if (candidates.length === 0 && !opts.listLoadedImpl) {
+    const prefKey = opts.modelKey?.trim() || "";
+    if (prefKey) {
+      try {
+        const { loadModel: lmsLoad } = await import("../../lmstudio-client.js");
+        await lmsLoad(prefKey, { gpuOffload: "max" });
+        candidates = [{ modelKey: prefKey }];
+      } catch { /* load failed — fall through to error */ }
+    }
+  }
+
   if (candidates.length === 0) {
     return {
       ok: false,

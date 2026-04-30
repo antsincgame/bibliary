@@ -482,14 +482,18 @@ async function evaluateOneInSlot(bookId: string, slot: SlotState): Promise<void>
             хотя бы одна loaded LLM есть.
        `allowAutoLoad: false` запрещает скрытую загрузку моделей с диска. */
     const evaluatorPrefs = await deps.readEvaluatorPrefs();
+    /* allowAutoLoad: true когда preferred модель задана (Olympics / пользователь
+     * выбрал в UI). Если pref пуст — безопасный false, чтобы не загружать
+     * случайную модель и не убить VRAM. */
+    const hasPreferred = !!evaluatorPrefs.preferred;
     const model = modelOverride ?? (await deps.pickEvaluatorModel({
       preferred: evaluatorPrefs.preferred,
       fallbacks: evaluatorPrefs.fallbacks,
-      allowAutoLoad: false,
+      allowAutoLoad: hasPreferred,
     }));
     if (!model) {
       const reason = evaluatorPrefs.preferred
-        ? `evaluator: selected model "${evaluatorPrefs.preferred}" not loaded in LM Studio`
+        ? `evaluator: selected model "${evaluatorPrefs.preferred}" not loaded in LM Studio (auto-load attempted)`
         : "evaluator: no LLM loaded";
       const failed: BookCatalogMeta = { ...meta, status: "failed", warnings: [...(meta.warnings ?? []), reason] };
       upsertBook(failed, meta.mdPath);

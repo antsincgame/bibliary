@@ -4,6 +4,49 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.6] — 2026-05-01 — Auto-load pipeline + Import UX cleanup
+
+### Added
+
+- **Auto-load моделей после Olympics** (`arena:apply-olympics-recommendations`):
+  после записи prefs автоматически загружает до 2 unique моделей
+  (приоритет: extractorModel → visionModelKey → evaluatorModel) в LM Studio.
+  Ранее: Olympics «распределяла» роли, но модели оставались на диске — весь
+  production pipeline (vision, evaluator, crystallizer) видел null и skip'ал.
+- **Lazy-load vision** в `illustration-worker.ts` и `vision-meta.ts`:
+  если `visionModelKey` задан в prefs но модель не в LM Studio loaded —
+  попытка `loadModel()` перед skip. Устраняет "No vision models loaded —
+  skipping illustration analysis" при настроенных prefs.
+- **`evaluator-queue.ts`**: `allowAutoLoad: true` для preferred-модели
+  (prefs.evaluatorModel задан). Ранее: `allowAutoLoad: false` — evaluator
+  видел «model not loaded» даже если Olympics записал ключ.
+- **`docs/future-formats.md`** — исследование 30+ форматов электронных книг
+  и архивов для расширения (MOBI, AZW3, CHM, LIT, TAR, GZ, BZ2, XZ, FBZ,
+  .djv, .md, LaTeX, PostScript и др.) с приоритизацией P0–P5.
+
+### Changed
+
+- **Удалены кнопки** «Сканировать папку (отчёт дублей)» и «Импортировать
+  папку как комплект» из панели импорта — дублировали функционал,
+  загромождали интерфейс.
+- **`scanArchives` = true по умолчанию** (`renderer/library/state.js`).
+  Раньше пользователь должен был включать вручную; большинство коллекций
+  содержат книги в ZIP/RAR/7Z.
+- **i18n hint** (ru/en): полный список архивов в dropzone и checkbox —
+  «ZIP, RAR, 7Z, CBZ, CBR» вместо «ZIP, CBZ».
+- **CSS fix**: `flex-wrap` на log header (кнопка «Скопировать» больше не
+  вылазит за край), `overflow-x: hidden` на log-list, grid колонка файла
+  `minmax(0, 280px)` вместо `minmax(180px, 320px)` — адаптивная ширина
+  без горизонтального скролла.
+
+### Fixed
+
+- **КРИТИЧЕСКИЙ**: production pipeline не использовал модели после Olympics.
+  Корень: `apply-olympics-recommendations` только записывал prefs, не загружал
+  модели в LM Studio. Резолвер, vision-meta, evaluator-queue — все ждали
+  `listLoaded()` и видели пустоту → skip. Исправлено: auto-load (до 2 моделей)
+  + lazy-load per-role + evaluator allowAutoLoad.
+
 ## [0.4.5] — 2026-05-01 — Olympics UX overhaul + Lightning preset + technical log
 
 ### Added

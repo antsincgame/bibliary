@@ -248,12 +248,29 @@ export async function processIllustrations(
   if (!modelKey) {
     const models = await pickVisionModels();
     if (models.length === 0) {
-      onProgress?.("No vision models loaded — skipping illustration analysis");
-      return { processed: 0, skipped: 0, errors: 0 };
+      /* Lazy-load: если prefs содержит visionModelKey, но модель не в LM Studio —
+       * попробуем загрузить её сами. Это решает проблему "Olympics записал prefs,
+       * но модель не в loaded" — раньше тут был молчаливый skip. */
+      const prefs2 = await getPreferencesStore().getAll();
+      const prefVision = prefs2.visionModelKey?.trim() || "";
+      if (prefVision) {
+        try {
+          const { loadModel } = await import("../../lmstudio-client.js");
+          onProgress?.(`Loading vision model "${prefVision}" from prefs...`);
+          await loadModel(prefVision, { gpuOffload: "max" });
+          modelKey = prefVision;
+        } catch (loadErr) {
+          onProgress?.(`Failed to auto-load vision model "${prefVision}": ${loadErr instanceof Error ? loadErr.message : String(loadErr)}`);
+        }
+      }
+      if (!modelKey) {
+        onProgress?.("No vision models loaded — skipping illustration analysis");
+        return { processed: 0, skipped: 0, errors: 0 };
+      }
+    } else {
+      modelKey = models[0]!.modelKey;
+      fallbackModelKeys = models.slice(1).map((m) => m.modelKey);
     }
-    modelKey = models[0]!.modelKey;
-    /* Доп. кандидаты из всех загруженных vision-моделей. */
-    fallbackModelKeys = models.slice(1).map((m) => m.modelKey);
   }
 
   /* Контекст книги для тематических описаний. В новом storage layout папка

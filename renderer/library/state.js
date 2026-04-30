@@ -120,7 +120,7 @@ export const IMPORT_STATE = {
   busy: false,
   /** @type {string|null} */
   importId: null,
-  scanArchives: false,
+  scanArchives: true,
   recursive: true,
 };
 

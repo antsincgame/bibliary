@@ -15,7 +15,7 @@ import { getPreferencesStore, type Preferences } from "../lib/preferences/store.
 import { globalLlmLock } from "../lib/llm/global-llm-lock.js";
 import { modelRoleResolver } from "../lib/llm/model-role-resolver.js";
 import { runOlympics, type OlympicsReport, type OlympicsRole } from "../lib/llm/arena/olympics.js";
-import { refreshLmStudioClient } from "../lmstudio-client.js";
+import { refreshLmStudioClient, listLoaded, loadModel } from "../lmstudio-client.js";
 
 export function registerArenaIpc(): void {
   function broadcastPreferencesChanged(prefs: Preferences): void {
@@ -139,6 +139,60 @@ export function registerArenaIpc(): void {
     refreshLmStudioClient();
     const prefs = await getPreferencesStore().getAll();
     broadcastPreferencesChanged(prefs);
+
+    /* ── Auto-load recommended models into LM Studio ──
+     * Olympics только записывает prefs, но если модели не загружены — весь
+     * production pipeline (vision, evaluator, crystallizer) видит null при
+     * resolveModelForRole и skip'ает задачи. Здесь мы загружаем unique модели
+     * из рекомендаций, которых ещё нет в LM Studio loaded list.
+     *
+     * Стратегия VRAM: загружаем последовательно, не более 2 уникальных
+     * моделей (primary = extractorModel, secondary = visionModelKey).
+     * Остальные роли часто разделяют одну из этих двух моделей.
+     * Если модель уже загружена — пропускаем. Ошибка load — не фатальна. */
+    void ensureRecommendedModelsLoaded(filtered).catch((err) => {
+      console.warn("[arena] auto-load after apply failed (non-fatal):", err);
+    });
+
     return prefs;
   });
+
+  async function ensureRecommendedModelsLoaded(recs: Partial<Preferences>): Promise<void> {
+    const PRIORITY_KEYS = ["extractorModel", "visionModelKey", "evaluatorModel"] as const;
+    const modelKeysToLoad = new Set<string>();
+    for (const pk of PRIORITY_KEYS) {
+      const val = (recs as Record<string, unknown>)[pk];
+      if (typeof val === "string" && val.trim().length > 0) {
+        modelKeysToLoad.add(val.trim());
+      }
+    }
+    for (const [, val] of Object.entries(recs)) {
+      if (typeof val === "string" && val.trim().length > 0) {
+        modelKeysToLoad.add(val.trim());
+      }
+    }
+    if (modelKeysToLoad.size === 0) return;
+
+    let loaded: Array<{ modelKey: string }>;
+    try {
+      loaded = await listLoaded();
+    } catch {
+      return;
+    }
+    const alreadyLoaded = new Set(loaded.map((m) => m.modelKey));
+    const toLoad = [...modelKeysToLoad].filter((k) => !alreadyLoaded.has(k));
+    if (toLoad.length === 0) return;
+
+    const MAX_AUTO_LOAD = 2;
+    const selected = toLoad.slice(0, MAX_AUTO_LOAD);
+    console.log(`[arena] auto-load: attempting ${selected.length} models: ${selected.join(", ")}`);
+    for (const modelKey of selected) {
+      try {
+        await loadModel(modelKey, { gpuOffload: "max" });
+        console.log(`[arena] auto-load OK: "${modelKey}"`);
+      } catch (err) {
+        console.warn(`[arena] auto-load "${modelKey}" failed:`, err);
+      }
+    }
+  }
 }
