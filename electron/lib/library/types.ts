@@ -151,7 +151,7 @@ export interface ConvertedBook {
 
 /** Параметры конвертации. */
 export interface ConvertOptions {
-  /** Включить OCR для сканированных PDF (медленно, но восстанавливает текст). */
+  /** Включить OCR для сканированных PDF/DJVU (медленно, но восстанавливает текст). */
   ocrEnabled?: boolean;
   /** Прерывание долгих операций. */
   signal?: AbortSignal;

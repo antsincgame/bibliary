@@ -315,7 +315,10 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
   const pool = runWithConcurrency(
     expandTasks(),
     poolSize,
-    async (task) => runImportTaskWithTimeout(task, opts, archiveTracker, PER_FILE_TIMEOUT_MS),
+    async (task) => {
+      emit("file-start", { currentFile: task.bookPath });
+      return runImportTaskWithTimeout(task, opts, archiveTracker, PER_FILE_TIMEOUT_MS);
+    },
   );
 
   /* Stage 3: единый sink — копит счётчики, шлёт «processed»-event,

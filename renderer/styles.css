@@ -5040,8 +5040,12 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
 .lib-reader {
   display: flex;
   flex-direction: column;
+  flex: 1;
   height: 100%;
+  min-height: 0;
   overflow: hidden;
+  position: relative;
+  z-index: 2;
   background:
     linear-gradient(180deg, rgba(0, 240, 255, 0.025), transparent 160px),
     rgba(0, 0, 0, 0.32);

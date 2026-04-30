@@ -214,6 +214,17 @@ export const PreferencesSchema = z.object({
    */
   olympicsUseLmsSDK: z.boolean().default(false),
 
+  /**
+   * Последний выбор класса моделей для Олимпиады (CSV: "s,m" / "s" / "m,l" / "s,m,l").
+   * Сохраняется при каждом изменении select и восстанавливается при следующем запуске.
+   */
+  olympicsWeightClasses: z.string().default("s,m"),
+
+  /**
+   * Последнее значение «Тестировать ВСЕ модели» для Олимпиады.
+   */
+  olympicsTestAll: z.boolean().default(false),
+
 });
 
 export type Preferences = z.infer<typeof PreferencesSchema>;

@@ -520,6 +520,7 @@ export async function mountSettings(root) {
     STATE.dirty = false;
   } catch (e) {
     clear(root);
+    delete root.dataset.mounted;
     root.appendChild(el("div", { class: "settings-error" }, t("settings.loadFailed") + ": " + String(e)));
     return;
   }

@@ -15,6 +15,7 @@ import { getPreferencesStore, type Preferences } from "../lib/preferences/store.
 import { globalLlmLock } from "../lib/llm/global-llm-lock.js";
 import { modelRoleResolver } from "../lib/llm/model-role-resolver.js";
 import { runOlympics, type OlympicsReport, type OlympicsRole } from "../lib/llm/arena/olympics.js";
+import { refreshLmStudioClient } from "../lmstudio-client.js";
 
 export function registerArenaIpc(): void {
   function broadcastPreferencesChanged(prefs: Preferences): void {
@@ -115,6 +116,7 @@ export function registerArenaIpc(): void {
     }
     await getPreferencesStore().set(filtered);
     modelRoleResolver.invalidate();
+    refreshLmStudioClient();
     const prefs = await getPreferencesStore().getAll();
     broadcastPreferencesChanged(prefs);
     return prefs;

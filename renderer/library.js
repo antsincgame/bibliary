@@ -25,8 +25,13 @@ import { mountCollectionViews } from "./library/collection-views.js";
 import { refreshEvaluatorState } from "./library/evaluator.js";
 import { applyBatchEvent } from "./library/batch-actions.js";
 import { renderSearch, subscribeDownloadProgress } from "./library/search.js";
+import { closeReader, isReaderOpen } from "./library/reader.js";
 
 function switchTab(tab, root) {
+  if (tab !== "catalog" && isReaderOpen()) {
+    const catalogPane = /** @type {HTMLElement|null} */ (root.querySelector(".lib-pane-catalog"));
+    if (catalogPane) closeReader(catalogPane);
+  }
   STATE.tab = tab;
   root.querySelectorAll(".lib-tab").forEach((b) => {
     b.classList.toggle("lib-tab-active", b.dataset.tab === tab);
@@ -167,7 +172,11 @@ export async function mountLibrary(root) {
   const layout = el("div", { class: "lib-page-layout" }, [topBar, tabs, importPane, catalogPane, searchPane, collectionsPane]);
   root.append(layout);
 
-  const _unsubDownload = subscribeDownloadProgress(root);
+  if (typeof CATALOG.unsubEvaluator === "function") CATALOG.unsubEvaluator();
+  if (typeof CATALOG.unsubBatch === "function") CATALOG.unsubBatch();
+  if (typeof CATALOG._unsubDownload === "function") CATALOG._unsubDownload();
+
+  CATALOG._unsubDownload = subscribeDownloadProgress(root);
   installWindowDropGuards(root);
 
   CATALOG.unsubEvaluator = window.api.library.onEvaluatorEvent((ev) => {

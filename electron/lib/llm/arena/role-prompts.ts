@@ -2,9 +2,8 @@
  * Single source of truth for compact, reused role prompts in the arena.
  *
  * These constants are shared between:
- *   - Olympics disciplines (`olympics.ts`)
- *   - Golden prompts for shadow arena (`golden-prompts.ts`)
- *   - Run-cycle judge fallback (`run-cycle.ts`)
+ *   - Olympics disciplines (`disciplines.ts`)
+ *   - Scoring module (`scoring.ts`)
  *
  * Each prompt is intentionally MINIMAL — single-token answers where possible,
  * no fuzzy adjectives ("helpful", "fair"), explicit format constraints.

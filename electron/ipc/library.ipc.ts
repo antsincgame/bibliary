@@ -31,6 +31,7 @@
 import { ipcMain, dialog, type BrowserWindow } from "electron";
 import { randomUUID } from "crypto";
 import { promises as fs } from "fs";
+import * as path from "path";
 import {
   query as queryCache,
   getBookById,
@@ -285,6 +286,17 @@ async function mirrorProgressToLogger(importId: string, evt: ProgressEvent): Pro
       level: "info",
       category: "scan.complete",
       message: `Scan finished: ${evt.discovered} files queued for processing`,
+    });
+    return;
+  }
+  if (evt.phase === "file-start") {
+    await logger.write({
+      importId,
+      level: "info",
+      category: "file.start",
+      message: `Processing: ${evt.currentFile ? path.basename(evt.currentFile) : "unknown file"}`,
+      file: evt.currentFile,
+      details: { progress: `${evt.processed}/${evt.discovered}` },
     });
     return;
   }

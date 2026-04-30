@@ -601,7 +601,14 @@ async function runImport(invoke, deps) {
         }
         const discovered = Number(evt?.discovered ?? 0);
         const processed = Number(evt?.processed ?? 0);
-        if (evt?.phase === "processed") {
+        if (evt?.phase === "file-start") {
+          const file = String(evt?.currentFile || "").split(/[\\/]/).pop() || t("library.import.progress.unknownFile");
+          status.textContent = t("library.import.progress.processing", {
+            file,
+            done: String(processed),
+            total: String(Math.max(discovered, processed)),
+          });
+        } else if (evt?.phase === "processed") {
           status.textContent = t("library.import.progress.copying", {
             done: String(processed),
             total: String(Math.max(discovered, processed)),

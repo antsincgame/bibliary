@@ -42,6 +42,10 @@ async function parseDjvu(filePath: string, opts: ParseOptions = {}): Promise<Par
   }
 
   const provider = opts.djvuOcrProvider ?? "system";
+  if (opts.ocrEnabled !== true) {
+    warnings.push("DJVU has no usable text layer and OCR is disabled");
+    return { metadata: { title: baseName, warnings }, sections: [], rawCharCount: 0 };
+  }
   /* DJVU — это всегда растровый формат; без текстового слоя OCR — единственный
      вариант. Блокируем только если явно указан provider=none. */
   if (provider === "none") {

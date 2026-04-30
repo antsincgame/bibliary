@@ -642,7 +642,7 @@ contextBridge.exposeInMainWorld("api", {
       smokeLibrary ? Promise.resolve({ ok: true, chapters: 1 }) : ipcRenderer.invoke("library:reparse-book", bookId),
     onImportProgress: (cb: (payload: {
       importId: string;
-      phase: "discovered" | "processed" | "scan-complete";
+      phase: "discovered" | "file-start" | "processed" | "scan-complete";
       discovered: number;
       processed: number;
       currentFile?: string;
@@ -661,7 +661,7 @@ contextBridge.exposeInMainWorld("api", {
       }
       const l = (_e: unknown, p: {
         importId: string;
-        phase: "discovered" | "processed" | "scan-complete";
+        phase: "discovered" | "file-start" | "processed" | "scan-complete";
         discovered: number;
         processed: number;
         currentFile?: string;

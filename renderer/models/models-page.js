@@ -20,6 +20,9 @@ const PIPELINE_ROLES = [
   "translator",
   "ukrainian_specialist",
   "lang_detector",
+  "vision_meta",
+  "vision_ocr",
+  "vision_illustration",
 ];
 
 let pageRoot = null;
@@ -280,6 +283,9 @@ const ROLE_META = {
   translator:           { labelKey: "models.role.translator.label",           helpKey: "models.role.translator.help" },
   ukrainian_specialist: { labelKey: "models.role.ukrainian_specialist.label", helpKey: "models.role.ukrainian_specialist.help" },
   lang_detector:        { labelKey: "models.role.lang_detector.label",        helpKey: "models.role.lang_detector.help" },
+  vision_meta:          { labelKey: "models.role.vision_meta.label",          helpKey: "models.role.vision_meta.help" },
+  vision_ocr:           { labelKey: "models.role.vision_ocr.label",           helpKey: "models.role.vision_ocr.help" },
+  vision_illustration:  { labelKey: "models.role.vision_illustration.label",  helpKey: "models.role.vision_illustration.help" },
 };
 
 /**
@@ -422,7 +428,20 @@ function buildOlympicsCard() {
     /* Опции: режим testAll + размах класса + per-role tuning */
     el("div", { class: "mp-olympics-options" }, [
       el("label", { class: "mp-olympics-option" }, [
-        el("input", { id: "mp-olympics-testall", type: "checkbox" }),
+        (() => {
+          const cb = el("input", { id: "mp-olympics-testall", type: "checkbox" });
+          if (window.api?.preferences?.getAll) {
+            void window.api.preferences.getAll().then((prefs) => {
+              cb.checked = prefs?.olympicsTestAll === true;
+            }).catch(() => { /* ignore */ });
+          }
+          cb.addEventListener("change", () => {
+            if (window.api?.preferences?.set) {
+              void window.api.preferences.set({ olympicsTestAll: cb.checked });
+            }
+          });
+          return cb;
+        })(),
         el("span", {}, t("models.olympics.option.test_all")),
         el("span", { class: "mp-olympics-option-hint" }, t("models.olympics.option.test_all_hint")),
       ]),
@@ -436,6 +455,17 @@ function buildOlympicsCard() {
             el("option", { value: "s,m,l" }, "S+M+L — широкий охват"),
           ]);
           sel.value = "s,m";
+          if (window.api?.preferences?.getAll) {
+            void window.api.preferences.getAll().then((prefs) => {
+              const saved = typeof prefs?.olympicsWeightClasses === "string" ? prefs.olympicsWeightClasses : "s,m";
+              if (saved && sel.querySelector(`option[value="${saved}"]`)) sel.value = saved;
+            }).catch(() => { /* ignore */ });
+          }
+          sel.addEventListener("change", () => {
+            if (window.api?.preferences?.set) {
+              void window.api.preferences.set({ olympicsWeightClasses: sel.value });
+            }
+          });
           return sel;
         })(),
       ]),

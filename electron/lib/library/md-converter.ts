@@ -403,11 +403,11 @@ export async function convertBookToMarkdown(
     visionModelKey: opts.visionModelKey,
     signal: opts.signal,
   });
-  /* OCR auto-fallback: если парсер вернул 0 секций, пробуем OCR независимо от
-     пользовательской настройки — нет смысла помечать книгу как unsupported, если
-     ОС умеет OCR. Применяется только к форматам, которые могут быть сканами. */
+  /* OCR fallback: если парсер вернул 0 секций, пробуем OCR только когда пользователь
+     явно включил OCR. Иначе импорт большой папки может внезапно уйти в тяжёлый
+     OCR на сотни страниц и выглядеть как зависание. */
   let ocrAutoRetried = false;
-  if (parsed.sections.length === 0 && isOcrSupported() && (format === "pdf" || format === "djvu")) {
+  if (opts.ocrEnabled === true && parsed.sections.length === 0 && isOcrSupported() && (format === "pdf" || format === "djvu")) {
     ocrAutoRetried = true;
     parsed = await parseBook(absFilePath, {
       ocrEnabled: true, ocrAccuracy: "accurate", ocrPdfDpi: 200,

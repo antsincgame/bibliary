@@ -109,7 +109,7 @@ e2e-full-corpus-library-import
 
   --root <dir>       Source root. Repeatable.
   --max-depth <n>    Recursive depth per root (default: 32).
-  --ocr              Enable OCR flag for PDF; DJVU auto-fallback still runs.
+  --ocr              Enable OCR for PDF/DJVU scans.
   --no-archives      Do not import archive files.
   --force-all         Import even when SHA already exists (default: false).
   --timeout-ms <n>    Per-file import timeout (default: 480000).

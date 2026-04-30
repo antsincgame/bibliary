@@ -68,6 +68,9 @@ export interface ImportFolderOptions {
  *  - `phase: "discovered"` — scanner нашёл ещё одну книгу, парсер ещё не
  *    подходил. `discovered` нарастает; `processed`/`outcome`/`currentFile`
  *    отсутствуют. Таких событий = ровно столько, сколько файлов в папке.
+ *  - `phase: "file-start"` — parser pool взял конкретный файл в работу.
+ *    Это критично для больших/битых PDF/DJVU: UI показывает, какой файл
+ *    сейчас может висеть до per-file timeout.
  *  - `phase: "scan-complete"` — обход FS завершён; `discovered` финально.
  *  - `phase: "processed"` — конкретный файл обработан (added/duplicate/...).
  *    Содержит `currentFile`, `outcome` и накопленные счётчики.
@@ -75,7 +78,7 @@ export interface ImportFolderOptions {
  * Backward-compat поля `index` и `total`: дублируют `processed`/`discovered`,
  * чтобы старый UI-код не падал. Для новых интеграций — читать `phase`.
  */
-export type ProgressEventPhase = "discovered" | "processed" | "scan-complete";
+export type ProgressEventPhase = "discovered" | "file-start" | "processed" | "scan-complete";
 
 export interface ProgressEvent {
   phase: ProgressEventPhase;
@@ -83,7 +86,7 @@ export interface ProgressEvent {
   discovered: number;
   /** Сколько файлов уже прошли через парсер (≤ discovered). */
   processed: number;
-  /** Только для phase="processed". */
+  /** Для phase="file-start" и phase="processed". */
   currentFile?: string;
   outcome?: ImportResult["outcome"];
   duplicateReason?: ImportResult["duplicateReason"];
