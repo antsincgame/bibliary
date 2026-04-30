@@ -2,8 +2,8 @@
  * Bibliary Olympics — реальный турнир локальных моделей через LM Studio.
  *
  * Не зависит от Electron — pure-Node, использует прямой fetch на
- * OpenAI-совместимый API LM Studio. CLI-обёртка живёт в
- * `scripts/run-olympics.ts`, IPC-обёртка в `electron/ipc/arena.ipc.ts`.
+ * OpenAI-совместимый API LM Studio. Запуск из приложения — через IPC-обёртку
+ * в `electron/ipc/arena.ipc.ts`.
  *
  * Дисциплины подобраны под РОЛИ Bibliary: crystallizer / evaluator /
  * translator / judge — то есть именно те модели, которые потом используются

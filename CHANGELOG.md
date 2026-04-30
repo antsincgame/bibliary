@@ -115,10 +115,6 @@ All notable changes to Bibliary are documented in this file. Format follows
     full-text mode, distillation sections, paragraph atomicity, 2-chapter
     edge case, compression ratio bound, blank paragraph filtering, missing
     title fallback.
-  - `tests/dataset-synth-presets.test.ts` — 10 кейсов: index.json validity,
-    file existence, exact-match domain routing, compound-domain longest-match,
-    real-production domains, unknown→default fallback, case insensitivity,
-    substring matching, keyword length lower bound, tie-breaking determinism.
 - **npm scripts**: `npm test` и `npm run test:unit`.
 
 ### Verified (live)

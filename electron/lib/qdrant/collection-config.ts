@@ -65,15 +65,6 @@ export interface QdrantCollectionSpec {
 }
 
 /**
- * Recommended HNSW config for a Bibliary book/illustration collection.
- * Values from Qdrant 2026 best-practices docs (medium.com/8-qdrant-levers).
- */
-export const RECOMMENDED_HNSW: QdrantHnswConfig = {
-  m: 24,
-  ef_construct: 128,
-};
-
-/**
  * Создать коллекцию если её ещё нет. Идемпотентно — повторный вызов
  * для существующей коллекции = no-op. Если коллекция была создана
  * старым `ensureCollection` без HNSW config, новые точки в неё всё

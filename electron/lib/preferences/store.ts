@@ -17,8 +17,7 @@ import { writeJsonAtomic, withFileLock } from "../resilience";
 // ---------------------------------------------------------------------------
 
 export const PreferencesSchema = z.object({
-  // -- RAG --
-  ragTopK: z.number().int().min(1).max(100).default(15),
+  // -- Qdrant search threshold (cosine score 0..1) --
   ragScoreThreshold: z.number().min(0).max(1).default(0.55),
 
   // -- Scanner / Ingest --
@@ -127,15 +126,6 @@ export const PreferencesSchema = z.object({
   evaluatorModelFallbacks: z.string().default(""),
   /** Fallback chain для vision-ролей (CSV modelKey1,modelKey2,...). */
   visionModelFallbacks: z.string().default(""),
-  /**
-   * Включить CLIP-векторизацию иллюстраций для multimodal-поиска.
-   * При включении: после vision-triage иллюстрация дополнительно индексируется
-   * в Qdrant-коллекции `bibliary_illustrations` через CLIP image encoder
-   * (Xenova/clip-vit-base-patch32, ~600MB, скачивается один раз).
-   * Это даёт image-to-image и text-to-image поиск по картинкам книг.
-   * Default false — экономит RAM на слабых машинах.
-   */
-  imageVectorIndexEnabled: z.boolean().default(false),
 
   // -- Language-specialist roles --
   /** Модель, которая хорошо работает с украинским (Aya, Llama-3-uk, Qwen-uk и т.п.). Пусто = не используется. */
