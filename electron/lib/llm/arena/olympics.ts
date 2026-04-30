@@ -37,7 +37,6 @@ import {
   estimateModelVramBytes,
   type OlympicsLogger,
   type LmsModelInfo,
-  type ChatResp,
 } from "./lms-client.js";
 import {
   OLYMPICS_DISCIPLINES,
@@ -167,11 +166,11 @@ export interface OlympicsMatchResult {
 export type OlympicsRole =
   | "crystallizer"
   | "evaluator"
-  /* @deprecated — use vision_meta / vision_ocr / vision_illustration */
   | "translator"
   | "judge"
   | "lang_detector"
   | "ukrainian_specialist"
+  /** @deprecated — used only by `vision-describe-shapes`; новые роли: vision_meta / vision_ocr / vision_illustration */
   | "vision"
   | "vision_meta"
   | "vision_ocr"
