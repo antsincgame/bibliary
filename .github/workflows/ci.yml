@@ -40,9 +40,10 @@ jobs:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
       # postinstall пересобирает better-sqlite3 под Electron ABI;
-      # для node:test возвращаем под Node ABI.
-      - name: Rebuild better-sqlite3 for Node
-        run: npm rebuild better-sqlite3
+      # для node:test возвращаем под Node ABI через ensure-sqlite-abi.cjs
+      # (на чистом CI = rebuild + auto-stash; локально = ~50ms copy).
+      - name: Ensure better-sqlite3 ABI (Node)
+        run: node scripts/ensure-sqlite-abi.cjs --target=node
 
       - name: Lint (tsc + eslint)
         run: npm run lint
@@ -91,15 +92,18 @@ jobs:
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
-      - name: Rebuild better-sqlite3 for Node
-        run: npm rebuild better-sqlite3 || echo "rebuild skipped"
+      - name: Ensure better-sqlite3 ABI (Node)
+        run: node scripts/ensure-sqlite-abi.cjs --target=node
 
       - name: Lint
         run: npm run lint
 
       # Запускаем только тесты, которые надёжно работают кросс-платформенно.
       # Если какие-то тесты Win-only — добавляй маркер и фильтр.
+      # BIBLIARY_SKIP_OCR=1 — на Linux нет system-ocr (см. electron/lib/scanner/ocr/index.ts).
       - name: Unit tests
+        env:
+          BIBLIARY_SKIP_OCR: '1'
         run: npm run test:fast
         continue-on-error: false
 

@@ -125,13 +125,21 @@ function requireExists(filePath: string): boolean {
 function resolve7zBinary(): string | null {
   const env = process.env.BIBLIARY_7Z_PATH?.trim();
   if (env && requireExists(env)) return env;
-  const vendorCandidates = [
-    typeof process.resourcesPath === "string"
-      ? path.join(process.resourcesPath, "vendor", "7zip", "win32-x64", "7z.exe")
-      : "",
-    path.join(process.cwd(), "vendor", "7zip", "win32-x64", "7z.exe"),
-  ].filter(Boolean);
-  for (const candidate of vendorCandidates) {
+  /* Vendor candidates: per-platform + legacy win32-x64 fallback (Phase 4.2).
+     На Linux/macOS vendor/7zip обычно не bundled — npm package 7zip-bin
+     ниже cover все платформы. Vendor-папка остаётся для Win-portable, где
+     bundled binary гарантирует версию и независимость от user-PATH. */
+  const { platformVendorDirsWithLegacy, platformExeName } = require("../platform.js") as typeof import("../platform.js");
+  const exeName = platformExeName("7z");
+  const vendorRoots: string[] = [];
+  for (const subdir of platformVendorDirsWithLegacy()) {
+    if (typeof process.resourcesPath === "string") {
+      vendorRoots.push(path.join(process.resourcesPath, "vendor", "7zip", subdir));
+    }
+    vendorRoots.push(path.join(process.cwd(), "vendor", "7zip", subdir));
+  }
+  for (const root of vendorRoots) {
+    const candidate = path.join(root, exeName);
     if (requireExists(candidate)) return candidate;
   }
   for (const pkg of ["7z-bin", "7zip-bin"]) {

@@ -16,7 +16,13 @@ import path from "path";
 /* ── Step 1: Rebuild better-sqlite3 for Electron and stash the binary ──
    electron-builder's @electron/rebuild downloads wrong prebuilt (Node ABI
    instead of Electron ABI). We rebuild from source, save the binary to
-   a stash directory, and the afterPack hook copies it into the output. */
+   a stash directory, and the afterPack hook copies it into the output.
+
+   Stash имена:
+     - better_sqlite3.node          (legacy, ожидаемое afterPack.js)
+     - better_sqlite3.electron.node (новое, для ensure-sqlite-abi.cjs)
+   Маркер `.abi-marker` рядом с live помогает скрипту переключения
+   быстро понять текущую ABI. */
 console.log("[build-portable] Rebuilding better-sqlite3 for Electron (from source)...");
 const rebuildResult = spawnSync("npx", [
   "@electron/rebuild",
@@ -35,13 +41,42 @@ if (rebuildResult.status !== 0) {
 const stashDir = path.resolve(".electron-rebuild-stash");
 fs.mkdirSync(stashDir, { recursive: true });
 const srcBin = path.resolve("node_modules", "better-sqlite3", "build", "Release", "better_sqlite3.node");
-const stashBin = path.join(stashDir, "better_sqlite3.node");
-fs.copyFileSync(srcBin, stashBin);
-console.log(`[build-portable] Stashed Electron-compatible binary → ${stashBin} (${fs.statSync(stashBin).size} bytes)`);
+const stashLegacy = path.join(stashDir, "better_sqlite3.node");
+const stashElectron = path.join(stashDir, "better_sqlite3.electron.node");
+fs.copyFileSync(srcBin, stashLegacy);
+fs.copyFileSync(srcBin, stashElectron);
+const sizeBytes = fs.statSync(stashElectron).size;
+console.log(`[build-portable] Stashed Electron-ABI binary → ${stashLegacy} (${sizeBytes} bytes)`);
+console.log(`[build-portable] Stashed Electron-ABI binary → ${stashElectron} (${sizeBytes} bytes)`);
 
-/* ── Step 2: Run electron-builder ───────────────────────────────────── */
+const marker = srcBin + ".abi-marker";
+try { fs.writeFileSync(marker, "electron"); }
+catch (e) { console.warn("[build-portable] failed to write abi-marker:", e.message); }
+
+/* ── Step 2: Run electron-builder ─────────────────────────────────────
+   Platform-aware target selection (Phase 4.6 cross-platform roadmap, 2026-04-30):
+     - Win  → --win portable (single-file .exe, без installer)
+     - Linux → --linux AppImage (single-file portable AppImage)
+     - macOS → --mac dir (unsigned bundle для dev-теста; release использует --dmg)
+   Пользователь может override через env BIBLIARY_BUILD_TARGET, например:
+     BIBLIARY_BUILD_TARGET="--linux deb" node scripts/build-portable.js */
 const out = process.env.BIBLIARY_BUILD_OUT?.trim();
-const args = ["electron-builder", "--win", "portable"];
+const targetOverride = process.env.BIBLIARY_BUILD_TARGET?.trim();
+let targetArgs;
+if (targetOverride) {
+  targetArgs = targetOverride.split(/\s+/);
+  console.log(`[build-portable] target override: ${targetOverride}`);
+} else if (process.platform === "win32") {
+  targetArgs = ["--win", "portable"];
+} else if (process.platform === "linux") {
+  targetArgs = ["--linux", "AppImage"];
+} else if (process.platform === "darwin") {
+  targetArgs = ["--mac", "dir"];
+} else {
+  console.error(`[build-portable] unsupported platform: ${process.platform}`);
+  process.exit(1);
+}
+const args = ["electron-builder", ...targetArgs];
 if (out) {
   args.push(`--config.directories.output=${out}`);
   console.log(`[build-portable] output override: ${out}`);

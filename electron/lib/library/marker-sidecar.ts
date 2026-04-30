@@ -237,20 +237,30 @@ export async function runMarkerOnDjvu(
 
 /**
  * Locate the ddjvu executable from the Electron vendor bundle or system PATH.
+ *
+ * Per-platform с Phase 4.2 cross-platform roadmap (2026-04-30):
+ *   - vendor/djvulibre/<platform>-<arch>/ddjvu[.exe]
+ *   - legacy fallback: vendor/djvulibre/win32-x64/ддля старых установок
  */
 function resolveDdjvuBin(): string | null {
-  /* In packaged Electron: resources/vendor/djvulibre/win32-x64/ddjvu.exe */
+  const fs = require("fs");
+  const { platformVendorDirsWithLegacy, platformExeName } = require("../platform.js");
+  const exeName = platformExeName("ddjvu");
+  const subdirs = platformVendorDirsWithLegacy();
+  const roots: string[] = [];
   if (typeof process.resourcesPath === "string") {
-    const vendorBin = path.join(
-      process.resourcesPath, "vendor", "djvulibre", "win32-x64", "ddjvu.exe"
-    );
-    if (require("fs").existsSync(vendorBin)) return vendorBin;
+    for (const subdir of subdirs) {
+      roots.push(path.join(process.resourcesPath, "vendor", "djvulibre", subdir));
+    }
   }
-  /* Dev: project root vendor/ */
-  const devBin = path.join(
-    findProjectRoot(), "vendor", "djvulibre", "win32-x64", "ddjvu.exe"
-  );
-  if (require("fs").existsSync(devBin)) return devBin;
+  const projectRoot = findProjectRoot();
+  for (const subdir of subdirs) {
+    roots.push(path.join(projectRoot, "vendor", "djvulibre", subdir));
+  }
+  for (const root of roots) {
+    const candidate = path.join(root, exeName);
+    if (fs.existsSync(candidate)) return candidate;
+  }
   return null;
 }
 

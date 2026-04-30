@@ -4,6 +4,176 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] — 2026-04-30 — Linux x64 build (Phase 4 cross-platform roadmap)
+
+### Added
+
+- **Linux x64 портативная сборка** (AppImage + .deb + .tar.gz):
+  - `electron-builder.yml`: новая секция `linux:` с тремя targets, `mac:` секция
+    подготовлена под Phase 5 (arm64+x64 dmg/zip с ad-hoc подписью)
+  - `extraResources` теперь использует per-platform подстановки
+    `vendor/<package>/${platform}-${arch}/` — Win собирается из `win32-x64`,
+    Linux из `linux-x64`, macOS из `darwin-{arm64,x64}`
+  - `asarUnpack` расширен на edgeparse native bindings всех платформ
+- **`scripts/download-djvulibre-linux.cjs`** — bundling djvulibre CLI с
+  shared-libraries (через `ldd`) в `vendor/djvulibre/linux-x64/` для
+  AppImage/deb. Если `djvused` не в PATH — печатает `apt-get install -y
+  djvulibre-bin` инструкцию.
+- **`.github/workflows/release-linux.yml`** — Linux build job на
+  `ubuntu-latest`, устанавливает djvulibre-bin, bundling, ABI ensure,
+  electron-builder для AppImage/deb/tar.gz. Auto-publish при пуше тега.
+- **`electron/lib/platform.ts`** — cross-platform helpers:
+  `platformVendorDir()`, `platformExeName()`,
+  `platformVendorDirsWithLegacy()` (с fallback на legacy `win32-x64` для
+  старых установок).
+
+### Changed
+
+- **`scripts/build-portable.js`** теперь platform-aware:
+  - Win → `--win portable`
+  - Linux → `--linux AppImage`
+  - macOS → `--mac dir`
+  - Override через ENV `BIBLIARY_BUILD_TARGET` (например `--linux deb`)
+- **`electron/lib/scanner/parsers/djvu-cli.ts`** — `candidateRoots()`
+  использует `platformVendorDirsWithLegacy()` + добавлены типичные
+  системные пути для Linux/macOS (`/usr/bin`, `/opt/homebrew/bin`).
+- **`electron/lib/library/marker-sidecar.ts`** — `resolveDdjvuBin()`
+  использует `platformExeName("ddjvu")` + per-platform vendor lookup.
+- **`electron/lib/library/archive-extractor.ts`** — `resolve7zBinary()`
+  per-platform path lookup; для Linux/macOS остаётся приоритет npm пакета
+  `7zip-bin`/`7z-bin` (cross-platform).
+- **i18n `settings.section.ocr.desc`** — расширено: упоминание Linux
+  ограничения и vision-LLM как cross-platform альтернативы. Новый ключ
+  `settings.section.ocr.linuxHint`.
+
+### Known limitations on Linux
+
+- **Системный OCR недоступен** — `@napi-rs/system-ocr` использует
+  `Windows.Media.Ocr` (Win) / Vision Framework (macOS). UI per-book OCR
+  toggle в preview уже скрывается через `STATE.prefs.ocrSupported`.
+  Для DJVU/scanned PDF на Linux используйте vision-LLM (Qwen3-VL-8B и
+  др.) через настройку `djvuOcrProvider`.
+- **AppImage требует FUSE** на target системе. Альтернатива: запустить
+  с `--appimage-extract-and-run` или установить через `.deb`.
+
+## [0.4.3] — 2026-04-30 — God-files refactor part 2 (high-risk shared state)
+
+### Changed
+
+- **`electron/ipc/library.ipc.ts`** (1063 LOC → 35 LOC barrel) разбит на:
+  - `library-ipc-state.ts` — registry активных импортов, lifecycle helpers
+    (`bootstrapLibrarySubsystem`, `flushLibraryImports`, `abortAllLibrary`),
+    `broadcastImportProgress`, `mirrorProgressToLogger`,
+    `registerLibraryLlmLockProbes`, `readImportPrefs`
+  - `library-import-ipc.ts` — `library:pick-folder/files`,
+    `import-folder/files`, `cancel-import`, `import-log-snapshot`,
+    `scan-folder`, `cancel-scan`
+  - `library-catalog-ipc.ts` — `library:catalog`, `tag-stats`,
+    `collection-by-{domain,author,year,sphere,tag}`,
+    `get-book`, `read-book-md`, `delete-book`, `rebuild-cache`
+  - `library-evaluator-ipc.ts` — все `evaluator-*` каналы +
+    `reparse-book` + `reevaluate-all`
+- **`electron/ipc/dataset-v2.ipc.ts`** (858 LOC → ~430 LOC) разбит на:
+  - `electron/lib/dataset-v2/extraction-runner.ts` — `runExtraction` +
+    `makeLlm` + типы (рядом с уже выделенным `batch-runner.ts`)
+  - `electron/ipc/dataset-v2-ipc-state.ts` — `activeJobs`/`activeBatches`,
+    `abortAllDatasetV2`, `killAllSynthChildren`, `DEFAULT_COLLECTION`
+  - `dataset-v2.ipc.ts` — только `ipcMain.handle` обёртки + barrel
+- **`electron/lib/library/evaluator-queue.ts`** (685 LOC) — консервативный
+  split: вынесены только pure-функции в `evaluator-persist.ts`
+  (`extractMetadataHints`, `persistFrontmatter` с writer-DI). Очередь и
+  worker-loop оставлены вместе — slot-state machine слишком плотный для
+  безопасного разделения (см. risk 🔴 в плане).
+- **`renderer/library/import-pane.js`** (928 LOC → 165 LOC entry) разбит на:
+  - `import-pane-log.js` — лог-панель с фильтром/счётчиками/copy
+  - `import-pane-actions.js` — pickFolder/Files, bundle, runImport,
+    drag&drop, scan-for-duplicates
+- **`renderer/dataset-v2.js`** (764 LOC → 80 LOC entry) разбит на:
+  - `dataset-v2-state.js` — STATE singleton + `phaseToLabel` + `isCrystalBusy`
+  - `dataset-v2-wizard.js` — buildStep1..4 + buildPrimaryAction +
+    advanced-model picker
+  - `dataset-v2-progress.js` — onSynthStart/Stop + renderProgress + handleEvent
+
+### Принцип реализации
+
+Те же правила что и в v0.4.2: barrel-pattern сохраняет публичный API,
+потребители не правятся. Существующие тесты `evaluator-queue.test.ts`,
+`evaluator-queue-slots.test.ts`, `library-cas-pipeline.test.ts` и др.
+проходят без изменений. Lint и typecheck зелёные.
+
+## [0.4.2] — 2026-04-30 — God-files refactor part 1 (low-risk)
+
+### Changed (декомпозиция god-файлов через barrel-pattern, потребители не правятся)
+
+- **`electron/lib/llm/arena/lms-client.ts`** (675 LOC → barrel) разбит на:
+  - `lms-client-types.ts` — типы + `makeLogger`
+  - `lms-client-rest.ts` — REST API: list / load / unload / health / chat
+  - `lms-client-sdk.ts` — SDK route (`@lmstudio/sdk`)
+- **`electron/lib/llm/arena/olympics.ts`** (862 LOC → 525 LOC) разбит на:
+  - `olympics-types.ts` — все интерфейсы и type-алиасы
+  - `olympics-load-config.ts` — `computeOlympicsLoadConfig`
+  - `olympics.ts` — `runOlympics` + cache + barrel re-exports
+- **`electron/lib/library/book-evaluator.ts`** (699 LOC → ~350 LOC) разбит на:
+  - `book-evaluator-schema.ts` — Zod schema, parsing, `isLmStudioBadRequest`
+  - `book-evaluator-model-picker.ts` — auto-выбор модели (scoring + heuristics)
+  - `book-evaluator.ts` — `EVALUATOR_SYSTEM_PROMPT` + `evaluateBook` + repair
+- **`renderer/models/models-page.js`** (1388 LOC → 110 LOC entry) разбит на:
+  - `models-page-internals.js` — shared `ctx` + toast / busy / apply
+  - `models-hardware-status.js` — hardware strip + status + loaded + roles
+  - `models-page-olympics-labels.js` — лейблы дисциплин и ролей
+  - `models-page-olympics-controls.js` — карточка Olympics + advanced + run/cancel
+  - `models-page-olympics-report.js` — рендер отчёта Olympics
+
+### Принцип реализации
+
+Везде применён **barrel-pattern**: оригинальный файл сохраняется как точка
+входа с `export { ... } from "..."` — потребители не правятся в этом же
+коммите. Тесты olympics-* / book-evaluator-prefs / model-pool продолжают
+проходить без изменений.
+
+## [0.4.1] — 2026-04-30 — UI Search + DX Foundation (Phase 0–1 of cross-platform roadmap)
+
+### Added
+
+- **Встроенный UI семантического поиска** (`renderer/search.js`, `nav.search`).
+  Picker коллекций (показывает только непустые с количеством точек), input
+  запроса с Enter, slider порога сходства 0..1 (default из prefs.ragScoreThreshold),
+  список карточек с метаданными (книга, глава, тэги, score), кнопки
+  «Скопировать путь» и «Открыть в библиотеке». Использует существующий
+  IPC `qdrant:search` + multilingual-e5-small (cold-start UI hint при первом
+  запросе).
+- **i18n keys** `search.*` и `nav.search` в `renderer/locales/{ru,en}.js`
+  (≈25 строк × 2 локали).
+- **`scripts/ensure-sqlite-abi.cjs`** — управление ABI-стэшем better-sqlite3.
+  Один скрипт для двух режимов: `--target=node|electron` (select из stash,
+  fallback на rebuild + auto-stash) и `--save --target=X` (положить live
+  в stash). Idempotent через marker-файл `.abi-marker`. Переключение между
+  Node ABI (для `npm test`) и Electron ABI (для `electron:dev` / portable
+  build) ~50 мс copy вместо десятков секунд `npm rebuild`.
+- **`docs/cross-platform.md`** — инвентарь всех нативных зависимостей и
+  vendored binaries с per-platform статусом, список Win-specific мест в
+  коде, план Phase 4 (Linux x64 build) и Phase 5 (macOS arm64+x64).
+- **Linux CI smoke baseline**: `.github/workflows/smoke.yml` теперь делает
+  pre-flight `ensure-sqlite-abi.cjs --target=node` и запускает полный test
+  suite (best-effort, `continue-on-error: true`) исключая `vision-meta`
+  (требует live LM Studio). ENV `BIBLIARY_SKIP_OCR=1` для Linux.
+
+### Changed
+
+- `package.json`: `test:rebuild-native` → `node scripts/ensure-sqlite-abi.cjs --target=node`,
+  `electron:dev` → аналогично с `--target=electron`. Добавлены
+  helper-scripts `sqlite:select-{node,electron}` и `sqlite:save-{node,electron}`.
+- `scripts/build-portable.js`: после `@electron/rebuild` теперь стэшит
+  Electron-ABI бинарь в обе слот-позиции (`better_sqlite3.node` legacy +
+  `better_sqlite3.electron.node` new) и пишет marker.
+- `electron/preload.ts`: добавлен опциональный параметр `scoreThreshold` в
+  `qdrant.search()` (handler уже принимал его, не было типа в preload).
+- `.github/workflows/ci.yml`: `npm rebuild better-sqlite3` заменён на
+  `ensure-sqlite-abi.cjs --target=node` для согласованности с локальным DX.
+- `README.md`: обновлён раздел «Поиск» (теперь UI есть), снят пункт
+  «Поиск без встроенного UI» из ограничений, обновлены инструкции для
+  `Bibliary 0.4.1.exe`. Добавлен пункт про OCR на Linux (unsupported).
+
 ## [2.7.0] — 2026-04-24 — Library + Dataset Factory (release)
 
 > **Закрытие линии.** Iter 7..9 (File-System Library + Pre-flight Evaluation +

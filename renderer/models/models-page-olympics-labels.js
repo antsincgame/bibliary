@@ -1,0 +1,116 @@
+// @ts-check
+/**
+ * Лейблы и иконки для UI Olympics.
+ *
+ * Намеренно **русские** атмосферные строки: страница Олимпиады стилизована под
+ * древнегреческий нарратив. Если потребуется английская локаль — переписать
+ * на ключи `models.olympics.role.*` / `models.olympics.discipline.*`.
+ *
+ * Извлечено из `models-page.js` (Phase 2.4 cross-platform roadmap, 2026-04-30).
+ */
+
+/**
+ * Роли для чекбоксов «какие роли тестировать в Олимпиаде».
+ * Должно совпадать с `PIPELINE_ROLES` (порядок важен — таб-бар результатов
+ * следует тому же порядку). Legacy `vision` намеренно убрана: новые
+ * vision_meta/vision_ocr/vision_illustration покрывают её полностью.
+ */
+export const ALL_ROLES = [
+  { role: "crystallizer",         label: "💎 Кристаллизатор" },
+  { role: "evaluator",            label: "📚 Оценщик" },
+  { role: "judge",                label: "⚖️ Судья" },
+  { role: "translator",           label: "🌐 Переводчик" },
+  { role: "ukrainian_specialist", label: "🇺🇦 Укр." },
+  { role: "lang_detector",        label: "🔤 Язык" },
+  { role: "vision_meta",          label: "📖 Vision: обложки" },
+  { role: "vision_ocr",           label: "🖨️ Vision: OCR страниц" },
+  { role: "vision_illustration",  label: "🖼️ Vision: иллюстрации" },
+];
+
+/**
+ * Литературные названия для ролей (для табов).
+ */
+export const ROLE_HUMAN_LABEL = {
+  crystallizer:         { icon: "💎", title: "Кристаллизатор знаний", subtitle: "извлечение фактов и связей" },
+  evaluator:            { icon: "📚", title: "Литературный критик", subtitle: "оценка качества книги" },
+  judge:                { icon: "⚖️", title: "Судья",               subtitle: "выбор лучшего ответа" },
+  translator:           { icon: "🌐", title: "Переводчик",          subtitle: "межъязыковая адаптация" },
+  lang_detector:        { icon: "🔤", title: "Лингвист-детектор",   subtitle: "определение языка" },
+  ukrainian_specialist: { icon: "🇺🇦", title: "Знаток украинского", subtitle: "генерация на укр." },
+  vision:               { icon: "👁️", title: "Зрение (общее)",     subtitle: "legacy" },
+  vision_meta:          { icon: "📖", title: "Хранитель обложек",   subtitle: "метаданные книги" },
+  vision_ocr:           { icon: "🖨️", title: "Распознаватель текста", subtitle: "OCR сканированных страниц" },
+  vision_illustration:  { icon: "🖼️", title: "Иллюстратор",         subtitle: "описание картинок" },
+};
+
+/**
+ * Литературные названия дисциплин: short — короткий заголовок таба-вкладки;
+ * long — полное название для содержимого аккордеона.
+ *
+ * Стиль: «спортивная номинация древней Греции в современной обработке».
+ */
+export const DISCIPLINE_HUMAN = {
+  /* — Кристаллизатор — */
+  "crystallizer-rover":              { short: "Марсоход",          long: "Извлечение фактов о миссии Curiosity" },
+  "crystallizer-production-delta":   { short: "Боевая схема",      long: "Извлечение DeltaKnowledge точно по продакшн-схеме (essence + cipher + relations)" },
+  "crystallizer-ru-mendeleev":       { short: "Менделеев",         long: "Извлечение знаний из русскоязычного текста (периодический закон)" },
+
+  /* — Оценщик — */
+  "evaluator-clrs":                  { short: "CLRS",              long: "Оценка эталона CLRS — должна быть высокой (8-10)" },
+  "evaluator-noise":                 { short: "Шум",               long: "Оценка мусорного фрагмента — должна быть низкой (0-2)" },
+
+  /* — Переводчик — */
+  "translator-en-ru":                { short: "Англ → Рус",        long: "Перевод английского технического текста на русский (главный путь импорта)" },
+
+  /* — Знаток украинского — */
+  "ukrainian-uk-write":              { short: "Письмо",            long: "Создание связного текста на украинском с правильной орфографией" },
+
+  /* — Судья — */
+  "judge-bst":                       { short: "BST",               long: "Выбор правильного ответа о сложности BST (A-вариант)" },
+
+  /* — Детектор языка — */
+  "lang-detect-uk":                  { short: "Современный укр.",  long: "Распознавание современного украинского технического текста" },
+  "lang-detect-en":                  { short: "Английский",        long: "Контрольная проверка распознавания английского" },
+
+  /* — Зрение — */
+  "vision_meta-strict-json":         { short: "Строгий JSON",      long: "Дисциплина формата: vision-модель возвращает чистый JSON без prose" },
+  "vision_meta-cover-en":            { short: "Обложка EN",        long: "JSON-метаданные обложки английской книги" },
+  "vision_ocr-plain-text":           { short: "Plain text",        long: "Дисциплина формата: OCR должен дать чистый текст без markdown/JSON" },
+  "vision_illustration-with-context":{ short: "С контекстом",      long: "Описание иллюстрации с привязкой к теме главы (для RAG-индекса)" },
+};
+
+export function disciplineHuman(id) {
+  return DISCIPLINE_HUMAN[id] || { short: id, long: id };
+}
+
+export function roleHuman(role) {
+  return ROLE_HUMAN_LABEL[role] || { icon: "🤖", title: role, subtitle: "" };
+}
+
+/** Человекочитаемое имя pref-ключа для UI. */
+export function prefKeyLabel(k) {
+  const MAP = {
+    extractorModel:           "Кристаллизатор",
+    judgeModel:               "Критик",
+    evaluatorModel:           "Оценщик книг",
+    translatorModel:          "Переводчик",
+    langDetectorModel:        "Определитель языка",
+    ukrainianSpecialistModel: "Украинская модель",
+    visionModelKey:           "Vision (обложки / OCR / иллюстрации)",
+  };
+  return MAP[k] ?? k;
+}
+
+/** Иконка роли для UI. */
+export function roleIcon(prefKey) {
+  const MAP = {
+    extractorModel:           "💎",
+    judgeModel:               "⚖️",
+    evaluatorModel:           "📚",
+    translatorModel:          "🌐",
+    langDetectorModel:        "🔤",
+    ukrainianSpecialistModel: "🇺🇦",
+    visionModelKey:           "👁️",
+  };
+  return MAP[prefKey] ?? "🤖";
+}

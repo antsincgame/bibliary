@@ -4,6 +4,7 @@ import { tmpdir } from "os";
 import { randomUUID } from "crypto";
 import { execFile as _execFile } from "child_process";
 import { promisify } from "util";
+import { platformVendorDirsWithLegacy } from "../../platform.js";
 
 const execFile = promisify(_execFile);
 
@@ -15,10 +16,15 @@ export interface DjvuToolResolution {
 function candidateRoots(): string[] {
   const roots = new Set<string>();
   const cwd = process.cwd();
-  roots.add(path.join(cwd, "vendor", "djvulibre", "win32-x64"));
+  /* per-platform + legacy win32-x64 fallback (Phase 4.2). */
+  for (const subdir of platformVendorDirsWithLegacy()) {
+    roots.add(path.join(cwd, "vendor", "djvulibre", subdir));
+  }
   roots.add(path.join(cwd, "vendor", "djvulibre"));
   if (process.resourcesPath) {
-    roots.add(path.join(process.resourcesPath, "vendor", "djvulibre", "win32-x64"));
+    for (const subdir of platformVendorDirsWithLegacy()) {
+      roots.add(path.join(process.resourcesPath, "vendor", "djvulibre", subdir));
+    }
     roots.add(path.join(process.resourcesPath, "vendor", "djvulibre"));
   }
   if (process.platform === "win32") {
@@ -30,6 +36,12 @@ function candidateRoots(): string[] {
     }
     const localApp = process.env["LOCALAPPDATA"] ?? "";
     if (localApp) roots.add(path.join(localApp, "Programs", "DjVuLibre"));
+  }
+  /* Linux/macOS: типичные системные пути для CLI */
+  if (process.platform !== "win32") {
+    roots.add("/usr/local/bin");
+    roots.add("/usr/bin");
+    roots.add("/opt/homebrew/bin");
   }
   return [...roots];
 }
@@ -108,6 +120,6 @@ export function getDjvuInstallHint(): string {
   if (process.platform === "win32") {
     return "Install DjVuLibre or keep bundled binaries (djvutxt.exe/ddjvu.exe/djvused.exe) in vendor/djvulibre/win32-x64";
   }
-  if (process.platform === "darwin") return "Install DjVuLibre: brew install djvulibre";
-  return "Install DjVuLibre package (e.g. apt install djvulibre-bin)";
+  if (process.platform === "darwin") return "Install DjVuLibre: brew install djvulibre (then run scripts/download-djvulibre-macos.cjs)";
+  return "Install DjVuLibre package: sudo apt-get install -y djvulibre-bin (then run scripts/download-djvulibre-linux.cjs)";
 }
