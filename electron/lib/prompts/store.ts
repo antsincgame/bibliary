@@ -34,20 +34,9 @@ export const DatasetRolesSchema = z.object({
 export type DatasetRoleSpec = z.infer<typeof RoleSchema>;
 export type DatasetRoles = z.infer<typeof DatasetRolesSchema>;
 
-export const MechanicusGrammarSchema = z.object({
-  domains: z.array(z.string()).min(1),
-  operators: z.record(z.string()),
-  abbreviations: z.record(z.string()),
-  principle: z.object({ minLength: z.number(), maxLength: z.number() }),
-  explanation: z.object({ minLength: z.number(), maxLength: z.number() }),
-});
-
-export type MechanicusGrammar = z.infer<typeof MechanicusGrammarSchema>;
-
-export type PromptFile = "grammar" | "dataset-roles";
+export type PromptFile = "dataset-roles";
 
 const FILES: Record<PromptFile, string> = {
-  grammar: "mechanicus-grammar.json",
   "dataset-roles": "dataset-roles.json",
 };
 
@@ -92,16 +81,6 @@ export class FsPromptStore {
     await withFileLock(target, async () => {
       await writeTextAtomic(target, content);
     });
-  }
-
-  async readGrammar(): Promise<MechanicusGrammar> {
-    const raw = await this.readJson("grammar");
-    return MechanicusGrammarSchema.parse(raw);
-  }
-
-  async writeGrammar(value: MechanicusGrammar): Promise<void> {
-    MechanicusGrammarSchema.parse(value);
-    await this.writeJson("grammar", value);
   }
 
   async readDatasetRoles(): Promise<DatasetRoles> {

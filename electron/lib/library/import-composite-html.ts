@@ -117,8 +117,7 @@ export async function importCompositeHtmlBook(
   }
 
   try {
-    const metaJsonPath = path.join(stored.bookDir, "meta.json");
-    await fs.writeFile(metaJsonPath, JSON.stringify(meta, null, 2), "utf-8");
+    await fs.writeFile(stored.metaPath, JSON.stringify(meta, null, 2), "utf-8");
   } catch {
     warnings.push("meta.json write failed (non-critical)");
   }

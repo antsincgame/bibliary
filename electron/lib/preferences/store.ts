@@ -20,6 +20,13 @@ export const PreferencesSchema = z.object({
   // -- RAG --
   ragTopK: z.number().int().min(1).max(100).default(15),
   ragScoreThreshold: z.number().min(0).max(1).default(0.55),
+  /**
+   * Включить cross-encoder rerank (BGE-reranker-large) поверх dense top-N.
+   * Cold-start модели ~5-15 сек, warm latency +2-3 сек на запрос. Качество
+   * +20-30% precision на технических запросах. Если железо слабое или
+   * пользователю нужен мгновенный ответ — выключи. По умолчанию включено.
+   */
+  ragRerankEnabled: z.boolean().default(true),
 
   // -- Scanner / Ingest --
   ingestParallelism: z.number().int().min(1).max(16).default(3),

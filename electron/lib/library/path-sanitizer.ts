@@ -49,38 +49,40 @@ export function sanitizeSegment(raw: string): string {
 }
 
 export interface HumanBookPath {
-  sphere: string;
+  language: string;
+  domain: string;
+  authorFolder: string;
+  /** Back-compat alias for older callers/tests. Now equals authorFolder. */
   folderName: string;
   mdFileName: string;
   relPath: string;
 }
 
 export function buildHumanBookPath(opts: {
-  sphere: string;
+  /** ISO-ish language segment; fallback "unknown". */
+  language?: string;
+  /** Domain/sphere segment; fallback "unsorted". */
+  domain?: string;
+  /** Back-compat: old caller passes sphere; treated as domain. */
+  sphere?: string;
   author?: string;
   title: string;
   bookIdShort: string;
 }): HumanBookPath {
-  const sphere = sanitizeSegment(opts.sphere || "unsorted");
+  const language = sanitizeSegment(opts.language || "unknown");
+  const domain = sanitizeSegment(opts.domain || opts.sphere || "unsorted");
   const titleSeg = sanitizeSegment(opts.title || "Untitled");
-
-  let folderName: string;
+  let authorFolder: string;
   if (opts.author && opts.author.trim().length > 0) {
-    const authorSeg = sanitizeSegment(opts.author);
-    folderName = `${authorSeg}_${titleSeg}`;
-    if (folderName.length > MAX_SEGMENT_LEN) {
-      const halfAuthor = authorSeg.slice(0, 20).replace(/_+$/, "");
-      const halfTitle = titleSeg.slice(0, 25).replace(/_+$/, "");
-      folderName = `${halfAuthor}_${halfTitle}`;
-    }
+    authorFolder = sanitizeSegment(opts.author);
   } else {
-    folderName = titleSeg;
+    authorFolder = "unknown_author";
   }
 
   const mdFileName = `${titleSeg}.md`;
-  const relPath = path.join(sphere, folderName, mdFileName);
+  const relPath = path.join(language, domain, authorFolder, mdFileName);
 
-  return { sphere, folderName, mdFileName, relPath };
+  return { language, domain, authorFolder, folderName: authorFolder, mdFileName, relPath };
 }
 
 export function resolveWithMaxPathGuard(
@@ -91,17 +93,18 @@ export function resolveWithMaxPathGuard(
   const fullMdPath = path.join(libraryRoot, humanPath.relPath);
 
   if (fullMdPath.length <= MAX_PATH_LEN) {
-    const bookDir = path.join(libraryRoot, humanPath.sphere, humanPath.folderName);
+    const bookDir = path.join(libraryRoot, humanPath.language, humanPath.domain, humanPath.authorFolder);
     return { bookDir, mdPath: fullMdPath, relPath: humanPath.relPath };
   }
 
   const budget = MAX_PATH_LEN - libraryRoot.length - 20;
   const maxSeg = Math.max(8, Math.floor(budget / 4));
-  const shortSphere = humanPath.sphere.slice(0, maxSeg);
-  const shortFolder = `${humanPath.folderName.slice(0, maxSeg)}_${bookIdShort}`;
+  const shortLanguage = humanPath.language.slice(0, Math.max(2, Math.min(maxSeg, 12)));
+  const shortDomain = humanPath.domain.slice(0, maxSeg);
+  const shortAuthor = humanPath.authorFolder.slice(0, maxSeg);
   const shortMdFile = `${bookIdShort}.md`;
-  const shortRel = path.join(shortSphere, shortFolder, shortMdFile);
-  const bookDir = path.join(libraryRoot, shortSphere, shortFolder);
+  const shortRel = path.join(shortLanguage, shortDomain, shortAuthor, shortMdFile);
+  const bookDir = path.join(libraryRoot, shortLanguage, shortDomain, shortAuthor);
   return { bookDir, mdPath: path.join(libraryRoot, shortRel), relPath: shortRel };
 }
 

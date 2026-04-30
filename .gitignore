@@ -67,3 +67,10 @@ test_rust.rs
 
 # DjVuLibre downloaded installers (not needed in repo)
 vendor/djvulibre/**/*_Setup.exe
+
+# Benchmark and E2E reports (generated data, not for VCS)
+data/benchmarks/
+data/e2e-reports/
+
+# Import audit logs
+data/logs/

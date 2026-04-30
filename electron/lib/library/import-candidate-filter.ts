@@ -1,4 +1,5 @@
 import * as path from "path";
+import { nameTokenSimilarity } from "../text/tokenize.js";
 
 export interface ImportCandidateContext {
   rootDir: string;
@@ -78,26 +79,10 @@ function normalizeSegments(rootDir: string, candidatePath: string): string[] {
   return relative.split(/[\\/]+/).filter(Boolean);
 }
 
-function tokenize(value: string): Set<string> {
-  return new Set(
-    value
-      .toLowerCase()
-      .replace(/[^\p{L}\p{N}]+/gu, " ")
-      .split(/\s+/)
-      .filter((token) => token.length >= 3),
-  );
-}
-
-export function nameTokenSimilarity(a: string, b: string): number {
-  const left = tokenize(a);
-  const right = tokenize(b);
-  if (left.size === 0 || right.size === 0) return 0;
-  let hits = 0;
-  for (const token of left) {
-    if (right.has(token)) hits += 1;
-  }
-  return hits / Math.max(left.size, right.size);
-}
+/* Перенесено в `electron/lib/text/tokenize.ts` — общая Unicode-tokenization
+   для BM25, import-candidate-filter и e2e скриптов. Re-export для backward
+   compat: внешние потребители продолжают импортировать из этого файла. */
+export { nameTokenSimilarity };
 
 export function shouldIncludeImportCandidate(ctx: ImportCandidateContext): boolean {
   const ext = ctx.ext.toLowerCase();

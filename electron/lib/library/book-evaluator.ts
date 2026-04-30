@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Book Evaluator — "Chief Epistemologist" Pre-flight Quality Assessment.
  *
  * Принимает Structural Surrogate (≈4K слов) + идентификатор LLM, возвращает
@@ -20,6 +20,7 @@ import type { ModelProfile } from "../dataset-v2/model-profile.js";
 import { extractJsonObjectFromReasoning } from "../dataset-v2/reasoning-decoder.js";
 import { parseReasoningResponse } from "./reasoning-parser.js";
 import type { BookEvaluation, EvaluationResult } from "./types.js";
+import { getModelPool, type ModelPool } from "../llm/model-pool.js";
 
 /** "Chief Epistemologist" -- системный промпт. На английском (CoT-friendly). */
 const EVALUATOR_SYSTEM_PROMPT = `You are the Chief Epistemologist, Bibliographic Detective, and Data Curator for an elite AI knowledge dataset. Your task: analyze the Structural Surrogate of a book (delivered inside <document> tags in the user message) and extract MAXIMUM bibliographic metadata + predict Conceptual Value.
@@ -268,6 +269,8 @@ export interface EvaluateBookOptions {
   temperature?: number;
   /** Прерывание долгой генерации. */
   signal?: AbortSignal;
+  /** DI hook для тестов — подменить ModelPool. Дефолт — `getModelPool()` singleton. */
+  pool?: ModelPool;
 }
 
 /**
@@ -396,8 +399,15 @@ export interface PickEvaluatorModelOptions {
   listLoadedImpl?: typeof listLoaded;
   /** DI hook для тестов — подменить `listDownloaded()`. */
   listDownloadedImpl?: typeof listDownloaded;
-  /** DI hook для тестов — подменить `loadModel()`. */
+  /**
+   * DI hook для тестов — подменить `loadModel()`. Если передан явно — используется
+   * **вместо** ModelPool (старое поведение, для backward compat существующих тестов).
+   * В проде `loadModelImpl` undefined, и evaluator идёт через `pool.acquire()`,
+   * который учитывает VRAM capacity и делит модель между потребителями.
+   */
   loadModelImpl?: typeof loadModel;
+  /** DI hook для тестов — подменить ModelPool. Дефолт — `getModelPool()` singleton. */
+  pool?: ModelPool;
 }
 
 /**
@@ -431,7 +441,26 @@ async function pickEvaluatorModelUnsafe(
   const allowAutoLoad = opts.allowAutoLoad === true;
   const listLoadedFn = opts.listLoadedImpl ?? listLoaded;
   const listDownloadedFn = opts.listDownloadedImpl ?? listDownloaded;
-  const loadModelFn = opts.loadModelImpl ?? loadModel;
+  /* loadModelFn ВСЕГДА должна быть вызываемой (для обратной совместимости тестов).
+     Если caller передал loadModelImpl явно — используем его (legacy DI hook).
+     Иначе — proxy через ModelPool: pool.acquire() c немедленным release(),
+     потому что book-evaluator не удерживает модель эксклюзивно — caller ходит
+     к chat сразу после pick. Pool всё равно учтёт modelKey как loaded
+     с refCount=0 и не выгрузит, пока новый acquire с capacity-overflow
+     не попросит место. */
+  const loadModelFn: typeof loadModel = opts.loadModelImpl ?? (
+    async (key, loadOpts) => {
+      const pool = opts.pool ?? getModelPool();
+      const handle = await pool.acquire(key, {
+        ttlSec: loadOpts?.ttlSec,
+        gpuOffload: loadOpts?.gpuOffload,
+        contextLength: loadOpts?.contextLength,
+        role: "evaluator",
+      });
+      handle.release();
+      return { modelKey: handle.modelKey, identifier: handle.identifier };
+    }
+  );
 
   const loaded = await listLoadedFn();
   const loadedKeys = new Set(loaded.map((m) => m.modelKey));
@@ -522,56 +551,67 @@ export async function evaluateBook(
     };
   }
 
-  let raw = "";
-  let reasoningFromApi: string | undefined;
-  try {
-    const profile = await getModelProfile(model);
-    let response;
-    try {
-      response = await callEvaluationModel(model, surrogate, opts, profile, profile.useResponseFormat);
-    } catch (err) {
-      if (!profile.useResponseFormat || !isLmStudioBadRequest(err)) throw err;
-      const msg = err instanceof Error ? err.message : String(err);
-      warnings.push(`evaluator: structured output rejected by LM Studio, retrying compatibility mode: ${msg}`);
-      response = await callEvaluationModel(model, surrogate, opts, profile, false);
-    }
-    raw = response.content ?? "";
-    reasoningFromApi = response.reasoningContent;
-  } catch (err) {
-    /* Не только «сеть»: сюда же попадают HTTP-ошибки, исчерпание ретраев, сбой профиля и т.д. */
-    const msg = err instanceof Error ? err.message : String(err);
-    warnings.push(`evaluator: LM Studio call failed: ${msg}`);
-    return { evaluation: null, reasoning: null, raw, model, warnings };
-  }
+  /* Audit fix 2026-04-30: pool.withModel удерживает refCount > 0 на всё
+     время inference + repair. Без этого ModelPool мог выбрать evaluator
+     модель как LRU-жертву (refCount=0) и выгрузить её посреди chat —
+     LM Studio вернул бы ошибку «model not loaded» через 30+ сек таймаута. */
+  const pool = opts.pool ?? getModelPool();
+  return pool.withModel(
+    model,
+    { role: "evaluator", ttlSec: 1800, gpuOffload: "max" },
+    async () => {
+      let raw = "";
+      let reasoningFromApi: string | undefined;
+      try {
+        const profile = await getModelProfile(model);
+        let response;
+        try {
+          response = await callEvaluationModel(model, surrogate, opts, profile, profile.useResponseFormat);
+        } catch (err) {
+          if (!profile.useResponseFormat || !isLmStudioBadRequest(err)) throw err;
+          const msg = err instanceof Error ? err.message : String(err);
+          warnings.push(`evaluator: structured output rejected by LM Studio, retrying compatibility mode: ${msg}`);
+          response = await callEvaluationModel(model, surrogate, opts, profile, false);
+        }
+        raw = response.content ?? "";
+        reasoningFromApi = response.reasoningContent;
+      } catch (err) {
+        /* Не только «сеть»: сюда же попадают HTTP-ошибки, исчерпание ретраев, сбой профиля и т.д. */
+        const msg = err instanceof Error ? err.message : String(err);
+        warnings.push(`evaluator: LM Studio call failed: ${msg}`);
+        return { evaluation: null, reasoning: null, raw, model, warnings };
+      }
 
-  /* Парсим ответ. Если модель отдала reasoning_content отдельно (LM Studio API),
-     используем его как первичный reasoning, а content как payload для JSON. */
-  const parsed = parseEvaluationResponse(raw, reasoningFromApi);
-  warnings.push(...parsed.warnings);
-  const reasoning = parsed.reasoning;
+      /* Парсим ответ. Если модель отдала reasoning_content отдельно (LM Studio API),
+         используем его как первичный reasoning, а content как payload для JSON. */
+      const parsed = parseEvaluationResponse(raw, reasoningFromApi);
+      warnings.push(...parsed.warnings);
+      const reasoning = parsed.reasoning;
 
-  if (parsed.json === null) {
-    const repaired = await repairEvaluationJson(model, raw, reasoning, opts.signal);
-    warnings.push(...repaired.warnings);
-    if (repaired.evaluation) return { ...repaired, warnings };
-    return { evaluation: null, reasoning: repaired.reasoning ?? reasoning, raw: repaired.raw || raw, model, warnings };
-  }
+      if (parsed.json === null) {
+        const repaired = await repairEvaluationJson(model, raw, reasoning, opts.signal);
+        warnings.push(...repaired.warnings);
+        if (repaired.evaluation) return { ...repaired, warnings };
+        return { evaluation: null, reasoning: repaired.reasoning ?? reasoning, raw: repaired.raw || raw, model, warnings };
+      }
 
-  let validation = evaluationSchema.safeParse(parsed.json);
-  if (!validation.success) {
-    const repaired = await repairEvaluationJson(model, raw, reasoning, opts.signal);
-    warnings.push(`evaluator: JSON schema mismatch before repair: ${validation.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
-    warnings.push(...repaired.warnings);
-    if (repaired.evaluation) return { ...repaired, warnings };
-    validation = evaluationSchema.safeParse(parsed.json);
-  }
-  if (!validation.success) {
-    warnings.push(`evaluator: JSON schema mismatch: ${validation.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
-    return { evaluation: null, reasoning, raw, model, warnings };
-  }
+      let validation = evaluationSchema.safeParse(parsed.json);
+      if (!validation.success) {
+        const repaired = await repairEvaluationJson(model, raw, reasoning, opts.signal);
+        warnings.push(`evaluator: JSON schema mismatch before repair: ${validation.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
+        warnings.push(...repaired.warnings);
+        if (repaired.evaluation) return { ...repaired, warnings };
+        validation = evaluationSchema.safeParse(parsed.json);
+      }
+      if (!validation.success) {
+        warnings.push(`evaluator: JSON schema mismatch: ${validation.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
+        return { evaluation: null, reasoning, raw, model, warnings };
+      }
 
-  const evaluation: BookEvaluation = validation.data;
-  return { evaluation, reasoning, raw, model, warnings };
+      const evaluation: BookEvaluation = validation.data;
+      return { evaluation, reasoning, raw, model, warnings };
+    },
+  );
 }
 
 async function repairEvaluationJson(

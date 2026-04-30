@@ -37,6 +37,7 @@ export const SECTIONS = Object.freeze([
       { key: "ingestParallelism", type: "int", min: 1, max: 16, labelKey: "settings.ingestParallelism" },
       { key: "searchPerSourceLimit", type: "int", min: 1, max: 50, labelKey: "settings.searchPerSourceLimit" },
       { key: "qdrantSearchLimit", type: "int", min: 1, max: 100, labelKey: "settings.qdrantSearchLimit" },
+      { key: "ragRerankEnabled", type: "bool", labelKey: "settings.ragRerankEnabled" },
     ],
   },
   {

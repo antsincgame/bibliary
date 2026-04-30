@@ -1,6 +1,6 @@
 {
   "name": "bibliary",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "type": "module",
   "main": "dist-electron/main.js",
   "description": "Vector knowledge store — natural language concepts for site generation",
@@ -31,6 +31,7 @@
     "test:e2e:bibliarifull": "tsx scripts/e2e-bibliarifull-library-import.ts",
     "test:e2e:bibliarifull-bundle": "tsx scripts/e2e-bibliarifull-bundle-import.ts",
     "test:e2e:full-corpus": "tsx scripts/e2e-full-corpus-library-import.ts",
+    "test:e2e:1000-electron": "node scripts/run-electron-node.cjs scripts/e2e-1000-random-sample.ts",
     "dataset:synth": "tsx scripts/dataset-synth.ts",
     "dataset:probe-model": "tsx scripts/probe-evaluator-pick.ts",
     "test": "npm run test:rebuild-native && node --import tsx --test tests/*.test.ts",

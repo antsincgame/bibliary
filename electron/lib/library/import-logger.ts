@@ -44,6 +44,7 @@ export type ImportLogCategory =
   | "vision.start"
   | "vision.success"
   | "vision.failed"
+  | "vision.illustration" /* Прогресс/ошибки worker'а иллюстраций (Semantic Triage). */
   | "evaluator.queued"
   | "system.info"
   | "system.warn"

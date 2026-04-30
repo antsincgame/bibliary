@@ -3,9 +3,12 @@
  * импорт, фоновая Pre-flight оценка, доступ к book.md.
  *
  * Архитектура:
- *   - data/library/{slug}/{original.ext, book.md} -- источник истины.
+ *   - data/library/<language>/<domain>/<author>/<Book Title>.md -- источник истины.
+ *     Sidecars рядом с тем же basename: .original.{ext}, .meta.json,
+ *     .illustrations.json. Старые layout'ы продолжают читаться.
  *   - SQLite cache-db.ts -- индекс для UI, перестраиваемый из FS.
- *   - evaluator-queue.ts -- фоновый воркер LLM-оценки (один LLM-call за раз).
+ *   - evaluator-queue.ts -- фоновый воркер LLM-оценки (slotCount параллельных
+ *     LLM-call'ов, default 2; настраивается через UI evaluator-set-slots).
  *
  * Пути с renderer: `parseOrThrow` + `AbsoluteFilePathSchema` / `LibraryImportFilePathsSchema`
  * (`electron/ipc/validators.ts`) — как в `scanner.ipc.ts` / `qdrant.ipc.ts`.
@@ -75,6 +78,7 @@ import {
 } from "../lib/library/evaluator-queue.js";
 import { globalLlmLock } from "../lib/llm/global-llm-lock.js";
 import { resolveLibraryRoot } from "../lib/library/paths.js";
+import { resolveCatalogSidecarPaths } from "../lib/library/storage-contract.js";
 import {
   AbsoluteFilePathSchema,
   LibraryImportFilePathsSchema,
@@ -149,6 +153,9 @@ export function abortAllLibrary(reason: string): void {
   cancelCurrentEvaluation(reason);
 }
 
+/* Outdated comment fixed below: «один LLM-call за раз» — было неверно;
+   фактически evaluator работает с slotCount слотами параллельно (default 2). */
+
 /** Сколько импортов сейчас в работе. Используется в `before-quit` чтобы не закрывать app посреди работы. */
 export function activeLibraryImportCount(): number {
   return activeImports.size;
@@ -161,11 +168,14 @@ export function activeLibraryImportCount(): number {
  * может оборваться посередине и оставить полу-битый book.md.
  */
 export async function flushLibraryImports(timeoutMs: number, reason: string): Promise<boolean> {
-  if (activeImports.size === 0) return true;
-  for (const [, ctrl] of activeImports.entries()) ctrl.abort(reason);
+  const logger = getImportLogger();
+
+  /* Сначала отменяем активные импорты. */
+  if (activeImports.size > 0) {
+    for (const [, ctrl] of activeImports.entries()) ctrl.abort(reason);
+  }
 
   const startedAt = Date.now();
-  const logger = getImportLogger();
   while (activeImports.size > 0) {
     if (Date.now() - startedAt > timeoutMs) {
       await logger.write({
@@ -178,6 +188,35 @@ export async function flushLibraryImports(timeoutMs: number, reason: string): Pr
     }
     await new Promise((r) => setTimeout(r, 100));
   }
+
+  /* После активных импортов ждём illustration jobs (post-return fire-and-forget).
+     Без этого app может закрыться до записи illustrations.json в очередной книге.
+     Используем оставшееся время от timeoutMs (минимум 2 сек). */
+  try {
+    const { drainIllustrationJobs, getIllustrationSemaphore } = await import("../lib/library/illustration-semaphore.js");
+    const status = getIllustrationSemaphore().getStatus();
+    if (status.active > 0 || status.queued > 0) {
+      const remainingMs = Math.max(2000, timeoutMs - (Date.now() - startedAt));
+      const drainStart = Date.now();
+      const drainPromise = drainIllustrationJobs();
+      const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, remainingMs));
+      await Promise.race([drainPromise, timeoutPromise]);
+      const elapsed = Date.now() - drainStart;
+      const finalStatus = getIllustrationSemaphore().getStatus();
+      if (finalStatus.active > 0 || finalStatus.queued > 0) {
+        await logger.write({
+          importId: "shutdown",
+          level: "warn",
+          category: "import.crash",
+          message: `flushLibraryImports: ${finalStatus.active} illustration jobs still running after ${elapsed}ms drain`,
+        });
+      }
+    }
+  } catch (e) {
+    /* Не падаем — drain best-effort. */
+    console.warn("[library.ipc] drainIllustrationJobs error:", e);
+  }
+
   return true;
 }
 
@@ -431,6 +470,15 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
         },
       });
       let endStatus: "ok" | "failed" | "cancelled" = "ok";
+      /* Auto-pause evaluator при больших импортах. Audit 2026-04-30:
+         параллельная работа evaluator (slotCount=2 chat) + import (4 vision-meta)
+         + illustration semaphore (2×4 vision) при 100+ книгах перегружает
+         LM Studio. Стратегия: первые 100 книг идут в очередь evaluator
+         немедленно (low load), при 101-й книге — auto-pause; resume в finally.
+         Если evaluator уже был на паузе пользователем — оставляем как есть. */
+      let importedCount = 0;
+      let autoPaused = false;
+      const AUTO_PAUSE_THRESHOLD = 100;
       try {
         const opts: ImportFolderOptions = {
           scanArchives: args.scanArchives === true,
@@ -458,6 +506,7 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
           /* Каждую новую книгу немедленно ставим в очередь оценки --
              не ждём конца импорта, чтобы LLM начала работать сразу. */
           onBookImported: (meta) => {
+            importedCount += 1;
             enqueueBook(meta.id);
             void logger.write({
               importId, level: "info", category: "evaluator.queued",
@@ -465,6 +514,20 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
               file: meta.originalFile,
               details: { bookId: meta.id, format: meta.originalFormat, words: meta.wordCount },
             });
+            /* Auto-pause при пересечении порога. Срабатывает один раз. */
+            if (importedCount === AUTO_PAUSE_THRESHOLD && !autoPaused && !getEvaluatorStatus().paused) {
+              autoPaused = true;
+              pauseEvaluator();
+              void logger.write({
+                importId, level: "info", category: "evaluator.queued",
+                message: `Auto-paused evaluator at ${AUTO_PAUSE_THRESHOLD} imports — will resume after import completes`,
+              });
+            } else if (importedCount === AUTO_PAUSE_THRESHOLD && getEvaluatorStatus().paused) {
+              void logger.write({
+                importId, level: "info", category: "evaluator.queued",
+                message: `Evaluator was already paused at ${AUTO_PAUSE_THRESHOLD} imports — preserving user pause`,
+              });
+            }
           },
           signal: ctrl.signal,
         };
@@ -488,6 +551,16 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
         throw err;
       } finally {
         activeImports.delete(importId);
+        /* Resume auto-paused evaluator чтобы он догнал backlog после импорта.
+           Если пользователь сам ставил на паузу до импорта — autoPaused=false,
+           ничего не делаем (его пауза остаётся). */
+        if (autoPaused) {
+          resumeEvaluator();
+          await logger.write({
+            importId, level: "info", category: "evaluator.queued",
+            message: `Resumed evaluator after import (${importedCount} books queued)`,
+          });
+        }
         await logger.endSession({ status: endStatus });
       }
     }
@@ -650,7 +723,10 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
     const ctrl = activeImports.get(importId);
     if (!ctrl) return false;
     ctrl.abort("user-cancel");
-    activeImports.delete(importId);
+    /* Не удаляем activeImports здесь: worker ещё может писать book.md/meta.json.
+       Удаление делает finally в import-folder/import-files handler после
+       реального завершения. Иначе flushLibraryImports() видел бы «0 активных»
+       и приложение могло закрыться посреди записи. */
     await getImportLogger().write({
       importId, level: "warn", category: "import.cancel",
       message: "Import cancelled by user",
@@ -739,10 +815,20 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
         unregisterFromNearDup(meta);
         resetRevisionDedupCache();
         if (args.deleteFiles !== false) {
-          /* book.md лежит в data/library/{slug}/book.md -- удаляем директорию целиком. */
-          const path = await import("path");
-          const dir = path.dirname(meta.mdPath);
-          await fs.rm(dir, { recursive: true, force: true });
+          /* Удаляем только файлы конкретной книги. Новый layout хранит много книг
+             в data/library/<language>/<domain>/<author>/, поэтому удалять dirname(mdPath)
+             целиком опасно: это может снести все книги автора. */
+          const sidecars = await resolveCatalogSidecarPaths(meta);
+          const toDelete = new Set([
+            meta.mdPath,
+            sidecars.originalPath,
+            sidecars.metaPath,
+            sidecars.illustrationsPath,
+          ]);
+          for (const p of toDelete) await fs.rm(p, { force: true });
+          /* Best-effort cleanup empty legacy book dir / author dir. Если там
+             остались другие книги, rmdir просто бросит ENOTEMPTY и мы игнорируем. */
+          await fs.rmdir(sidecars.bookDir).catch(() => undefined);
         }
         return { ok: true };
       } catch (e) {
@@ -863,10 +949,9 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
       const meta = getBookById(bookId);
       if (!meta) return { ok: false, reason: "not-found" };
 
-      const pathMod = await import("path");
       const { promises: fsMod } = await import("fs");
-      const dir = pathMod.dirname(meta.mdPath);
-      const originalPath = pathMod.join(dir, meta.originalFile);
+      const sidecars = await resolveCatalogSidecarPaths(meta);
+      const originalPath = sidecars.originalPath;
 
       try {
         await fsMod.access(originalPath);

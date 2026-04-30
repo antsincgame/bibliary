@@ -23,6 +23,7 @@ import * as path from "path";
 import { pickVisionModels } from "../llm/vision-meta.js";
 import { modelRoleResolver } from "../llm/model-role-resolver.js";
 import { getPreferencesStore } from "../preferences/store.js";
+import { getModelPool } from "../llm/model-pool.js";
 
 /** Minimum score (exclusive) for a semantic illustration to be kept in CAS. */
 const SEMANTIC_SCORE_THRESHOLD = 5;
@@ -212,9 +213,10 @@ export async function processIllustrations(
   blobsRoot: string,
   signal?: AbortSignal,
   onProgress?: (msg: string) => void,
+  exactPaths?: { mdPath?: string; illustrationsPath?: string; bookTitle?: string },
 ): Promise<{ processed: number; skipped: number; errors: number }> {
-  const illustrationsPath = path.join(bookDir, "illustrations.json");
-  const mdPath = await findBookMdFile(bookDir);
+  const illustrationsPath = exactPaths?.illustrationsPath ?? path.join(bookDir, "illustrations.json");
+  const mdPath = exactPaths?.mdPath ?? await findBookMdFile(bookDir);
   let entries: IllustrationEntry[];
 
   try {
@@ -254,9 +256,10 @@ export async function processIllustrations(
     fallbackModelKeys = models.slice(1).map((m) => m.modelKey);
   }
 
-  /* Контекст книги для тематических описаний — извлекаем title из имени
-   * директории книги (book layout: data/library/<sanitized-title>/). */
-  const bookTitle = inferBookTitleFromDir(bookDir);
+  /* Контекст книги для тематических описаний. В новом storage layout папка
+   * bookDir — это author folder, поэтому title берём из exactPaths/book meta,
+   * а basename(bookDir) используем только для legacy layout. */
+  const bookTitle = exactPaths?.bookTitle ?? inferBookTitleFromDir(bookDir);
 
   /* Feature-flagged CLIP indexing — отдельный шаг D после triage. */
   let clipIndexingEnabled = false;
@@ -437,7 +440,15 @@ export async function processIllustrations(
     await Promise.all(workers);
   }
 
-  await runPool(entries, VISION_PARALLELISM);
+  /* Pool: один acquire primary vision-модели на весь батч иллюстраций.
+     Без этого pool увидел бы N независимых chat-вызовов на ту же модель.
+     Здесь — один pin на всё время обработки, fallback модели грузятся
+     отдельно по мере необходимости в analyzeImageWithVision. */
+  await getModelPool().withModel(
+    modelKey,
+    { role: "vision_illustration", ttlSec: 3600, gpuOffload: "max" },
+    () => runPool(entries, VISION_PARALLELISM),
+  );
   /* Финальная синхронизация md-очереди — гарантирует что bookMd зафиксирован
    * до записи на диск. */
   await mdSerial;

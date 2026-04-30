@@ -4,11 +4,27 @@
  */
 import { el, clear } from "../dom.js";
 import { t } from "../i18n.js";
-import { IMPORT_STATE } from "./state.js";
+import { IMPORT_STATE, STATE } from "./state.js";
 import { buildEvaluatorPanel, refreshEvaluatorState } from "./evaluator.js";
 import { refreshCollectionViews } from "./collection-views.js";
 import { showLibraryToast } from "./toast.js";
-import { showAlert } from "../components/ui-dialog.js";
+import { showAlert, showConfirm } from "../components/ui-dialog.js";
+
+/**
+ * Эффективное значение OCR для конкретного импорта: учитывает per-book override
+ * (если пользователь поставил галочку в preview), иначе глобальный prefs.ocrEnabled.
+ *
+ * Без этой функции renderer вызывал importFolder/importFiles без `ocrEnabled`,
+ * и md-converter.ts тихо отключал OCR auto-fallback — сканированные PDF/DJVU
+ * пропускались как «no extractable text».
+ *
+ * @returns {boolean}
+ */
+function resolveOcrEnabled() {
+  if (STATE?.ocrOverride === true) return true;
+  if (STATE?.ocrOverride === false) return false;
+  return Boolean(STATE?.prefs?.ocrEnabled);
+}
 
 const LOG_RING_SIZE = 1000;
 const LOG_LEVEL_PRIORITY = { debug: 0, info: 1, warn: 2, error: 3 };
@@ -481,10 +497,26 @@ async function importFromFolder(deps) {
     folderPath = null;
   }
   if (!folderPath) return;
+
+  /* Подтверждение перед стартом — пользователь видит выбранный путь и
+     может отменить, если выбрал не ту папку. Раньше импорт стартовал
+     сразу после выбора, что давало шанс случайно проиндексировать
+     огромную папку. */
+  const confirmed = await showConfirm(
+    t("library.import.confirm.startMessage", { folder: folderPath }),
+    {
+      title: t("library.import.confirm.startTitle"),
+      okLabel: t("library.import.btn.start"),
+      cancelLabel: t("library.import.btn.cancel"),
+    },
+  );
+  if (!confirmed) return;
+
   await runImport(async () =>
     window.api.library.importFolder({
       folder: folderPath,
       scanArchives: IMPORT_STATE.scanArchives,
+      ocrEnabled: resolveOcrEnabled(),
       maxDepth: IMPORT_STATE.recursive ? 16 : 0,
     }),
     deps,
@@ -568,10 +600,26 @@ async function importFromFiles(deps) {
     paths = [];
   }
   if (paths.length === 0) return;
+
+  /* Если выбрано >1 файла — показываем confirm с количеством. Один файл
+     импортируется сразу (типичный сценарий «закинул конкретную книгу»). */
+  if (paths.length > 1) {
+    const confirmed = await showConfirm(
+      t("library.import.confirm.startFilesMessage", { count: String(paths.length) }),
+      {
+        title: t("library.import.confirm.startFilesTitle"),
+        okLabel: t("library.import.btn.start"),
+        cancelLabel: t("library.import.btn.cancel"),
+      },
+    );
+    if (!confirmed) return;
+  }
+
   await runImport(async () =>
     window.api.library.importFiles({
       paths,
       scanArchives: IMPORT_STATE.scanArchives,
+      ocrEnabled: resolveOcrEnabled(),
     }),
     deps,
   );
@@ -734,16 +782,19 @@ async function importDroppedEntries(entries) {
     total.failed += Number(res.failed ?? 0);
   };
 
+  const ocrEnabled = resolveOcrEnabled();
   if (files.length > 0) {
     merge(await window.api.library.importFiles({
       paths: files,
       scanArchives: IMPORT_STATE.scanArchives,
+      ocrEnabled,
     }));
   }
   for (const folder of dirs) {
     merge(await window.api.library.importFolder({
       folder,
       scanArchives: IMPORT_STATE.scanArchives,
+      ocrEnabled,
       maxDepth: IMPORT_STATE.recursive ? 16 : 0,
     }));
   }

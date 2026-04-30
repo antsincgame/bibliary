@@ -17,6 +17,7 @@
 import { z } from "zod";
 import { listLoaded } from "../../lmstudio-client.js";
 import { getLmStudioUrl } from "../endpoints/index.js";
+import { getModelPool } from "./model-pool.js";
 
 /**
  * Маркеры vision-моделей в modelKey/architecture. Это эвристика стратегии,
@@ -426,8 +427,17 @@ export async function extractMetadataFromCover(
   let bestIncomplete: VisionMetaResult | null = null;
   let lastFailure: VisionMetaResult | null = null;
 
+  /* Pool: каждая попытка fallback acquire'ит свою модель отдельно.
+     Если первая candidate модель уже загружена — pool найдёт её и просто
+     инкрементит refCount. Если нет — загрузит. На ошибке release происходит
+     автоматически в withModel(), и следующая попытка работает с новой моделью. */
+  const pool = getModelPool();
   for (const candidate of candidates) {
-    const result = await requestMetaFromModel(imageBuffer, candidate.modelKey, opts);
+    const result = await pool.withModel(
+      candidate.modelKey,
+      { role: "vision_meta", ttlSec: 1800, gpuOffload: "max" },
+      () => requestMetaFromModel(imageBuffer, candidate.modelKey, opts),
+    );
     if (!result.ok || !result.meta) {
       const reason = result.error ?? "unknown error";
       attempts.push({ model: candidate.modelKey, ok: false, reason });

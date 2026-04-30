@@ -192,7 +192,7 @@ function renderLoadFromDisk(downloaded, loaded) {
   if (!host) return;
   clear(host);
 
-  const loadedKeys = new Set(loaded.map((l) => l.modelKey));
+    const loadedKeys = new Set(loaded.map((l) => l.modelKey));
   if (downloaded.length === 0) {
     host.appendChild(el("p", { class: "mp-empty" }, t("models.empty.no_downloaded")));
     return;
@@ -419,8 +419,8 @@ function buildLayout() {
       el("h2", { class: "mp-card-title" }, t("models.roles.title")),
       el("p", { class: "mp-card-sub" }, t("models.header.sub_simple")),
       el("div", { id: "mp-roles", class: "mp-roles-list mp-roles-list-compact" }, t("models.card.loading")),
-    ]),
-  ]);
+      ]),
+    ]);
 }
 
 // ---------------------------------------------------------------------------
@@ -631,7 +631,7 @@ async function exportProfileViaDialog() {
     const res = await window.api.preferences.exportProfile();
     if (!res?.path) return;
     showToast(t("models.olympics.advanced.export_done", { path: res.path }), "success");
-  } catch (e) {
+      } catch (e) {
     showToast(errMsg(e), "error");
   }
 }
@@ -647,7 +647,7 @@ async function importProfileViaDialog() {
     if (!res?.path) return;
     showToast(t("models.olympics.advanced.import_done", { keys: String(res.appliedKeys.length) }), "success");
     await refresh();
-  } catch (e) {
+      } catch (e) {
     showToast(errMsg(e), "error");
   }
 }

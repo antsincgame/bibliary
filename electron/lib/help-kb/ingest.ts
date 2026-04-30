@@ -23,6 +23,8 @@ import { chunkMarkdown, type HelpChunk } from "./chunker.js";
 import { embedPassage } from "../embedder/shared.js";
 import { DEFAULT_EMBED_MODEL, EMBEDDING_DIM, EMBED_MAX_INPUT_CHARS } from "../scanner/embedding.js";
 import { QDRANT_URL, QDRANT_API_KEY } from "../qdrant/http-client.js";
+import { ensureQdrantCollection } from "../qdrant/collection-config.js";
+import { bm25SparseVector } from "../qdrant/bm25-sparse.js";
 
 export const HELP_KB_COLLECTION = "bibliary_help";
 
@@ -47,7 +49,7 @@ export interface HelpKbBuildResult {
 
 interface QdrantPoint {
   id: string;
-  vector: number[];
+  vector: unknown;
   payload: Record<string, unknown>;
 }
 
@@ -63,33 +65,43 @@ function deterministicId(seed: string): string {
   ].join("-");
 }
 
-async function ensureHelpCollection(signal?: AbortSignal): Promise<void> {
+/**
+ * Probe + create. Новые коллекции — hybrid (dense + BM25 sparse).
+ * Существующие legacy не пересоздаём. Возвращает true если hybrid.
+ */
+async function ensureHelpCollection(signal?: AbortSignal): Promise<boolean> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (QDRANT_API_KEY) headers["api-key"] = QDRANT_API_KEY;
   const probe = await fetch(`${QDRANT_URL}/collections/${HELP_KB_COLLECTION}`, { headers, signal });
-  if (probe.ok) return;
+  if (probe.ok) {
+    try {
+      const body = (await probe.json()) as {
+        result?: { config?: { params?: { sparse_vectors?: Record<string, unknown> } } };
+      };
+      const sparse = body.result?.config?.params?.sparse_vectors;
+      return !!sparse && typeof sparse === "object" && Object.keys(sparse).length > 0;
+    } catch {
+      return false;
+    }
+  }
   if (probe.status !== 404) {
     const txt = await probe.text().catch(() => "");
     throw new Error(`qdrant probe ${probe.status}: ${txt.slice(0, 240)}`);
   }
-  const create = await fetch(`${QDRANT_URL}/collections/${HELP_KB_COLLECTION}`, {
-    method: "PUT",
-    headers,
-    body: JSON.stringify({ vectors: { size: EMBEDDING_DIM, distance: "Cosine" } }),
-    signal,
+
+  const wantHybrid = (process.env.BIBLIARY_HELPKB_HYBRID ?? "true").toLowerCase() !== "false";
+  await ensureQdrantCollection({
+    name: HELP_KB_COLLECTION,
+    vectorSize: EMBEDDING_DIM,
+    distance: "Cosine",
+    sparseVectors: wantHybrid,
+    hnsw: { m: 24, ef_construct: 128 },
+    payloadIndexes: [
+      { field: "source", type: "keyword" },
+      { field: "docTitle", type: "keyword" },
+    ],
   });
-  if (!create.ok) {
-    const txt = await create.text().catch(() => "");
-    throw new Error(`qdrant create ${create.status}: ${txt.slice(0, 240)}`);
-  }
-  for (const field of ["source", "docTitle"] as const) {
-    await fetch(`${QDRANT_URL}/collections/${HELP_KB_COLLECTION}/index`, {
-      method: "PUT",
-      headers,
-      body: JSON.stringify({ field_name: field, field_schema: "keyword" }),
-      signal,
-    }).catch((err) => console.error("[help-kb/ensurePayloadIndex] Error:", err));
-  }
+  return wantHybrid;
 }
 
 async function upsertBatch(points: QdrantPoint[], signal?: AbortSignal): Promise<void> {
@@ -148,7 +160,7 @@ export async function buildHelpKb(opts: BuildHelpKbOptions = {}): Promise<HelpKb
   const batchSize = opts.upsertBatch ?? DEFAULT_UPSERT_BATCH;
   const warnings: string[] = [];
 
-  await ensureHelpCollection(opts.signal);
+  const isHybrid = await ensureHelpCollection(opts.signal);
   const chunks = await loadAndChunkDocs(docsDir, files, warnings);
   if (chunks.length === 0) {
     return { totalChunks: 0, embedded: 0, upserted: 0, warnings, durationMs: Date.now() - startedAt };
@@ -163,14 +175,17 @@ export async function buildHelpKb(opts: BuildHelpKbOptions = {}): Promise<HelpKb
     const text = chunk.text.length > EMBED_MAX_INPUT_CHARS
       ? chunk.text.slice(0, EMBED_MAX_INPUT_CHARS)
       : chunk.text;
-    let vector: number[];
+    let denseVec: number[];
     try {
-      vector = await embedPassage(text, embedModel);
+      denseVec = await embedPassage(text, embedModel);
     } catch (e) {
       warnings.push(`embed fail ${chunk.seed}: ${e instanceof Error ? e.message : String(e)}`);
       continue;
     }
     embedded += 1;
+    const vector: unknown = isHybrid
+      ? { dense: denseVec, bm25: bm25SparseVector(chunk.text) }
+      : denseVec;
     buffer.push({
       id: deterministicId(chunk.seed),
       vector,

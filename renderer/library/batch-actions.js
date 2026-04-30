@@ -3,7 +3,7 @@
  * Batch crystallization + synthesis actions for the Catalog bottom-bar.
  */
 import { t } from "../i18n.js";
-import { showAlert, showConfirm, showPrompt } from "../components/ui-dialog.js";
+import { showAlert, showConfirm } from "../components/ui-dialog.js";
 import { STATE, BATCH, CATALOG } from "./state.js";
 
 /**
@@ -195,55 +195,3 @@ export function updateBatchUi(root) {
   }
 }
 
-export async function launchSynthesis() {
-  if (!STATE.targetCollection) {
-    await showAlert(t("library.catalog.guard.noCollection"));
-    return;
-  }
-  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "").replace("T", "_");
-  const safeColl = STATE.targetCollection.replace(/[^a-z0-9-]/gi, "_");
-  const defaultOut = `release/datasets/${safeColl}-${stamp}.jsonl`;
-
-  const outputPath = await showPrompt(
-    t("library.catalog.synth.promptOutput", { coll: STATE.targetCollection }),
-    defaultOut,
-  );
-  if (!outputPath) return;
-
-  const pairsRaw = await showPrompt(t("library.catalog.synth.promptPairs"), "2");
-  if (!pairsRaw) return;
-  const pairsPerConcept = Math.max(1, Math.min(5, parseInt(pairsRaw, 10) || 2));
-
-  const includeReasoning = await showConfirm(t("library.catalog.synth.confirmReasoning"));
-
-  const startConfirmed = await showConfirm(
-    t("library.catalog.synth.confirmStart", {
-      coll: STATE.targetCollection,
-      out: outputPath,
-      pairs: String(pairsPerConcept),
-      reasoning: includeReasoning ? "yes" : "no",
-    }),
-  );
-  if (!startConfirmed) return;
-
-  try {
-    const res = await window.api.datasetV2.synthesize({
-      collection: STATE.targetCollection,
-      outputPath,
-      pairsPerConcept,
-      includeReasoning,
-    });
-    if (!res?.ok) {
-      await showAlert(t("library.catalog.synth.errSpawn", { err: res?.error ?? "unknown error" }));
-      return;
-    }
-    await showAlert(t("library.catalog.synth.started", {
-      pid: String(res.pid ?? "—"),
-      out: outputPath,
-      log: res.logPath ?? "",
-    }));
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    await showAlert(t("library.catalog.synth.errSpawn", { err: msg }));
-  }
-}

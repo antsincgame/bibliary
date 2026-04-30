@@ -149,7 +149,7 @@ interface OpenAiModelsResponse {
   data: Array<{ id: string }>;
 }
 
-interface DownloadedModelInfo {
+export interface DownloadedModelInfo {
   modelKey: string;
   displayName?: string;
   format?: string;

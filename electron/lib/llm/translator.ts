@@ -15,6 +15,7 @@
 import { chatWithPolicy } from "../../lmstudio-client.js";
 import { modelRoleResolver } from "./model-role-resolver.js";
 import { getPreferencesStore } from "../preferences/store.js";
+import { getModelPool } from "./model-pool.js";
 
 export type TargetLang = "ru" | "en";
 
@@ -128,40 +129,49 @@ export async function translateText(
   const system = SYSTEM_PROMPTS[targetLang];
   const sourceHint = opts.sourceLang ? `Source language: ${opts.sourceLang}.\n\n` : "";
 
-  const translated: string[] = [];
-  for (let i = 0; i < chunks.length; i++) {
-    if (opts.signal?.aborted) {
-      throw new Error("Translation aborted");
-    }
-    const chunk = chunks[i]!;
-    const resp = await chatWithPolicy(
-      {
-        model: modelKey,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: `${sourceHint}${chunk}` },
-        ],
-        sampling: {
-          temperature: 0.1,
-          top_p: 0.9,
-          top_k: 20,
-          min_p: 0,
-          presence_penalty: 0,
-          max_tokens: Math.max(1024, Math.ceil(chunk.length * 2)),
-        },
-      },
-      { externalSignal: opts.signal },
-    );
-    translated.push(resp.content.trim());
-    opts.onProgress?.({ chunkIndex: i + 1, totalChunks: chunks.length });
-  }
-
-  return {
-    text: translated.join("\n\n"),
-    chunksTranslated: chunks.length,
+  /* Pool: один acquire на весь цикл чанков — модель удерживается между
+     вызовами, LRU не вытолкнет её даже если параллельно crystallizer
+     попросит свою. Если памяти мало — pool выгрузит самую старую. */
+  return getModelPool().withModel(
     modelKey,
-    targetLang,
-  };
+    { role: "translator", ttlSec: 1800, gpuOffload: "max" },
+    async () => {
+      const translated: string[] = [];
+      for (let i = 0; i < chunks.length; i++) {
+        if (opts.signal?.aborted) {
+          throw new Error("Translation aborted");
+        }
+        const chunk = chunks[i]!;
+        const resp = await chatWithPolicy(
+          {
+            model: modelKey,
+            messages: [
+              { role: "system", content: system },
+              { role: "user", content: `${sourceHint}${chunk}` },
+            ],
+            sampling: {
+              temperature: 0.1,
+              top_p: 0.9,
+              top_k: 20,
+              min_p: 0,
+              presence_penalty: 0,
+              max_tokens: Math.max(1024, Math.ceil(chunk.length * 2)),
+            },
+          },
+          { externalSignal: opts.signal },
+        );
+        translated.push(resp.content.trim());
+        opts.onProgress?.({ chunkIndex: i + 1, totalChunks: chunks.length });
+      }
+
+      return {
+        text: translated.join("\n\n"),
+        chunksTranslated: chunks.length,
+        modelKey,
+        targetLang,
+      };
+    },
+  );
 }
 
 /**
@@ -242,67 +252,75 @@ export async function translateParagraphs(
     `Do not merge paragraphs, do not skip them, do not add any extra paragraphs.`;
   const sourceHint = opts.sourceLang ? `Source language: ${opts.sourceLang}.\n\n` : "";
 
-  const out: string[] = [];
-  let fallbackUsed = 0;
-  let llmCalls = 0;
+  /* Pool: единый acquire на все батчи параграфов одной книги.
+     На средней книге это ≈50 chat-вызовов под одной моделью без перезагрузок. */
+  return getModelPool().withModel(
+    modelKey,
+    { role: "translator", ttlSec: 1800, gpuOffload: "max" },
+    async () => {
+      const out: string[] = [];
+      let fallbackUsed = 0;
+      let llmCalls = 0;
 
-  for (let bi = 0; bi < batches.length; bi++) {
-    if (opts.signal?.aborted) throw new Error("Translation aborted");
-    const batch = batches[bi]!;
-    const joined = batch.join(PARAGRAPH_MARKER);
+      for (let bi = 0; bi < batches.length; bi++) {
+        if (opts.signal?.aborted) throw new Error("Translation aborted");
+        const batch = batches[bi]!;
+        const joined = batch.join(PARAGRAPH_MARKER);
 
-    const resp = await chatWithPolicy(
-      {
-        model: modelKey,
-        messages: [
-          { role: "system", content: SYSTEM },
-          { role: "user", content: `${sourceHint}${joined}` },
-        ],
-        sampling: {
-          temperature: 0.1,
-          top_p: 0.9,
-          top_k: 20,
-          min_p: 0,
-          presence_penalty: 0,
-          max_tokens: Math.max(1024, Math.ceil(joined.length * 2)),
-        },
-      },
-      { externalSignal: opts.signal },
-    );
-    llmCalls++;
-    opts.onProgress?.({ chunkIndex: bi + 1, totalChunks: batches.length });
+        const resp = await chatWithPolicy(
+          {
+            model: modelKey,
+            messages: [
+              { role: "system", content: SYSTEM },
+              { role: "user", content: `${sourceHint}${joined}` },
+            ],
+            sampling: {
+              temperature: 0.1,
+              top_p: 0.9,
+              top_k: 20,
+              min_p: 0,
+              presence_penalty: 0,
+              max_tokens: Math.max(1024, Math.ceil(joined.length * 2)),
+            },
+          },
+          { externalSignal: opts.signal },
+        );
+        llmCalls++;
+        opts.onProgress?.({ chunkIndex: bi + 1, totalChunks: batches.length });
 
-    const segments = resp.content
-      .split(PARAGRAPH_MARKER)
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
+        const segments = resp.content
+          .split(PARAGRAPH_MARKER)
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
 
-    if (segments.length === batch.length) {
-      out.push(...segments);
-    } else {
-      /* fallback: модель потеряла/добавила маркеры. Делим по \n\n; если
-         всё равно не сходится — приклеиваем единым параграфом к каждому
-         входному (чтобы потерять разметку, а не данные). */
-      const byBlankLine = resp.content
-        .split(/\n\s*\n/)
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-      if (byBlankLine.length === batch.length) {
-        out.push(...byBlankLine);
-      } else if (byBlankLine.length > 0) {
-        fallbackUsed += batch.length;
-        const merged = byBlankLine.join("\n\n");
-        for (let i = 0; i < batch.length; i++) {
-          out.push(i === 0 ? merged : "");
+        if (segments.length === batch.length) {
+          out.push(...segments);
+        } else {
+          /* fallback: модель потеряла/добавила маркеры. Делим по \n\n; если
+             всё равно не сходится — приклеиваем единым параграфом к каждому
+             входному (чтобы потерять разметку, а не данные). */
+          const byBlankLine = resp.content
+            .split(/\n\s*\n/)
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0);
+          if (byBlankLine.length === batch.length) {
+            out.push(...byBlankLine);
+          } else if (byBlankLine.length > 0) {
+            fallbackUsed += batch.length;
+            const merged = byBlankLine.join("\n\n");
+            for (let i = 0; i < batch.length; i++) {
+              out.push(i === 0 ? merged : "");
+            }
+          } else {
+            fallbackUsed += batch.length;
+            for (const _p of batch) out.push(resp.content.trim());
+          }
         }
-      } else {
-        fallbackUsed += batch.length;
-        for (const _p of batch) out.push(resp.content.trim());
       }
-    }
-  }
 
-  return { paragraphs: out, modelKey, targetLang, llmCalls, fallbackUsed };
+      return { paragraphs: out, modelKey, targetLang, llmCalls, fallbackUsed };
+    },
+  );
 }
 
 /**

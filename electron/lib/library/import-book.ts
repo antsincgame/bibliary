@@ -10,6 +10,7 @@ import { computeFileSha256, bookIdFromSha } from "./sha-stream.js";
 import { putBlob, getBlobsRoot } from "./library-store.js";
 import { extractSphereFromImportPath } from "./path-sanitizer.js";
 import { processIllustrations } from "./illustration-worker.js";
+import { runIllustrationJob } from "./illustration-semaphore.js";
 import { findNearDuplicate, registerForNearDup } from "./near-dup-detector.js";
 import {
   computeRevisionScore,
@@ -225,10 +226,10 @@ export async function importBookFromFile(
     return { outcome: "failed", warnings, error: `write book.md failed: ${msg}`, sourceArchive: opts.sourceArchive };
   }
 
-  /* Write meta.json manifest. */
+  /* Write sidecar manifest next to the markdown:
+     <Book Title>.meta.json (new layout) or meta.json (legacy fallback). */
   try {
-    const metaJsonPath = path.join(bookDir, "meta.json");
-    await fs.writeFile(metaJsonPath, JSON.stringify(finalMeta, null, 2), "utf-8");
+    await fs.writeFile(stored.metaPath, JSON.stringify(finalMeta, null, 2), "utf-8");
   } catch {
     warnings.push("meta.json write failed (non-critical)");
   }
@@ -236,7 +237,6 @@ export async function importBookFromFile(
   /* Write illustrations.json stub.
      score/description are filled later by illustration-worker.ts (Semantic Triage). */
   try {
-    const illustrationsPath = path.join(bookDir, "illustrations.json");
     const illustrationData = convResult.images
       .filter((img) => img.assetUrl)
       .map((img) => ({
@@ -249,7 +249,7 @@ export async function importBookFromFile(
         skipped: false,
         caption: img.caption ?? null,
       }));
-    await fs.writeFile(illustrationsPath, JSON.stringify(illustrationData, null, 2), "utf-8");
+    await fs.writeFile(stored.illustrationsPath, JSON.stringify(illustrationData, null, 2), "utf-8");
   } catch {
     warnings.push("illustrations.json write failed (non-critical)");
   }
@@ -266,7 +266,38 @@ export async function importBookFromFile(
     const abortCombined = () => combinedAbort.abort("shutdown");
     if (opts.signal) opts.signal.addEventListener("abort", abortCombined, { once: true });
     appSignal.addEventListener("abort", abortCombined, { once: true });
-    void processIllustrations(bookDir, blobsRoot, combinedAbort.signal).catch(async (err) => {
+    /* Прогресс иллюстраций пробрасываем в централизованный import-logger,
+       чтобы пользователь видел в UI лог: «обрабатываю img-001, score=8»
+       и т.д. Без onProgress всё это уходило только в console main-процесса. */
+    const illustrationProgress = (msg: string): void => {
+      void (async () => {
+        try {
+          const { getImportLogger } = await import("./import-logger.js");
+          /* Уровень info для нормальных событий, warn для known-failures
+             в формате «X failed (non-fatal): ...» из illustration-worker. */
+          const level: "info" | "warn" = /failed|error/i.test(msg) ? "warn" : "info";
+          await getImportLogger().write({
+            importId: "post-import",
+            level,
+            category: "vision.illustration",
+            message: msg,
+            file: absPath,
+            details: { bookId: finalMeta.id, stage: "illustrations" },
+          });
+        } catch { /* logger недоступен — продолжаем тихо */ }
+      })();
+    };
+    /* Семафор: max N книг одновременно в illustration pipeline (default 2).
+       Без него импорт 100 книг создавал ~100 fire-and-forget jobs × 4
+       параллельных vision-чата = до 400 одновременных HTTP к LM Studio,
+       что вызывало OOM/таймауты. */
+    void runIllustrationJob(() =>
+      processIllustrations(bookDir, blobsRoot, combinedAbort.signal, illustrationProgress, {
+        mdPath,
+        illustrationsPath: stored.illustrationsPath,
+        bookTitle: finalMeta.title,
+      }),
+    ).catch(async (err) => {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[import] illustration processing failed:", msg);
       /* Иллюстрации обрабатываются асинхронно (post-return), поэтому ошибка
@@ -277,8 +308,8 @@ export async function importBookFromFile(
         const { getImportLogger } = await import("./import-logger.js");
         await getImportLogger().write({
           importId: "post-import",
-          level: "warn",
-          category: "system.warn",
+          level: "error",
+          category: "vision.illustration",
           message: `illustration processing failed for ${finalMeta.titleEn || finalMeta.title || finalMeta.id}: ${msg}`,
           file: absPath,
           details: { bookId: finalMeta.id, stage: "illustrations" },
@@ -340,6 +371,7 @@ async function persistFailedImport(
     const markdown = replaceFrontmatter("---\n---\n\n# Placeholder\n\nImport failed.\n", meta)
       .replace("# Placeholder", `# ${bodyTitle}\n\nImport failed: ${error}`);
     await fs.writeFile(stored.mdPath, markdown, "utf-8");
+    await fs.writeFile(stored.metaPath, JSON.stringify(meta, null, 2), "utf-8").catch(() => undefined);
     upsertBook(meta, stored.mdPath);
     return {
       outcome: "failed",

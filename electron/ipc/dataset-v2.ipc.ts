@@ -40,6 +40,7 @@ import { getModelProfile } from "../lib/dataset-v2/model-profile.js";
 import { buildDeltaKnowledgeResponseFormat } from "../lib/dataset-v2/json-schemas.js";
 import { ALLOWED_DOMAINS } from "../crystallizer-constants.js";
 import { globalLlmLock } from "../lib/llm/global-llm-lock.js";
+import { getModelPool } from "../lib/llm/model-pool.js";
 
 const DEFAULT_COLLECTION = "delta-knowledge";
 
@@ -131,32 +132,44 @@ function makeLlm(
   const profilePromise = getModelProfile(modelKey);
   const allowedDomains = Array.from(ALLOWED_DOMAINS).sort();
 
+  /* ModelPool integration (2026-04-30): каждый chat-вызов оборачивается в
+     pool.withModel() — это гарантирует что модель загружена в LM Studio
+     перед чатом и refCount учитывается. Pool сам решит выгружать ли LRU.
+     При cross-model fallback (delta-extractor) каждая модель из chain
+     попадает сюда отдельно, и pool правильно зарегистрирует refCount
+     на каждом ключе. */
   return async ({ messages, temperature, maxTokens }) => {
     const profile = await profilePromise;
     const callerHint = maxTokens ?? 4096;
     const effectiveMaxTokens = Math.max(callerHint, profile.maxTokens);
 
-    const response = await chatWithPolicy(
-      {
-        model: modelKey,
-        messages,
-        sampling: {
-          temperature: temperature ?? 0.3,
-          top_p: 0.9,
-          top_k: 30,
-          min_p: 0,
-          presence_penalty: 0,
-          max_tokens: effectiveMaxTokens,
-        },
-        stop: profile.stop,
-        responseFormat: profile.useResponseFormat
-          ? buildDeltaKnowledgeResponseFormat(allowedDomains)
-          : undefined,
-        chatTemplateKwargs: profile.chatTemplateKwargs,
+    return getModelPool().withModel(
+      modelKey,
+      { role: "crystallizer", ttlSec: 1800, gpuOffload: "max" },
+      async () => {
+        const response = await chatWithPolicy(
+          {
+            model: modelKey,
+            messages,
+            sampling: {
+              temperature: temperature ?? 0.3,
+              top_p: 0.9,
+              top_k: 30,
+              min_p: 0,
+              presence_penalty: 0,
+              max_tokens: effectiveMaxTokens,
+            },
+            stop: profile.stop,
+            responseFormat: profile.useResponseFormat
+              ? buildDeltaKnowledgeResponseFormat(allowedDomains)
+              : undefined,
+            chatTemplateKwargs: profile.chatTemplateKwargs,
+          },
+          { externalSignal: signal },
+        );
+        return { content: response.content, reasoningContent: response.reasoningContent };
       },
-      { externalSignal: signal },
     );
-    return { content: response.content, reasoningContent: response.reasoningContent };
   };
 }
 
@@ -247,16 +260,45 @@ async function runExtraction(
 
     const { fetchQdrantJson, QDRANT_URL } = await import("../lib/qdrant/http-client.js");
     const { EMBEDDING_DIM } = await import("../lib/scanner/embedding.js");
+    const { ensureQdrantCollection } = await import("../lib/qdrant/collection-config.js");
+    const { bm25SparseVector } = await import("../lib/qdrant/bm25-sparse.js");
     console.log(`[extraction] Qdrant: ${QDRANT_URL} → collection "${targetCollection}" (dim=${EMBEDDING_DIM})`);
-    await fetchQdrantJson(`${QDRANT_URL}/collections/${targetCollection}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        vectors: { size: EMBEDDING_DIM, distance: "Cosine" },
-      }),
-    }).catch((e) => {
-      console.warn(`[extraction] collection PUT skipped (may exist): ${e instanceof Error ? e.message : e}`);
-    });
+
+    /* Пробуем понять, существует ли коллекция и какого она формата.
+       - Существующая legacy (unnamed) → используем unnamed upsert (back-compat).
+       - Существующая hybrid (named dense + sparse bm25) → используем hybrid upsert.
+       - Новая → создаём как HYBRID по умолчанию, чтобы наконец активировать
+         BM25 + RRF + BGE-rerank в продакшне.
+       Override через env BIBLIARY_DATASET_HYBRID=false (откат к unnamed). */
+    let collectionIsHybrid = false;
+    try {
+      const info = await fetchQdrantJson<{
+        result: { config?: { params?: { sparse_vectors?: Record<string, unknown>; vectors?: unknown } } };
+      }>(`${QDRANT_URL}/collections/${targetCollection}`, { method: "GET", timeoutMs: 5_000 });
+      const sparse = info.result?.config?.params?.sparse_vectors;
+      collectionIsHybrid = !!sparse && typeof sparse === "object" && Object.keys(sparse).length > 0;
+      console.log(`[extraction] collection exists: hybrid=${collectionIsHybrid}`);
+    } catch (probeErr) {
+      /* Не существует — создаём. */
+      const wantHybrid = (process.env.BIBLIARY_DATASET_HYBRID ?? "true").toLowerCase() !== "false";
+      try {
+        await ensureQdrantCollection({
+          name: targetCollection,
+          vectorSize: EMBEDDING_DIM,
+          distance: "Cosine",
+          sparseVectors: wantHybrid,
+          hnsw: { m: 24, ef_construct: 128 },
+          payloadIndexes: [
+            { field: "bookSourcePath", type: "keyword" },
+            { field: "domain", type: "keyword" },
+          ],
+        });
+        collectionIsHybrid = wantHybrid;
+        console.log(`[extraction] collection created: hybrid=${collectionIsHybrid} (probe error: ${probeErr instanceof Error ? probeErr.message : probeErr})`);
+      } catch (createErr) {
+        console.warn(`[extraction] collection create failed (will try upsert anyway): ${createErr instanceof Error ? createErr.message : createErr}`);
+      }
+    }
 
     for (let ci = range.from; ci < Math.min(range.to, totalChapters); ci++) {
       if (ctrl.signal.aborted) throw new Error("job aborted");
@@ -313,7 +355,10 @@ async function runExtraction(
       });
       warnings.push(...deltaRes.warnings);
 
-      /* Step 4 — upsert accepted deltas to Qdrant */
+      /* Step 4 — upsert accepted deltas to Qdrant.
+         Формат vector зависит от типа коллекции:
+         - hybrid: { dense: [...], bm25: {indices, values} } — для searchHybridChunks
+         - legacy unnamed: [...] — для обратной совместимости. */
       for (const delta of deltaRes.accepted) {
         if (ctrl.signal.aborted) throw new Error("job aborted");
         let vector: number[];
@@ -326,14 +371,20 @@ async function runExtraction(
           stats.skipped++;
           continue;
         }
-        console.log(`[extraction] ✓ upsert → "${targetCollection}" id=${delta.id} domain=${delta.domain} tags=[${delta.tags.join(",")}]`);
+        const upsertVector: unknown = collectionIsHybrid
+          ? {
+              dense: vector,
+              bm25: bm25SparseVector(`${delta.essence}\n${delta.cipher ?? ""}\n${delta.proof ?? ""}`),
+            }
+          : vector;
+        console.log(`[extraction] ✓ upsert → "${targetCollection}" id=${delta.id} domain=${delta.domain} tags=[${delta.tags.join(",")}] hybrid=${collectionIsHybrid}`);
         await fetchQdrantJson(`${QDRANT_URL}/collections/${targetCollection}/points?wait=true`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             points: [{
               id: delta.id,
-              vector,
+              vector: upsertVector,
               payload: {
                 domain: delta.domain,
                 chapterContext: delta.chapterContext,

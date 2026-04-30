@@ -1,10 +1,16 @@
 /**
  * Library catalog types — Pre-flight Evaluation architecture.
  *
- * Каждая книга хранится в `data/library/{slug}/` как два файла:
- *   1. `original.{ext}` -- нетронутая копия исходника
- *   2. `book.md`        -- единый Markdown с YAML frontmatter, текстом,
- *                          опциональной секцией `## Evaluator Reasoning`
+ * Новые импорты хранятся в человекочитаемой структуре:
+ *   data/library/<language>/<domain>/<author>/<Book Title>.md
+ *
+ * Sidecar-файлы лежат рядом с тем же basename:
+ *   <Book Title>.original.{ext}
+ *   <Book Title>.meta.json
+ *   <Book Title>.illustrations.json
+ *
+ * Старые layout'ы (`{id}/book.md`, `Sphere/Author_Title/Title.md` +
+ * `original.{ext}` / `meta.json`) поддерживаются для чтения и удаления.
  *                          и Base64 image-references в самом конце
  *
  * SQLite-кэш можно удалить -- при следующем старте приложение

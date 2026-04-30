@@ -24,6 +24,7 @@
 
 import { fetchQdrantJson, QDRANT_URL } from "./http-client.js";
 import { IMAGE_EMBED_DIMS, embedImage } from "../embedder/image-embedder.js";
+import { ensurePayloadIndex } from "./collection-config.js";
 import { createHash } from "crypto";
 
 /** Default collection name. Overridable via ENV for tests. */
@@ -92,10 +93,19 @@ export async function ensureIllustrationsCollection(qdrantUrl: string = QDRANT_U
       body: JSON.stringify({
         vectors: { size: IMAGE_EMBED_DIMS, distance: "Cosine" },
         optimizers_config: { default_segment_number: 2 },
+        /* HNSW tuning (Qdrant 2026 best practice for 10K+ vectors): m=24
+           даёт +5-8% recall vs default 16, ef_construct=128 — стандартное
+           build quality. CLIP 512d не требует более высоких значений. */
+        hnsw_config: { m: 24, ef_construct: 128 },
       }),
       timeoutMs: 15_000,
     },
   );
+
+  /* Payload indexes — превращают filtered search "по книге" из O(N) в O(log N).
+     Безопасно для новой коллекции, идемпотентно для существующей. */
+  await ensurePayloadIndex(ILLUSTRATIONS_COLLECTION, "bookSourcePath", "keyword", qdrantUrl);
+  await ensurePayloadIndex(ILLUSTRATIONS_COLLECTION, "sha256", "keyword", qdrantUrl);
 }
 
 /**

@@ -34,7 +34,5 @@ export const EMBEDDING_DIM = 384;
  * mixed Cyrillic + Latin text comfortably fits after BPE tokenisation
  * (avg ~3-4 chars/token). Going higher risks silent truncation by the
  * tokenizer, which produces unstable embeddings.
- *
- * If you change EMBEDDING_DIM (different model), reconsider this cap.
  */
 export const EMBED_MAX_INPUT_CHARS = 8000;

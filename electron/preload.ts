@@ -200,13 +200,29 @@ contextBridge.exposeInMainWorld("api", {
     info: (name: string): Promise<QdrantCollectionInfo | null> =>
       ipcRenderer.invoke("qdrant:collection-info", name),
     create: (
-      args: { name: string; vectorSize?: number; distance?: "Cosine" | "Euclid" | "Dot" }
-    ): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke("qdrant:create-collection", args),
+      args: {
+        name: string;
+        vectorSize?: number;
+        distance?: "Cosine" | "Euclid" | "Dot";
+        /** Создать как hybrid (dense + BM25 sparse). Default false. */
+        hybrid?: boolean;
+      }
+    ): Promise<{ ok: boolean; error?: string; hybrid?: boolean }> =>
+      ipcRenderer.invoke("qdrant:create-collection", args),
     remove: (name: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke("qdrant:delete-collection", name),
     search: (
       args: { collection: string; query?: string; vector?: number[]; limit?: number }
     ): Promise<QdrantSearchHit[]> => ipcRenderer.invoke("qdrant:search", args),
+    /**
+     * Smart search: dense+rerank или hybrid+rerank автоматически в зависимости
+     * от типа коллекции. Возвращает поле `rerankScore` если применился
+     * cross-encoder reranking — UI может показать его как индикатор качества.
+     */
+    searchSmart: (
+      args: { collection: string; query: string; limit?: number }
+    ): Promise<Array<QdrantSearchHit & { rerankScore?: number }>> =>
+      ipcRenderer.invoke("qdrant:search-smart", args),
     cluster: (): Promise<QdrantClusterInfo> => ipcRenderer.invoke("qdrant:cluster-info"),
   },
 
