@@ -1,6 +1,6 @@
 {
   "name": "bibliary",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "type": "module",
   "main": "dist-electron/main.js",
   "description": "Vector knowledge store — natural language concepts for site generation",

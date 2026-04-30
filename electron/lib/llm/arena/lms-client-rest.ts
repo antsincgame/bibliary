@@ -430,7 +430,7 @@ export async function lmsChat(
     }
     const j = (await r.json()) as {
       choices: Array<{ message: { content?: string; reasoning_content?: string } }>;
-      usage?: { total_tokens?: number };
+      usage?: { total_tokens?: number; prompt_tokens?: number; completion_tokens?: number };
     };
     const choice = j.choices?.[0]?.message;
     /* `||` вместо `??`: thinking-модели (Qwen3, GLM-4) могут возвращать
@@ -443,7 +443,14 @@ export async function lmsChat(
       const rc = (choice?.reasoning_content || "").trim();
       if (rc) processed = opts.postProcess ? opts.postProcess(rc) : rc;
     }
-    return { content: processed, durationMs: Date.now() - t0, totalTokens: j.usage?.total_tokens ?? 0, ok: true };
+    return {
+      content: processed,
+      durationMs: Date.now() - t0,
+      totalTokens: j.usage?.total_tokens ?? 0,
+      promptTokens: j.usage?.prompt_tokens,
+      completionTokens: j.usage?.completion_tokens,
+      ok: true,
+    };
   } catch (e) {
     return { content: "", durationMs: Date.now() - t0, totalTokens: 0, ok: false, error: e instanceof Error ? e.message : String(e) };
   } finally {

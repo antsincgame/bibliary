@@ -79,9 +79,12 @@ test("thinking-policy: judge/lang_detector/ukrainian/vision НЕ должны б
 
 test("thinking-policy: каждая роль имеет хотя бы одну дисциплину", () => {
   const rolesPresent = new Set(OLYMPICS_DISCIPLINES.map((d) => d.role));
+  /* judge удалён из Олимпиады (2026-04-30): delta-extractor заменил отдельный
+   * judge-шаг, judge-bst был лишь sanity-test без production-применения. */
   const requiredRoles = [
-    "crystallizer", "evaluator", "judge", "translator",
+    "crystallizer", "evaluator", "translator",
     "lang_detector", "ukrainian_specialist",
+    "vision_meta", "vision_ocr", "vision_illustration",
   ];
   for (const role of requiredRoles) {
     assert.ok(
@@ -89,6 +92,15 @@ test("thinking-policy: каждая роль имеет хотя бы одну �
       `Роль "${role}" не имеет ни одной дисциплины — Олимпиада не сможет её калибровать`,
     );
   }
+});
+
+test("thinking-policy: judge удалён — нет judge-дисциплин", () => {
+  const judgeDisciplines = OLYMPICS_DISCIPLINES.filter((d) => d.role === "judge");
+  assert.deepEqual(
+    judgeDisciplines.map((d) => d.id),
+    [],
+    `judge удалён из Олимпиады. Если потребуется вернуть, обнови ALL_ROLES в renderer.`,
+  );
 });
 
 test("thinking-policy: id уникальны", () => {

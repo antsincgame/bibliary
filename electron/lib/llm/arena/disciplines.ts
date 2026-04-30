@@ -12,7 +12,6 @@
  */
 
 import {
-  JUDGE_SYSTEM_PROMPT,
   LANG_DETECT_SYSTEM_PROMPT,
   TRANSLATE_TO_RU_SYSTEM_PROMPT,
 } from "./role-prompts.js";
@@ -452,28 +451,6 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
       return Math.max(0, Math.min(1, s));
     },
   },
-  {
-    id: "judge-bst",
-    role: "judge",
-    description: "Сравнить два ответа: правильный = A.",
-    whyImportant:
-      "Судья оценивает качество ответов на арене. Тест на anti-bias-A: правильный ответ — A. Если модель отвечает наугад — score будет 0.5 на двух тестах вместе.",
-    system: JUDGE_SYSTEM_PROMPT,
-    user:
-      "Question: What is the time complexity of inserting into a balanced BST?\n\n" +
-      "Answer A: O(log n) average and worst case, because the tree stays balanced.\n\n" +
-      "Answer B: O(n) because you might have to traverse the whole tree.\n\n" +
-      "Which is correct? A or B?",
-    maxTokens: 16,
-    score: (a) => {
-      const t = a.trim().toUpperCase().replace(/[^A-Z]/g, "");
-      if (t.length === 0) return 0;             /* пустой ответ — не «случайно угадал» */
-      if (t.startsWith("A")) return 1.0;
-      if (t.startsWith("B")) return 0.0;
-      return 0.05;                               /* мусор — почти ноль */
-    },
-  },
-
   /* ─── Crystallizer: Russian language test ──────────────────────────── */
   {
     id: "crystallizer-ru-mendeleev",

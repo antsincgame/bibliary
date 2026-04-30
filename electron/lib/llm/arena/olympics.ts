@@ -324,7 +324,14 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
         const isVisionDiscipline = isVisionRole && !!d.imageUrl;
         if (isVisionDiscipline && !visionCapableKeys.has(modelKey)) continue;
 
-        opts.onProgress?.({ type: "olympics.discipline.start", discipline: d.id, role: d.role });
+        opts.onProgress?.({
+          type: "olympics.discipline.start",
+          discipline: d.id,
+          role: d.role,
+          whyImportant: d.whyImportant,
+          thinkingFriendly: d.thinkingFriendly,
+          maxTokens: d.maxTokens,
+        });
 
         const isReasoning = reasoningCapableKeys.has(modelKey);
         const useReasoning = isReasoning && d.role === "crystallizer";
@@ -387,8 +394,18 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
           ok: r.ok, tokens: r.totalTokens, sample: r.content.slice(0, 80),
         });
         opts.onProgress?.({
-          type: "olympics.model.done", discipline: d.id, model: modelKey,
-          score: s, durationMs: r.durationMs, ok: r.ok, error: r.error,
+          type: "olympics.model.done",
+          discipline: d.id,
+          role: d.role,
+          model: modelKey,
+          score: s,
+          durationMs: r.durationMs,
+          tokens: r.totalTokens,
+          promptTokens: r.promptTokens,
+          completionTokens: r.completionTokens,
+          sample: r.content.slice(0, 240).replace(/\s+/g, " "),
+          ok: r.ok,
+          error: r.error,
         });
       }
 

@@ -206,6 +206,24 @@ export const PreferencesSchema = z.object({
    */
   olympicsUseChampion: z.boolean().default(false),
 
+  /**
+   * 🚀 Lightning Olympics — быстрая аттестация (см. docs/lightning-olympics.md).
+   *
+   * При включении автоматически меняет на лету:
+   *   - weightClasses → "s" (только мелкие модели)
+   *   - testAll → false (не тестировать всё подряд)
+   *   - perDisciplineTimeoutMs → 30s (вместо 90s)
+   *   - maxModels → 5 (top-K по probe)
+   *
+   * UI Olympics показывает один большой переключатель «Lightning»; внутри
+   * пресета пользователь видит финальные значения, но не выставляет их вручную.
+   * Если требуется тонкая настройка — выключи Lightning, тогда работают
+   * `olympicsTestAll` / `olympicsWeightClasses` / etc.
+   *
+   * Цель: прогон 5–8 моделей за 60–90 сек вместо 5–15 минут.
+   */
+  olympicsLightning: z.boolean().default(false),
+
 });
 
 export type Preferences = z.infer<typeof PreferencesSchema>;

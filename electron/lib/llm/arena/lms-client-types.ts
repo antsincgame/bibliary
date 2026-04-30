@@ -63,6 +63,10 @@ export interface ChatResp {
   content: string;
   durationMs: number;
   totalTokens: number;
+  /** prompt токены (LM Studio v1.x возвращает usage.prompt_tokens). */
+  promptTokens?: number;
+  /** completion токены (LM Studio v1.x возвращает usage.completion_tokens). */
+  completionTokens?: number;
   ok: boolean;
   error?: string;
 }

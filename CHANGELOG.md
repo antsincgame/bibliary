@@ -4,6 +4,64 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] — 2026-05-01 — Olympics UX overhaul + Lightning preset + technical log
+
+### Added
+
+- **`docs/lightning-olympics.md`** — научно-инженерный фундамент молниеносной
+  LLM-аттестации: am-ELO, LiteCoST, EfficientArena single-probe, Light-LLM
+  auto-tune, целевые ROI (×8–10 ускорения, ≥90% champion agreement).
+- **🚀 Lightning preset** в Olympics Advanced — один тумблер
+  (`olympicsLightning` pref) перекрывает несколько параметров:
+  weightClasses=`["s"]` · testAll=false · maxModels=5 ·
+  perDisciplineTimeoutMs=30s. Прогон 60–90 сек вместо 5–15 мин.
+- **Расширенный технический лог Олимпиады** (научный формат):
+  - Внешний `<details>` collapsible с счётчиком событий
+  - Per-event `<details>` для discipline.start (whyImportant) и model.done
+    (sample/role/error)
+  - Подключён `olympics.log` канал (info/warn/error/debug + ctx как pretty JSON)
+  - Метрики: tokens/prompt_tokens/completion_tokens/tps в каждой
+    `model.done` записи, max_tokens/thinkingFriendly в `discipline.start`
+- **Подсветка `flash` на role-select'ах** после `applyRecommendations()` —
+  визуальное подтверждение что роли получили модели.
+
+### Changed
+
+- **Синхронизация ролей: 8 = 8** (`ALL_ROLES` ↔ `PIPELINE_ROLES`).
+  Ранее: 9 чекбоксов категорий vs 8 селекторов ролей. `judge` удалён из
+  Олимпиады (delta-extractor заменил отдельный judge-шаг). Дисциплина
+  `judge-bst` снята с rotation; `judgeModel` pref + ModelRole сохранены
+  для backward-compat.
+- **Vision-карточки: 3 разных заголовка** вместо 3 одинаковых
+  «Vision (обложки / OCR / иллюстрации)». Используем `aggregateRoleTitle(agg.role)`
+  → «Хранитель обложек» / «Распознаватель текста» / «Иллюстратор», под ним
+  sub-hint `→ visionModelKey (общая для трёх vision-задач)`.
+- **Кнопка «Распределить» считает РОЛИ** (было: уникальные prefs). 9 категорий
+  → 8 ролей (без judge) → 8 чемпионов; vision×3 показываются раздельно но
+  применяются к общей `visionModelKey`.
+- **`applyRecommendations()` await refresh** — селекты гарантированно
+  перерисовываются ДО показа toast'а.
+- **`OlympicsEvent.model.done`** расширен: `role`, `tokens`,
+  `promptTokens`, `completionTokens`, `sample`. `discipline.start` —
+  `whyImportant`, `thinkingFriendly`, `maxTokens`.
+- **`ChatResp`** в `lms-client-types.ts`: новые поля `promptTokens`,
+  `completionTokens` (LM Studio v1.x usage из `/v1/chat/completions`).
+
+### Fixed
+
+- **«Распределить (7)» не подставляет модели**: причины устранены —
+  3 vision-роли больше не сливаются в один счётчик, await refresh
+  гарантирует перерисовку, flash-эффект подтверждает применение.
+- Расхождение `judge` между «категориями тестирования» и «ролями пайплайна» —
+  устранено через удаление judge из Olympics.
+
+### Removed
+
+- `electron/lib/llm/arena/disciplines.ts`: дисциплина `judge-bst` (sanity-test
+  без production-применения; lifecycle test переключён на `lang-detect-en`).
+- `tests/olympics-scorers.test.ts`: SAMPLES для `judge-bst` / `judge-async`
+  (orphan-fixtures).
+
 ## [0.4.4] — 2026-04-30 — Linux x64 build (Phase 4 cross-platform roadmap)
 
 ### Added

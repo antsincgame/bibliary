@@ -11,14 +11,17 @@
 
 /**
  * Роли для чекбоксов «какие роли тестировать в Олимпиаде».
- * Должно совпадать с `PIPELINE_ROLES` (порядок важен — таб-бар результатов
- * следует тому же порядку). Legacy `vision` намеренно убрана: новые
- * vision_meta/vision_ocr/vision_illustration покрывают её полностью.
+ * **Должно совпадать с `PIPELINE_ROLES`** (`models-page-internals.js`).
+ * Legacy `vision` намеренно убрана: новые vision_meta/vision_ocr/vision_illustration
+ * покрывают её полностью.
+ *
+ * `judge` намеренно отсутствует: delta-extractor заменил отдельный judge-шаг,
+ * так что роль не привязана к видимому селектору на странице моделей.
+ * Дисциплина `judge-bst` тоже удалена из disciplines.ts.
  */
 export const ALL_ROLES = [
   { role: "crystallizer",         label: "💎 Кристаллизатор" },
   { role: "evaluator",            label: "📚 Оценщик" },
-  { role: "judge",                label: "⚖️ Судья" },
   { role: "translator",           label: "🌐 Переводчик" },
   { role: "ukrainian_specialist", label: "🇺🇦 Укр." },
   { role: "lang_detector",        label: "🔤 Язык" },
@@ -65,9 +68,6 @@ export const DISCIPLINE_HUMAN = {
   /* — Знаток украинского — */
   "ukrainian-uk-write":              { short: "Письмо",            long: "Создание связного текста на украинском с правильной орфографией" },
 
-  /* — Судья — */
-  "judge-bst":                       { short: "BST",               long: "Выбор правильного ответа о сложности BST (A-вариант)" },
-
   /* — Детектор языка — */
   "lang-detect-uk":                  { short: "Современный укр.",  long: "Распознавание современного украинского технического текста" },
   "lang-detect-en":                  { short: "Английский",        long: "Контрольная проверка распознавания английского" },
@@ -113,4 +113,22 @@ export function roleIcon(prefKey) {
     visionModelKey:           "👁️",
   };
   return MAP[prefKey] ?? "🤖";
+}
+
+/** Заголовок карточки рекомендации по Olympics-роли.
+ *  Используется в `models-page-olympics-report.js` (раньше: `prefKeyLabel(agg.prefKey)`,
+ *  что давало 3 одинаковых "Vision (обложки / OCR / иллюстрации)" заголовка).
+ *  Решение от 2026-04-30: показывать имя роли (3 разных vision-блока), а
+ *  под ним sub-label куда применится. */
+export function aggregateRoleTitle(role) {
+  return roleHuman(role).title;
+}
+
+/** Sub-label "Применится к: <prefKey>" — объясняет что vision-роли мапятся в одну
+ *  pref `visionModelKey` (видеть это нужно в карточках рекомендаций). */
+export function aggregateApplyHint(prefKey) {
+  if (prefKey === "visionModelKey") {
+    return "→ visionModelKey (общая для трёх vision-задач)";
+  }
+  return `→ ${prefKey}`;
 }

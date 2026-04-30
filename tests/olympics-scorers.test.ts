@@ -174,16 +174,6 @@ const SAMPLES: Record<string, Sample> = {
     bad: "Современные процессоры используют кэши.", /* русский вместо украинского */
   },
 
-  "judge-bst": {
-    good: "A",
-    bad: "B",
-  },
-
-  "judge-async": {
-    good: "B",
-    bad: "A",
-  },
-
   "lang-detect-uk": {
     good: "uk",
     bad: "ru",

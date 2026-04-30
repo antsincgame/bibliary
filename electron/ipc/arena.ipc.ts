@@ -59,13 +59,31 @@ export function registerArenaIpc(): void {
 
     /* Read prefs once for per-role tuning toggle. */
     const prefs = await getPreferencesStore().getAll();
+    /* Lightning preset (см. docs/lightning-olympics.md): один тумблер в UI
+     * перекрывает несколько частных настроек на лету. Это «macro-pref»:
+     *   weightClasses → ["s"]   (только мелкие модели)
+     *   testAll       → false   (не пробежать всё)
+     *   maxModels     → 5       (top-K фильтр)
+     *   timeout       → 30s     (вместо 90s — Lightning не для медленного reasoning)
+     * Если Lightning выключен — работают индивидуальные prefs/args. */
+    const lightning = prefs.olympicsLightning === true;
+    const requestedWeightClasses = Array.isArray(args.weightClasses)
+      ? (args.weightClasses as Array<"xs"|"s"|"m"|"l"|"xl"|"unknown">)
+      : undefined;
+    const finalWeightClasses = lightning ? (["s"] as const) : requestedWeightClasses;
+    const finalTestAll = lightning ? false : (args.testAll === true);
+    const finalMaxModels = lightning
+      ? 5
+      : (typeof args.maxModels === "number" ? args.maxModels : undefined);
+    const finalTimeout = lightning ? 30_000 : undefined;
     try {
       const report = await runOlympics({
         models: Array.isArray(args.models) ? (args.models as string[]) : undefined,
         disciplines: Array.isArray(args.disciplines) ? (args.disciplines as string[]) : undefined,
-        maxModels: typeof args.maxModels === "number" ? args.maxModels : undefined,
-        weightClasses: Array.isArray(args.weightClasses) ? (args.weightClasses as Array<"xs"|"s"|"m"|"l"|"xl"|"unknown">) : undefined,
-        testAll: args.testAll === true,
+        maxModels: finalMaxModels,
+        weightClasses: finalWeightClasses as Array<"xs"|"s"|"m"|"l"|"xl"|"unknown"> | undefined,
+        testAll: finalTestAll,
+        perDisciplineTimeoutMs: finalTimeout,
         roles: Array.isArray(args.roles) ? (args.roles as OlympicsRole[]) : undefined,
         roleLoadConfigEnabled: prefs.olympicsRoleLoadConfigEnabled === true,
         useLmsSDK: prefs.olympicsUseLmsSDK === true,

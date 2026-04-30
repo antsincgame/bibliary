@@ -84,8 +84,33 @@ export interface OlympicsOptions {
 
 export type OlympicsEvent =
   | { type: "olympics.start"; models: string[]; disciplines: string[] }
-  | { type: "olympics.discipline.start"; discipline: string; role: string }
-  | { type: "olympics.model.done"; discipline: string; model: string; score: number; durationMs: number; ok: boolean; error?: string }
+  | {
+      type: "olympics.discipline.start";
+      discipline: string;
+      role: string;
+      /** Описание для technical log (whyImportant из disciplines.ts). */
+      whyImportant?: string;
+      /** thinkingFriendly флаг: позволяет UI показать «🧠 thinking-friendly». */
+      thinkingFriendly?: boolean;
+      /** Базовый бюджет токенов: помогает технарю оценить стоимость. */
+      maxTokens?: number;
+    }
+  | {
+      type: "olympics.model.done";
+      discipline: string;
+      role?: string;
+      model: string;
+      score: number;
+      durationMs: number;
+      /** Полные метрики токенизации (для научно-технического лога). */
+      tokens?: number;
+      promptTokens?: number;
+      completionTokens?: number;
+      /** Сэмпл ответа (первые 240 символов) — для отладки на лету. */
+      sample?: string;
+      ok: boolean;
+      error?: string;
+    }
   | { type: "olympics.discipline.done"; discipline: string; champion: string | null }
   | { type: "olympics.done"; durationMs: number }
   | { type: "olympics.log"; level: string; message: string; ctx?: Record<string, unknown> }

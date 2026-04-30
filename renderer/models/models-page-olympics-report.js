@@ -12,8 +12,9 @@ import { ctx, applyRecommendations } from "./models-page-internals.js";
 import {
   disciplineHuman,
   roleHuman,
-  prefKeyLabel,
   roleIcon,
+  aggregateRoleTitle,
+  aggregateApplyHint,
 } from "./models-page-olympics-labels.js";
 import { refresh } from "./models-hardware-status.js";
 
@@ -216,6 +217,14 @@ export function renderOlympicsReport(report) {
     return;
   }
 
+  /* Счётчик ролей для кнопки «Распределить»:
+   * показываем РЕАЛЬНОЕ число ролей с чемпионом (а не число уникальных pref-ключей).
+   * Vision_meta + vision_ocr + vision_illustration → 3 роли, но → 1 prefKey.
+   * Раньше показывали 7 (=уникальных prefs), это путало пользователя — он видит
+   * 9 категорий, ожидает 9 чемпионов. Теперь = (число aggregates с champion). */
+  const rolesWithOptimum = aggregates.filter((a) => a.optimum).length;
+  const rolesWithChampion = aggregates.filter((a) => a.champion).length;
+
   let useChampion = false;
   const champBadge = el("span", { class: "mp-olympics-champion-badge", style: "display:none" }, "🏆");
   const distributeBtn = el("button", {
@@ -230,7 +239,7 @@ export function renderOlympicsReport(report) {
     el("span", { class: "mp-olympics-distribute-label" }, t("models.olympics.distribute")),
     champBadge,
     el("span", { class: "mp-olympics-distribute-count" },
-      ` (${(useChampion ? byScoreKeys : recsKeys).length})`),
+      ` (${useChampion ? rolesWithChampion : rolesWithOptimum})`),
   ]);
 
   if (window.api?.preferences?.getAll) {
@@ -241,7 +250,7 @@ export function renderOlympicsReport(report) {
       if (lbl) lbl.textContent = useChampion
         ? t("models.olympics.distribute_champion")
         : t("models.olympics.distribute");
-      if (cnt) cnt.textContent = ` (${(useChampion ? byScoreKeys : recsKeys).length})`;
+      if (cnt) cnt.textContent = ` (${useChampion ? rolesWithChampion : rolesWithOptimum})`;
       champBadge.style.display = useChampion ? "" : "none";
     }).catch(() => { /* ignore */ });
   }
@@ -257,14 +266,19 @@ export function renderOlympicsReport(report) {
     const top = (agg.perModel ?? []).slice(0, 3);
     const optimumStats = agg.optimum ? agg.perModel.find((p) => p.model === agg.optimum) : null;
     const championStats = agg.champion ? agg.perModel.find((p) => p.model === agg.champion) : null;
+    const roleH = roleHuman(agg.role);
 
     const card = el("div", { class: "mp-olympics-role-card" }, [
       el("div", { class: "mp-olympics-role-header" }, [
-        el("span", { class: "mp-olympics-role-icon" }, roleIcon(agg.prefKey)),
-        el("span", { class: "mp-olympics-role-name" }, prefKeyLabel(agg.prefKey)),
+        el("span", { class: "mp-olympics-role-icon" }, roleH.icon || roleIcon(agg.prefKey)),
+        el("span", { class: "mp-olympics-role-name" }, aggregateRoleTitle(agg.role)),
         el("span", { class: "mp-olympics-role-disciplines" },
           `${(agg.disciplines ?? []).length} ${t("models.olympics.role.tests")}`),
       ]),
+      el("div", { class: "mp-olympics-role-subhint" }, [
+        el("span", { class: "mp-olympics-role-subhint-pref" }, aggregateApplyHint(agg.prefKey)),
+        roleH.subtitle ? el("span", { class: "mp-olympics-role-subhint-sub" }, ` · ${roleH.subtitle}`) : null,
+      ].filter(Boolean)),
 
       el("div", { class: "mp-olympics-role-top" },
         top.map((p, i) => {
