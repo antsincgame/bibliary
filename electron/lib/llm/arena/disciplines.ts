@@ -47,23 +47,26 @@ export interface Discipline {
 }
 
 /**
- * Удаляет `<think>…</think>` блок из ответа LLM.
+ * Удаляет `<think>…</think>` (или `<thinking>…</thinking>`) блок из ответа LLM.
  *
- * Qwen3, GLM-4 и другие "thinking" модели могут вставлять внутренний
- * reasoning прямо в `content` (LM Studio не всегда разделяет content
- * и reasoning_content). Если не вырезать — scorer получит мусор вместо ответа.
+ * Qwen3, GLM-4 используют `<think>`; DeepSeek-R1, GPT-OSS — `<thinking>`.
+ * LM Studio не всегда разделяет content и reasoning_content, поэтому
+ * thinking-блок может оказаться прямо в `content`. Если не вырезать —
+ * scorer получит мусор вместо ответа.
  *
  * Поведение:
  * - `<think>reasoning here</think>\n\nen` → `en`
- * - `<think>...</think>{"score":9}` → `{"score":9}`
+ * - `<thinking>...</thinking>{"score":9}` → `{"score":9}`
  * - `en` (без think) → `en` (noop)
  * - `<think>only reasoning, no close tag` → всё удалено → `""` (пустой)
  */
 export function stripThinkingBlock(raw: string): string {
   if (!raw.includes("<think")) return raw;
   const stripped = raw
-    .replace(/<think>[\s\S]*?<\/think>/gi, "")
-    .replace(/<think>[\s\S]*/gi, "")  /* незакрытый <think> — удалить всё после */
+    /* Парные теги: <think>...</think> или <thinking>...</thinking>. */
+    .replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, "")
+    /* Незакрытый блок (модель не дописала закрывающий тег) — режем до конца. */
+    .replace(/<think(?:ing)?>[\s\S]*/gi, "")
     .trim();
   return stripped;
 }

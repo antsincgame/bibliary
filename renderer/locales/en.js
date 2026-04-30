@@ -458,7 +458,7 @@ export default {
   "models.header.sub_simple": "Pick which loaded model powers each pipeline step — or leave Auto.",
   "models.roles.title": "Pipeline roles",
   "models.olympics.title": "🏆 Model Olympics (auto-tune)",
-  "models.olympics.sub": "Run a tournament: each model takes 4 tasks (extraction, book evaluation, translation, judging). Best model per role is auto-assigned. ~30-60 sec.",
+  "models.olympics.sub": "Run a tournament: each model goes through ~29 disciplines across 10 pipeline roles (extraction, evaluation, translation, judging, language, Ukrainian, vision-cover/OCR/illustration). Best model per role is auto-assigned. Duration scales with model count/size: typically 1-10 minutes.",
   "models.olympics.run": "Run Olympics",
   "models.olympics.cancel": "Cancel",
   "models.olympics.starting": "Starting tournament…",

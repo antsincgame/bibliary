@@ -10,6 +10,7 @@ release/
 .claude/*
 !.claude/rules/
 .git-commit-msg.tmp
+.commit-msg
 
 # Debug diagnostic artifacts
 _*.json

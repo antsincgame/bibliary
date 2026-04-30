@@ -19,7 +19,7 @@ import type {
   OlympicsRoleAggregate,
 } from "./olympics.js";
 
-export function roleToPrefKey(role: OlympicsRole): string | null {
+function roleToPrefKey(role: OlympicsRole): string | null {
   switch (role) {
     case "crystallizer":         return "extractorModel";
     case "vision_meta":          return "visionMetaModel";

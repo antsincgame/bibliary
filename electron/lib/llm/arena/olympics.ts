@@ -29,9 +29,7 @@ import {
   lmsListAvailableModels,
   lmsWaitForReady,
   lmsLoadModel,
-  lmsUnloadModel,
   lmsHealthCheck,
-  lmsLoadedInstanceIdsForModel,
   lmsUnloadAllInstancesForModel,
   lmsChat,
   estimateModelVramBytes,
@@ -589,7 +587,13 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
       for (const d of disciplines) {
         if (opts.signal?.aborted) break;
 
-        const isVisionDiscipline = d.role === "vision" && !!d.imageUrl;
+        /* Vision-дисциплины (legacy `vision` + современные `vision_meta`/
+         * `vision_ocr`/`vision_illustration`) с image_url требуют
+         * мультимодальную модель. Текстовая модель на image_url отдаст
+         * пустой/ошибочный ответ. Фильтруем все 4 роли. */
+        const isVisionRole = d.role === "vision" || d.role === "vision_meta"
+          || d.role === "vision_ocr" || d.role === "vision_illustration";
+        const isVisionDiscipline = isVisionRole && !!d.imageUrl;
         if (isVisionDiscipline && !visionCapableKeys.has(modelKey)) continue;
 
         opts.onProgress?.({ type: "olympics.discipline.start", discipline: d.id, role: d.role });

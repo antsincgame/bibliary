@@ -715,7 +715,7 @@ function roleIcon(prefKey) {
 const ALL_ROLES = [
   { role: "crystallizer",         label: "💎 Кристаллизатор" },
   { role: "evaluator",            label: "📚 Оценщик" },
-  { role: "judge",                label: "⚖️ Критик" },
+  { role: "judge",                label: "⚖️ Судья" },
   { role: "translator",           label: "🌐 Переводчик" },
   { role: "lang_detector",        label: "🔤 Язык" },
   { role: "ukrainian_specialist", label: "🇺🇦 Укр." },
