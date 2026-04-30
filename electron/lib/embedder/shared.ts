@@ -1,14 +1,9 @@
 /**
  * Shared embedder singleton.
  *
- * Before: scanner/ingest.ts and rag/index.ts each owned a separate
- * pipeline("feature-extraction", model) instance. transformers.js loaded
- * the same multilingual-e5-small twice, costing roughly 150 MB per
- * Electron process when both ingest and chat ran in parallel.
- *
- * After: one cached pipeline per model key. Both call sites import
- * `getEmbedder()`. Race-safe: parallel callers wait on a single Promise
- * during cold-start so we never call `pipeline()` twice for the same key.
+ * Shared singleton: one cached pipeline per model key.
+ * Race-safe: parallel callers wait on a single Promise during cold-start
+ * so we never call `pipeline()` twice for the same key.
  *
  * Embedding text is wrapped here so encoding conventions
  * ("query: " vs "passage: " for E5 family) live in one place.

@@ -3,7 +3,6 @@
  *
  * Раньше в проекте было **3 разных реализации** одного приёма:
  *   - `electron/lib/library/import-candidate-filter.ts:tokenize` — min 3, Set
- *   - `electron/lib/qdrant/bm25-sparse.ts:tokenizeForBm25` — min 2, max 64, array
  *   - `scripts/e2e-bibliarifull-bundle-import.ts:tokenize` — локальный дубль
  *
  * Все три делали одно и то же:

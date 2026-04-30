@@ -58,10 +58,9 @@ jobs:
             tests/lang-detector.test.ts \
             tests/parsers-html-edge.test.ts
 
-      # Vitest suites: новые модули (ModelPool, reranker, BM25, hybrid bench,
-      # qdrant config, illustration semaphore, embedding flag).
+      # Vitest suites: unit-тесты (ModelPool, qdrant config, illustration semaphore).
       # Запускаются отдельным шагом, потому что используют vitest а не node:test.
-      - name: Vitest suites (model-pool + reranker + bm25 + hybrid bench + semaphore)
+      - name: Vitest suites (model-pool + qdrant-collection-config + illustration-semaphore)
         run: |
           npx vitest run \
             tests/model-pool.test.ts \

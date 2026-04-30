@@ -39,7 +39,6 @@
     "test:rebuild-native": "npm rebuild better-sqlite3 2>nul || echo [test:rebuild-native] rebuild skipped",
     "test:fast": "node --import tsx --test tests/*.test.ts",
     "test:smoke": "node scripts/prepare-electron.js && tsc -p tsconfig.electron.json && node --import tsx --test tests/smoke/*.test.ts",
-    "build:help-kb": "tsx scripts/build-help-kb.ts",
     "typecheck": "tsc -p tsconfig.electron.json --noEmit",
     "lint": "npm run typecheck && eslint \"renderer/**/*.js\" --ignore-pattern \"renderer/vendor/**\" --max-warnings=0",
     "lint:fix": "eslint \"renderer/**/*.js\" --ignore-pattern \"renderer/vendor/**\" --fix",

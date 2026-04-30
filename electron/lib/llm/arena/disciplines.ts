@@ -520,98 +520,6 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
   },
 
   {
-    id: "evaluator-nuanced",
-    role: "evaluator",
-    description: "Взвешенная оценка неоднозначной книги (для thinking-моделей).",
-    whyImportant:
-      "Большинство реальных книг — не очевидные «классика 10/10» или «шум 1/10», а серая зона. Тест проверяет способность модели держать в голове ОДНОВРЕМЕННО плюсы (актуальная тема, известное издательство) и минусы (старый год, тонкий объём). Thinking-модель должна attribute factors и поставить взвешенную оценку 5-7.",
-    thinkingFriendly: true,
-    system:
-      "You evaluate book quality for a TECHNICAL knowledge base. Think step by step about strengths and weaknesses. Score 0-10. " +
-      'Output ONLY JSON: {"score":number,"reasoning":string}.',
-    user:
-      'Book: "JavaScript: The Good Parts" by Douglas Crockford. ' +
-      "Topics: JS subset, functional programming, prototype inheritance, JSON. " +
-      "Year: 2008. Pages: 176. Published by O'Reilly. " +
-      "Note: highly influential when written, but covers ES3-era JS only — " +
-      "predates ES6 (let/const, classes, modules, async/await, arrow functions).",
-    maxTokens: 384,
-    score: (a) => {
-      const parsed = tryParseJson(a) as { score?: number; reasoning?: string } | null;
-      if (!parsed || typeof parsed.score !== "number") return 0;
-
-      let s = 0;
-      /* Правильная зона — 5-7 (взвешенно). */
-      if (parsed.score >= 5 && parsed.score <= 7) s += 0.50;
-      else if (parsed.score === 4 || parsed.score === 8) s += 0.25;
-      else if (parsed.score === 3 || parsed.score === 9) s += 0.10;
-      /* 1-2 (полный мусор) или 10 (эталон) — серьёзная ошибка. */
-
-      if (typeof parsed.reasoning === "string") {
-        const r = parsed.reasoning.toLowerCase();
-        if (r.length >= 60) s += 0.10;
-
-        /* Должен УПОМЯНУТЬ оба фактора (плюс И минус). */
-        const positiveSignals = /influential|classic|crockford|important|foundational|good\s*parts|funktional|функционал/.test(r);
-        const negativeSignals = /outdated|old|es3|es5|es6|2008|predates|legacy|устарел|стар/.test(r);
-        if (positiveSignals && negativeSignals) s += 0.30; /* mature reasoning */
-        else if (positiveSignals || negativeSignals) s += 0.10; /* one-sided */
-
-        /* Бонус за упоминание конкретики ES6/modern features. */
-        if (/let|const|class(es)?|module|async\s*\/?\s*await|arrow/.test(r)) s += 0.10;
-      }
-
-      return Math.max(0, Math.min(1, s));
-    },
-  },
-
-  {
-    id: "translator-uk-ru",
-    role: "translator",
-    description: "Перевод UK→RU с техническими терминами.",
-    whyImportant:
-      "Переводчик должен: 1) полностью убрать укр.буквы (іїєґ); 2) сохранить точно «O(V + E)» и обозначения; 3) дать живой русский, не машинный кальк. Без этих свойств — мусор в датасете.",
-    system: TRANSLATE_TO_RU_SYSTEM_PROMPT,
-    user:
-      "Алгоритм пошуку в глибину (DFS) обходить дерево, починаючи з кореня, " +
-      "і йде якомога глибше по кожній гілці перед поверненням назад. " +
-      "Складність — O(V + E).",
-    maxTokens: 256,
-    score: (a) => {
-      const lower = a.toLowerCase();
-      const ukChars = (a.match(/[іїєґІЇЄҐ]/g)?.length ?? 0);
-      const ruChars = (a.match(/[а-яА-Я]/g)?.length ?? 0);
-      const totalText = a.replace(/[^а-яёїєґіА-ЯЁЇЄҐІ]/gi, "").length;
-
-      let s = 0;
-      /* 1. Полное русскоязычие — украинские буквы должны исчезнуть. */
-      if (totalText >= 30 && ruChars / totalText >= 0.95 && ukChars === 0) s += 0.30;
-      else if (ukChars <= 2)                                                s += 0.15;
-      else if (ukChars <= 5)                                                s += 0.05;
-
-      /* 2. Сохранение технических обозначений — точная буквенная копия. */
-      if (lower.includes("o(v + e)") || lower.includes("o(v+e)")) s += 0.25;
-      else if (lower.includes("o(v") && lower.includes("e)"))      s += 0.10;
-
-      /* 3. Аббревиатура DFS — must be preserved. */
-      if (a.includes("DFS")) s += 0.15;
-
-      /* 4. Корректные русские термины (не калька). */
-      if (/обход|обходит/.test(lower))       s += 0.10;
-      if (/поиск\s+в\s+глубин/.test(lower))   s += 0.10;
-      if (/(сложность|время|complexity)/.test(lower)) s += 0.05;
-      if (/(дерев|корн|ветв|узел|узл)/.test(lower))    s += 0.05;
-
-      /* Штрафы. */
-      if (lower.length < 50)                  s -= 0.20;
-      if (lower.length > 600)                 s -= 0.10; /* раздул, не должен быть в N раз длиннее */
-      if (/обходить|починаючи|якомога/.test(a)) s -= 0.15; /* остаточные укр.слова — кальки */
-
-      return Math.max(0, Math.min(1, s));
-    },
-  },
-
-  {
     /* Production-релевант: en→ru, главный путь импорта англ.книг. */
     id: "translator-en-ru",
     role: "translator",
@@ -659,53 +567,6 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
       if (a.length > 1500) s -= 0.10;
       /* Не перевёл вообще (английский остался в большинстве). */
       if (totalLetters > 50 && enLetters / totalLetters > 0.30) s -= 0.20;
-
-      return Math.max(0, Math.min(1, s));
-    },
-  },
-
-  {
-    /* Тест обратного направления — RU→EN для экспорта датасета. */
-    id: "translator-ru-en",
-    role: "translator",
-    description: "Перевод RU→EN научного абзаца.",
-    whyImportant:
-      "При экспорте датасетов и публикации иногда нужен RU→EN путь. Тест проверяет, что та же модель умеет работать в обе стороны без потери технических терминов.",
-    system:
-      "You are a professional translator. Translate the user's text into English. " +
-      "Preserve technical terms and numbers exactly. Output ONLY the translation. " +
-      "BAD: 'Here is the translation: ...' — never do this.",
-    user:
-      "Translate to English:\n\n" +
-      "«Тепловая теорема Нернста утверждает, что энтропия кристалла при абсолютном нуле " +
-      "температуры равна нулю. Это третий закон термодинамики. Из него следует недостижимость " +
-      "абсолютного нуля за конечное число шагов охлаждения.»",
-    maxTokens: 384,
-    score: (a) => {
-      const enLetters = (a.match(/[a-zA-Z]/g)?.length ?? 0);
-      const ruChars = (a.match(/[а-яА-ЯёЁ]/g)?.length ?? 0);
-      const totalLetters = enLetters + ruChars;
-      const lower = a.toLowerCase();
-      let s = 0;
-
-      /* 1. Должен быть на английском. */
-      if (totalLetters >= 50 && enLetters / totalLetters >= 0.90) s += 0.30;
-      else if (totalLetters >= 50 && enLetters / totalLetters >= 0.75) s += 0.15;
-
-      /* 2. Якоря-термины. */
-      if (/nernst/i.test(a)) s += 0.15; /* имя должно быть точно */
-      if (/(third\s+law|3rd\s+law)/i.test(lower)) s += 0.10;
-      if (/thermodynamic/i.test(lower)) s += 0.10;
-      if (/entropy/i.test(lower))       s += 0.10;
-      if (/absolute\s+zero/i.test(lower)) s += 0.10;
-      if (/crystal/i.test(lower))         s += 0.05;
-      if (/unattain|impossib|cannot\s+be\s+reached/i.test(lower)) s += 0.05;
-
-      /* === ШТРАФЫ === */
-      if (/(here\s+is\s+the\s+translation|вот\s+перевод)/i.test(a)) s -= 0.30;
-      if (/```/.test(a)) s -= 0.10;
-      if (a.length < 80) s -= 0.20;
-      if (totalLetters > 50 && ruChars / totalLetters > 0.10) s -= 0.20; /* остался кириллический шум */
 
       return Math.max(0, Math.min(1, s));
     },
@@ -773,27 +634,6 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
       return 0.05;                               /* мусор — почти ноль */
     },
   },
-  {
-    id: "judge-async",
-    role: "judge",
-    description: "Сравнить два ответа: правильный = B (anti-A bias).",
-    whyImportant:
-      "Парный тест к judge-bst — здесь правильный ответ B, чтобы выявить bias-A (склонность судьи всегда говорить «A»). Стабильно good-судья наберёт 1.0 в обоих тестах.",
-    system: JUDGE_SYSTEM_PROMPT,
-    user:
-      "Question: In Python, what does `await` do in an async function?\n\n" +
-      "Answer A: It blocks the entire program until the awaited operation completes.\n\n" +
-      "Answer B: It pauses the current coroutine and yields control to the event loop until the awaitable resolves.\n\n" +
-      "Which is correct? A or B?",
-    maxTokens: 16,
-    score: (a) => {
-      const t = a.trim().toUpperCase().replace(/[^A-Z]/g, "");
-      if (t.length === 0) return 0;
-      if (t.startsWith("B")) return 1.0;
-      if (t.startsWith("A")) return 0.0;
-      return 0.05;
-    },
-  },
 
   /* ─── Crystallizer: Russian language test ──────────────────────────── */
   {
@@ -835,81 +675,6 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
     },
   },
 
-  /* ─── НОВЫЕ ДИСЦИПЛИНЫ ДЛЯ FALLBACK CHAIN ─────────────────────────── */
-
-  {
-    /* Описание примера кода — кейс bundle-import: cpp-книга + сотни .cpp файлов
-       рядом. LLM должна за 2-3 предложения объяснить что делает код. */
-    id: "code-summary-cpp",
-    role: "crystallizer", /* sidecar describer тоже идёт через crystallizer */
-    thinkingFriendly: true, /* crystallizer = ДА: рассуждение о структуре кода даёт лучшее резюме */
-    description: "Описать пример C++ кода (sidecar для bundle-import).",
-    system:
-      "You are a code reviewer. In 2-3 sentences explain what this C++ code does. " +
-      "Be concise and technical. No markdown.",
-    user:
-      "```cpp\n" +
-      "#include <vector>\n" +
-      "#include <algorithm>\n" +
-      "void quicksort(std::vector<int>& v, int lo, int hi) {\n" +
-      "  if (lo >= hi) return;\n" +
-      "  int pivot = v[(lo + hi) / 2];\n" +
-      "  int i = lo, j = hi;\n" +
-      "  while (i <= j) {\n" +
-      "    while (v[i] < pivot) i++;\n" +
-      "    while (v[j] > pivot) j--;\n" +
-      "    if (i <= j) std::swap(v[i++], v[j--]);\n" +
-      "  }\n" +
-      "  quicksort(v, lo, j);\n" +
-      "  quicksort(v, i, hi);\n" +
-      "}\n" +
-      "```",
-    maxTokens: 200,
-    score: (a) => {
-      const lower = a.toLowerCase();
-      let s = 0;
-      if (lower.length > 30 && lower.length < 1500) s += 0.2; /* разумная длина */
-      if (lower.includes("quicksort") || lower.includes("quick sort") || lower.includes("быстр")) s += 0.3;
-      if (lower.includes("pivot") || lower.includes("опорн")) s += 0.2;
-      if (lower.includes("recurs") || lower.includes("рекурс")) s += 0.15;
-      if (lower.includes("partition") || lower.includes("разби") || lower.includes("разделя")) s += 0.15;
-      return Math.min(1, s);
-    },
-  },
-
-  {
-    /* HTML-extraction: извлечь полезный текст из скачанного фрагмента сайта.
-       Важно для bundle-import (книга + downloaded examples-files). */
-    id: "html-extract",
-    role: "crystallizer",
-    description: "Извлечь чистый текст из HTML (без тегов, скриптов, CSS).",
-    system:
-      "Extract the visible main content as plain text. Skip <script>, <style>, " +
-      "navigation menus, ads. Output ONLY the cleaned text.",
-    user:
-      "<!DOCTYPE html><html><head><title>Tutorial</title>" +
-      "<script>var x = 1;</script><style>body{color:red}</style></head>" +
-      "<body><nav>Menu | Home | About</nav>" +
-      "<main><h1>Binary Search</h1>" +
-      "<p>Binary search is an algorithm with O(log n) complexity. " +
-      "It works on sorted arrays by halving the search range.</p></main>" +
-      "<footer>(c) 2024</footer></body></html>",
-    maxTokens: 256,
-    score: (a) => {
-      const t = a.trim();
-      if (t.length < 10) return 0; /* пустой/мусорный ответ */
-      const lower = t.toLowerCase();
-      let s = 0;
-      if (!t.includes("<")) s += 0.20; /* нет tags — хорошо */
-      if (!lower.includes("<script") && !lower.includes("<style")) s += 0.10;
-      if (lower.includes("binary search") || lower.includes("бинарн")) s += 0.30;
-      if (lower.includes("o(log n)") || lower.includes("o(log")) s += 0.20;
-      if (!lower.includes("menu") && !lower.includes("(c) 2024")) s += 0.10; /* убрал navigation/footer */
-      if (/sorted\s+array|halv|range|sort/.test(lower)) s += 0.10;
-      return Math.min(1, s);
-    },
-  },
-
   {
     id: "lang-detect-uk",
     role: "lang_detector",
@@ -932,47 +697,6 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
     score: ukLangScore,
   },
   {
-    id: "lang-detect-uk-shevchenko",
-    role: "lang_detector",
-    description: "Визначити мову поезії Шевченка (складний тест).",
-    whyImportant:
-      "Класична літературна українська — найважчий тест. Лексика Шевченка унікальна: " +
-      "«нащо», «лихо», «чом» — цих форм немає в російській. " +
-      "Модель яка провалить цей тест, не розпізнає старих або художніх українських текстів.",
-    system:
-      LANG_DETECT_SYSTEM_PROMPT,
-    user:
-      "What language is this text?\n\n" +
-      "«Думи мої, думи мої, лихо мені з вами! " +
-      "Нащо стали на папері сумними рядами? " +
-      "Чом вас вітер не розвіяв в степу, як пилину? " +
-      "Чом вас лихо не приспало, як свою дитину? " +
-      "Встаньте, діти, орли сизі, розправте крила! " +
-      "Летіть у поле, де широко, де вільно й мило.»",
-    maxTokens: 16,
-    score: ukLangScore,
-  },
-  {
-    id: "lang-detect-uk-library",
-    role: "lang_detector",
-    description: "Визначити мову технічного тексту про книги (доменний тест).",
-    whyImportant:
-      "Пайплайн обробляє бібліотечні описи. Тест використовує технічний текст бібліотечної " +
-      "тематики українською — саме той контент, що потрапляє в pipeline. " +
-      "Слова «видання», «надходження», «рубриками», «здійснювати» — унікально українські.",
-    system:
-      LANG_DETECT_SYSTEM_PROMPT,
-    user:
-      "What language is this text?\n\n" +
-      "«Бібліотечний каталог містить тисячі книжок різних жанрів і тематик. " +
-      "Кожне видання має унікальний ідентифікатор, автора, назву та анотацію. " +
-      "Система автоматично індексує нові надходження та дозволяє користувачам " +
-      "здійснювати пошук за ключовими словами, іменами авторів або тематичними рубриками. " +
-      "Електронні читанки надають доступ до оцифрованих рукописів і стародруків.»",
-    maxTokens: 16,
-    score: ukLangScore,
-  },
-  {
     id: "lang-detect-en",
     role: "lang_detector",
     description: "Распознать английский (контроль).",
@@ -991,60 +715,6 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
       if (t === "en" || t === "english") return 1.0;
       if (t.startsWith("en"))             return 0.85;
       return 0.0;
-    },
-  },
-  {
-    id: "lang-detect-ru",
-    role: "lang_detector",
-    description: "Распознать русский язык (контрольный тест).",
-    whyImportant:
-      "Если модель отвечает «ru» на всё подряд, этот тест покажет что она случайно угадала. " +
-      "Правильная lang-detect модель должна уметь различать ru от uk. " +
-      "Тест использует длинный технический абзац по-русски.",
-    system:
-      LANG_DETECT_SYSTEM_PROMPT,
-    user:
-      "What language is this text?\n\n" +
-      "«Алгоритм поиска в глубину обходит дерево, начиная с корневого узла. " +
-      "Он исследует каждую ветку полностью, прежде чем вернуться назад и исследовать другие ветки. " +
-      "Этот подход использует структуру данных стек, явно или через стек вызовов функций. " +
-      "Временная сложность алгоритма составляет O(V+E), где V — вершины, E — рёбра.»",
-    maxTokens: 16,
-    score: (a) => {
-      const t = a.trim().toLowerCase().replace(/[^a-z]/g, "");
-      if (t === "ru" || t === "russian") return 1.0;
-      if (t.startsWith("ru"))            return 0.85;
-      if (t === "uk")                    return 0.0; /* критическая ошибка: путает ru↔uk */
-      return 0.1;
-    },
-  },
-
-  /* ─── Vision ────────────────────────────────────────────────────────── */
-  {
-    /* Базовый vision-тест: умеет ли модель видеть тривиальную геометрию.
-     * Для legacy `vision`-роли (старая объединённая роль). */
-    id: "vision-describe-shapes",
-    role: "vision",
-    description: "Описать содержимое изображения (vision-модель).",
-    whyImportant:
-      "Базовый sanity check: видит ли модель цвет и форму? Если нет — она не справится " +
-      "ни с OCR обложки, ни с описанием иллюстрации.",
-    system:
-      "You are a vision assistant. Describe what you see in this image. " +
-      "Be precise about colors and shapes. 1-2 sentences. No markdown.",
-    user: "Describe this image.",
-    imageUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFAAAAAeCAIAAAA0IQ7mAAAAUklEQVR4nO3PwQkAIAwEweu/MrvSjxVIArLZ5d4hk2QNW9Yek2B6gukJpieYXjM4eV/XR4JrzwsWLFhw7UeCa88LZoP/SzA9wfQE0xNM74JH7QAkJZohvhUzSwAAAABJRU5ErkJggg==",
-    maxTokens: 128,
-    score: (a) => {
-      const lower = a.toLowerCase();
-      let s = 0;
-      if (lower.length >= 10 && lower.length < 500) s += 0.15;
-      if (/red|красн/.test(lower))                   s += 0.25;
-      if (/rectangle|rect|square|квадрат|прямоуг/.test(lower)) s += 0.25;
-      if (/blue|синий|голуб/.test(lower))             s += 0.15;
-      if (/white|бел/.test(lower))                    s += 0.10;
-      if (/border|frame|рамк|обвод/.test(lower))      s += 0.10;
-      return Math.min(1, s);
     },
   },
 
@@ -1186,64 +856,6 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
     },
   },
 
-  /* ─── Crystallizer: chapter-thesis (AURA filter) ─────────────────────
-   * Заявленный в плане crystallizer-aura — производственный chapter-thesis prompt.
-   * Не схема знаний с фактами/relations, а краткий тезис главы (≤200 chars).
-   * Это вход в pipeline AURA-фильтра: тезис главы используется при scoring
-   * delta-knowledge как "в каком контексте мы извлекаем факт?" */
-  {
-    id: "crystallizer-aura",
-    role: "crystallizer",
-    thinkingFriendly: true, /* выделение главной мысли = reasoning */
-    description: "Сгенерировать тезис главы для AURA-фильтра.",
-    whyImportant:
-      "Boevoy chapter_thesis prompt — каждая глава импорта проходит через эту операцию. " +
-      "Если модель пишет «в этой главе говорится о...», вместо одного содержательного " +
-      "предложения — AURA-фильтр получает шум, и delta-extractor хуже отбирает факты.",
-    system:
-      "Извлеки одно содержательное предложение — тезис главы. " +
-      "Без префикса «В этой главе...», без markdown, без JSON. " +
-      "Строго одно предложение, ≤200 символов, заканчивается точкой.",
-    user:
-      "Глава: «Кэш-иерархия в современных процессорах».\n\n" +
-      "Современные процессоры используют многоуровневую систему кэшей (L1, L2, L3) " +
-      "для уменьшения латентности доступа к памяти. L1-кэш разделён на инструкции и " +
-      "данные, имеет размер 32-64 КБ на ядро и латентность 4-5 циклов. L2 общий на " +
-      "ядро, 256КБ-1МБ. L3 разделяемый между всеми ядрами, до 64 МБ. Когерентность " +
-      "поддерживается протоколом MESI или его расширениями. Промах L1 стоит ~10 циклов, " +
-      "промах L3 — ~200 циклов, обращение в DRAM — 300+ циклов.\n\n" +
-      "Тезис главы:",
-    maxTokens: 100,
-    score: (a) => {
-      const cleaned = stripThinkingBlock(a).trim();
-      let s = 0;
-
-      /* Длина: 1 предложение 50-200 chars. */
-      if (cleaned.length >= 30 && cleaned.length <= 200) s += 0.30;
-      else if (cleaned.length > 0 && cleaned.length <= 250) s += 0.15;
-
-      /* Одно предложение (одна точка в конце, не больше 2 точек total). */
-      const dots = (cleaned.match(/[.!?]/g) || []).length;
-      if (dots === 1 && /[.!?]$/.test(cleaned)) s += 0.20;
-      else if (dots <= 2) s += 0.10;
-
-      /* Содержательность: тематика главы. */
-      const lower = cleaned.toLowerCase();
-      if (/кэш|cache/.test(lower)) s += 0.15;
-      if (/иерархи|hierarch|многоуров|уровн/.test(lower)) s += 0.10;
-      if (/процессор|cpu|латентн|память|memory/.test(lower)) s += 0.10;
-
-      /* === Штрафы === */
-      if (/^в\s+этой\s+главе|^эта\s+глава|^the\s+chapter|^this\s+chapter/i.test(cleaned)) s -= 0.40;
-      if (/говорится|описыва|посвящ|рассматрив/i.test(cleaned)) s -= 0.10; /* meta-обёртки */
-      if (cleaned.includes("```")) s -= 0.15;
-      if (/^\s*\{/.test(cleaned)) s -= 0.30; /* JSON вместо текста */
-      if (cleaned.split("\n").length > 2) s -= 0.15; /* multi-line */
-
-      return Math.max(0, Math.min(1, s));
-    },
-  },
-
   /* ─── Vision_meta: cover EN — обложка с английским заголовком ────────
    * Production: книги в библиотеке на английском нуждаются в извлечении
    * заголовка/автора/года из обложки. Здесь fixture минимальный (red rect),
@@ -1284,47 +896,6 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
       if (typeof obj.confidence === "number" && obj.confidence < 0.5) s += 0.05;
 
       /* === Штрафы === */
-      if (a.includes("```")) s -= 0.20;
-      if (/^[\s\S]{0,30}\{/.test(a) && !/^\{/.test(a.trim())) s -= 0.10;
-
-      return Math.max(0, Math.min(1, s));
-    },
-  },
-
-  /* ─── Vision_meta: cover RU — обложка с русскоязычным mental model ────
-   * Зеркало предыдущего теста для русских книг — проверяет что модель не
-   * ломается на не-латинском. */
-  {
-    id: "vision_meta-cover-ru",
-    role: "vision_meta",
-    description: "Vision-meta cover (русская обложка) → строгий JSON metadata.",
-    whyImportant:
-      "Русские книги — половина библиотеки. Модель должна понимать русский " +
-      "system prompt и возвращать JSON metadata. Несовместимые модели лучше " +
-      "выявить здесь, чем после импорта 5000 книг.",
-    system:
-      "Ты анализатор книжных обложек. Выводи СТРОГО JSON. БЕЗ prose, БЕЗ markdown.\n" +
-      "Схема: {\"title\":string|null,\"author\":string|null,\"year\":number|null,\"language\":\"ru\"|\"en\"|\"uk\"|\"unknown\",\"confidence\":0.0-1.0}",
-    user: "Проанализируй обложку и выведи JSON с метаданными.",
-    imageUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFAAAAAeCAIAAAA0IQ7mAAAAUklEQVR4nO3PwQkAIAwEweu/MrvSjxVIArLZ5d4hk2QNW9Yek2B6gukJpieYXjM4eV/XR4JrzwsWLFhw7UeCa88LZoP/SzA9wfQE0xNM74JH7QAkJZohvhUzSwAAAABJRU5ErkJggg==",
-    maxTokens: 128,
-    score: (a) => {
-      const parsed = tryParseJson(a);
-      if (!parsed || typeof parsed !== "object") return 0;
-      const obj = parsed as Record<string, unknown>;
-      let s = 0;
-
-      if ("title" in obj) s += 0.15;
-      if ("author" in obj) s += 0.15;
-      if ("year" in obj) s += 0.10;
-      if (typeof obj.language === "string" &&
-          ["ru", "en", "uk", "unknown"].includes(obj.language)) s += 0.20;
-      if (typeof obj.confidence === "number" && obj.confidence >= 0 && obj.confidence <= 1) s += 0.10;
-
-      if (obj.title === null || obj.title === "") s += 0.10;
-      if (obj.language === "unknown") s += 0.10;
-      if (typeof obj.confidence === "number" && obj.confidence < 0.5) s += 0.05;
-
       if (a.includes("```")) s -= 0.20;
       if (/^[\s\S]{0,30}\{/.test(a) && !/^\{/.test(a.trim())) s -= 0.10;
 

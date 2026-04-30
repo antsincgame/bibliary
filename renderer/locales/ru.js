@@ -778,7 +778,6 @@ export default {
   "settings.spinDurationMs": "Длительность анимации спиннера (мс)",
   "settings.resilienceBarHideDelayMs": "Задержка скрытия resilience-бара (мс)",
   "settings.tags.hint": "через запятую",
-  "settings.ragTopK": "RAG: кол-во чанков для поиска",
   "settings.ragScoreThreshold": "RAG: минимальный score",
   "settings.ingestParallelism": "Параллельность инжеста",
   "settings.searchPerSourceLimit": "Результатов на источник (BookHunter)",
