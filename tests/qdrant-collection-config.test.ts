@@ -9,9 +9,10 @@
  *   - Probe-200 (existing) не пересоздаёт коллекцию
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, beforeEach, afterEach } from "node:test";
 import { ensureQdrantCollection, ensurePayloadIndex } from "../electron/lib/qdrant/collection-config.ts";
 import { setupMockFetch, jsonResponse, notFoundResponse } from "./helpers/mock-fetch.ts";
+import { expect } from "./helpers/expect-shim.ts";
 
 describe("ensureQdrantCollection", () => {
   let restore: () => void = () => undefined;

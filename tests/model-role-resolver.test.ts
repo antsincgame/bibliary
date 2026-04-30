@@ -58,6 +58,7 @@ test("[model-role-resolver] listAllRoles exposes stable UI metadata for all role
     "judge",
     "vision_meta",
     "vision_ocr",
+    "vision_illustration",
     "evaluator",
     "ukrainian_specialist",
     "lang_detector",

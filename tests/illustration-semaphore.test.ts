@@ -11,8 +11,9 @@
  *   7. getStatus возвращает правильные числа
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, beforeEach } from "node:test";
 import { IllustrationSemaphore } from "../electron/lib/library/illustration-semaphore.ts";
+import { expect } from "./helpers/expect-shim.ts";
 
 describe("IllustrationSemaphore", () => {
   let sem: IllustrationSemaphore;

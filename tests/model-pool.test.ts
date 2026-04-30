@@ -16,7 +16,8 @@
  *   12. Real-world: 32GB VRAM + три 7B модели держатся одновременно.
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, beforeEach } from "node:test";
+import { expect } from "./helpers/expect-shim.ts";
 import {
   ModelPool,
   estimateVramMBForModel,
