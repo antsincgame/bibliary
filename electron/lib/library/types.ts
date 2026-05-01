@@ -172,10 +172,19 @@ export interface ConvertOptions {
    */
   precomputedSha256?: string;
   /**
-   * OCR-провайдер для DJVU. Передаётся в parseBook. Default "system".
-   * "vision-llm" использует локальную vision-модель LM Studio.
+   * OCR-провайдер для DJVU и сканированных PDF. Передаётся в parseBook. Default "auto".
+   *   - "auto": vision-llm (LM Studio) → system OCR → none, fallback chain.
+   *   - "vision-llm": ТОЛЬКО локальный LM Studio.
+   *   - "system": ТОЛЬКО OS OCR.
+   *   - "none": OCR отключён.
    */
-  djvuOcrProvider?: "system" | "vision-llm" | "none";
+  djvuOcrProvider?: "auto" | "system" | "vision-llm" | "none";
+  /** Точность OS-OCR. Default "accurate". */
+  ocrAccuracy?: "fast" | "accurate";
+  /** DPI растеризации страниц PDF перед OCR. Default 400. */
+  ocrPdfDpi?: number;
+  /** DPI рендера страниц DJVU. Default 400. */
+  djvuRenderDpi?: number;
   /** Хинты языков для OCR ("uk", "en", "ru"). Первый — primary. */
   ocrLanguages?: string[];
   /**

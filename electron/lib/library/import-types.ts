@@ -41,13 +41,18 @@ export interface ImportFolderOptions {
   /** Колбэк после успешного импорта -- evaluator-queue его подхватывает. */
   onBookImported?: (meta: BookCatalogMeta) => void;
   /**
-   * OCR-провайдер для DJVU. "system" | "vision-llm" | "none". Default "system".
-   * Берётся из preferences и пробрасывается в md-converter.
-   * "vision-llm" использует локальную vision-модель LM Studio.
+   * OCR-провайдер для DJVU и сканированных PDF. Default "auto":
+   * vision-llm (LM Studio) → system → none, fallback chain.
    */
-  djvuOcrProvider?: "system" | "vision-llm" | "none";
+  djvuOcrProvider?: "auto" | "system" | "vision-llm" | "none";
   /** Хинты OCR-языков ("uk", "en", "ru"). Первый — primary для Windows OCR. */
   ocrLanguages?: string[];
+  /** Точность OS-OCR (default "accurate"). */
+  ocrAccuracy?: "fast" | "accurate";
+  /** DPI растеризации страниц PDF перед OCR (default 400). */
+  ocrPdfDpi?: number;
+  /** DPI рендера страниц DJVU (default 400). */
+  djvuRenderDpi?: number;
   /** Включить Vision LLM extraction метаданных из обложки (через LM Studio). */
   visionMetaEnabled?: boolean;
   /** Включить онлайн lookup метаданных по ISBN (Open Library / Google Books). Default true. */

@@ -46,7 +46,7 @@ export function buildOlympicsCard() {
           resetOlympicsUI();
           showToast(t("models.olympics.cache_cleared"), "success");
         },
-      }, "🗑 Очистить кэш"),
+      }, t("models.olympics.log.clear_cache_btn")),
       el("button", {
         id: "mp-olympics-debug-toggle",
         class: "btn btn-ghost btn-xs",
@@ -59,9 +59,11 @@ export function buildOlympicsCard() {
             logEl.style.display = ctx.olympicsDebugVisible ? "" : "none";
             if (logEl instanceof HTMLDetailsElement) logEl.open = ctx.olympicsDebugVisible;
           }
-          if (toggleBtn) toggleBtn.textContent = ctx.olympicsDebugVisible ? "🔽 Скрыть протокол" : "📜 Протокол игр";
+          if (toggleBtn) toggleBtn.textContent = ctx.olympicsDebugVisible
+            ? t("models.olympics.log.toggle_hide")
+            : t("models.olympics.log.header");
         },
-      }, "📜 Протокол игр"),
+      }, t("models.olympics.log.header")),
     ]),
 
     /* Лог-панель: collapsible <details>, расширяющийся вниз по мере турнира.
@@ -74,8 +76,8 @@ export function buildOlympicsCard() {
         style: "display:none",
       });
       log.appendChild(el("summary", { class: "mp-olympics-log-summary" }, [
-        el("span", { class: "mp-olympics-log-summary-label" }, "📜 Протокол игр"),
-        el("span", { class: "mp-olympics-log-counter" }, "0 событий"),
+        el("span", { class: "mp-olympics-log-summary-label" }, t("models.olympics.log.header")),
+        el("span", { class: "mp-olympics-log-counter" }, t("models.olympics.log.events.zero")),
       ]));
       log.appendChild(el("div", { class: "mp-olympics-log-body" }, ""));
       return log;
@@ -115,7 +117,7 @@ function bumpLogCounter(logEl) {
   if (!counter) return;
   const n = (parseInt(counter.dataset.n || "0", 10) || 0) + 1;
   counter.dataset.n = String(n);
-  counter.textContent = `${n} ${n === 1 ? "событие" : (n < 5 ? "события" : "событий")}`;
+  counter.textContent = eventCountStr(n);
 }
 
 function ensureLogVisible(logEl) {
@@ -124,7 +126,7 @@ function ensureLogVisible(logEl) {
   ctx.olympicsDebugVisible = true;
   if (logEl instanceof HTMLDetailsElement) logEl.open = true;
   const toggleBtn = ctx.pageRoot?.querySelector("#mp-olympics-debug-toggle");
-  if (toggleBtn) toggleBtn.textContent = "🔽 Скрыть протокол";
+  if (toggleBtn) toggleBtn.textContent = t("models.olympics.log.toggle_hide");
 }
 
 /** Простое событие — одна строка. */
@@ -162,7 +164,7 @@ function resetOlympicsUI() {
     if (body) clear(body);
     const counter = logEl.querySelector(".mp-olympics-log-counter");
     if (counter) {
-      counter.textContent = "0 событий";
+      counter.textContent = t("models.olympics.log.events.zero");
       counter.dataset.n = "0";
     }
     logEl.style.display = "none";
@@ -171,7 +173,7 @@ function resetOlympicsUI() {
   if (resultsEl) clear(resultsEl);
   ctx.olympicsDebugVisible = false;
   const toggleBtn = ctx.pageRoot?.querySelector("#mp-olympics-debug-toggle");
-  if (toggleBtn) toggleBtn.textContent = "📜 Протокол игр";
+  if (toggleBtn) toggleBtn.textContent = t("models.olympics.log.header");
 }
 
 /** Pretty-print любого объекта/значения для technical log. */
@@ -179,6 +181,28 @@ function fmtCtx(obj) {
   if (obj === null || obj === undefined) return "";
   if (typeof obj === "string") return obj;
   try { return JSON.stringify(obj, null, 2); } catch { return String(obj); }
+}
+
+/** Возвращает человеко-читаемое имя дисциплины или исходный ID как запасной вариант. */
+function discName(id) {
+  const key = `models.olympics.disc.${id}`;
+  const val = t(key);
+  return val === key ? id : val;
+}
+
+/** Возвращает человеко-читаемое имя роли для протокола. */
+function logRoleName(role) {
+  const key = `models.olympics.role.${role}`;
+  const val = t(key);
+  return val === key ? role : val;
+}
+
+/** Строка числа событий с правильным склонением (ru/en). */
+function eventCountStr(n) {
+  if (n === 0) return t("models.olympics.log.events.zero");
+  if (n === 1) return t("models.olympics.log.events.one");
+  if (n < 5)  return t("models.olympics.log.events.few", { n: String(n) });
+  return t("models.olympics.log.events.many", { n: String(n) });
 }
 
 function setOlympicsButtons(running) {
@@ -214,10 +238,10 @@ async function runOlympicsAndShow() {
         const d = e.disciplines?.length ?? 0;
         appendOlympicsLogDetail(
           logEl,
-          `⚡ STARTUP — ${n} models × ${d} disciplines`,
+          t("models.olympics.log.startup", { n: String(n), d: String(d) }),
           el("div", {}, [
-            el("div", {}, `participants (${n}): ${(e.models ?? []).slice(0, 8).join(", ")}${(e.models ?? []).length > 8 ? "…" : ""}`),
-            el("div", {}, `disciplines (${d}): ${(e.disciplines ?? []).slice(0, 12).join(", ")}${(e.disciplines ?? []).length > 12 ? "…" : ""}`),
+            el("div", {}, t("models.olympics.log.startup.participants", { n: String(n) }) + " " + (e.models ?? []).slice(0, 8).join(", ") + ((e.models ?? []).length > 8 ? "…" : "")),
+            el("div", {}, t("models.olympics.log.startup.disciplines", { d: String(d) }) + " " + (e.disciplines ?? []).slice(0, 12).map(discName).join(", ") + ((e.disciplines ?? []).length > 12 ? "…" : "")),
           ]),
           "mid",
         );
@@ -227,40 +251,41 @@ async function runOlympicsAndShow() {
         const limit = Number(e.limitGB ?? 0).toFixed(1);
         appendOlympicsLog(
           logEl,
-          `⚠ VRAM guard: action=${e.action ?? "unknown"} estimated=${gb}GB limit=${limit}GB`,
+          t("models.olympics.log.vram_guard", { action: String(e.action ?? "?"), gb, limit }),
           "mid",
         );
 
       } else if (e.type === "olympics.model.loading") {
-        appendOlympicsLog(logEl, `🔄 LOAD ${e.model}…`, "info");
+        appendOlympicsLog(logEl, t("models.olympics.log.loading", { model: e.model }), "info");
 
       } else if (e.type === "olympics.model.loaded") {
         const dur = ((e.loadTimeMs ?? 0) / 1000).toFixed(2);
-        appendOlympicsLog(logEl, `  ✅ ready: ${e.model} (load=${dur}s)`, "mid");
+        appendOlympicsLog(logEl, t("models.olympics.log.loaded", { model: e.model, dur }), "mid");
 
       } else if (e.type === "olympics.model.unloaded") {
-        appendOlympicsLog(logEl, `  ⏏ unloaded: ${e.model}`, "info");
+        appendOlympicsLog(logEl, t("models.olympics.log.unloaded", { model: e.model }), "info");
 
       } else if (e.type === "olympics.model.load_failed") {
         const reason = String(e.reason ?? "").slice(0, 200);
         appendOlympicsLogDetail(
           logEl,
-          `  ❌ load_failed: ${e.model} — ${reason.slice(0, 60)}`,
+          t("models.olympics.log.load_failed", { model: e.model, reason: reason.slice(0, 60) }),
           el("pre", { class: "mp-olympics-log-pre" }, reason),
           "bad",
         );
 
       } else if (e.type === "olympics.discipline.start") {
-        const role = e.role ? ` · role=${e.role}` : "";
-        const tf = e.thinkingFriendly ? " · 🧠 thinking-friendly" : "";
-        const mt = e.maxTokens ? ` · max_tokens=${e.maxTokens}` : "";
-        const summary = `🏛 DISCIPLINE.START "${e.discipline}"${role}${tf}${mt}`;
+        let suffix = "";
+        if (e.role) suffix += t("models.olympics.log.role_suffix", { role: logRoleName(e.role) });
+        if (e.thinkingFriendly) suffix += t("models.olympics.log.thinking_suffix");
+        if (e.maxTokens) suffix += t("models.olympics.log.tokens_suffix", { tokens: String(e.maxTokens) });
+        const summary = t("models.olympics.log.discipline_start", { discipline: discName(e.discipline ?? ""), suffix });
         if (e.whyImportant) {
           appendOlympicsLogDetail(
             logEl,
             summary,
             el("div", {}, [
-              el("div", { class: "mp-olympics-log-meta" }, "WHY IMPORTANT:"),
+              el("div", { class: "mp-olympics-log-meta" }, t("models.olympics.log.why_important")),
               el("div", { class: "mp-olympics-log-prose" }, e.whyImportant),
             ]),
             "mid",
@@ -276,21 +301,28 @@ async function runOlympicsAndShow() {
         const tier = score >= 70 ? "🥇" : score >= 40 ? "🥈" : "🥉";
         const level = score >= 70 ? "good" : score >= 40 ? "mid" : "bad";
         const tokFields = [];
-        if (typeof e.tokens === "number" && e.tokens > 0)             tokFields.push(`tot=${e.tokens}`);
-        if (typeof e.promptTokens === "number")                       tokFields.push(`prompt=${e.promptTokens}`);
-        if (typeof e.completionTokens === "number")                   tokFields.push(`comp=${e.completionTokens}`);
+        if (typeof e.tokens === "number" && e.tokens > 0)             tokFields.push(t("models.olympics.log.tok_total", { n: String(e.tokens) }));
+        if (typeof e.promptTokens === "number")                       tokFields.push(t("models.olympics.log.tok_prompt", { n: String(e.promptTokens) }));
+        if (typeof e.completionTokens === "number")                   tokFields.push(t("models.olympics.log.tok_answer", { n: String(e.completionTokens) }));
         const tps = (typeof e.completionTokens === "number" && e.durationMs > 0)
           ? (e.completionTokens / (e.durationMs / 1000)).toFixed(1)
           : null;
-        if (tps) tokFields.push(`${tps}tok/s`);
+        if (tps) tokFields.push(t("models.olympics.log.tok_speed", { n: tps }));
         const tokStr = tokFields.length ? ` · ${tokFields.join(" ")}` : "";
-        const sumLine = `  ${tier} MATCH "${e.discipline}" → ${e.model}: score=${score}/100 (${dur}s)${tokStr}`;
+        const sumLine = t("models.olympics.log.match_line", {
+          medal: tier,
+          discipline: discName(e.discipline ?? ""),
+          model: e.model ?? "",
+          score: String(score),
+          dur,
+          tokens: tokStr,
+        });
 
         const bodyChildren = [];
-        if (e.role) bodyChildren.push(el("div", { class: "mp-olympics-log-meta" }, `role: ${e.role}`));
-        if (e.error) bodyChildren.push(el("div", { class: "mp-olympics-log-meta mp-olympics-log-error" }, `error: ${e.error}`));
+        if (e.role) bodyChildren.push(el("div", { class: "mp-olympics-log-meta" }, t("models.olympics.log.role_label", { role: logRoleName(e.role) })));
+        if (e.error) bodyChildren.push(el("div", { class: "mp-olympics-log-meta mp-olympics-log-error" }, t("models.olympics.log.error_label", { error: e.error })));
         if (e.sample) {
-          bodyChildren.push(el("div", { class: "mp-olympics-log-meta" }, "sample (first 240 chars):"));
+          bodyChildren.push(el("div", { class: "mp-olympics-log-meta" }, t("models.olympics.log.sample_label")));
           bodyChildren.push(el("pre", { class: "mp-olympics-log-pre" }, e.sample));
         }
         if (bodyChildren.length > 0) {
@@ -301,9 +333,9 @@ async function runOlympicsAndShow() {
 
       } else if (e.type === "olympics.discipline.done") {
         if (e.champion) {
-          appendOlympicsLog(logEl, `  🏆 DISCIPLINE.DONE "${e.discipline}" → champion=${e.champion}`, "good");
+          appendOlympicsLog(logEl, t("models.olympics.log.discipline_won", { discipline: discName(e.discipline ?? ""), champion: e.champion }), "good");
         } else {
-          appendOlympicsLog(logEl, `  ⊘ DISCIPLINE.DONE "${e.discipline}" → no qualified winner`, "bad");
+          appendOlympicsLog(logEl, t("models.olympics.log.discipline_no_winner", { discipline: discName(e.discipline ?? "") }), "bad");
         }
 
       } else if (e.type === "olympics.log") {
@@ -326,7 +358,7 @@ async function runOlympicsAndShow() {
 
       } else if (e.type === "olympics.done") {
         const dur = ((e.durationMs ?? 0) / 1000).toFixed(1);
-        appendOlympicsLog(logEl, `🏁 OLYMPICS.DONE — total ${dur}s`, "good");
+        appendOlympicsLog(logEl, t("models.olympics.log.done", { dur }), "good");
       }
     });
   }

@@ -65,14 +65,38 @@ export const PreferencesSchema = z.object({
   spinDurationMs: z.number().int().min(100).max(3000).default(600),
   resilienceBarHideDelayMs: z.number().int().min(1000).max(30_000).default(4000),
 
-  // -- OCR (Phase 6.0, OS-native via @napi-rs/system-ocr) --
-  ocrEnabled: z.boolean().default(false),
-  ocrLanguages: z.array(z.string().min(2).max(10)).max(8).default([]),
+  // -- OCR (Phase 6.0, OS-native via @napi-rs/system-ocr + LM Studio vision) --
+  /**
+   * Default ON. OCR применяется автоматически когда у книги нет текстового слоя
+   * (сканированные PDF, DJVU без OCR'a). Безвредно для книг с текстом — там
+   * парсер вытаскивает текст напрямую, OCR не вызывается.
+   */
+  ocrEnabled: z.boolean().default(true),
+  /**
+   * Языки распознавания. Default: en, ru, uk. Первый — primary для Windows OCR
+   * (Windows.Media.Ocr берёт только первый язык). Остальные — для vision-LLM
+   * пути и для Tesseract где он используется.
+   */
+  ocrLanguages: z.array(z.string().min(2).max(10)).max(8).default(["en", "ru", "uk"]),
   ocrAccuracy: z.enum(["fast", "accurate"]).default("accurate"),
-  ocrPdfDpi: z.number().int().min(100).max(400).default(200),
-  djvuOcrProvider: z.enum(["system", "vision-llm", "none"]).default("system"),
-  djvuRenderDpi: z.number().int().min(100).max(600).default(200),
-  openrouterApiKey: z.string().max(512).default(""),
+  /**
+   * DPI растеризации страниц PDF перед OCR. Default 400 — высокое качество
+   * для тонкого текста и формул. Для очень больших книг (>1000 страниц)
+   * можно понизить до 200, чтобы ускорить.
+   */
+  ocrPdfDpi: z.number().int().min(100).max(600).default(400),
+  /**
+   * Провайдер OCR для DJVU и сканированных PDF.
+   *   - "auto" (default): сначала пытаемся через локальную vision-модель LM Studio
+   *     (роль vision_ocr из настроек "Модели"), при провале — системный OCR
+   *     (Windows.Media.Ocr / macOS Vision Framework), при его недоступности — none.
+   *     Это режим "лучшее качество с автоматическим fallback".
+   *   - "vision-llm": ТОЛЬКО локальный LM Studio (vision_ocr роль).
+   *   - "system": ТОЛЬКО системный OS OCR.
+   *   - "none": OCR полностью отключён для DJVU/PDF-сканов.
+   */
+  djvuOcrProvider: z.enum(["auto", "system", "vision-llm", "none"]).default("auto"),
+  djvuRenderDpi: z.number().int().min(100).max(600).default(400),
 
   // -- Vision-meta (локальная LM Studio multimodal модель для извлечения метаданных из обложек) --
   /** Ручной override modelKey vision-модели. Пусто = автоматический поиск среди загруженных. */

@@ -193,13 +193,13 @@ export async function runExtraction(
     console.log(`\n[extraction] ═══ START ═══ collection="${targetCollection}" model="${extractModel}"`);
     console.log(`[extraction] parsing: ${args.bookSourcePath}`);
     const parsed = await parseBook(args.bookSourcePath, {
-      ocrEnabled: prefs.ocrEnabled && isOcrSupported(),
+      ocrEnabled: prefs.ocrEnabled && (isOcrSupported() || prefs.djvuOcrProvider !== "system"),
       ocrLanguages: prefs.ocrLanguages,
       ocrAccuracy: prefs.ocrAccuracy,
       ocrPdfDpi: prefs.ocrPdfDpi,
       djvuOcrProvider: prefs.djvuOcrProvider,
       djvuRenderDpi: prefs.djvuRenderDpi,
-      openrouterApiKey: prefs.openrouterApiKey,
+      visionModelKey: prefs.visionModelKey,
       signal: ctrl.signal,
     });
     const totalChapters = parsed.sections.length;

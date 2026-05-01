@@ -115,10 +115,14 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
       try {
         const opts: ImportFolderOptions = {
           scanArchives: args.scanArchives === true,
-          ocrEnabled: args.ocrEnabled === true,
+          /* OCR-флаг: явный override от UI или глобальный prefs.ocrEnabled. */
+          ocrEnabled: typeof args.ocrEnabled === "boolean" ? args.ocrEnabled : prefs.ocrEnabled,
           maxDepth: typeof args.maxDepth === "number" ? args.maxDepth : undefined,
           djvuOcrProvider: prefs.djvuOcrProvider,
           ocrLanguages: prefs.ocrLanguages,
+          ocrAccuracy: prefs.ocrAccuracy,
+          ocrPdfDpi: prefs.ocrPdfDpi,
+          djvuRenderDpi: prefs.djvuRenderDpi,
           visionMetaEnabled: prefs.visionMetaEnabled,
           visionModelKey: prefs.visionModelKey,
           metadataOnlineLookup: prefs.metadataOnlineLookup,
@@ -247,10 +251,13 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
           try {
             const itemResults = await importFiles(p, {
               scanArchives: args.scanArchives === true,
-              ocrEnabled: args.ocrEnabled === true,
+              ocrEnabled: typeof args.ocrEnabled === "boolean" ? args.ocrEnabled : prefs.ocrEnabled,
               signal: ctrl.signal,
               djvuOcrProvider: prefs.djvuOcrProvider,
               ocrLanguages: prefs.ocrLanguages,
+              ocrAccuracy: prefs.ocrAccuracy,
+              ocrPdfDpi: prefs.ocrPdfDpi,
+              djvuRenderDpi: prefs.djvuRenderDpi,
               visionMetaEnabled: prefs.visionMetaEnabled,
               visionModelKey: prefs.visionModelKey,
               metadataOnlineLookup: prefs.metadataOnlineLookup,

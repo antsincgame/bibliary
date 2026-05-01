@@ -127,13 +127,13 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
     }
     const prefs = await getPreferencesStore().getAll();
     const parsed = await parseBook(filePath, {
-      ocrEnabled: prefs.ocrEnabled && isOcrSupported(),
+      ocrEnabled: prefs.ocrEnabled && (isOcrSupported() || prefs.djvuOcrProvider !== "system"),
       ocrLanguages: prefs.ocrLanguages,
       ocrAccuracy: prefs.ocrAccuracy,
       ocrPdfDpi: prefs.ocrPdfDpi,
       djvuOcrProvider: prefs.djvuOcrProvider,
       djvuRenderDpi: prefs.djvuRenderDpi,
-      openrouterApiKey: prefs.openrouterApiKey,
+      visionModelKey: prefs.visionModelKey,
     });
     const chunks = chunkBook(parsed, filePath);
     return {
@@ -192,13 +192,13 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
           maxBookChars: prefs.maxBookChars,
           translateNonRussian: prefs.translateNonRussianBooks,
           parseOptions: {
-            ocrEnabled: ocrWanted && isOcrSupported(),
+            ocrEnabled: ocrWanted && (isOcrSupported() || prefs.djvuOcrProvider !== "system"),
             ocrLanguages: prefs.ocrLanguages,
             ocrAccuracy: prefs.ocrAccuracy,
             ocrPdfDpi: prefs.ocrPdfDpi,
             djvuOcrProvider: prefs.djvuOcrProvider,
             djvuRenderDpi: prefs.djvuRenderDpi,
-            openrouterApiKey: prefs.openrouterApiKey,
+            visionModelKey: prefs.visionModelKey,
             signal: ctrl.signal,
           },
           onProgress: (p: IngestProgress) => {

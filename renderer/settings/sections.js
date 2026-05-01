@@ -104,14 +104,12 @@ export const SECTIONS = Object.freeze([
     fields: [
       { key: "ocrEnabled", type: "bool", labelKey: "settings.ocrEnabled" },
       { key: "ocrAccuracy", type: "enum", options: ["fast", "accurate"], labelKey: "settings.ocrAccuracy" },
-      { key: "ocrLanguages", type: "tags", labelKey: "settings.ocrLanguages", placeholder: "en, ru, fr" },
-      { key: "ocrPdfDpi", type: "int", min: 100, max: 400, labelKey: "settings.ocrPdfDpi" },
-      { key: "djvuOcrProvider", type: "enum", options: ["system", "vision-llm", "none"], labelKey: "settings.djvuOcrProvider" },
+      { key: "ocrLanguages", type: "tags", labelKey: "settings.ocrLanguages", placeholder: "en, ru, uk" },
+      { key: "ocrPdfDpi", type: "int", min: 100, max: 600, labelKey: "settings.ocrPdfDpi" },
+      { key: "djvuOcrProvider", type: "enum", options: ["auto", "vision-llm", "system", "none"], labelKey: "settings.djvuOcrProvider" },
       { key: "djvuRenderDpi", type: "int", min: 100, max: 600, labelKey: "settings.djvuRenderDpi" },
-      { key: "openrouterApiKey", type: "password", labelKey: "settings.openrouterApiKey", placeholder: "sk-or-v1-..." },
       { key: "metadataOnlineLookup", type: "bool", labelKey: "settings.metadataOnlineLookup" },
       { key: "visionMetaEnabled", type: "bool", labelKey: "settings.visionMetaEnabled" },
-      { key: "visionModelKey", type: "text", labelKey: "settings.visionModelKey", placeholder: "qwen3-vl-7b-q4..." },
     ],
   },
   {

@@ -64,17 +64,21 @@ export interface ParseOptions {
   ocrAccuracy?: "fast" | "accurate";
   /** DPI used when rasterising PDF pages for OCR. Higher = better quality but slower. */
   ocrPdfDpi?: number;
-  /** DJVU OCR backend selector. */
-  djvuOcrProvider?: "system" | "vision-llm" | "none";
+  /**
+   * DJVU OCR backend selector.
+   *   - "auto" (default): vision-LLM (LM Studio) → system OCR → none, fallback chain.
+   *   - "vision-llm": только локальный LM Studio (роль vision_ocr).
+   *   - "system": только OS OCR (Windows.Media.Ocr / macOS Vision).
+   *   - "none": OCR не выполняется.
+   */
+  djvuOcrProvider?: "auto" | "system" | "vision-llm" | "none";
   /** Render DPI used by ddjvu page rasterisation. */
   djvuRenderDpi?: number;
-  /** Optional OpenRouter key for vision-llm OCR backend. */
-  openrouterApiKey?: string;
   /**
    * Явно выбранный modelKey для vision-OCR (preferences.visionModelKey).
-   * Пробрасывается в `recognizeWithVisionLlm`. Если задан, но модель не
-   * загружена в LM Studio — vision-OCR откажется работать с пустым результатом
-   * вместо подмены на любую другую vision-модель.
+   * Пробрасывается в `recognizeWithVisionLlm`. Если пусто — vision-OCR
+   * сам резолвит модель через `modelRoleResolver.resolve("vision_ocr")`,
+   * чтобы соответствовать настройкам "Модели".
    */
   visionModelKey?: string;
   /** Caller-side abort. Honoured by long-running parsers (PDF OCR). */

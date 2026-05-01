@@ -3,14 +3,18 @@
  * через локальную vision-модель LM Studio.
  *
  * АРХИТЕКТУРНЫЙ КОНТРАКТ:
- *   1. ИСКЛЮЧИТЕЛЬНО локальный LM Studio (никаких облачных API, никакого OpenRouter).
- *   2. Никакого хардкода имён моделей: vision-модель выбирается динамически
- *      из загруженных в LM Studio через pickVisionModels() из vision-meta.ts.
+ *   1. ИСКЛЮЧИТЕЛЬНО локальный LM Studio (никаких облачных API).
+ *   2. Источник модели:
+ *      - явный override (opts.modelKey) — приоритет;
+ *      - иначе modelRoleResolver.resolve("vision_ocr") — берёт настройку
+ *        из карточки "Модели" (preference + fallback chain);
+ *      - иначе авто-детект через pickVisionModels (вся загруженная vision-модель).
  *   3. Никогда не throw — на любых ошибках возвращает пустой текст с confidence=0.
  */
 
 import { getLmStudioUrl } from "../endpoints/index.js";
 import { pickVisionModels } from "./vision-meta.js";
+import { modelRoleResolver } from "./model-role-resolver.js";
 
 export interface VisionOcrResult {
   text: string;
@@ -28,15 +32,25 @@ export async function recognizeWithVisionLlm(
     modelKey?: string;
   } = {},
 ): Promise<VisionOcrResult> {
-  const models = await pickVisionModels({
-    preferredModelKey: opts.modelKey,
-  });
+  /* 1. Явный override модели от caller (preferences.visionModelKey). */
+  let preferred = opts.modelKey?.trim() || undefined;
+  /* 2. Если override не задан — спросить role resolver (vision_ocr роль). */
+  if (!preferred) {
+    try {
+      const resolved = await modelRoleResolver.resolve("vision_ocr");
+      if (resolved?.modelKey) preferred = resolved.modelKey;
+    } catch {
+      /* graceful: упадём на pickVisionModels ниже */
+    }
+  }
+  /* 3. Финальный pick (с fallback на любую загруженную vision-модель). */
+  const models = await pickVisionModels({ preferredModelKey: preferred });
 
   if (models.length === 0) {
     return {
       text: "",
       confidence: 0,
-      error: "No vision models loaded in LM Studio. Load a vision model (qwen-vl, llava, pixtral, gemma-3, etc.) to enable OCR.",
+      error: "No vision models loaded in LM Studio. Load a vision model (qwen-vl, llava, pixtral, gemma-3, etc.) and assign it to role 'vision_ocr' in Models page.",
     };
   }
 

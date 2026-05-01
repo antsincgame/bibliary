@@ -40,15 +40,17 @@ import type { ProgressEvent } from "../lib/library/import.js";
  * Читает relevant prefs для импорта. Безопасно — если store не инициализирован
  * (например в тесте), возвращает дефолты, не throw.
  *
- * Vision-meta использует ИСКЛЮЧИТЕЛЬНО локальную LM Studio:
- *   - visionMetaEnabled — флаг (default true);
- *   - visionModelKey — override modelKey, пусто = автодетект среди загруженных.
- * Никаких облачных API — если в LM Studio нет vision-модели, импорт работает
- * без enrichment'а (graceful degradation, причина в логе).
+ * Vision-OCR и Vision-meta используют ИСКЛЮЧИТЕЛЬНО локальную LM Studio
+ * (через роли vision_ocr / vision_meta из настроек "Модели"). Никаких облачных
+ * API. Если в LM Studio нет vision-модели — graceful fallback на system OCR.
  */
 export async function readImportPrefs(): Promise<{
-  djvuOcrProvider: "system" | "vision-llm" | "none";
+  djvuOcrProvider: "auto" | "system" | "vision-llm" | "none";
   ocrLanguages: string[];
+  ocrEnabled: boolean;
+  ocrAccuracy: "fast" | "accurate";
+  ocrPdfDpi: number;
+  djvuRenderDpi: number;
   visionMetaEnabled: boolean;
   visionModelKey?: string;
   metadataOnlineLookup: boolean;
@@ -59,14 +61,22 @@ export async function readImportPrefs(): Promise<{
     return {
       djvuOcrProvider: prefs.djvuOcrProvider,
       ocrLanguages: prefs.ocrLanguages ?? [],
+      ocrEnabled: prefs.ocrEnabled !== false,
+      ocrAccuracy: prefs.ocrAccuracy,
+      ocrPdfDpi: prefs.ocrPdfDpi,
+      djvuRenderDpi: prefs.djvuRenderDpi,
       visionMetaEnabled: prefs.visionMetaEnabled === true,
       visionModelKey: prefs.visionModelKey?.trim() || undefined,
       metadataOnlineLookup: prefs.metadataOnlineLookup !== false,
     };
   } catch {
     return {
-      djvuOcrProvider: "system",
-      ocrLanguages: [],
+      djvuOcrProvider: "auto",
+      ocrLanguages: ["en", "ru", "uk"],
+      ocrEnabled: true,
+      ocrAccuracy: "accurate",
+      ocrPdfDpi: 400,
+      djvuRenderDpi: 400,
       visionMetaEnabled: false,
       visionModelKey: undefined,
       metadataOnlineLookup: true,

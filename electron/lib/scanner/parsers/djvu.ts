@@ -41,15 +41,29 @@ async function parseDjvu(filePath: string, opts: ParseOptions = {}): Promise<Par
     };
   }
 
-  const provider = opts.djvuOcrProvider ?? "system";
+  const provider = opts.djvuOcrProvider ?? "auto";
   if (opts.ocrEnabled !== true) {
     warnings.push("DJVU has no usable text layer and OCR is disabled");
     return { metadata: { title: baseName, warnings }, sections: [], rawCharCount: 0 };
   }
-  /* DJVU — это всегда растровый формат; без текстового слоя OCR — единственный
-     вариант. Блокируем только если явно указан provider=none. */
   if (provider === "none") {
     warnings.push("DJVU has no usable text layer and OCR is disabled (provider=none)");
+    return { metadata: { title: baseName, warnings }, sections: [], rawCharCount: 0 };
+  }
+
+  /* AUTO: vision-llm → system → none (highest quality first). */
+  if (provider === "auto") {
+    const visionAvailable = await hasVisionOcrModel(opts.visionModelKey);
+    if (visionAvailable) {
+      const result = await ocrDjvuPages(filePath, baseName, "vision-llm", opts, warnings);
+      if (result.sections.length > 0) return result;
+      warnings.push("vision-llm OCR returned no text — falling back to system OCR");
+    }
+    if (isOcrSupported()) {
+      return ocrDjvuPages(filePath, baseName, "system", opts, warnings);
+    }
+    warnings.push("DJVU OCR auto-fallback: vision-llm unavailable AND system OCR unsupported on this OS");
+    warnings.push(getDjvuInstallHint());
     return { metadata: { title: baseName, warnings }, sections: [], rawCharCount: 0 };
   }
 
@@ -60,6 +74,18 @@ async function parseDjvu(filePath: string, opts: ParseOptions = {}): Promise<Par
   }
 
   return ocrDjvuPages(filePath, baseName, provider, opts, warnings);
+}
+
+/** Проверяет, доступна ли vision-OCR модель в LM Studio (через role resolver). */
+async function hasVisionOcrModel(preferredKey?: string): Promise<boolean> {
+  try {
+    if (preferredKey?.trim()) return true;
+    const { modelRoleResolver } = await import("../../llm/model-role-resolver.js");
+    const resolved = await modelRoleResolver.resolve("vision_ocr");
+    return resolved !== null;
+  } catch {
+    return false;
+  }
 }
 
 async function ocrDjvuPages(
