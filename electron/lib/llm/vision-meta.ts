@@ -417,14 +417,23 @@ export async function extractMetadataFromCover(
   })).slice(0, getMaxModelAttempts(opts.maxModelAttempts));
 
   /* Lazy-load: если prefs содержит visionModelKey, но модель не загружена в
-   * LM Studio — попытаться загрузить. Решает проблему "Olympics записал prefs →
-   * import pipeline видит null → skip vision". */
+   * LM Studio — попытаться загрузить ЧЕРЕЗ POOL. Решает проблему «Olympics
+   * записал prefs → import pipeline видит null → skip vision» И защищает
+   * от DDoS параллельной загрузки моделей: pool.acquire идёт через единую
+   * runOnChain цепочку, конкурирующие acquire дедуплицируются. */
   if (candidates.length === 0 && !opts.listLoadedImpl) {
     const prefKey = opts.modelKey?.trim() || "";
     if (prefKey) {
       try {
-        const { loadModel: lmsLoad } = await import("../../lmstudio-client.js");
-        await lmsLoad(prefKey, { gpuOffload: "max" });
+        const handle = await getModelPool().acquire(prefKey, {
+          role: "vision_meta",
+          ttlSec: 1800,
+          gpuOffload: "max",
+        });
+        /* Сразу release: ниже мы всё равно сделаем pool.withModel для inference.
+           Между release и withModel модель в LM Studio не выгрузится — у Pool
+           LRU eviction срабатывает только когда нужно место под другую модель. */
+        handle.release();
         candidates = [{ modelKey: prefKey }];
       } catch { /* load failed — fall through to error */ }
     }

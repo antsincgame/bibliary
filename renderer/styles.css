@@ -6630,6 +6630,52 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
 .mp-hw-expanded { padding: 4px 10px 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .mp-hw-reco { font-size: 11px; color: var(--text-secondary); flex: 1; }
 
+/* ── Pipeline status widget (Iter 7) ───────────────────────────────────
+   Live-индикатор scheduler lanes + VRAM pressure. Виден внутри
+   .mp-hw-strip под .mp-hw-details. */
+.mp-pipeline-status { margin-top: 6px; }
+.pipeline-status-widget {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 6px 10px;
+  border: 1px solid var(--border, #2a2a2a); border-radius: 6px;
+  background: rgba(0, 0, 0, 0.18);
+  font-size: 11px;
+}
+.pipeline-status-lanes { display: flex; gap: 12px; flex-wrap: wrap; }
+.pipeline-lane {
+  display: flex; align-items: center; gap: 6px;
+  padding: 2px 6px; border-radius: 4px;
+  background: rgba(255, 255, 255, 0.03);
+  font-family: var(--font-mono, monospace); color: var(--text-secondary);
+  transition: background 0.2s, color 0.2s;
+}
+.pipeline-lane.is-active { background: rgba(96, 192, 255, 0.12); color: var(--text-primary, #e0e0e0); }
+.pipeline-lane--heavy.is-active { background: rgba(255, 96, 96, 0.14); }
+.pipeline-lane--medium.is-active { background: rgba(255, 192, 96, 0.14); }
+.pipeline-lane--light.is-active { background: rgba(96, 220, 96, 0.12); }
+.pipeline-lane__label { text-transform: uppercase; font-size: 10px; opacity: 0.75; }
+.pipeline-lane__counter { display: inline-flex; gap: 2px; align-items: baseline; }
+.pipeline-lane__counter strong { font-weight: 600; color: var(--text-primary, #e0e0e0); }
+.pipeline-lane__sep { opacity: 0.4; }
+.pipeline-pressure {
+  display: flex; align-items: center; gap: 8px;
+  padding-top: 2px;
+  font-family: var(--font-mono, monospace);
+}
+.pipeline-pressure__label { font-size: 10px; opacity: 0.75; text-transform: uppercase; min-width: 32px; }
+.pipeline-pressure__bar {
+  flex: 1; height: 6px;
+  background: rgba(255, 255, 255, 0.05); border-radius: 3px; overflow: hidden;
+}
+.pipeline-pressure__fill {
+  height: 100%; border-radius: 3px; transition: width 0.3s, background 0.3s;
+}
+.pipeline-pressure--ok .pipeline-pressure__fill   { background: #4caf50; }
+.pipeline-pressure--warn .pipeline-pressure__fill { background: #ff9800; }
+.pipeline-pressure--crit .pipeline-pressure__fill { background: #f44336; }
+.pipeline-pressure--unknown .pipeline-pressure__fill { background: rgba(255, 255, 255, 0.1); }
+.pipeline-pressure__text { font-size: 10px; color: var(--text-secondary); white-space: nowrap; }
+
 /* ── Olympics card ── */
 .mp-olympics-card { margin-top: 0; margin-bottom: 8px; }
 .mp-olympics-actions { display: flex; gap: 8px; margin-bottom: 8px; }

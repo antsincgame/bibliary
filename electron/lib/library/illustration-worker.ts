@@ -24,6 +24,7 @@ import { pickVisionModels } from "../llm/vision-meta.js";
 import { modelRoleResolver } from "../llm/model-role-resolver.js";
 import { getPreferencesStore } from "../preferences/store.js";
 import { getModelPool } from "../llm/model-pool.js";
+import { getImportScheduler } from "./import-task-scheduler.js";
 
 /** Minimum score (exclusive) for a semantic illustration to be kept in CAS. */
 const SEMANTIC_SCORE_THRESHOLD = 5;
@@ -248,16 +249,22 @@ export async function processIllustrations(
   if (!modelKey) {
     const models = await pickVisionModels();
     if (models.length === 0) {
-      /* Lazy-load: если prefs содержит visionModelKey, но модель не в LM Studio —
-       * попробуем загрузить её сами. Это решает проблему "Olympics записал prefs,
-       * но модель не в loaded" — раньше тут был молчаливый skip. */
+      /* Lazy-load через pool. Раньше прямой client.llm.load обходил все
+       * сериализаторы, и при импорте 2+ книг параллельные illustration-worker'ы
+       * могли дёрнуть load одной vision-модели одновременно → OOM на тяжёлых
+       * Qwen-VL. Pool.acquire дедуплицирует через runOnChain. Immediate release
+       * безопасен — withModel ниже снова возьмёт refCount. */
       const prefs2 = await getPreferencesStore().getAll();
       const prefVision = prefs2.visionModelKey?.trim() || "";
       if (prefVision) {
         try {
-          const { loadModel } = await import("../../lmstudio-client.js");
           onProgress?.(`Loading vision model "${prefVision}" from prefs...`);
-          await loadModel(prefVision, { gpuOffload: "max" });
+          const handle = await getModelPool().acquire(prefVision, {
+            role: "vision_illustration",
+            ttlSec: 1800,
+            gpuOffload: "max",
+          });
+          handle.release();
           modelKey = prefVision;
         } catch (loadErr) {
           onProgress?.(`Failed to auto-load vision model "${prefVision}": ${loadErr instanceof Error ? loadErr.message : String(loadErr)}`);
@@ -402,11 +409,18 @@ export async function processIllustrations(
   /* Pool: один acquire primary vision-модели на весь батч иллюстраций.
      Без этого pool увидел бы N независимых chat-вызовов на ту же модель.
      Здесь — один pin на всё время обработки, fallback модели грузятся
-     отдельно по мере необходимости в analyzeImageWithVision. */
-  await getModelPool().withModel(
-    modelKey,
-    { role: "vision_illustration", ttlSec: 3600, gpuOffload: "max" },
-    () => runPool(entries, VISION_PARALLELISM),
+     отдельно по мере необходимости в analyzeImageWithVision.
+
+     Iter 7: оборачиваем в scheduler.enqueue("heavy") для observability —
+     UI widget видит что vision-illustration активен. heavy concurrency=1
+     гарантирует что vision_illustration НЕ конкурирует с vision_ocr/vision_meta
+     за GPU (они тоже идут через heavy lane). */
+  await getImportScheduler().enqueue("heavy", () =>
+    getModelPool().withModel(
+      modelKey,
+      { role: "vision_illustration", ttlSec: 3600, gpuOffload: "max" },
+      () => runPool(entries, VISION_PARALLELISM),
+    ),
   );
   /* Финальная синхронизация md-очереди — гарантирует что bookMd зафиксирован
    * до записи на диск. */

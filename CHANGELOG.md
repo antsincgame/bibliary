@@ -4,6 +4,448 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Iter 7 — Scheduler Observability + Pipeline UI Widget Mount
+
+Замыкаем Контур 2 (Smart Pipeline Scheduler): scheduler.enqueue обёртки в
+evaluator-queue (medium lane) и illustration-worker (heavy lane) для UI
+observability + monteрование pipeline-status-widget в models-hardware-status.
+Sherlok recon перед битвой обнаружил забытый хвост Iter 6В: `.rb` всё ещё
+было в `CALIBRE_INPUT_EXTS` — HOTFIX + превентивный тест.
+
+### Fixed
+
+- **🚨 Sherlok HOTFIX Iter 6В забытый хвост** —
+  [electron/lib/scanner/converters/index.ts](electron/lib/scanner/converters/index.ts)
+  `.rb` был удалён из 6 файлов в Iter 6В, но остался в `CALIBRE_INPUT_EXTS`
+  set этого dispatcher. `convertToParseable` пропускал .rb в Calibre даже
+  когда `parseBook` reject'ит. Удалён + превентивный тест в
+  [tests/regression-rb-not-book.test.ts](tests/regression-rb-not-book.test.ts)
+  (`Iter 6В regression: .rb НЕ в CALIBRE_INPUT_EXTS (sherlok find)`).
+
+### Added
+
+- **Scheduler observability в evaluator-queue** —
+  [electron/lib/library/evaluator-queue.ts](electron/lib/library/evaluator-queue.ts)
+  `evaluateBook` обёрнут в `getImportScheduler().enqueue("medium", ...)`. UI
+  widget теперь видит счётчик medium-lane (running/queued) во время evaluation.
+  Это observability layer ПОВЕРХ ModelPool/withModel, не заменяет lock'и.
+- **Scheduler observability в illustration-worker** —
+  [electron/lib/library/illustration-worker.ts](electron/lib/library/illustration-worker.ts)
+  vision tasks обёрнуты в `getImportScheduler().enqueue("heavy", ...)`. heavy
+  concurrency=1 гарантирует что vision_illustration НЕ конкурирует с
+  vision_ocr/vision_meta за GPU.
+- **Pipeline-status-widget mount** в
+  [renderer/models/models-hardware-status.js](renderer/models/models-hardware-status.js)
+  через `mountPipelineStatusWidget(pipelineHost)` в `buildHwStrip()`.
+  Idempotent: повторный buildHwStrip unmount'ит предыдущий widget. Экспорт
+  `unmountHwStrip()` для page lifecycle. Виджет показывает live counters
+  lanes (light/medium/heavy running+queued) + VRAM pressure bar с цветовой
+  зоной (green<70%, yellow 70-85%, red>85%).
+- **CSS для pipeline widget** в
+  [renderer/styles.css](renderer/styles.css) — `.pipeline-status-widget`,
+  `.pipeline-lane*` (active/heavy/medium/light variants),
+  `.pipeline-pressure*` (ok/warn/crit zones), плавные transitions.
+- **8 новых тестов** (740 → **747 pass**, 1 skipped, 0 fail):
+  - [tests/scheduler-observability-integration.test.ts](tests/scheduler-observability-integration.test.ts)
+    (7 тестов: snapshot отражает running, medium concurrency=3, heavy strict 1,
+    singleton, rejected task counter не leak, повторный enqueue после throw)
+  - [tests/regression-rb-not-book.test.ts](tests/regression-rb-not-book.test.ts)
+    (+1 превентивный для CALIBRE_INPUT_EXTS)
+
+### Notes
+
+- **Scope cut: import.ts:313**. План предполагал прямую интеграцию scheduler в
+  parser pool. На практике это conflict двух concurrency systems — parser pool
+  CPU-bound (PDF/EPUB parsing), scheduler для LLM-задач. Scheduler уже
+  косвенно через converters (Calibre/CBZ/multi-TIFF) — этого достаточно.
+  Verdict /sparta: legitimate scope refinement, не афинская импровизация.
+- **Event channel: `resilience:scheduler-snapshot`, не `library:state`**.
+  План был неточен — `library:state` event не существует. Реальный
+  broadcaster (Iter 5: `electron/lib/resilience/scheduler-snapshot-broadcaster.ts`)
+  шлёт через `resilience:` namespace. UI widget уже подписан через preload.
+- **Architectural insight**: Scheduler — это observability layer ПОВЕРХ
+  ModelPool. Не дублирование lock'ов:
+  - **ModelPool** обеспечивает correctness (одна модель = одна копия в VRAM)
+  - **Scheduler** обеспечивает observability (UI видит что происходит)
+  - heavy concurrency=1 совпадает с GPU sequential reality (vision модели
+    не любят параллель)
+  - medium concurrency=3 совпадает с дефолтной evaluator parallelism
+
+### Iter 8+ (открытые вопросы)
+
+- Settings UI для scheduler limits (light/medium/heavy concurrency)
+- Live `current?: string` в SchedulerSnapshot (показать какая книга в heavy
+  lane прямо сейчас)
+- Telemetry sinks (логирование snapshot history для post-mortem)
+- Auto-scale heavy concurrency при наличии 2+ GPU
+
+---
+
+## [Unreleased] — Iter 6В — HOTFIX регрессий + Multi-TIFF Routing + Converter Cache
+
+Разведка реальной библиотеки D:\Bibliarifull (32 000+ файлов) обнаружила
+**критическую регрессию Iter 6Б**: `.rb` зарегистрирован как Rocket eBook, но
+в библиотеке 921 файл — Ruby исходники. HOTFIX откатывает регистрацию.
+Также найдено 99 файлов `.pdb` — все Microsoft Program Database (debug
+symbols от Visual Studio), не Palm DB eBook. Magic guard ужесточён.
+
+### Fixed
+
+- **🚨 HOTFIX `.rb` регрессия Iter 6Б** — расширение `.rb` удалено из
+  [SupportedExt](electron/lib/scanner/parsers/types.ts),
+  [PARSERS](electron/lib/scanner/parsers/index.ts),
+  [SupportedBookFormat + SUPPORTED_BOOK_EXTS](electron/lib/library/types.ts),
+  [FORMAT_PRIORITY](electron/lib/library/cross-format-prededup.ts),
+  [import-magic-guard.ts](electron/lib/library/import-magic-guard.ts).
+  Удалён `rbParser` из `parsers/calibre-formats.ts`. Rocket eBook (deprecated
+  2003) — нишевый формат; Ruby исходники доминируют в `.rb` namespace на
+  10000:1.
+- **🚨 MS Program Database reject** — `isMicrosoftPdb()` в
+  [import-magic-guard.ts](electron/lib/library/import-magic-guard.ts) проверяет
+  магическую сигнатуру "Microsoft C/C+" в первых 14 байтах. При detection в
+  `.pdb` файле — `verifyExtMatchesContent` возвращает `{ok: false, reason:
+  "magic: pdb is Microsoft Program Database (debug symbols), not Palm DB eBook"}`.
+  Защищает от 99 ошибочных Calibre-конвертаций debug symbols в реальной
+  библиотеке.
+
+### Added
+
+- **TIFF parser routing** —
+  [electron/lib/scanner/parsers/tiff.ts](electron/lib/scanner/parsers/tiff.ts)
+  заменяет imageParser для `.tif/.tiff` в PARSERS. Runtime check
+  `getTiffPageCount()`:
+  - Single-page (pages == 1) → fallback на `imageParser` (текущее OS OCR
+    поведение)
+  - Multi-page (pages > 1) → `convertMultiTiff` → multi-page PDF →
+    `pdfParser` → Universal Cascade (OS OCR Tier 1 → vision-LLM Tier 2)
+  - Sharp недоступен или throw → graceful fallback на `imageParser`
+- **Converter Cache** —
+  [electron/lib/scanner/converters/cache.ts](electron/lib/scanner/converters/cache.ts)
+  on-disk кеш по `sha256(srcPath + mtime + size + ext)` →
+  `<cwd>/data/converters-cache/<sha>.{epub,pdf,txt}`. Atomic writes (tmp+rename),
+  LRU eviction при превышении 5 GB (override через
+  `BIBLIARY_CONVERTER_CACHE_MAX_BYTES`), кеш dir override через
+  `BIBLIARY_CONVERTER_CACHE_DIR`. Интегрирован в `convertViaCalibre`,
+  `convertCbz`, `convertMultiTiff` — повторный convert того же файла = hit без
+  recomputation. Calibre на 50 MB MOBI = 30 сек, CBZ→PDF на 500 страниц = ~30
+  сек + 200 MB RAM, multi-TIFF на 100 страниц = ~30 сек. Кэш окупается мгновенно.
+- **24 новых теста** (716 → **739 pass**, 1 skipped, 0 fail):
+  - [tests/regression-rb-not-book.test.ts](tests/regression-rb-not-book.test.ts)
+    (5 тестов: detectExt, isSupportedBook, parseBook reject .rb, реальный Ruby
+    sample)
+  - [tests/regression-ms-pdb-reject.test.ts](tests/regression-ms-pdb-reject.test.ts)
+    (3 теста: MS PDB header reject, valid Palm DB pass, типичный VS .pdb)
+  - [tests/parsers-tiff-routing.test.ts](tests/parsers-tiff-routing.test.ts)
+    (6 тестов: registration, single-page graceful, AbortSignal, direct call)
+  - [tests/converters-cache.test.ts](tests/converters-cache.test.ts)
+    (10 тестов: round-trip, miss/hit, mtime invalidation, size invalidation,
+    idempotent set, clear, stats, atomic writes без .tmp residue)
+
+### Changed
+
+- `parsers/index.ts:PARSERS` — `tif: tiffParser`, `tiff: tiffAlternateParser`
+  (вместо `imageParser` для обоих).
+- `tests/parsers-cbz-tcr-lit-lrf-rb-snb.test.ts` — обновлён, `.rb` убран из
+  `ITER_6B_EXTS` set.
+
+### Audit Findings (D:\Bibliarifull, 32K+ файлов)
+
+Обнаружено сканированием реальной библиотеки:
+
+| Расширение | Кол-во | Реальная семантика | Действие |
+|------------|--------|--------------------|---------:|
+| `.rb` | **921** | Ruby исходники | Удалено из SupportedExt |
+| `.pdb` | **99** | MS Program Database (все 10 проверенных) | Magic guard reject |
+| `.tif` | 51 | Single-page (page-per-file convention) | Wiring готов на будущее |
+| `.cbz/.cbr/.snb/.lit/.lrf/.tcr` | 0 | Нет в библиотеке | Iter 6Б готовность сохранена |
+
+### Notes
+
+- **Multi-TIFF wiring сделан defensively** — реальных multi-page TIFF в
+  Bibliarifull нет, но wiring готов на будущее. Архивные/факсимильные сканы
+  (которые могут попасть из других библиотек) теперь автоматически
+  обрабатываются правильно: вместо потери 90% контента (читалась только
+  страница 1) — проходят через mighty cascade.
+- **Cache scope**: интегрирован в Calibre / CBZ / multi-TIFF converters. DjVu
+  пока без cache — у DjVu есть собственный fast-path через `djvutxt` который
+  не требует тяжёлой конвертации.
+- **Atomic writes в cache** — tmp+rename защищает от partial cache entry при
+  abort/crash в середине copy. Тест `tests/converters-cache.test.ts` проверяет
+  что после set нет `.tmp-*` residue.
+- **Iter 7**: интеграция scheduler в `import.ts:313`, `evaluator-queue.ts`,
+  `illustration-worker.ts` + UI widget mount в `models-hardware-status.js`.
+
+---
+
+## [Unreleased] — Iter 6Б — Древние Знатоки Подчинены (CBZ/CBR + Niche)
+
+Захвачено ещё 7 legacy форматов: CBZ/CBR (комиксы и манга через свой
+multi-page PDF converter) + TCR/LIT/LRF/RB/SNB (нишевые eBook через
+расширение Calibre cascade). Полная коллекция legacy: 16 форматов теперь.
+
+### Added
+
+- **CBZ/CBR Converter** —
+  [electron/lib/scanner/converters/cbz.ts](electron/lib/scanner/converters/cbz.ts)
+  собирает страницы комикса в multi-page PDF через `pdf-lib`. JSZip для CBZ,
+  vendor/7zip (или fallback на npm `7zip-bin`) для CBR (RAR-архив). Natural
+  sort страниц (001 < 002 < 010), embed JPEG/PNG напрямую через
+  `pdfDoc.embedJpg/embedPng`, WebP/GIF/BMP конвертируются через sharp в PNG.
+  Heavy lane через scheduler. Limits: maxPages=1000, maxBytes=500 MB.
+- **Multi-TIFF Converter** (standalone) —
+  [electron/lib/scanner/converters/multi-tiff.ts](electron/lib/scanner/converters/multi-tiff.ts)
+  использует `sharp.metadata({pages:-1})` для детекта multi-page, затем loop
+  pages → embed PNG → multi-page PDF. Wiring в `parsers/image.ts`
+  (auto-detect single vs multi) отложен до Iter 6В.
+- **CBZ/CBR parser-обёртка** —
+  [electron/lib/scanner/parsers/cbz.ts](electron/lib/scanner/parsers/cbz.ts)
+  делегирует `convertCbz` → `pdfParser` cascade (OS OCR Tier 1 → vision-LLM
+  Tier 2). Для комиксов это обеспечивает лучшую extraction quality чем
+  Calibre→EPUB (image-only book, сразу vision-LLM).
+- **5 nишевых eBook форматов** через расширение
+  [electron/lib/scanner/parsers/calibre-formats.ts](electron/lib/scanner/parsers/calibre-formats.ts) —
+  TCR (Psion 90-е), LIT (MS Reader, deprecated 2012), LRF (Sony BBeB,
+  deprecated 2010), RB (Rocket eBook, deprecated 2003), SNB (Samsung Note
+  Book ~200x). Все через тот же Calibre wrapper.
+- **Magic guard для RAR/LIT/LRF** в
+  [electron/lib/library/import-magic-guard.ts](electron/lib/library/import-magic-guard.ts) —
+  `isRar()` (Rar!\x1A\x07\x00 / \x01\x00 для RAR 5), `isLit()` (ITOLITLS),
+  `isLrf()` (LRF\\0). 6 case-блоков для cbz/cbr/lit/lrf/rb/snb/tcr.
+- **18 новых тестов** —
+  [tests/converters-cbz.test.ts](tests/converters-cbz.test.ts) (7 тестов:
+  happy path PNG/JPEG, natural sort, limits, abort, cleanup),
+  [tests/converters-multi-tiff.test.ts](tests/converters-multi-tiff.test.ts)
+  (5 тестов: graceful, getTiffPageCount, abort, cleanup),
+  [tests/parsers-cbz-tcr-lit-lrf-rb-snb.test.ts](tests/parsers-cbz-tcr-lit-lrf-rb-snb.test.ts)
+  (5 тестов: registration smoke, CBZ→PDF delegation, niche graceful).
+  698 → **716 pass** (715 ok + 1 skipped, 0 fail).
+
+### Changed
+
+- `SupportedExt` ([electron/lib/scanner/parsers/types.ts](electron/lib/scanner/parsers/types.ts))
+  расширен: `+tcr/+lit/+lrf/+rb/+snb/+cbz/+cbr`.
+- `PARSERS` ([electron/lib/scanner/parsers/index.ts](electron/lib/scanner/parsers/index.ts))
+  — 7 новых mappings.
+- `SupportedBookFormat` + `SUPPORTED_BOOK_EXTS`
+  ([electron/lib/library/types.ts](electron/lib/library/types.ts)) —
+  синхронизированы с +7 расширениями.
+- `FORMAT_PRIORITY`
+  ([electron/lib/library/cross-format-prededup.ts](electron/lib/library/cross-format-prededup.ts)):
+  ODT(25) > LIT(24) > LRF(23) > RB(22) > SNB(21) > PDB=PRC(20) > CHM(15) >
+  CBZ(12) > CBR(11) > TCR=TXT(10). Все нишевые форматы ниже ODT т.к.
+  конвертация теряет часть форматирования.
+
+### Dependencies
+
+- **+ `pdf-lib@^1.17.1`** — pure JS multi-page PDF generation (~150 KB,
+  mature 5+ лет). Добавлен после retreat: `@napi-rs/canvas` НЕ умеет
+  multi-page PDF (только single buffer), pdf-lib — стандартный выбор.
+
+### Notes
+
+- **Architecture pivot**: первоначальный план был использовать уже
+  установленный `@napi-rs/canvas` для PDF generation. Recon обнаружил что
+  canvas не поддерживает multi-page (issue #963), формальный retreat →
+  пользователь явно выбрал pdf-lib через AskQuestion.
+- **CBZ pipeline = optimal extraction**: CBZ→multi-page PDF→pdfParser
+  cascade использует мощный OCR Контура 4 (OS OCR первый, vision-LLM
+  fallback). Это лучше для комиксов чем Calibre→EPUB (image-only book →
+  сразу vision-LLM).
+- **`npm install pdf-lib` инцидент**: установка снесла native binding
+  `edgeparse-win32-x64-msvc` → 3 теста упали. Восстановлено через
+  `node scripts/fix-edgeparse-native.cjs` (postinstall script). Lesson:
+  после npm install НОВЫХ deps на Windows ВСЕГДА запускать fix script.
+- **Iter 6В**: wiring `convertMultiTiff` в `parsers/image.ts` (auto-detect
+  multi-page TIFF) + on-disk converter cache.
+- **Iter 7**: интеграция scheduler в `import.ts:313`, `evaluator-queue.ts`,
+  `illustration-worker.ts` + UI widget mount в `models-hardware-status.js`.
+
+---
+
+## [Unreleased] — Iter 6А — Calibre Cascade
+
+Захвачены знатоки древних текстов — 6 legacy форматов теперь импортируются
+через runtime detection системного Calibre. Первое production использование
+`ImportTaskScheduler` heavy lane.
+
+### Added
+
+- **Поддержка MOBI/AZW/AZW3/PDB/PRC/CHM** через
+  [electron/lib/scanner/converters/calibre.ts](electron/lib/scanner/converters/calibre.ts) —
+  `convertViaCalibre()` запускает `ebook-convert.exe in.<ext> out.epub
+  --no-default-epub-cover` через scheduler heavy lane, делегирует epubParser.
+- **Runtime detection системного Calibre** в
+  [electron/lib/scanner/converters/calibre-cli.ts](electron/lib/scanner/converters/calibre-cli.ts) —
+  `resolveCalibreBinary()` ищет `ebook-convert` в `vendor/calibre/`, Program
+  Files/Calibre2, LOCALAPPDATA/Programs/Calibre2, /Applications/calibre.app,
+  /usr/bin, /opt/calibre. Кеш + fallback на PATH. При отсутствии Calibre —
+  graceful warning с install hint (winget / brew / apt команда).
+- **Converter dispatcher** —
+  [electron/lib/scanner/converters/index.ts](electron/lib/scanner/converters/index.ts)
+  `convertToParseable(srcPath, ext, opts)` маршрутизирует расширения в нужный
+  конвертер (DjVu / Calibre / null если не нужно конвертировать).
+- **Scheduler heavy lane в production** — `convertViaCalibre` использует
+  `getImportScheduler().enqueue("heavy", ...)`. Heavy concurrency=1 по дефолту
+  сериализует Calibre процессы. При параллельном импорте 5 MOBI файлов —
+  только 1 ebook-convert работает, остальные ждут в queue. CPU защищён.
+- **Magic guard для PalmDB и CHM** в
+  [electron/lib/library/import-magic-guard.ts](electron/lib/library/import-magic-guard.ts) —
+  `isCalibreLegacyContainer()` проверяет PalmDB type@offset 60 (BOOK/TEXt/Data/PNRd/TPZ3),
+  `isChm()` проверяет ITSF сигнатуру. Reject невалидных PalmDB или non-ITSF .chm.
+- **Тесты** — [tests/converters-calibre.test.ts](tests/converters-calibre.test.ts) (cache,
+  graceful, AbortSignal, install hint),
+  [tests/cross-format-prededup-legacy.test.ts](tests/cross-format-prededup-legacy.test.ts)
+  (EPUB > MOBI > PDB > CHM приоритеты),
+  [tests/parsers-mobi-azw-chm.test.ts](tests/parsers-mobi-azw-chm.test.ts) (registration
+  smoke + 6 форматов graceful). +23 теста (675 → **698 pass**).
+
+### Changed
+
+- `SupportedExt` ([electron/lib/scanner/parsers/types.ts](electron/lib/scanner/parsers/types.ts))
+  расширен: `+mobi/+azw/+azw3/+pdb/+prc/+chm`.
+- `PARSERS` ([electron/lib/scanner/parsers/index.ts](electron/lib/scanner/parsers/index.ts))
+  — 6 новых mappings через wrapper'ы в
+  [electron/lib/scanner/parsers/calibre-formats.ts](electron/lib/scanner/parsers/calibre-formats.ts).
+- `SupportedBookFormat` + `SUPPORTED_BOOK_EXTS`
+  ([electron/lib/library/types.ts](electron/lib/library/types.ts)) — синхронизированы.
+- `FORMAT_PRIORITY`
+  ([electron/lib/library/cross-format-prededup.ts](electron/lib/library/cross-format-prededup.ts)):
+  AZW3=36, MOBI=AZW=35, PDB=PRC=20, CHM=15. EPUB(100) > PDF(80) > DJVU(70) >
+  FB2(60) > DOCX(50) > DOC(40) > AZW3(36) > MOBI=AZW(35) > RTF(30) > ODT(25) >
+  PDB=PRC(20) > CHM(15) > TXT(10). Calibre-форматы ниже DOC потому что
+  конвертация в EPUB обычно теряет некоторые edge-case форматирования.
+
+### Notes
+
+- **Vendoring Calibre отказались** — Calibre = ~250 MB + Python runtime + сотни
+  DLL. Runtime detection компромисс: пользователь ставит Calibre один раз
+  через `winget install --id calibre.calibre` (Windows) / `brew install --cask
+  calibre` (macOS) / `apt install calibre` (Linux), обновляет независимо,
+  никакой дублирующей копии в проекте.
+- **Iter 6Б отложен**: CBZ/CBR (комиксы), multi-page TIFF (архивные сканы),
+  TCR (Psion), LIT/LRF/RB/SNB (ниша) + on-disk converter cache.
+- **Iter 7 отложен**: интеграция scheduler в `import.ts:313`, `evaluator-queue.ts`,
+  `illustration-worker.ts` + UI widget mount в `models-hardware-status.js`.
+
+---
+
+## [0.6.0] — 2026-05-01 — Smart Import Pipeline Foundation
+
+Завершён фундамент Smart Import Pipeline (Контуры 1, 2 UI, 4 — см.
+[docs/smart-import-pipeline.md](docs/smart-import-pipeline.md)). Главная цель —
+не допустить DDoS heavy-очереди тяжёлой vision-LLM (Qwen-VL 22 GB) при импорте
+больших библиотек DjVu/PDF. **675 tests pass, 0 fail, 0 регрессий** относительно
+v0.5.3 (564 pass / 8 fail).
+
+### Added
+
+- **ModelPool — единственная точка загрузки моделей LM Studio**
+  (`electron/lib/llm/model-pool.ts`). 5 подсистем (vision-meta, evaluator-queue,
+  illustration-worker, lmstudio.ipc, book-evaluator-model-picker) переведены с
+  прямого `client.llm.load` на `getModelPool().acquire()` — закрыта дыра
+  параллельной загрузки одной модели N раз при N=4 импорт-воркерах.
+- **OOM Recovery в ModelPool** — `loadWithOomRecovery` с трёхуровневой
+  стратегией (load → evictAll → unloadHeavy → retry), telemetry events
+  `lmstudio.oom_recovered` / `lmstudio.oom_failed`. Защита от падения
+  приложения на heavy моделях >20 GB.
+- **Model Size Classifier** (`electron/lib/llm/model-size-classifier.ts`) —
+  light (≤8 GB) / medium (8-16 GB) / heavy (>16 GB) категоризация. Heavy
+  модели первые жертвы при `makeRoom` (composite sort: `evictionPriority` +
+  LRU при равном весе).
+- **Heavy Lane Rate Limiter** (`electron/lib/llm/heavy-lane-rate-limiter.ts`) —
+  sliding-window per-modelKey, default 60/min (env `BIBLIARY_VISION_OCR_RPM`).
+  Интегрирован в `vision-ocr.ts` — защищает от 1000-страничного DjVu DDoS.
+- **VRAM Pressure Watchdog** — расширен `lmstudio-watchdog.ts`
+  (`pollVramPressure` каждую минуту, `resilience:lmstudio-pressure` event при
+  ratio > 0.85, `getLastPressureRatio()` для UI диагностики).
+- **Role Load Config Wiring** — мёртвый `ROLE_LOAD_CONFIG` подключён через
+  `applyRoleDefaults` в `model-pool.acquireExclusive` (caller-priority
+  сохраняется).
+- **ImportTaskScheduler skeleton** (`electron/lib/library/import-task-scheduler.ts`) —
+  light/medium/heavy lanes (8/3/1 default concurrency), `enqueue/getSnapshot/setLimit`,
+  singleton `getImportScheduler()`. Готов к интеграции в Iter 6 (Calibre converters).
+- **Universal Light-First Extraction Cascade** —
+  `electron/lib/scanner/extractors/{types,quality-heuristic,cascade-runner,ocr-cache}.ts`.
+  Tier 0 (text-layer) → Tier 1 (OS OCR) → Tier 2 (vision-LLM). OCR cache
+  по `sha256(file+page+engine)` — повторный импорт не делает OCR заново.
+- **DjVu двухступенчатый converter**
+  (`electron/lib/scanner/converters/djvu.ts`) — `djvutxt` quality fast-path,
+  fallback `ddjvu -format=pdf` → делегация существующему `pdfParser`. Принцип
+  «формат это контейнер, способ обработки = каскад от дешёвого к дорогому»
+  теперь воплощён в коде.
+- **DjVu Parser Cascade Integration** (`electron/lib/scanner/parsers/djvu.ts`) —
+  при `provider="auto"+ocrEnabled=true` использует `convertDjvu` →
+  `pdfParser` cascade. Per-page routing через `runDjvutxtPage` (страницы со
+  встроенным текстом ≥50 chars пропускают OCR). Старый `ocrDjvuPages`
+  сохранён как Tier 2 fallback.
+- **`.djv` extension** зарегистрирован в `SupportedExt` + `PARSERS` +
+  `SUPPORTED_BOOK_EXTS` (DOS-эра 3-char alias). Magic bytes уже распознавали.
+- **Pipeline Status UI infrastructure**:
+  - `electron/lib/resilience/scheduler-snapshot-broadcaster.ts` — periodic
+    poll каждые 2с, change detection, force broadcast, IPC channel
+    `resilience:scheduler-snapshot`.
+  - `preload.ts` — `api.resilience.onLmstudioPressure` +
+    `api.resilience.onSchedulerSnapshot`.
+  - `renderer/models/pipeline-status-widget.js` — lanes counters + VRAM
+    pressure bar (3 цветовые зоны). Готов к монтированию в любую страницу
+    через `mountPipelineStatusWidget(rootEl)`.
+
+### Changed
+
+- **DjVu OCR default chain inverted** (`djvu.ts`) — было `vision-LLM → system OCR`
+  (DDoS-генератор: 500 страниц × Qwen-VL = часы и сожжённый GPU). Стало
+  `system OCR → vision-LLM` (cheap-first). Если пользователь явно выбрал
+  `djvuOcrProvider:"vision-llm"` — уважаем выбор.
+- **`isQualityText` heuristic** заменил наивную проверку `text.length > 100`
+  в `djvu.ts:35` (false positive: 200 символов OCR-мусора проходили). Новая —
+  4 сигнала: min length, letter ratio (`\p{L}`), word count, avg word length.
+  Вынесена в `extractors/quality-heuristic.ts` как переиспользуемый блок.
+- **`isOomError` сужен** — убрана подстрока `"oom"` (false positive на
+  `room`/`zoom`/`bloomberg api`), заменена на word-boundary `/\boom\b/`.
+- **DjVu Converter cleanup** теперь идемпотентен и пытается удалить partial
+  PDF при сбое `runDdjvuToPdf` (orphan в tmpdir больше не накапливаются).
+
+### Fixed
+
+- **`forceBroadcastSchedulerSnapshot` cache bug** — не обновлял
+  `lastSnapshotJson` после force-broadcast → следующий plановый tick дублировал
+  тот же snapshot. Поймано unit-тестом, исправлено в Iter 5.
+- **`lastPressureRatio` reset** — не сбрасывался в `deactivate()` watchdog,
+  оставались stale данные между сессиями.
+- **Stale JSDoc** — `model-pool.ts` шапка («Не управляет user IPC»),
+  `evaluator-queue.ts:67-75` про `loadModel`, `lmstudio-watchdog.ts` про
+  pressure subscriber.
+
+### Removed
+
+- **`lmstudio.direct_load_detected`** event type — был объявлен в
+  `telemetry.ts`, никогда не эмитился. Очищен.
+- **Мёртвые тест-хуки** `_resetHeavyLaneRateLimiterForTests` и
+  `_resetOcrCacheDirForTests` — никем не использовались (тесты создают
+  локальные экземпляры или передают `cacheDir` override).
+
+### Tests
+
+- **+108 новых тестов** (567 → 675): `djvu-quality-heuristic` (16),
+  `model-pool-oom-recovery` (6), `model-size-classifier` (7),
+  `heavy-lane-rate-limiter` (9), `import-task-scheduler` (11),
+  `extractors-cache` (9), `extractors-cascade-runner` (11),
+  `converters-djvu` (4), `djvu-parser-cascade` (5),
+  `extractors-quality-heuristic` (10), `model-pool-role-defaults` (10),
+  `scheduler-snapshot-broadcaster` (9).
+
+### Foundation Complete vs Production Integration
+
+Готовы как foundation (контракты, типы, тесты), но НЕ интегрированы в
+production pipeline (запланировано Iter 6+):
+
+- `getImportScheduler().enqueue()` — из прод-кода не вызывается. Естественно
+  произойдёт когда Calibre converters в Iter 6 станут heavy lane consumer.
+- `runExtractionCascade` — DjVu использует `pdfParser` напрямую (не через
+  cascade-runner). Cascade-runner — общий контракт для будущих converters.
+- `mountPipelineStatusWidget` — виджет готов, но не смонтирован в renderer
+  pages. Подключение — отдельный шаг.
+
 ## [0.5.3] — 2026-05-01 — Advanced settings panel under roles
 
 Добавлена едва заметная панель дополнительных настроек внизу карточки «Ролей» —

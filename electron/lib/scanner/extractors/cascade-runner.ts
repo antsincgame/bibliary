@@ -1,0 +1,140 @@
+/**
+ * Cascade Runner — оркестратор Tier 0 → 1 → 2.
+ *
+ * АЛГОРИТМ:
+ *   1. Tier 0 (text-layer): попробовать. Если quality >= acceptableQuality — принять, остановить.
+ *   2. Tier 1 (system-ocr): попробовать. Если quality >= acceptableQuality — принять, остановить.
+ *   3. Tier 2 (vision-llm): попробовать. Принять любой результат.
+ *
+ *   Если все три отдали null или мусор < threshold — вернуть лучшее из имеющегося
+ *   (по quality score) с warnings, либо null если вообще ничего.
+ *
+ *   Tier пропускается если:
+ *     - extractor не реализует соответствующий метод (typeof undefined)
+ *     - opts.disabledTiers содержит этот tier
+ *
+ * ИНТЕГРАЦИЯ С КЕШЕМ:
+ *   Если opts.fileSha256 + opts.pageIndex заданы — Runner проверяет ocr-cache
+ *   перед каждым Tier'ом и сохраняет результат после успешного. Это снимает
+ *   повторный OCR при re-import той же книги.
+ */
+
+import type {
+  CascadeResult,
+  ExtractOptions,
+  ExtractionAttempt,
+  TextExtractor,
+} from "./types.js";
+import { DEFAULT_ACCEPTABLE_QUALITY } from "./types.js";
+import { getCachedOcr, setCachedOcr, type OcrEngine } from "./ocr-cache.js";
+
+export interface RunCascadeOptions extends ExtractOptions {
+  acceptableQuality?: number;
+}
+
+/**
+ * Запустить каскад на конкретном файле (или странице).
+ *
+ * Best-effort: исключения внутри одного Tier не валят весь каскад — Runner
+ * ловит и переходит к следующему. Это критично для надёжности при ошибках
+ * djvutxt или сети LM Studio.
+ */
+export async function runExtractionCascade(
+  extractor: TextExtractor,
+  srcPath: string,
+  opts: RunCascadeOptions = {},
+): Promise<CascadeResult> {
+  const acceptableQuality = opts.acceptableQuality ?? DEFAULT_ACCEPTABLE_QUALITY;
+  const disabled = new Set<number>(opts.disabledTiers ?? []);
+  const attempts: ExtractionAttempt[] = [];
+
+  const tiers: Array<{
+    tier: 0 | 1 | 2;
+    engine: OcrEngine;
+    method?: TextExtractor["tryTextLayer"];
+  }> = [
+    { tier: 0, engine: "text-layer", method: extractor.tryTextLayer?.bind(extractor) },
+    { tier: 1, engine: "system-ocr", method: extractor.tryOsOcr?.bind(extractor) },
+    { tier: 2, engine: "vision-llm", method: extractor.tryVisionLlm?.bind(extractor) },
+  ];
+
+  for (const { tier, engine, method } of tiers) {
+    if (!method) continue;
+    if (disabled.has(tier)) continue;
+    if (opts.signal?.aborted) break;
+
+    /* Проверка кеша перед вызовом Tier'а. */
+    const cached = await tryGetCached(opts, engine, tier);
+    if (cached) {
+      attempts.push(cached);
+      if (cached.quality >= acceptableQuality) {
+        return { attempt: cached, attempts, acceptableQuality };
+      }
+      continue;
+    }
+
+    let attempt: ExtractionAttempt | null = null;
+    try {
+      attempt = await method(srcPath, opts);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      attempts.push({
+        tier,
+        engine,
+        quality: 0,
+        text: "",
+        warnings: [`tier ${tier} (${engine}) threw: ${msg.slice(0, 200)}`],
+      });
+      continue;
+    }
+
+    if (!attempt) continue;
+    attempts.push(attempt);
+
+    /* Сохраняем в кеш только осмысленный результат (quality > 0). Тот факт что
+       Tier «не справился» с quality=0 в кеше нам не нужен — повторный re-import
+       должен переоценить (вдруг engine улучшился, либо сменился movellModel). */
+    if (attempt.quality > 0) {
+      await trySetCached(opts, attempt);
+    }
+
+    if (attempt.quality >= acceptableQuality) {
+      return { attempt, attempts, acceptableQuality };
+    }
+  }
+
+  /* Никто не достиг порога — выбираем лучшее из имеющегося. */
+  const best = attempts.reduce<ExtractionAttempt | null>((acc, a) => {
+    if (!acc) return a;
+    return a.quality > acc.quality ? a : acc;
+  }, null);
+
+  return { attempt: best, attempts, acceptableQuality };
+}
+
+async function tryGetCached(
+  opts: RunCascadeOptions,
+  engine: OcrEngine,
+  tier: 0 | 1 | 2,
+): Promise<ExtractionAttempt | null> {
+  if (!opts.fileSha256 || opts.pageIndex === undefined) return null;
+  const entry = await getCachedOcr(opts.fileSha256, opts.pageIndex, engine);
+  if (!entry) return null;
+  return {
+    tier,
+    engine,
+    quality: entry.quality,
+    text: entry.text,
+    warnings: [`tier ${tier} (${engine}): from cache (created ${entry.createdAt})`],
+  };
+}
+
+async function trySetCached(opts: RunCascadeOptions, attempt: ExtractionAttempt): Promise<void> {
+  if (!opts.fileSha256 || opts.pageIndex === undefined) return;
+  await setCachedOcr(opts.fileSha256, opts.pageIndex, {
+    engine: attempt.engine,
+    quality: attempt.quality,
+    text: attempt.text,
+    createdAt: new Date().toISOString(),
+  });
+}

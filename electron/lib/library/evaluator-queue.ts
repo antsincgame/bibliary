@@ -39,6 +39,7 @@ import {
   extractMetadataHints,
 } from "./evaluator-persist.js";
 import { isAbortError } from "../resilience/lm-request-policy.js";
+import { getImportScheduler } from "./import-task-scheduler.js";
 import type { BookCatalogMeta } from "./types.js";
 import type { EvaluationResult } from "./types.js";
 
@@ -67,8 +68,11 @@ interface EvaluatorDeps {
    * Загрузить preferred модель в LM Studio ДО pickEvaluatorModel.
    * Closes Шерлок-bug v0.4.6: picker возвращает preferred ТОЛЬКО если она
    * уже в loaded; иначе скоринг может выбрать другую (более крупную) модель.
-   * По дефолту дёргает lmstudio-client `loadModel`. Тесты — no-op.
-   * Не throw: ошибка → warn → picker идёт по fallback пути.
+   * По дефолту идёт через `getModelPool().acquire()` (с Итерации 1) — раньше
+   * был прямой `lmstudio-client.loadModel`, что давало конкурентную загрузку
+   * при N>1 evaluator-слотах одной модели. Тесты — no-op.
+   * МОЖЕТ throw: исключение от pool пробрасывается, caller (`evaluateOneInSlot`)
+   * оборачивает в try/catch и идёт по fallback пути через picker.
    */
   ensurePreferredLoaded: (modelKey: string) => Promise<void>;
 }
@@ -91,10 +95,20 @@ async function defaultReadEvaluatorPrefs(): Promise<{ preferred?: string; fallba
 }
 
 async function defaultEnsurePreferredLoaded(modelKey: string): Promise<void> {
-  const { listLoaded, loadModel } = await import("../../lmstudio-client.js");
-  const loaded = await listLoaded();
-  if (loaded.some((m) => m.modelKey === modelKey)) return;
-  await loadModel(modelKey, { ttlSec: 900, gpuOffload: "max" });
+  /* Раньше вызывался прямой loadModel() — две параллельные книги в очереди
+     дёргали client.llm.load одной и той же модели одновременно, что для
+     тяжёлых evaluator-моделей (>20 GB) приводило к OOM и крэшу LM Studio.
+     Теперь pool.acquire сериализует всё через runOnChain и дедуплицирует
+     in-flight загрузки. Immediate release: refCount удержится через
+     последующий evaluateBook → pool.withModel; модель не выгрузится между
+     ними (LRU eviction только при нехватке места). */
+  const { getModelPool } = await import("../llm/model-pool.js");
+  const handle = await getModelPool().acquire(modelKey, {
+    role: "evaluator-prewarm",
+    ttlSec: 900,
+    gpuOffload: "max",
+  });
+  handle.release();
 }
 
 const defaultDeps: EvaluatorDeps = {
@@ -540,9 +554,16 @@ async function evaluateOneInSlot(bookId: string, slot: SlotState): Promise<void>
     }
 
     /* 4. LLM call. Используем signal этого слота — параллельные слоты
-       имеют независимые AbortController'ы, cancel одного не валит других. */
+       имеют независимые AbortController'ы, cancel одного не валит других.
+
+       Iter 7: оборачиваем вызов в scheduler.enqueue("medium") для observability —
+       UI widget видит счётчик medium-lane (running/queued) во время evaluation.
+       Это НЕ заменяет ModelPool/withModel; scheduler — observability layer
+       поверх pool, лимиты medium=3 совпадают с типичной concurrency evaluator. */
     const slotSignal = slot.controller!.signal;
-    const result = await deps.evaluateBook(surrogateWithHints, { model, signal: slotSignal });
+    const result = await getImportScheduler().enqueue("medium", () =>
+      deps.evaluateBook(surrogateWithHints, { model, signal: slotSignal }),
+    );
     if (!result.evaluation) {
       const failed: BookCatalogMeta = {
         ...meta,

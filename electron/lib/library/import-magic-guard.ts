@@ -94,6 +94,82 @@ function isOleCompound(head: Buffer): boolean {
   );
 }
 
+function isCalibreLegacyContainer(head: Buffer, ext: string): boolean {
+  /* MOBI / AZW / AZW3 / PDB / PRC — все Palm Database Format на низком уровне.
+     На офсете 60 (0x3C) лежит type + creator (8 байт). Для MOBI: "BOOKMOBI",
+     для PalmDOC: "TEXtREAd", для AZW: "BOOKMOBI" тоже, etc.
+     Проверка офсета 60 требует head >= 68 байт. */
+  if (head.length < 68) {
+    /* Слишком короткий head — не валидируем (не reject), пусть парсер сам разберётся. */
+    return true;
+  }
+  /* Тип на офсете 60 — 4 байта */
+  const type = head.subarray(60, 64).toString("ascii");
+  const validTypes = new Set([
+    "BOOK", "TEXt", "Data", "PNRd",
+    "TPZ3" /* Topaz/AZW1 — старый Kindle */,
+    ".pdf" /* мусорные PRC которые на самом деле PDF — пропускаем дальше */,
+  ]);
+  /* Проверяем что type начинается с одного из ожидаемых маркеров. */
+  for (const v of validTypes) {
+    if (type.startsWith(v)) return true;
+  }
+  /* CHM имеет свою сигнатуру — проверяется отдельно через isChm. */
+  if (ext === "chm") return false;
+  /* Без сильных улик — не reject (пусть Calibre сам попробует и упадёт с
+     понятной ошибкой). */
+  return true;
+}
+
+function isChm(head: Buffer): boolean {
+  /* CHM (Compiled HTML Help): "ITSF" + version 3. Первые 4 байта строго ITSF. */
+  return (
+    head.length >= 4 &&
+    head[0] === 0x49 && head[1] === 0x54 && head[2] === 0x53 && head[3] === 0x46
+  );
+}
+
+function isMicrosoftPdb(head: Buffer): boolean {
+  /* Microsoft C/C++ Program Database (debug symbols от Visual Studio).
+     Первые 32 байта: "Microsoft C/C++ MSF 7.00\r\n\x1a\x44\x53\x00\x00\x00".
+     Достаточно проверить первые 14 ASCII символов: "Microsoft C/C+".
+     Iter 6В: 99 .pdb файлов в реальной библиотеке D:\Bibliarifull — все MS PDB. */
+  if (head.length < 14) return false;
+  const sig = "Microsoft C/C+";
+  for (let i = 0; i < sig.length; i++) {
+    if (head[i] !== sig.charCodeAt(i)) return false;
+  }
+  return true;
+}
+
+function isRar(head: Buffer): boolean {
+  /* RAR signatures:
+     - RAR 1.5+ (rar4): 52 61 72 21 1A 07 00 ("Rar!\x1A\x07\x00")
+     - RAR 5.0+: 52 61 72 21 1A 07 01 00 ("Rar!\x1A\x07\x01\x00") */
+  if (head.length < 7) return false;
+  return (
+    head[0] === 0x52 && head[1] === 0x61 && head[2] === 0x72 && head[3] === 0x21 &&
+    head[4] === 0x1a && head[5] === 0x07 &&
+    (head[6] === 0x00 || head[6] === 0x01)
+  );
+}
+
+function isLit(head: Buffer): boolean {
+  /* LIT (Microsoft Reader): "ITOLITLS" magic в первых 8 байтах. */
+  if (head.length < 8) return false;
+  return (
+    head[0] === 0x49 && head[1] === 0x54 && head[2] === 0x4f && head[3] === 0x4c &&
+    head[4] === 0x49 && head[5] === 0x54 && head[6] === 0x4c && head[7] === 0x53
+  );
+}
+
+function isLrf(head: Buffer): boolean {
+  /* LRF (Sony BBeB): "L" "R" "F" 0x00 + версия в первых байтах.
+     Сигнатура: 4C 52 46 00 ("LRF\0") */
+  if (head.length < 4) return false;
+  return head[0] === 0x4c && head[1] === 0x52 && head[2] === 0x46 && head[3] === 0x00;
+}
+
 function leadingText(head: Buffer): string {
   let start = 0;
   /* UTF-8 BOM */
@@ -199,6 +275,67 @@ export function verifyExtMatchesContentHead(ext: string, head: Buffer): MagicVer
     case "txt":
       /* Для .txt только проверяем что файл вообще текстовый. */
       if (isLikelyText(head) === "binary") return { ok: false, reason: "magic: txt must be text, got binary" };
+      return { ok: true };
+
+    case "mobi":
+    case "azw":
+    case "azw3":
+    case "pdb":
+    case "prc":
+      /* Calibre-legacy форматы (Palm Database Format). Проверка офсета 60 — type+creator.
+         Если файл слишком короткий или type незнакомый — не reject (Calibre сам разберётся
+         и упадёт с понятной ошибкой). Strong reject только при магическом мусоре
+         (PE/ELF/SQLite, что уже обработано isKnownBinaryGarbage выше).
+         Iter 6В: для .pdb дополнительно reject Microsoft Program Database (debug symbols
+         от Visual Studio) — 99 файлов в реальной библиотеке D:\Bibliarifull = все MS PDB,
+         не Palm DB. Magic "Microsoft C/C+" в первых 14 байтах. */
+      if (head.length < MIN_HEAD_FOR_BINARY) return { ok: false, reason: `magic: too short for ${e}` };
+      if (e === "pdb" && isMicrosoftPdb(head)) {
+        return { ok: false, reason: "magic: pdb is Microsoft Program Database (debug symbols), not Palm DB eBook" };
+      }
+      if (!isCalibreLegacyContainer(head, e)) {
+        return { ok: false, reason: `magic: ${e} has unexpected PalmDB type at offset 60` };
+      }
+      return { ok: true };
+
+    case "chm":
+      /* CHM имеет четкую сигнатуру ITSF в первых 4 байтах. */
+      if (head.length < 4) return { ok: false, reason: "magic: too short for chm" };
+      if (!isChm(head)) return { ok: false, reason: "magic: not a CHM (missing ITSF)" };
+      return { ok: true };
+
+    case "cbz":
+      /* CBZ — это ZIP. Та же проверка что для epub/docx/odt. */
+      if (head.length < MIN_HEAD_FOR_BINARY) return { ok: false, reason: "magic: too short for cbz" };
+      if (!isZipBased(head)) return { ok: false, reason: "magic: not a ZIP-based cbz (missing PK header)" };
+      return { ok: true };
+
+    case "cbr":
+      /* CBR — это RAR. Сигнатура "Rar!\x1A\x07\x00" или "\x01\x00" для RAR 5. */
+      if (head.length < MIN_HEAD_FOR_BINARY) return { ok: false, reason: "magic: too short for cbr" };
+      if (!isRar(head)) return { ok: false, reason: "magic: not a RAR-based cbr (missing Rar! header)" };
+      return { ok: true };
+
+    case "lit":
+      /* LIT (Microsoft Reader): сигнатура ITOLITLS в первых 8 байтах. */
+      if (head.length < 8) return { ok: false, reason: "magic: too short for lit" };
+      if (!isLit(head)) return { ok: false, reason: "magic: not a LIT (missing ITOLITLS)" };
+      return { ok: true };
+
+    case "lrf":
+      /* LRF (Sony BBeB): сигнатура LRF\0 в первых 4 байтах. */
+      if (head.length < 4) return { ok: false, reason: "magic: too short for lrf" };
+      if (!isLrf(head)) return { ok: false, reason: "magic: not a LRF (missing LRF\\0)" };
+      return { ok: true };
+
+    case "snb":
+    case "tcr":
+      /* SNB (Samsung Note Book), TCR (Psion) — ниша, известных стабильных
+         magic-сигнатур мало, реальных файлов очень мало. Не reject — Calibre
+         сам разберётся. Базовая проверка: minimum size + не PE/ELF/SQLite
+         (уже отброшено через isKnownBinaryGarbage).
+         Iter 6В: .rb удалён — Ruby исходники в реальных библиотеках. */
+      if (head.length < MIN_HEAD_FOR_BINARY) return { ok: false, reason: `magic: too short for ${e}` };
       return { ok: true };
 
     default:

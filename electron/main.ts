@@ -22,6 +22,10 @@ import { initPreferencesStore } from "./lib/preferences/store.js";
 import { syncMarkerEnvFromPrefs } from "./lib/library/marker-sidecar.js";
 import { registerExtractionPipeline } from "./lib/dataset-v2/coordinator-pipeline";
 import { startWatchdog, stopWatchdog, configureWatchdog } from "./lib/resilience/lmstudio-watchdog";
+import {
+  startSchedulerSnapshotBroadcaster,
+  stopSchedulerSnapshotBroadcaster,
+} from "./lib/resilience/scheduler-snapshot-broadcaster";
 import { SHUTDOWN_FLUSH_TIMEOUT_MS } from "./lib/resilience/constants";
 import { getWindowsParentExecutablePath, resolveAppDataDir } from "./lib/app-data-dir.js";
 import { closeCacheDb } from "./lib/library/cache-db.js";
@@ -206,6 +210,10 @@ if (!gotLock) {
     applyCsp();
     registerAssetProtocol();
     startWatchdog(() => mainWindow);
+    /* Scheduler snapshot broadcaster (Итерация 5): periodic emit состояния
+       ImportTaskScheduler в renderer для UI телеметрии. Independent от watchdog,
+       только read-only наблюдение через getImportScheduler().getSnapshot(). */
+    startSchedulerSnapshotBroadcaster(() => mainWindow);
     registerAllIpcHandlers(() => mainWindow);
     void bootstrapLibrarySubsystem(() => mainWindow);
     createWindow();
@@ -221,6 +229,7 @@ if (!gotLock) {
     const subsystems: [string, () => void][] = [
       ["triggerAppShutdown", triggerAppShutdown],
       ["stopWatchdog", stopWatchdog],
+      ["stopSchedulerSnapshotBroadcaster", stopSchedulerSnapshotBroadcaster],
       ["abortAllIngests", () => abortAllIngests("app-quit")],
       ["abortAllDatasetV2", () => abortAllDatasetV2("app-quit")],
       ["killAllSynthChildren", killAllSynthChildren],

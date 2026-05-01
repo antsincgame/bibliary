@@ -116,6 +116,46 @@ export async function runDdjvu(filePath: string, pageIndex: number, dpi: number,
   }
 }
 
+/**
+ * Конвертирует весь DjVu в имиджевый PDF через `ddjvu -format=pdf`.
+ *
+ * Используется DjVu converter'ом (`converters/djvu.ts`) когда в DjVu нет
+ * текстового слоя — конвертим в PDF и делегируем обычному pdfParser, у которого
+ * уже отлажен путь rasterise → OS OCR / vision-LLM. Это сохраняет принцип
+ * «формат = контейнер»: вместо собственного OCR-цикла внутри djvu.ts
+ * используем существующий pipeline.
+ *
+ * Caller отвечает за `outPath` (обычно — `tmpdir/bibliary-djvu-<uuid>.pdf`).
+ * Функция НЕ удаляет outPath — это обязанность caller'а через cleanup().
+ */
+export async function runDdjvuToPdf(srcPath: string, outPath: string, signal?: AbortSignal): Promise<void> {
+  const tool = await resolveBinary("ddjvu");
+  await runBinary(tool.binary, ["-format=pdf", srcPath, outPath], signal);
+}
+
+/**
+ * Извлекает текстовый слой одной страницы DjVu через `djvutxt --page=N`.
+ *
+ * Используется per-page cascade в parseDjvu: для каждой страницы пробуем сначала
+ * встроенный текст (бесплатно). Если на странице ≥ POROГ chars осмысленного
+ * текста — пропускаем OCR. Это даёт 80%+ экономию heavy lane на смешанных DjVu,
+ * где часть страниц имеет OCR-слой (например научные книги где formula-страницы
+ * без слоя, а текстовые — с OCR от FineReader).
+ *
+ * Возвращает trimmed text. Пустую строку если djvutxt упал или страницы нет.
+ * НЕ throw — graceful degradation, caller просто получит пусто и пойдёт в OCR.
+ */
+export async function runDjvutxtPage(srcPath: string, pageIndex: number, signal?: AbortSignal): Promise<string> {
+  const tool = await resolveBinary("djvutxt");
+  const page = Math.max(1, pageIndex + 1);
+  try {
+    const { stdout } = await runBinary(tool.binary, [`--page=${page}`, srcPath], signal);
+    return stdout.toString("utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
 export function getDjvuInstallHint(): string {
   if (process.platform === "win32") {
     return "Install DjVuLibre or keep bundled binaries (djvutxt.exe/ddjvu.exe/djvused.exe) in vendor/djvulibre/win32-x64";

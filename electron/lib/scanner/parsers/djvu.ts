@@ -3,9 +3,17 @@ import * as path from "path";
 import { cleanParagraph, looksLikeHeading, type BookParser, type ParseOptions, type ParseResult, type BookSection } from "./types.js";
 import { isOcrSupported, recognizeImageBuffer } from "../ocr/index.js";
 import { recognizeWithVisionLlm } from "../../llm/vision-ocr.js";
-import { getDjvuInstallHint, getDjvuPageCount, runDdjvu, runDjvutxt } from "./djvu-cli.js";
+import { getDjvuInstallHint, getDjvuPageCount, runDdjvu, runDjvutxt, runDjvutxtPage } from "./djvu-cli.js";
 import { imageBufferToPng } from "../../native/sharp-loader.js";
 import { pickBestBookTitle } from "../../library/title-heuristics.js";
+import { isQualityText } from "../extractors/quality-heuristic.js";
+import { convertDjvu } from "../converters/djvu.js";
+
+/* Re-export для backward-compat: tests/djvu-quality-heuristic.test.ts импортирует
+   isQualityText из этого модуля. После переноса логики в extractors/ — оставляем
+   тонкий re-export. Future cleanup (отдельный поход): обновить импорт в тестах
+   на extractors/quality-heuristic и удалить отсюда. */
+export { isQualityText };
 
 const MAX_DJVU_FILE_BYTES = 500 * 1024 * 1024;
 
@@ -32,7 +40,7 @@ async function parseDjvu(filePath: string, opts: ParseOptions = {}): Promise<Par
     warnings.push(getDjvuInstallHint());
   }
 
-  if (text.length > 100) {
+  if (isQualityText(text)) {
     const sections = textToSections(text);
     return {
       metadata: { title: guessTitleFromText(text) || baseName, warnings },
@@ -51,18 +59,69 @@ async function parseDjvu(filePath: string, opts: ParseOptions = {}): Promise<Par
     return { metadata: { title: baseName, warnings }, sections: [], rawCharCount: 0 };
   }
 
-  /* AUTO: vision-llm → system → none (highest quality first). */
+  /* AUTO: convertDjvu → pdfParser → fallback на ocrDjvuPages (system→vision).
+   *
+   * Spartan retreat возврат из Итерации 3: parseDjvu теперь делегирует
+   * convertDjvu (двухступенчатый: djvutxt → ddjvu→pdf). Имиджевый PDF от ddjvu
+   * парсится существующим pdfParser, у которого уже отлажен Universal Cascade
+   * (pdf-inspector → rasterise → OS OCR → vision-LLM). Это сохраняет принцип
+   * «формат это контейнер»: вместо собственного OCR-цикла используем готовый
+   * pipeline pdfParser.
+   *
+   * Если pdfParser cascade вернул пусто (редкий случай — повреждённый ddjvu
+   * output или pdf-inspector ошибочно классифицировал) — fallback на старый
+   * прямой ocrDjvuPages cascade (system→vision per-page). Это Mahakala
+   * expand-contract паттерн: новая ветка ДО старой, старая остаётся как safety net. */
   if (provider === "auto") {
+    /* Передаём precomputedText чтобы convertDjvu не вызывал runDjvutxt повторно
+       (parseDjvu выше уже его сделал и сохранил в `text` для quality check). */
+    const conv = await convertDjvu(filePath, { signal: opts.signal, precomputedText: text });
+    try {
+      if (conv.kind === "delegate" && conv.ext === "pdf") {
+        /* Lazy import чтобы избежать циклических зависимостей djvu↔pdf на этапе
+           загрузки модуля. На рантайме pdfParser уже загружен через parsers/index. */
+        const { pdfParser } = await import("./pdf.js");
+        try {
+          const pdfResult = await pdfParser.parse(conv.path, opts);
+          if (pdfResult.sections.length > 0 && pdfResult.rawCharCount > 0) {
+            warnings.push("DJVU converted to imaged PDF and parsed via pdfParser cascade");
+            if (conv.warnings.length > 0) warnings.push(...conv.warnings);
+            return {
+              metadata: {
+                ...pdfResult.metadata,
+                title: pdfResult.metadata.title || baseName,
+                warnings: [...warnings, ...pdfResult.metadata.warnings],
+              },
+              sections: pdfResult.sections,
+              rawCharCount: pdfResult.rawCharCount,
+            };
+          }
+          warnings.push("DJVU→PDF cascade returned no sections — falling back to direct OCR");
+          if (pdfResult.metadata.warnings.length > 0) warnings.push(...pdfResult.metadata.warnings);
+        } catch (pdfErr) {
+          const msg = pdfErr instanceof Error ? pdfErr.message : String(pdfErr);
+          warnings.push(`DJVU→PDF parse failed: ${msg.slice(0, 200)} — falling back to direct OCR`);
+        }
+      } else if (conv.warnings.length > 0) {
+        /* convertDjvu вернул text-extracted (ddjvu сам не справился) — переходим
+           в прямой ocrDjvuPages cascade ниже. */
+        warnings.push(...conv.warnings);
+      }
+    } finally {
+      await conv.cleanup();
+    }
+
+    /* Fallback на прямой OCR cascade (старый путь, сохранён как safety net). */
+    if (isOcrSupported()) {
+      const result = await ocrDjvuPages(filePath, baseName, "system", opts, warnings);
+      if (result.sections.length > 0) return result;
+      warnings.push("system OCR returned no text — falling back to vision-llm");
+    }
     const visionAvailable = await hasVisionOcrModel(opts.visionModelKey);
     if (visionAvailable) {
-      const result = await ocrDjvuPages(filePath, baseName, "vision-llm", opts, warnings);
-      if (result.sections.length > 0) return result;
-      warnings.push("vision-llm OCR returned no text — falling back to system OCR");
+      return ocrDjvuPages(filePath, baseName, "vision-llm", opts, warnings);
     }
-    if (isOcrSupported()) {
-      return ocrDjvuPages(filePath, baseName, "system", opts, warnings);
-    }
-    warnings.push("DJVU OCR auto-fallback: vision-llm unavailable AND system OCR unsupported on this OS");
+    warnings.push("DJVU OCR auto-fallback: system OCR unsupported AND vision-llm unavailable");
     warnings.push(getDjvuInstallHint());
     return { metadata: { title: baseName, warnings }, sections: [], rawCharCount: 0 };
   }
@@ -88,6 +147,22 @@ async function hasVisionOcrModel(preferredKey?: string): Promise<boolean> {
   }
 }
 
+/** Минимум осмысленного текста на странице чтобы пропустить OCR (per-page routing). */
+const PER_PAGE_TEXT_THRESHOLD = 50;
+
+/**
+ * Прямой OCR cascade per-page для DjVu.
+ *
+ * Это Tier 2 fallback в parseDjvu — используется когда convertDjvu→pdfParser
+ * не справился (см. parseDjvu provider="auto" ветка) ИЛИ когда пользователь
+ * явно выбрал djvuOcrProvider:"system"/"vision-llm".
+ *
+ * Per-page routing (Итерация 4 Часть Б): для каждой страницы СНАЧАЛА пробуем
+ * `runDjvutxtPage` (бесплатно). Если страница имеет ≥50 chars осмысленного
+ * текста — используем его, OCR пропускаем. Это даёт 80%+ heavy lane экономии
+ * на смешанных DjVu (научные книги: текстовые страницы с FineReader OCR-слоем,
+ * formula/diagram страницы — без слоя).
+ */
 async function ocrDjvuPages(
   filePath: string,
   baseName: string,
@@ -108,9 +183,29 @@ async function ocrDjvuPages(
   const paragraphs: Array<{ page: number; text: string }> = [];
   let totalChars = 0;
   let ocrPages = 0;
+  let textLayerPages = 0;
 
   for (let page = 0; page < pageCount; page++) {
     if (opts.signal?.aborted) throw new Error("djvu OCR aborted");
+
+    /* Tier 0 per-page: пробуем встроенный текстовый слой страницы. Дешёво
+       (один djvutxt --page=N вызов, обычно <100ms). Если на странице есть
+       ≥ PER_PAGE_TEXT_THRESHOLD chars — пропускаем OCR. */
+    const pageText = await runDjvutxtPage(filePath, page, opts.signal);
+    if (pageText.length >= PER_PAGE_TEXT_THRESHOLD) {
+      const blocks = pageText
+        .split(/\n{2,}/)
+        .map((line) => cleanParagraph(line))
+        .filter((line) => line.length > 0);
+      for (const block of blocks) {
+        paragraphs.push({ page: page + 1, text: block });
+        totalChars += block.length;
+      }
+      textLayerPages++;
+      continue;
+    }
+
+    /* Tier 1/2 per-page: страница без встроенного текста — рендерим и OCR'им. */
     try {
       const imageBuffer = await runDdjvu(filePath, page, dpi, opts.signal);
       const pngBuffer = await imageBufferToPng(imageBuffer);
@@ -145,9 +240,12 @@ async function ocrDjvuPages(
     }
   }
 
+  if (textLayerPages > 0) warnings.push(`DJVU per-page text layer used for ${textLayerPages}/${pageCount} page(s) (heavy lane saved)`);
   if (ocrPages > 0) warnings.push(`DJVU OCR applied to ${ocrPages}/${pageCount} page(s) using ${provider}`);
-  if (ocrPages === 0) warnings.push("DJVU OCR produced no text. Check djvulibre binaries and OCR settings.");
-  if (ocrPages === 0) warnings.push(getDjvuInstallHint());
+  if (ocrPages === 0 && textLayerPages === 0) {
+    warnings.push("DJVU OCR produced no text. Check djvulibre binaries and OCR settings.");
+    warnings.push(getDjvuInstallHint());
+  }
 
   const sections = paragraphsToSections(paragraphs);
   return {

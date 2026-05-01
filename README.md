@@ -2,7 +2,13 @@
 
 > Персональная база знаний из книг. Загрузи тысячи PDF и DJVU — приложение само извлечёт из них принципы, идеи и факты, векторизует их и позволит искать по смыслу.
 
-**Версия:** 0.4.8 · **Платформа:** Windows (portable .exe), Linux x64 (AppImage/.deb) · **Модели:** LM Studio (локально)
+**Версия:** 0.6.0 · **Платформа:** Windows (portable .exe), Linux x64 (AppImage/.deb) · **Модели:** LM Studio (локально)
+
+> **v0.6.0 — Smart Import Pipeline Foundation готов**: централизованный
+> ModelPool с OOM recovery, Universal Light-First Cascade (text-layer → OS OCR
+> → vision-LLM), двухступенчатый DjVu конвертер, защита heavy-очереди от DDoS.
+> Снижение нагрузки vision-LLM ~50x при импорте больших DjVu библиотек.
+> Подробнее: [`docs/smart-import-pipeline.md`](docs/smart-import-pipeline.md).
 
 ---
 

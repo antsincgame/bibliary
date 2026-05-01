@@ -39,8 +39,13 @@
  *
  * НЕ ДЕЛАЕТ:
  *   - Не вмешивается в Olympics (свой lifecycle через `lib/llm/arena/lms-client.ts`).
- *   - Не управляет user-driven IPC `lmstudio:load`/`unload` (явные действия пользователя).
  *   - Не оценивает фактическую free VRAM (LM Studio её не отдаёт). Capacity = total*0.85.
+ *
+ * УПРАВЛЯЕТ (с Итерации 1):
+ *   - User-driven IPC `lmstudio:load` теперь идёт через pool.acquire() — это закрывает
+ *     gap когда UI грузил модель параллельно с автоматическим pipeline.
+ *     `lmstudio:unload` остаётся прямым (явное действие пользователя), но триггерит
+ *     `pool.refresh()` чтобы не висели stale entries.
  */
 
 import {
@@ -54,6 +59,78 @@ import {
 } from "../../lmstudio-client.js";
 import { detectHardware } from "../hardware/profiler.js";
 import { globalLlmLock } from "./global-llm-lock.js";
+import * as telemetry from "../resilience/telemetry.js";
+import { classifyByVramMB, evictionPriority, type ModelWeight } from "./model-size-classifier.js";
+import { getRoleLoadConfig } from "./role-load-config.js";
+import type { ModelRole } from "./model-role-resolver.js";
+
+/** Известные ModelRole — синхронизировано с model-role-resolver.ts. */
+const KNOWN_MODEL_ROLES: ReadonlySet<ModelRole> = new Set<ModelRole>([
+  "crystallizer", "judge", "vision_meta", "vision_ocr", "vision_illustration",
+  "evaluator", "ukrainian_specialist", "lang_detector", "translator",
+]);
+
+/**
+ * Применяет дефолты из ROLE_LOAD_CONFIG к LoadOptions.
+ *
+ * Caller-передаваемые значения имеют приоритет (если caller указал
+ * contextLength=8192, дефолт role не перезатирает). Это решает gap:
+ * раньше ROLE_LOAD_CONFIG был объявлен но никем не использовался,
+ * и каждая call-site сама дублировала magic numbers (gpuOffload, ttl).
+ *
+ * Только для ролей из KNOWN_MODEL_ROLES — сторонние строки role
+ * (например "evaluator-prewarm", "ui-load", "test") не трогают opts.
+ */
+function applyRoleDefaults(role: string | undefined, opts: LoadOptions): LoadOptions {
+  if (!role || !KNOWN_MODEL_ROLES.has(role as ModelRole)) return opts;
+  const cfg = getRoleLoadConfig(role as ModelRole);
+  return {
+    contextLength: opts.contextLength ?? cfg.contextLength,
+    ttlSec: opts.ttlSec,
+    gpuOffload: opts.gpuOffload ?? mapGpuRatio(cfg.gpu?.ratio),
+  };
+}
+
+function mapGpuRatio(ratio: LMSGpuRatio | undefined): "max" | number | undefined {
+  if (ratio === undefined) return undefined;
+  if (ratio === "off") return 0;
+  return ratio;
+}
+
+type LMSGpuRatio = "max" | "off" | number;
+
+/* ─── OOM detection helpers ─────────────────────────────────────────── */
+
+/**
+ * Эвристика «это ошибка нехватки VRAM/RAM».
+ *
+ * LM Studio (через @lmstudio/sdk) пробрасывает ошибки от llama.cpp/MLX/CUDA с
+ * текстом, в котором обычно есть один из паттернов ниже. Точного error code SDK
+ * не даёт — детектим по сообщению.
+ *
+ * Все паттерны матчатся как ОТДЕЛЬНЫЕ слова (через regex с word boundaries) или
+ * как длинные специфичные фразы. Подстрока `"oom"` намеренно убрана — она дала
+ * бы false positive на `"zoom failed"`, `"room not available"`, `"bloomberg api"`
+ * и подобных сетевых/диагностических ошибках.
+ */
+function isOomError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (!msg) return false;
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes("out of memory") ||
+    /\boom\b/.test(lower) ||                        /* word-boundary, не ловит room/zoom/bloom */
+    lower.includes("cuda error: out of memory") ||
+    lower.includes("failed to allocate") ||
+    lower.includes("cannot allocate") ||
+    lower.includes("not enough memory") ||
+    /vram[^a-z]/.test(lower) && lower.includes("insufficient") ||
+    lower.includes("hipmalloc") ||                  /* AMD ROCm */
+    lower.includes("metal allocation failed")       /* Apple MLX */
+  );
+}
+
+const HEAVY_THRESHOLD_MB = 16 * 1024;
 
 /* ─── Public types ──────────────────────────────────────────────────── */
 
@@ -79,6 +156,12 @@ export interface PoolEntry {
   modelKey: string;
   identifier: string;
   vramMB: number;
+  /**
+   * Классификация по размеру: light/medium/heavy.
+   * Используется ImportTaskScheduler для выбора lane и Pool для
+   * приоритезации eviction (heavy первая жертва при OOM/makeRoom).
+   */
+  weight: ModelWeight;
   refCount: number;
   lastUsed: number;
   role?: string;
@@ -267,16 +350,19 @@ export class ModelPool {
 
       await this.makeRoom(vramMB);
 
-      const info = await this.loadFn(modelKey, {
+      const loadOpts: LoadOptions = applyRoleDefaults(opts.role, {
         contextLength: opts.contextLength,
         ttlSec: opts.ttlSec,
         gpuOffload: opts.gpuOffload,
       });
 
+      const info = await this.loadWithOomRecovery(modelKey, vramMB, loadOpts);
+
       const entry: PoolEntry = {
         modelKey: info.modelKey,
         identifier: info.identifier,
         vramMB,
+        weight: classifyByVramMB(vramMB),
         refCount: 1,
         lastUsed: this.now(),
         role: opts.role,
@@ -390,14 +476,167 @@ export class ModelPool {
   }
 
   /**
+   * Загрузить модель с автоматическим восстановлением при OOM.
+   *
+   * Стратегия трёхуровневая:
+   *   1. Прямой `loadFn`. Если успех — вернуть.
+   *   2. Если OOM — `evictAllInternal()` (выгружаем все refCount=0), retry. Часто
+   *      решается так, потому что LM Studio мог не понять, что нам нужна VRAM.
+   *   3. Если опять OOM И модель тяжёлая (>16 GB) — `unloadAllHeavyInternal()`
+   *      (выгружаем все heavy-модели, даже если они в нашем учёте), retry.
+   *   4. Если и это OOM — пробрасываем последнюю ошибку с понятным сообщением.
+   *
+   * При успехе/провале логируем телеметрию (`lmstudio.oom_recovered` /
+   * `lmstudio.oom_failed`) для постмортем-анализа.
+   *
+   * Все шаги eviction идут на той же promise-цепочке `runOnChain`,
+   * потому что мы УЖЕ внутри неё — никаких новых вложенных захватов цепочки.
+   */
+  private async loadWithOomRecovery(
+    modelKey: string,
+    vramMB: number,
+    loadOpts: LoadOptions,
+  ): Promise<LoadedModelInfo> {
+    const startedAt = this.now();
+    let attempts = 0;
+
+    /* Attempt 1 — straight load. */
+    attempts += 1;
+    try {
+      return await this.loadFn(modelKey, loadOpts);
+    } catch (err1) {
+      if (!isOomError(err1)) throw err1;
+
+      /* Attempt 2 — evictAll then retry. */
+      console.warn(`[model-pool] OOM detected for "${modelKey}" (vramMB=${vramMB}); evicting all unpinned and retrying`);
+      try {
+        await this.evictAllInternal();
+      } catch (evictErr) {
+        console.warn("[model-pool] evictAllInternal during OOM-recovery failed", evictErr);
+      }
+
+      attempts += 1;
+      try {
+        const info = await this.loadFn(modelKey, loadOpts);
+        telemetry.logEvent({
+          type: "lmstudio.oom_recovered",
+          modelKey,
+          vramMB,
+          strategy: "evict_all",
+          attempts,
+          durationMs: this.now() - startedAt,
+        });
+        return info;
+      } catch (err2) {
+        if (!isOomError(err2)) throw err2;
+
+        /* Attempt 3 — для тяжёлых моделей выгрузить ВСЕ heavy (даже pinned),
+           попробовать снова. Pinned модели потеряют идентификатор, но caller
+           получит чистую ошибку при попытке chat — это лучше, чем import
+           целиком обрубленный OOM'ом. */
+        if (vramMB <= HEAVY_THRESHOLD_MB) {
+          telemetry.logEvent({
+            type: "lmstudio.oom_failed",
+            modelKey,
+            vramMB,
+            attempts,
+            lastError: err2 instanceof Error ? err2.message : String(err2),
+          });
+          throw err2;
+        }
+
+        console.warn(`[model-pool] OOM persisted for heavy model "${modelKey}" after evictAll; unloading all heavy models`);
+        try {
+          await this.unloadAllHeavyInternal(modelKey);
+        } catch (unloadErr) {
+          console.warn("[model-pool] unloadAllHeavyInternal during OOM-recovery failed", unloadErr);
+        }
+
+        attempts += 1;
+        try {
+          const info = await this.loadFn(modelKey, loadOpts);
+          telemetry.logEvent({
+            type: "lmstudio.oom_recovered",
+            modelKey,
+            vramMB,
+            strategy: "unload_heavy",
+            attempts,
+            durationMs: this.now() - startedAt,
+          });
+          return info;
+        } catch (err3) {
+          telemetry.logEvent({
+            type: "lmstudio.oom_failed",
+            modelKey,
+            vramMB,
+            attempts,
+            lastError: err3 instanceof Error ? err3.message : String(err3),
+          });
+          throw err3;
+        }
+      }
+    }
+  }
+
+  /**
+   * Внутренний evictAll — НЕ берёт runOnChain (мы уже внутри цепочки).
+   */
+  private async evictAllInternal(): Promise<number> {
+    const victims = [...this.entries.values()].filter((e) => e.refCount === 0);
+    let unloaded = 0;
+    for (const v of victims) {
+      try {
+        await this.unloadFn(v.identifier);
+        unloaded += 1;
+      } catch (e) {
+        console.warn(`[model-pool] evictAllInternal: unload(${v.modelKey}) failed`, e);
+      }
+      this.entries.delete(v.modelKey);
+    }
+    return unloaded;
+  }
+
+  /**
+   * Выгружает все heavy (>16 GB) модели, кроме `exceptKey`. Используется как
+   * последняя попытка восстановления при OOM на heavy. Не берёт runOnChain.
+   */
+  private async unloadAllHeavyInternal(exceptKey: string): Promise<number> {
+    const victims = [...this.entries.values()].filter(
+      (e) => e.vramMB > HEAVY_THRESHOLD_MB && e.modelKey !== exceptKey,
+    );
+    let unloaded = 0;
+    for (const v of victims) {
+      try {
+        await this.unloadFn(v.identifier);
+        unloaded += 1;
+      } catch (e) {
+        console.warn(`[model-pool] unloadAllHeavyInternal: unload(${v.modelKey}) failed`, e);
+      }
+      this.entries.delete(v.modelKey);
+    }
+    return unloaded;
+  }
+
+  /**
    * Освободить место под `needMB`. Эвиктит LRU среди refCount=0.
    * Если все pinned — пробуем загрузить и надеемся на LM Studio (он сам OOM'нет).
    */
   private async makeRoom(needMB: number): Promise<void> {
     while (this.totalLoadedMB() + needMB > this.capacityMB) {
+      /* Композитная сортировка кандидатов на выселение:
+         1. Сначала по weight (heavy первая жертва — освобождает больше места,
+            обычно дороже держать неиспользуемой). evictionPriority: heavy=3>medium=2>light=1.
+         2. При равном весе — LRU (старшая по lastUsed первой).
+         Это сохраняет существующее LRU поведение для одного weight и добавляет
+         heavy-first для смешанных нагрузок (типичный сценарий: импорт держит
+         heavy vision-LLM в памяти после того как nightlight evaluator закончил). */
       const evictable = [...this.entries.values()]
         .filter((e) => e.refCount === 0)
-        .sort((a, b) => a.lastUsed - b.lastUsed);
+        .sort((a, b) => {
+          const priorityDiff = evictionPriority(b.weight) - evictionPriority(a.weight);
+          if (priorityDiff !== 0) return priorityDiff;
+          return a.lastUsed - b.lastUsed;
+        });
       const victim = evictable[0];
       if (!victim) {
         /* Нет evictable — все pinned. Пробуем продолжить. */
@@ -478,6 +717,7 @@ export class ModelPool {
         modelKey: m.modelKey,
         identifier: m.identifier,
         vramMB,
+        weight: classifyByVramMB(vramMB),
         refCount: 0,
         lastUsed: this.now() - 60_000 /* "старше" свежезагруженных, эвиктится первой */,
         source: "external",

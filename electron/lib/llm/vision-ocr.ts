@@ -15,6 +15,7 @@
 import { getLmStudioUrl } from "../endpoints/index.js";
 import { pickVisionModels } from "./vision-meta.js";
 import { modelRoleResolver } from "./model-role-resolver.js";
+import { getHeavyLaneRateLimiter } from "./heavy-lane-rate-limiter.js";
 
 export interface VisionOcrResult {
   text: string;
@@ -64,8 +65,17 @@ export async function recognizeWithVisionLlm(
 
   let lastError: string | undefined;
 
+  const rateLimiter = getHeavyLaneRateLimiter();
+
   for (const { modelKey } of models) {
     try {
+      /* DDoS-защита heavy lane: книга в 1000 страниц без текстового слоя
+         не должна забить vision-LLM очередь. Лимит per-modelKey, default
+         60 запросов в минуту, конфигурируется через BIBLIARY_VISION_OCR_RPM.
+         Sliding window — не throttling: простаивающие минуты «возвращают
+         кредит». При aborted signal limiter throws — try/catch ниже handle. */
+      await rateLimiter.acquire(modelKey, opts.signal);
+
       const baseUrl = await getLmStudioUrl();
       const body = {
         model: modelKey,

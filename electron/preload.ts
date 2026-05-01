@@ -237,6 +237,46 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.on("resilience:lmstudio-online", listener);
       return () => ipcRenderer.removeListener("resilience:lmstudio-online", listener);
     },
+    /**
+     * VRAM pressure event от lmstudio-watchdog (Итерация 2).
+     * Эмитится когда totalLoadedMB / capacityMB > 0.85 (default threshold).
+     * payload: { totalLoadedMB, capacityMB, pressureRatio, loadedModels }.
+     */
+    onLmstudioPressure: (callback: (snapshot: {
+      totalLoadedMB: number;
+      capacityMB: number;
+      pressureRatio: number;
+      loadedModels: number;
+    }) => void): (() => void) => {
+      const listener = (_e: unknown, payload: {
+        totalLoadedMB: number;
+        capacityMB: number;
+        pressureRatio: number;
+        loadedModels: number;
+      }): void => callback(payload);
+      ipcRenderer.on("resilience:lmstudio-pressure", listener);
+      return () => ipcRenderer.removeListener("resilience:lmstudio-pressure", listener);
+    },
+    /**
+     * Scheduler snapshot периодически эмитится из bootstrap (Итерация 5).
+     * Показывает текущее состояние lanes: light/medium/heavy с running/queued.
+     * payload: SchedulerSnapshot из import-task-scheduler.ts.
+     */
+    onSchedulerSnapshot: (callback: (snapshot: {
+      io: { running: number; queued: number };
+      light: { running: number; queued: number };
+      medium: { running: number; queued: number };
+      heavy: { running: number; queued: number };
+    }) => void): (() => void) => {
+      const listener = (_e: unknown, payload: {
+        io: { running: number; queued: number };
+        light: { running: number; queued: number };
+        medium: { running: number; queued: number };
+        heavy: { running: number; queued: number };
+      }): void => callback(payload);
+      ipcRenderer.on("resilience:scheduler-snapshot", listener);
+      return () => ipcRenderer.removeListener("resilience:scheduler-snapshot", listener);
+    },
   },
 
   system: {

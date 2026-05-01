@@ -48,6 +48,9 @@ data/bibliary-cache.db
 data/bibliary-cache.db-wal
 data/bibliary-cache.db-shm
 
+# Converter output cache (EPUB/PDF/TXT artifacts; не для VCS)
+data/converters-cache/
+
 # Servitor quarantine (recoverable docs/code trash)
 .servitor-trash/
 

@@ -32,13 +32,20 @@ export type BookStatus =
 
 /** Поддерживаемые форматы книг. */
 export type SupportedBookFormat =
-  | "pdf" | "epub" | "fb2" | "txt" | "docx" | "djvu"
-  | "doc" | "rtf" | "odt" | "html" | "htm";
+  | "pdf" | "epub" | "fb2" | "txt" | "docx" | "djvu" | "djv"
+  | "doc" | "rtf" | "odt" | "html" | "htm"
+  | "mobi" | "azw" | "azw3" | "pdb" | "prc" | "chm"
+  | "tcr" | "lit" | "lrf" | "snb"
+  | "cbz" | "cbr";
 
-/** Canonical set — single source of truth for book extensions across the pipeline. */
+/** Canonical set — single source of truth for book extensions across the pipeline.
+ *  Iter 6В: .rb удалён — Ruby исходники доминируют в реальных библиотеках. */
 export const SUPPORTED_BOOK_EXTS: ReadonlySet<SupportedBookFormat> = new Set([
-  "pdf", "epub", "fb2", "txt", "docx", "djvu",
+  "pdf", "epub", "fb2", "txt", "docx", "djvu", "djv",
   "doc", "rtf", "odt", "html", "htm",
+  "mobi", "azw", "azw3", "pdb", "prc", "chm",
+  "tcr", "lit", "lrf", "snb",
+  "cbz", "cbr",
 ]);
 
 /** Метаданные книги: попадают и в YAML frontmatter, и в SQLite-кэш. */
@@ -173,7 +180,7 @@ export interface ConvertOptions {
   precomputedSha256?: string;
   /**
    * OCR-провайдер для DJVU и сканированных PDF. Передаётся в parseBook. Default "auto".
-   *   - "auto": vision-llm (LM Studio) → system OCR → none, fallback chain.
+   *   - "auto": system OCR (cheap) → vision-llm (LM Studio) → none, cheapest first.
    *   - "vision-llm": ТОЛЬКО локальный LM Studio.
    *   - "system": ТОЛЬКО OS OCR.
    *   - "none": OCR отключён.

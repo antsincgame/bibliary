@@ -45,6 +45,19 @@ export type SupportedExt =
   | "htm"
   | "txt"
   | "djvu"
+  | "djv"
+  | "mobi"
+  | "azw"
+  | "azw3"
+  | "pdb"
+  | "prc"
+  | "chm"
+  | "tcr"
+  | "lit"
+  | "lrf"
+  | "snb"
+  | "cbz"
+  | "cbr"
   | "png"
   | "jpg"
   | "jpeg"
@@ -66,7 +79,10 @@ export interface ParseOptions {
   ocrPdfDpi?: number;
   /**
    * DJVU OCR backend selector.
-   *   - "auto" (default): vision-LLM (LM Studio) → system OCR → none, fallback chain.
+   *   - "auto" (default): system OCR (cheap) → vision-LLM (LM Studio) → none.
+   *     Порядок «cheapest first» защищает heavy-очередь от DDoS на длинных
+   *     сканах: система пробует OS OCR на каждой странице и поднимает
+   *     тяжёлую vision-LLM только если system OCR не справилась.
    *   - "vision-llm": только локальный LM Studio (роль vision_ocr).
    *   - "system": только OS OCR (Windows.Media.Ocr / macOS Vision).
    *   - "none": OCR не выполняется.

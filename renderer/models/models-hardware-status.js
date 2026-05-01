@@ -22,6 +22,12 @@ import {
   withBusy,
   PIPELINE_ROLES,
 } from "./models-page-internals.js";
+import { mountPipelineStatusWidget } from "./pipeline-status-widget.js";
+
+/* Iter 7: pipeline widget unmount callback — хранится глобально per-mount чтобы
+   повторный buildHwStrip (idempotent) не плодил дублирующие подписки на IPC.
+   При new mount старый unmount вызывается, новый сохраняется. */
+let pipelineWidgetUnmount = /** @type {(() => void) | null} */ (null);
 
 const ROLE_META = {
   crystallizer:         { labelKey: "models.role.crystallizer.label",         helpKey: "models.role.crystallizer.help" },
@@ -295,5 +301,35 @@ export function buildHwStrip() {
       el("button", { id: "mp-hw-refresh", class: "btn btn-ghost btn-sm", type: "button" }, t("models.hardware.rescan")),
     ]),
   ]);
-  return el("div", { class: "mp-hw-strip" }, [details]);
+
+  /* Iter 7: pipeline-status-widget — live VRAM pressure + scheduler lanes counters.
+     Виден только когда что-то идёт через scheduler (calibre/cbz/multi-tiff
+     converters, evaluator, illustration). Empty state — нули, не отвлекает. */
+  const pipelineHost = el("div", { id: "mp-pipeline-status", class: "mp-pipeline-status" }, []);
+
+  /* Mount widget. Если был предыдущий — unmount чтобы не плодить IPC подписки. */
+  if (pipelineWidgetUnmount) {
+    pipelineWidgetUnmount();
+    pipelineWidgetUnmount = null;
+  }
+  /* Mount синхронно после возврата DOM — браузер уже вставил pipelineHost
+     в DOM tree. Используем microtask чтобы гарантировать что pipelineHost
+     уже в document (mount читает rootEl.appendChild). */
+  queueMicrotask(() => {
+    pipelineWidgetUnmount = mountPipelineStatusWidget(pipelineHost);
+  });
+
+  return el("div", { class: "mp-hw-strip" }, [details, pipelineHost]);
+}
+
+/**
+ * Iter 7: явный unmount для хост-страницы (при unmount models-page).
+ * Вызывается из models-page.js при destroy если он добавит обработчик.
+ * Безопасно вызывать несколько раз.
+ */
+export function unmountHwStrip() {
+  if (pipelineWidgetUnmount) {
+    pipelineWidgetUnmount();
+    pipelineWidgetUnmount = null;
+  }
 }

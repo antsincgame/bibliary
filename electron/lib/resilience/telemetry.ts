@@ -23,6 +23,31 @@ export type TelemetryEvent =
   | { type: "lmstudio.online"; ts: string }
   | { type: "lmstudio.throttle"; tps: number; newCoolDownMs: number; ts: string }
   | { type: "lmstudio.crash_detected"; modelKey: string; ts: string }
+  | {
+      /**
+       * OOM был пойман в ModelPool.acquireExclusive и автоматически восстановлен:
+       * вызвано evictAll() (или unloadAllHeavy() во второй попытке) и retry прошёл успешно.
+       */
+      type: "lmstudio.oom_recovered";
+      modelKey: string;
+      vramMB: number;
+      strategy: "evict_all" | "unload_heavy";
+      attempts: number;
+      durationMs: number;
+      ts: string;
+    }
+  | {
+      /**
+       * OOM повторился после всех попыток восстановления — модель так и не загрузилась.
+       * Pool пробрасывает ошибку дальше, caller должен handle (warn в UI).
+       */
+      type: "lmstudio.oom_failed";
+      modelKey: string;
+      vramMB: number;
+      attempts: number;
+      lastError: string;
+      ts: string;
+    }
   | { type: "olympics.run"; phase: "start" | "done"; models: string[]; disciplines: string[]; durationMs?: number; skippedModels?: number; ts: string }
   | {
       type: "olympics.model_lifecycle";

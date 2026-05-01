@@ -31,8 +31,29 @@ const FORMAT_PRIORITY: Record<string, number> = {
   fb2:  60,
   docx: 50,
   doc:  40,
+  /* Calibre-cascade форматы (Iter 6А): mobi/azw/azw3 = Kindle native, чуть
+     ниже DOC потому что конвертация в EPUB обычно теряет некоторые edge-case
+     форматирования. PDB/PRC/CHM ниже — старые форматы, ещё больше шансов на
+     потери при конвертации. */
+  azw3: 36,
+  mobi: 35,
+  azw:  35,
   rtf:  30,
   odt:  25,
+  /* Iter 6Б — нишевые legacy форматы и комиксы. Все ниже ODT т.к.
+     конвертация через Calibre теряет часть форматирования. SNB ниже LIT/LRF
+     по распространённости (Samsung Note Book — самый малоизвестный).
+     CBZ > CBR (CBR = устаревший RAR-вариант). TCR — самый старый, через Calibre.
+     Iter 6В: .rb удалён (Ruby исходники доминируют в реальных библиотеках). */
+  lit:  24,
+  lrf:  23,
+  snb:  21,
+  pdb:  20,
+  prc:  20,
+  chm:  15,
+  cbz:  12,
+  cbr:  11,
+  tcr:  10,
   txt:  10,
   html: 5,
   htm:  5,
