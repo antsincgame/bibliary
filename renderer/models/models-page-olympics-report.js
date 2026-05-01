@@ -207,12 +207,10 @@ export function renderOlympicsReport(report) {
 
   /* ── Рекомендации (по ролям) ── */
   const recs = report.recommendations ?? {};
-  const byScore = report.recommendationsByScore ?? {};
   const aggregates = report.roleAggregates ?? [];
   const recsKeys = Object.keys(recs);
-  const byScoreKeys = Object.keys(byScore);
 
-  if (recsKeys.length === 0 && byScoreKeys.length === 0) {
+  if (recsKeys.length === 0) {
     root.appendChild(el("div", { class: "mp-olympics-no-recs" }, t("models.olympics.no_recommendations")));
     return;
   }
@@ -243,82 +241,43 @@ export function renderOlympicsReport(report) {
   ]);
   root.appendChild(recsHeader);
 
-  /* ── Probe phase + Adaptive elimination + EcoTune (Lightning Olympics) ── */
-  const probeStats = report.probeStats;
-  const adaptiveStats = report.adaptiveElimination;
+  /* ── EcoTune auto-tune suggestions ── */
   const tuneSuggestions = Array.isArray(report.autoTuneSuggestions) ? report.autoTuneSuggestions : [];
 
-  if (probeStats || adaptiveStats || tuneSuggestions.length > 0) {
-    const lightningBox = el("details", { class: "mp-olympics-lightning-stats", open: tuneSuggestions.length > 0 ? "open" : undefined }, [
+  if (tuneSuggestions.length > 0) {
+    const tuneBox = el("details", { class: "mp-olympics-lightning-stats", open: "open" }, [
       el("summary", { class: "mp-olympics-lightning-summary" },
-        `🚀 Lightning Olympics: probe + adaptive + EcoTune auto-tune`),
-    ]);
-
-    if (probeStats) {
-      const probeBox = el("div", { class: "mp-olympics-lightning-section" }, [
-        el("h4", {}, "🎯 Probe phase (Arena-Lite)"),
-        el("p", { class: "mp-olympics-lightning-stat" },
-          `Протестировано: ${probeStats.totalProbed} · отсеяно: ${probeStats.eliminated} · cutoff=${probeStats.cutoff}`),
-      ]);
-      const scores = probeStats.scores ?? {};
-      const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
-      if (sorted.length > 0) {
-        probeBox.appendChild(el("div", { class: "mp-olympics-probe-grid" },
-          sorted.map(([key, score]) => {
-            const sc = Math.round(score * 100);
-            const level = sc >= 70 ? "good" : sc >= 40 ? "mid" : "bad";
-            return el("div", { class: `mp-olympics-probe-row mp-olympics-row-${level}` }, [
-              el("span", { class: "mp-olympics-probe-key" }, key),
-              el("span", { class: "mp-olympics-probe-score" }, `${sc}/100`),
-            ]);
-          }),
-        ));
-      }
-      lightningBox.appendChild(probeBox);
-    }
-
-    if (adaptiveStats && adaptiveStats.skippedDisciplines > 0) {
-      lightningBox.appendChild(el("div", { class: "mp-olympics-lightning-section" }, [
-        el("h4", {}, "⏭️ Adaptive elimination"),
-        el("p", { class: "mp-olympics-lightning-stat" },
-          `Пропущено дисциплин для отстающих моделей: ${adaptiveStats.skippedDisciplines} (gap ≥ 35%)`),
-      ]));
-    }
-
-    if (tuneSuggestions.length > 0) {
-      const tuneBox = el("div", { class: "mp-olympics-lightning-section" }, [
-        el("h4", {}, "🔧 EcoTune auto-tune (рекомендации параметров)"),
+        `🔧 EcoTune auto-tune`),
+      el("div", { class: "mp-olympics-lightning-section" }, [
         el("p", { class: "mp-card-sub" },
           "Детерминированный анализ результатов: для каждой роли — оптимальные temperature / max_tokens / top_p. " +
           "Применить можно вручную в Settings → Models → Inference (или будущий «Apply Tune»). " +
           "Источник: EcoTune EMNLP 2025."),
-      ]);
-      const grid = el("div", { class: "mp-olympics-tune-grid" });
-      grid.appendChild(el("div", { class: "mp-olympics-tune-header" }, [
-        el("span", {}, "Роль"),
-        el("span", {}, "temp"),
-        el("span", {}, "max_tok"),
-        el("span", {}, "top_p"),
-        el("span", {}, "conf"),
-        el("span", {}, "обоснование"),
+      ]),
+    ]);
+    const grid = el("div", { class: "mp-olympics-tune-grid" });
+    grid.appendChild(el("div", { class: "mp-olympics-tune-header" }, [
+      el("span", {}, "Роль"),
+      el("span", {}, "temp"),
+      el("span", {}, "max_tok"),
+      el("span", {}, "top_p"),
+      el("span", {}, "conf"),
+      el("span", {}, "обоснование"),
+    ]));
+    for (const s of tuneSuggestions) {
+      const confLevel = s.confidence === "high" ? "good" : s.confidence === "medium" ? "mid" : "bad";
+      const confLabel = s.confidence === "high" ? "✓ high" : s.confidence === "medium" ? "~ med" : "? low";
+      grid.appendChild(el("div", { class: `mp-olympics-tune-row mp-olympics-tune-conf-${confLevel}` }, [
+        el("span", { class: "mp-olympics-tune-role", title: `→ ${s.prefKey}` }, s.role),
+        el("span", { class: "mp-olympics-tune-num" }, String(s.suggestedTemperature)),
+        el("span", { class: "mp-olympics-tune-num" }, String(s.suggestedMaxTokens)),
+        el("span", { class: "mp-olympics-tune-num" }, String(s.suggestedTopP)),
+        el("span", { class: `mp-olympics-tune-conf` }, confLabel),
+        el("span", { class: "mp-olympics-tune-rationale" }, s.rationale),
       ]));
-      for (const s of tuneSuggestions) {
-        const confLevel = s.confidence === "high" ? "good" : s.confidence === "medium" ? "mid" : "bad";
-        const confLabel = s.confidence === "high" ? "✓ high" : s.confidence === "medium" ? "~ med" : "? low";
-        grid.appendChild(el("div", { class: `mp-olympics-tune-row mp-olympics-tune-conf-${confLevel}` }, [
-          el("span", { class: "mp-olympics-tune-role", title: `→ ${s.prefKey}` }, s.role),
-          el("span", { class: "mp-olympics-tune-num" }, String(s.suggestedTemperature)),
-          el("span", { class: "mp-olympics-tune-num" }, String(s.suggestedMaxTokens)),
-          el("span", { class: "mp-olympics-tune-num" }, String(s.suggestedTopP)),
-          el("span", { class: `mp-olympics-tune-conf` }, confLabel),
-          el("span", { class: "mp-olympics-tune-rationale" }, s.rationale),
-        ]));
-      }
-      tuneBox.appendChild(grid);
-      lightningBox.appendChild(tuneBox);
     }
-
-    root.appendChild(lightningBox);
+    tuneBox.appendChild(grid);
+    root.appendChild(tuneBox);
   }
 
   for (const agg of aggregates) {

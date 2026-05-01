@@ -1,7 +1,8 @@
 // @ts-check
 /**
- * Карточка Олимпиады: kнопки run/cancel/cache/profiles, лог-панель, advanced
- * настройки, обработчик прогресса IPC, авто-применение рекомендаций.
+ * Карточка Олимпиады — главный экран («для бабушек»):
+ *   — большая кнопка «Запустить Олимпиаду»
+ *   — после прогона: медальный зачёт + рекомендации (роли применяются автоматически)
  *
  * Извлечено из `models-page.js` (Phase 2.4 cross-platform roadmap, 2026-04-30).
  */
@@ -13,17 +14,14 @@ import {
   errMsg,
   showToast,
 } from "./models-page-internals.js";
-/* ALL_ROLES больше не используется — advanced-настройки с чекбоксами ролей удалены. */
 import { renderOlympicsReport } from "./models-page-olympics-report.js";
 import { refresh } from "./models-hardware-status.js";
 
-/* bindPrefCheckbox удалён — advanced-настройки с чекбоксами убраны. */
-
 /**
- * Карточка Олимпиады. Главный экран — простой и понятный («для бабушек»):
+ * Карточка Олимпиады. Главный экран — простой и понятный:
  *   — большая кнопка «Запустить Олимпиаду»
  *   — после прогона: медальный зачёт + рекомендации (роли применяются автоматически)
- *   — все сложные опции спрятаны в `<details>` Advanced.
+ *   — Олимпиада всегда запускает с полным охватом (testAll + все роли).
  */
 export function buildOlympicsCard() {
   return el("section", { class: "mp-card mp-card-compact mp-olympics-card" }, [
@@ -92,13 +90,8 @@ export function buildOlympicsCard() {
 
     /* Зона результатов (медальный зачёт + рекомендации). */
     el("div", { id: "mp-olympics-results", class: "mp-olympics-results" }, ""),
-
-    /* Advanced-настройки удалены: бабушкам не понятно. Олимпиада
-     * всегда работает с максимальным охватом (testAll + все роли). */
   ]);
 }
-
-/* buildOlympicsAdvanced + profile export/import — удалены (UX-упрощение v0.5.0). */
 
 /* ─── Лог + UI помощники ───────────────────────────────────────────────
  *
@@ -388,5 +381,3 @@ async function cancelOlympics() {
     showToast(errMsg(e), "error");
   }
 }
-
-/* autoApplyOlympicsRecommendations удалён — инлайнена в runOlympicsAndShow. */

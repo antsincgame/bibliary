@@ -6905,60 +6905,6 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
 .mp-olympics-no-recs { font-size: 12px; color: var(--text-secondary); font-style: italic; }
 .mp-error { color: var(--accent-error, #f87171); font-size: 12px; padding: 8px; }
 
-/* ── Olympics: options (testAll + class selector) ── */
-.mp-olympics-options {
-  display: flex; gap: 16px; flex-wrap: wrap;
-  background: rgba(0,0,0,0.15); border: 1px solid var(--border, #2a2a2a);
-  border-radius: 6px; padding: 8px 10px; margin-bottom: 8px;
-  font-size: 11px;
-}
-.mp-olympics-option {
-  display: flex; align-items: center; gap: 6px;
-  cursor: pointer; user-select: none;
-}
-.mp-olympics-option input[type="checkbox"] { cursor: pointer; }
-.mp-olympics-option-hint { color: var(--text-secondary); font-size: 10px; }
-.mp-olympics-option-strong { font-weight: 700; color: #6ee7a0; font-size: 13px; }
-.mp-olympics-preset-box {
-  border: 1px solid rgba(110, 231, 160, 0.3);
-  background: rgba(110, 231, 160, 0.05);
-  padding: 8px 10px;
-  border-radius: 4px;
-  margin: 6px 0 10px 0;
-}
-.mp-olympics-option-lightning { gap: 8px; flex-wrap: wrap; }
-.mp-olympics-option-lightning .mp-olympics-option-hint {
-  flex-basis: 100%;
-  margin-top: 4px;
-  margin-left: 22px;
-  line-height: 1.4;
-}
-.mp-olympics-select {
-  background: var(--bg, #1a1a1a); color: var(--text, #e0e0e0);
-  border: 1px solid var(--border, #2a2a2a);
-  padding: 3px 6px; border-radius: 4px; font-size: 11px;
-}
-
-/* ── Olympics: per-role checkboxes ── */
-.mp-olympics-roles {
-  display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
-  padding: 6px 10px; margin-bottom: 8px;
-  background: rgba(0,0,0,0.1); border: 1px solid var(--border, #2a2a2a);
-  border-radius: 6px; font-size: 11px;
-}
-.mp-olympics-roles-label { font-weight: 600; margin-right: 4px; color: var(--text-secondary); }
-.mp-olympics-role-check {
-  display: flex; align-items: center; gap: 3px;
-  cursor: pointer; user-select: none;
-  padding: 2px 5px; border-radius: 4px;
-  transition: background 0.15s;
-}
-.mp-olympics-role-check:hover { background: rgba(255,255,255,0.05); }
-.mp-olympics-role-check input[type="checkbox"] { cursor: pointer; width: 13px; height: 13px; }
-/* ── Olympics: cache button ── */
-.mp-olympics-cache-row {
-  display: flex; justify-content: flex-end; gap: 8px; padding: 4px 0; margin-top: 4px;
-}
 .btn-xs { font-size: 10px; padding: 2px 8px; opacity: 0.6; }
 .btn-xs:hover { opacity: 1; }
 .btn-lg { font-size: 14px; padding: 10px 22px; font-weight: 600; }
@@ -6981,67 +6927,10 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   margin-left: 4px;
 }
 
-/* ── Olympics: блок Advanced (свёрнут) ── */
-.mp-olympics-advanced {
-  margin-top: 14px;
-  padding: 8px 10px;
-  border: 1px dashed var(--border, #2a2a2a);
-  border-radius: 6px;
-  background: rgba(0,0,0,0.10);
-}
-.mp-olympics-advanced[open] { background: rgba(0,0,0,0.18); }
-.mp-olympics-advanced-summary {
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 12px;
-  color: var(--text-secondary);
-  user-select: none;
-  list-style: none;
-}
-.mp-olympics-advanced-summary::-webkit-details-marker { display: none; }
-.mp-olympics-advanced-summary::before {
-  content: "▶ ";
-  display: inline-block;
-  margin-right: 4px;
-  font-size: 9px;
-  transition: transform 0.15s;
-  color: var(--text-secondary);
-}
-.mp-olympics-advanced[open] > .mp-olympics-advanced-summary::before {
-  transform: rotate(90deg);
-}
-.mp-olympics-advanced-hint {
-  font-size: 11px;
-  color: var(--text-secondary);
-  margin: 6px 0 10px;
-}
-.mp-olympics-advanced .mp-olympics-option {
-  margin: 4px 0;
-}
-.mp-olympics-roles-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 4px;
-  margin-top: 6px;
-}
-.mp-olympics-roles-hint {
-  font-size: 11px;
-  color: var(--text-secondary);
-  margin: 2px 0 4px;
-  font-style: italic;
-}
-
-/* ── Olympics: profile export/import row ── */
-.mp-olympics-profile-row {
-  display: flex; gap: 8px; flex-wrap: wrap;
-  margin-top: 12px; padding-top: 10px;
-  border-top: 1px dashed var(--border, #2a2a2a);
-}
 
 /* ── Olympics: единая кнопка "Распределить роли" ── */
 .mp-olympics-distribute-label { font-weight: 600; }
 .mp-olympics-distribute-count { color: rgba(255,255,255,0.7); font-weight: 400; margin-left: 4px; }
-.mp-olympics-champion-badge { margin: 0 4px; }
 
 /* ── Roles: visual feedback "✓ сохранено" ── */
 .mp-role-control { display: flex; align-items: center; gap: 6px; }
@@ -7053,13 +6942,6 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   user-select: none;
   min-width: 12px;
 }
-
-/* ── Olympics: champion vs optimum two-column (legacy, sub) ── */
-.mp-olympics-recs-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
-.mp-olympics-recs-col { background: rgba(0,0,0,0.15); border: 1px solid var(--border, #2a2a2a); border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
-.mp-olympics-recs-col:first-child { border-color: rgba(56, 142, 60, 0.4); background: rgba(56, 142, 60, 0.06); }
-.mp-olympics-recs-col-title { font-weight: 600; font-size: 13px; }
-.mp-olympics-recs-col-sub { font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
 
 /* ── Olympics: per-role recommendation cards ── */
 .mp-olympics-recs-header {
@@ -7137,7 +7019,7 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   padding: 4px 0;
 }
 
-/* ── Lightning Olympics: probe + adaptive + EcoTune (v0.4.9) ── */
+/* ── EcoTune auto-tune (v0.4.9) ── */
 .mp-olympics-lightning-stats {
   margin: 16px 0;
   padding: 12px 14px;
@@ -7173,28 +7055,6 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   font-weight: 600;
   margin: 0 0 6px;
   color: var(--text-primary, #e5e7eb);
-}
-.mp-olympics-lightning-stat {
-  font-size: 11px;
-  color: var(--text-secondary);
-  margin: 0 0 8px;
-}
-.mp-olympics-probe-grid {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 2px 12px;
-  font-family: var(--font-mono, monospace);
-  font-size: 11px;
-}
-.mp-olympics-probe-row {
-  display: contents;
-}
-.mp-olympics-probe-key {
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.mp-olympics-probe-score {
-  text-align: right;
-  white-space: nowrap;
 }
 .mp-olympics-tune-grid {
   display: grid;

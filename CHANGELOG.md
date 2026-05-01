@@ -4,6 +4,28 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] — 2026-05-01 — Code hygiene: probe/adaptive hidden, dead CSS/prefs removed
+
+Probe-фаза и adaptive elimination сохранены в `olympics.ts` (код не удалён),
+но скрыты из UI отчёта — они неактивны при `testAll=true`. Из UI удалены
+мёртвые ссылки на эти функции, удалены orphan CSS-классы и мёртвые prefs.
+
+### Removed
+
+- **Orphan CSS** — `mp-olympics-options/option/select`, `mp-olympics-roles`,
+  `mp-olympics-advanced*`, `mp-olympics-profile-row`, `mp-olympics-champion-badge`,
+  `mp-olympics-recs-cols`, `mp-olympics-probe-*`, `mp-olympics-lightning-stat`.
+- **Dead prefs** — `olympicsWeightClasses`, `olympicsTestAll`, `olympicsUseChampion`,
+  `olympicsLightning` удалены из `preferences/store.ts` (нигде не читались).
+- **Stale comments** в `controls.js` — убраны призраки удалённых функций.
+
+### Changed
+
+- **EcoTune auto-tune** в отчёте отображается напрямую без обёртки
+  «Lightning Olympics: probe + adaptive + EcoTune» — раздел переименован.
+- **Probe/adaptive UI** убран из `models-page-olympics-report.js`.
+  Код в `olympics.ts` сохранён — активируется когда `opts.maxModels` задан.
+
 ## [0.5.0] — 2026-05-01 — UX Revolution: простота для бабушек
 
 Масштабная чистка UI: удалены все «экспертные» настройки, Lightning mode,

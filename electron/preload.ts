@@ -292,6 +292,7 @@ contextBridge.exposeInMainWorld("api", {
       required: string[];
       preferred: string[];
       resolved: { modelKey: string; source: string; usedFallback?: boolean } | null;
+      prefValue: string;
     }>> => ipcRenderer.invoke("model-roles:list", roles ? { roles } : {}),
   },
 
