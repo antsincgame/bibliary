@@ -202,4 +202,36 @@ export async function runEbookConvert(
  */
 export function _resetCalibreResolutionForTests(): void {
   cachedResolution = undefined;
+  lastSeenOverride = undefined;
+}
+
+/**
+ * Последнее «увиденное» значение `calibrePathOverride`. Нужно чтобы отличить:
+ *   - boot: applyCalibrePathPrefs вызывается до первого resolve, кеш ещё пуст,
+ *     инвалидация бессмысленна — просто запоминаем значение.
+ *   - runtime change: пользователь поменял override в Settings UI, IPC
+ *     `preferences:set` дёрнул applyRuntimeSideEffects → нужно сбросить кеш.
+ *
+ * Без этого сравнения каждый apply (даже apply, не меняющий calibre-параметр,
+ * например смена `visionOcrRpm`) дёргал бы инвалидацию и заставлял повторно
+ * сканировать диск при следующем `resolveCalibreBinary()`.
+ */
+let lastSeenOverride: string | undefined = undefined;
+
+/**
+ * Применить `calibrePathOverride` из preferences (Иt 8В.CRITICAL.4).
+ * Вызывается из `preferences.ipc.applyRuntimeSideEffects` при boot и каждом
+ * `preferences:set`. Сбрасывает `cachedResolution` ТОЛЬКО при реальной смене
+ * override — иначе no-op (производительный boot, нет лишних диск-сканов).
+ */
+export function applyCalibrePathPrefs(prefs: { calibrePathOverride?: string }): void {
+  const newOverride = (prefs.calibrePathOverride ?? "").trim();
+  if (lastSeenOverride === undefined) {
+    lastSeenOverride = newOverride;
+    return;
+  }
+  if (newOverride !== lastSeenOverride) {
+    cachedResolution = undefined;
+    lastSeenOverride = newOverride;
+  }
 }

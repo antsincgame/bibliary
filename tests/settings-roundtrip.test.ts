@@ -38,6 +38,12 @@ import {
   getEvaluatorSlotCount,
 } from "../electron/lib/library/evaluator-queue.ts";
 
+import {
+  applyCalibrePathPrefs,
+  resolveCalibreBinary,
+  _resetCalibreResolutionForTests,
+} from "../electron/lib/scanner/converters/calibre-cli.ts";
+
 import { CrossFormatPreDedup } from "../electron/lib/library/cross-format-prededup.ts";
 
 let tmpDir: string;
@@ -187,6 +193,55 @@ describe("[Settings 8В] applyEvaluatorPrefs propagates evaluatorSlots to live w
     const after = getEvaluatorSlotCount();
     assert.ok(after <= 16, `slotCount должен быть кепом MAX_SLOT_COUNT=16, получили ${after}`);
     applyEvaluatorPrefs({ evaluatorSlots: before });
+  });
+});
+
+/* ── Calibre CLI: applyCalibrePathPrefs инвалидирует кеш при реальной смене (Иt 8В.CRITICAL.4) ── */
+
+describe("[Settings 8В] applyCalibrePathPrefs invalidates resolveCalibreBinary cache", () => {
+  test("смена override без apply была бы молчаливо проигнорирована (защита от регрессии)", async () => {
+    _resetCalibreResolutionForTests();
+    const fakeA = path.join(tmpDir, "ebook-convert-A");
+    const fakeB = path.join(tmpDir, "ebook-convert-B");
+    fs.writeFileSync(fakeA, "");
+    fs.writeFileSync(fakeB, "");
+
+    const store = getPreferencesStore();
+    await store.ensureDefaults();
+
+    /* Boot: устанавливаем A в store + apply (boot — запомнит) + resolve → cache = A */
+    await store.set({ calibrePathOverride: fakeA });
+    applyCalibrePathPrefs({ calibrePathOverride: fakeA });
+    const r1 = await resolveCalibreBinary();
+    assert.equal(r1?.binary, fakeA);
+
+    /* Change без apply: меняем store на B, resolve возвращает A (старый кеш — баг до Иt 8В) */
+    await store.set({ calibrePathOverride: fakeB });
+    const stillA = await resolveCalibreBinary();
+    assert.equal(stillA?.binary, fakeA, "без applyCalibrePathPrefs кеш молчаливо игнорирует store change");
+
+    /* Apply: значение реально изменилось vs lastSeenOverride → инвалидация */
+    applyCalibrePathPrefs({ calibrePathOverride: fakeB });
+    const r2 = await resolveCalibreBinary();
+    assert.equal(r2?.binary, fakeB, "после applyCalibrePathPrefs кеш сброшен → resolve видит B");
+  });
+
+  test("повторный apply с тем же значением — no-op (не сбрасывает кеш зря)", async () => {
+    _resetCalibreResolutionForTests();
+    const fake = path.join(tmpDir, "ebook-convert-same");
+    fs.writeFileSync(fake, "");
+
+    const store = getPreferencesStore();
+    await store.ensureDefaults();
+    await store.set({ calibrePathOverride: fake });
+    applyCalibrePathPrefs({ calibrePathOverride: fake });
+    const r1 = await resolveCalibreBinary();
+
+    /* Удаляем файл — если кеш реально сброшен, следующий resolve упадёт на fs.access. */
+    fs.unlinkSync(fake);
+    applyCalibrePathPrefs({ calibrePathOverride: fake }); /* same value → no-op */
+    const r2 = await resolveCalibreBinary();
+    assert.equal(r2?.binary, r1?.binary, "no-op apply не должен трогать кеш — resolve вернёт прежнее");
   });
 });
 

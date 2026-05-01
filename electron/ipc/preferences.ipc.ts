@@ -11,6 +11,7 @@ import { modelRoleResolver } from "../lib/llm/model-role-resolver.js";
 import { applyImportSchedulerPrefs } from "../lib/library/import-task-scheduler.js";
 import { applyEvaluatorPrefs } from "../lib/library/evaluator-queue.js";
 import { applyHeavyLaneRateLimiterPrefs } from "../lib/llm/heavy-lane-rate-limiter.js";
+import { applyCalibrePathPrefs } from "../lib/scanner/converters/calibre-cli.js";
 
 /**
  * Whitelist полей, входящих в «профиль моделей» (export/import).
@@ -99,8 +100,10 @@ export function applyRuntimeSideEffects(prefs: Preferences): void {
   /* Иt 8Б — Smart Import Pipeline: Settings = single source of truth.
      applyRuntimeSideEffects распространяет изменения на живые singletons.
      parserPoolSize / illustrationParallelism / converterCacheMaxBytes /
-     calibrePathOverride / preferDjvuOverPdf читаются из prefs lazy
-     по месту использования (не нужен push). */
+     preferDjvuOverPdf читаются из prefs lazy по месту использования
+     (не нужен push). calibrePathOverride — особый случай: он кеширует
+     результат resolveCalibreBinary(), смена override без invalidate
+     останется незамеченной — поэтому отдельный push (Иt 8В.CRITICAL.4). */
   applyImportSchedulerPrefs({
     schedulerLightConcurrency: prefs.schedulerLightConcurrency,
     schedulerMediumConcurrency: prefs.schedulerMediumConcurrency,
@@ -108,6 +111,7 @@ export function applyRuntimeSideEffects(prefs: Preferences): void {
   });
   applyEvaluatorPrefs({ evaluatorSlots: prefs.evaluatorSlots });
   applyHeavyLaneRateLimiterPrefs({ visionOcrRpm: prefs.visionOcrRpm });
+  applyCalibrePathPrefs({ calibrePathOverride: prefs.calibrePathOverride });
 }
 
 export function registerPreferencesIpc(): void {
