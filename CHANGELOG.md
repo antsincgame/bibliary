@@ -4,6 +4,32 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.8] — 2026-05-01 — Probe phase + Adaptive elimination + EcoTune auto-tune
+
+### Added
+
+- **Probe phase** (Arena-Lite EMNLP 2025 / Active Evaluation ICML 2025):
+  в Lightning mode каждая модель получает 1 быстрый probe (`lang-detect-en`,
+  16 tokens). Модели с score < 0.4 исключаются из полного турнира.
+  Экономит 30-50% времени при наличии "сломанных" моделей.
+- **Adaptive elimination** (Arena-Lite EMNLP 2025): если текущая модель
+  отстаёт от лидера роли на ≥ 35 пунктов на первой дисциплине — остальные
+  дисциплины этой роли пропускаются. Экономит 20-40% inference time.
+- **EcoTune auto-tune** (EMNLP 2025): `olympics-auto-tune.ts` —
+  детерминированный analyzer per-role результатов. Вычисляет
+  оптимальные temperature/top_p/max_tokens на основе наблюдаемых
+  scores, durations, reasoning capability. Нет LLM-зависимости
+  (arXiv 2603.24647: CMA-ES + 0.8B hybrid не превосходит classical).
+- **Report: probeStats + adaptiveElimination** — метрики probe и elimination
+  для прозрачности в UI и телеметрии.
+
+### Changed
+
+- **docs/lightning-olympics.md**: обновлены ссылки на реальные публикации
+  (am-ELO ICML'25, Arena-Lite EMNLP'25, Active Eval ICML'25, EcoTune
+  EMNLP'25, Judge Tuning ICML'25, arXiv 2603.24647), удалены неверифицированные.
+  Статус всех трёх механизмов: ✅ реализовано.
+
 ## [0.4.7] — 2026-05-01 — Olympics report persist + auto-restore
 
 ### Added

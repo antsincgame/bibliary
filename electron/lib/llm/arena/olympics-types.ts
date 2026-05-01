@@ -273,4 +273,25 @@ export interface OlympicsReport {
   /** Сколько дисциплин запущено (для UI и i18n-сабтайтла). */
   disciplineCount: number;
   totalDurationMs: number;
+  /** EcoTune-style auto-tune suggestions per role (see olympics-auto-tune.ts). */
+  autoTuneSuggestions?: Array<{
+    role: string;
+    prefKey: string;
+    suggestedTemperature: number;
+    suggestedMaxTokens: number;
+    suggestedTopP: number;
+    confidence: "high" | "medium" | "low";
+    rationale: string;
+  }>;
+  /** Probe phase stats (only if Lightning mode with probe). */
+  probeStats?: {
+    totalProbed: number;
+    eliminated: number;
+    cutoff: number;
+    scores: Record<string, number>;
+  };
+  /** Adaptive elimination stats. */
+  adaptiveElimination?: {
+    skippedDisciplines: number;
+  };
 }

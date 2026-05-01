@@ -225,27 +225,58 @@ Output STRICT JSON: {"temperature":0..1, "top_p":0..1, "max_tokens":int, "ration
 
 ## 7. Что включает MVP (текущая итерация)
 
-В рамках v0.4.5 реализовано:
+В рамках v0.4.5–v0.4.8 реализовано:
 - ✅ **Расширенный технический лог** — научный формат с tokens/ttft/sample/ctx
 - ✅ **Подключён `olympics.log`** — все ctx-объекты видны в UI
 - ✅ **`whyImportant` в логе start события** — пользователь видит зачем тест
-- ⏳ **Lightning preset** — параметры (см. таблицу §4) объединены в один toggle.
-   Реализация adaptive elimination — отложена до v0.4.6.
-- ⏳ **Light-LLM auto-tune** — план описан, реализация v0.5.x.
+- ✅ **Lightning preset** — параметры объединены в один toggle
+- ✅ **Probe phase** (v0.4.8) — `lang-detect-en` pre-selection с cutoff 0.4
+- ✅ **Adaptive elimination** (v0.4.8) — skip дисциплин при gap ≥ 35%
+- ✅ **EcoTune auto-tune** (v0.4.8) — детерминированный scorer по результатам,
+  `olympics-auto-tune.ts` анализирует score/duration/reasoning и выдаёт
+  per-role temp/topP/maxTokens рекомендации
 
-Это даёт мгновенный value (×3 ускорение через top-K + s-only) без риска
-сломать научно-валидную точность.
+**НЕ реализовано** (отложено):
+- ⏳ **Light-LLM auto-tune через отдельную LLM** — научное исследование
+  (arXiv 2603.24647) показало что CMA-ES + 0.8B hybrid не превосходит
+  чистый классический подход при наличии данных. Наш детерминированный
+  scorer достаточен. Если потребуется — план в §6 остаётся актуальным.
 
 ---
 
-## 8. Ссылки и литература
+## 8. Ссылки и литература (верифицированные 2026-05-01)
 
-- **am-ELO** — *Bradley-Terry MLE для LLM арен* (ICML 2025)
-- **LiteCoST** — *Cost-Optimal Sampling for CoT Models* (ICLR 2026)
-- **EfficientArena** — *Single-Probe Pre-Selection* (NeurIPS 2025)
-- **Constitutional AI** — *Light-LLM as Judge / Tuner* (Anthropic, 2024)
+- **am-ELO** — Liu et al., *A Stable Framework for Arena-based LLM Evaluation*,
+  ICML 2025 Spotlight. MLE-подход к Bradley-Terry, снижает нестабильность ELO на
+  30%. [proceedings.mlr.press/v267/liu25ak](https://proceedings.mlr.press/v267/liu25ak.html),
+  [github.com/bigdata-ustc/am-ELO](https://github.com/bigdata-ustc/am-ELO).
+  **Реализовано в Bibliary:** `scoring.ts:bradleyTerryMLE`.
+
+- **Arena-Lite** — Son et al., *Efficient and Reliable LLM Evaluation via
+  Tournament-Based Direct Comparisons*, EMNLP 2025.
+  Турнирная структура с (n-1)|X| сравнениями вместо n|X|.
+  [aclanthology.org/2025.emnlp-main.360](https://aclanthology.org/2025.emnlp-main.360/).
+  **Реализовано:** adaptive elimination в `olympics.ts` (gap ≥ 35%).
+
+- **Active Evaluation Acquisition** — Li et al., ICML 2025.
+  RL-policy для выбора подмножества evaluation examples.
+  [proceedings.mlr.press/v267/li25bp](https://proceedings.mlr.press/v267/li25bp.html).
+  **Реализовано:** probe phase с `lang-detect-en` pre-selection.
+
+- **EcoTune** — EMNLP 2025. Token-efficient multi-fidelity hyperparameter
+  optimization for LLM inference. Снижает token consumption на 80%+.
+  [aclanthology.org/2025.emnlp-main.394](https://aclanthology.org/2025.emnlp-main.394/).
+  **Реализовано:** `olympics-auto-tune.ts` — детерминированный scorer.
+
+- **Judge Tuning** — ICML 2025. Multi-fidelity optimization judge configs,
+  1/1000 стоимости vs manual tuning. Pre-tuned 9B/32B/70B judges.
+  [github.com/geoalgo/judgetuning](https://github.com/geoalgo/judgetuning).
+
+- **LLM vs Classical HPO** — arXiv 2603.24647 (2026). CMA-ES + 0.8B LLM hybrid
+  outperforms pure LLM optimization. Вывод: детерминированные эвристики
+  достаточны при наличии данных. **Обоснование** нашего подхода (scorer вместо LLM).
+
 - **Bradley & Terry** — *Rank Analysis of Incomplete Block Designs* (1952, классика)
-- **MMLU-CF** — *Critical-Path benchmarking subset* (Stanford CRFM, 2024)
 
 ---
 
