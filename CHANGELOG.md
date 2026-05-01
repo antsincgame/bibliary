@@ -4,6 +4,47 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] — 2026-05-01 — Test repair: vision-meta DI, parser warning contract, log filename uniqueness
+
+Шесть из семи vision-meta тестов и тест на «битый PDF» падали потому что
+расходились с контрактом продакшен-кода. Plus race condition в
+`import-logger`: два вызова `startSession` в одну миллисекунду давали
+одинаковое имя файла. Plus dead-code cleanup в renderer.
+
+### Fixed
+
+- **vision-meta tests (7 шт.)** — `extractMetadataFromCover` через
+  `ModelPool.withModel` пытался загрузить мок-модели (`qwen-vl`/`llava`)
+  в реальный LM Studio. Тесты передают `fetcherImpl` / `listLoadedImpl`
+  именно ради изоляции — теперь при наличии test-DI хуков идём напрямую
+  через `requestMetaFromModel`, минуя pool. Прод-путь (без хуков) идёт
+  через `pool.withModel` как раньше.
+- **import-logger race condition** — `subsequent startSession closes previous`
+  падал из-за коллизии имени файла при двух стартах в одну миллисекунду.
+  Добавлен monotonic `sessionSeq` (4 цифры) в имя файла:
+  `import-{ts}-{seq}-{importId}.jsonl`.
+- **«битый PDF» тест** — ожидал `assert.rejects`, но `parsePdfMain`
+  правильно ловит `InvalidPDFException` и возвращает
+  `{ sections: [], warnings: [...] }`. Тест переписан под фактический
+  контракт (warning, не throw).
+
+### Removed
+
+- **Dead UI references в `import-pane-actions.js`** — querySelectors на
+  `.lib-import-cancel` / `.lib-import-pause`, элементы которых были
+  удалены из `import-pane.js` в v0.5.0. Ветки `if (cancelBtn)` и
+  `if (pauseBtn)` всегда выпадали в false. Убрано.
+
+### Added
+
+- **`.gitattributes`** — `* text=auto eol=lf` + `binary` для медиа.
+  Убирает шум CRLF/LF в `git status` на Windows-машинах, который
+  маскирует реальные правки.
+
+### Tests
+
+- 572/573 passed, 0 failed, 1 skipped (было 564/573, 8 failed).
+
 ## [0.5.1] — 2026-05-01 — Code hygiene: probe/adaptive hidden, dead CSS/prefs removed
 
 Probe-фаза и adaptive elimination сохранены в `olympics.ts` (код не удалён),

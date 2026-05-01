@@ -442,17 +442,18 @@ export async function extractMetadataFromCover(
   let bestIncomplete: VisionMetaResult | null = null;
   let lastFailure: VisionMetaResult | null = null;
 
-  /* Pool: каждая попытка fallback acquire'ит свою модель отдельно.
-     Если первая candidate модель уже загружена — pool найдёт её и просто
-     инкрементит refCount. Если нет — загрузит. На ошибке release происходит
-     автоматически в withModel(), и следующая попытка работает с новой моделью. */
-  const pool = getModelPool();
+  /* Test hooks (fetcher/listLoaded) run in isolation and MUST NOT hit real
+     LM Studio load path via ModelPool. In production, keep pooled loading. */
+  const useDirectModelRequest = !!(opts.fetcherImpl || opts.listLoadedImpl);
+  const pool = useDirectModelRequest ? null : getModelPool();
   for (const candidate of candidates) {
-    const result = await pool.withModel(
-      candidate.modelKey,
-      { role: "vision_meta", ttlSec: 1800, gpuOffload: "max" },
-      () => requestMetaFromModel(imageBuffer, candidate.modelKey, opts),
-    );
+    const result = useDirectModelRequest
+      ? await requestMetaFromModel(imageBuffer, candidate.modelKey, opts)
+      : await pool!.withModel(
+        candidate.modelKey,
+        { role: "vision_meta", ttlSec: 1800, gpuOffload: "max" },
+        () => requestMetaFromModel(imageBuffer, candidate.modelKey, opts),
+      );
     if (!result.ok || !result.meta) {
       const reason = result.error ?? "unknown error";
       attempts.push({ model: candidate.modelKey, ok: false, reason });

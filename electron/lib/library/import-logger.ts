@@ -84,6 +84,7 @@ const WRITE_FLUSH_INTERVAL_MS = 1500;
 class ImportLogger {
   private readonly ee = new EventEmitter();
   private readonly ring: ImportLogEntry[] = [];
+  private sessionSeq = 0;
   private writeBuffer: string[] = [];
   private logFile: string | null = null;
   private flushTimer: NodeJS.Timeout | null = null;
@@ -126,7 +127,9 @@ class ImportLogger {
     const dir = this.resolveLogsDir();
     await fs.mkdir(dir, { recursive: true });
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
-    this.logFile = path.join(dir, `import-${ts}-${importId.slice(0, 8)}.jsonl`);
+    this.sessionSeq += 1;
+    const seq = String(this.sessionSeq).padStart(4, "0");
+    this.logFile = path.join(dir, `import-${ts}-${seq}-${importId.slice(0, 8)}.jsonl`);
     this.ring.length = 0;
     this.writeBuffer = [];
     this.active = true;

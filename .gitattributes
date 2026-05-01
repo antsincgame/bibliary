@@ -1,0 +1,33 @@
+# Force LF line endings for all text files in the repo so that
+# Windows machines don't show entire files as "modified" in `git status`
+# due to CRLF/LF auto-conversion.
+* text=auto eol=lf
+
+# Binary file types — never touch line endings.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.bmp  binary
+*.tif  binary
+*.tiff binary
+*.ico  binary
+*.pdf  binary
+*.djvu binary
+*.epub binary
+*.fb2  binary
+*.zip  binary
+*.7z   binary
+*.gz   binary
+*.tar  binary
+*.exe  binary
+*.dll  binary
+*.dylib binary
+*.so   binary
+*.node binary
+*.wasm binary
+*.db   binary
+*.sqlite binary
+
+# Force CRLF for files that must keep Windows line endings (none for now).

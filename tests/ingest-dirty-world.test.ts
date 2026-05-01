@@ -118,21 +118,18 @@ test("parseBook: TXT с CRLF (Windows line endings) разбивает пара�
   assert.match(allText, /Second paragraph/);
 });
 
-test("parseBook: «битый PDF» (header не %PDF) выкидывает осмысленную ошибку, не crash", async (t) => {
+test("parseBook: «битый PDF» (header не %PDF) возвращает warning и не падает", async (t) => {
   const dir = await tmpDir();
   t.after(() => rm(dir, { recursive: true, force: true }));
   const file = path.join(dir, "broken.pdf");
   /* Не начинается с %PDF и не имеет минимальной структуры */
   await writeFile(file, Buffer.from("This is NOT a PDF file at all 12345"));
-
-  await assert.rejects(
-    parseBook(file),
-    (e: Error) => {
-      /* Должна быть осмысленная ошибка, а не «cannot read property of undefined» */
-      assert.ok(e.message.length > 0, "error must have a message");
-      assert.ok(!/Cannot read prop/.test(e.message), `should not be uncaught NPE: ${e.message}`);
-      return true;
-    },
+  const r = await parseBook(file);
+  assert.equal(r.sections.length, 0, "broken PDF should not produce sections");
+  assert.ok(r.metadata.warnings.length > 0, "must contain parser warning");
+  assert.ok(
+    r.metadata.warnings.some((w) => /pdf parse failed|invalidpdf|failed/i.test(w)),
+    `expected parse-failed warning, got: ${r.metadata.warnings.join("|")}`,
   );
 });
 

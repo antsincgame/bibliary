@@ -172,11 +172,7 @@ async function runImport(invoke, deps) {
   const root = document.getElementById("library-root");
   if (!root) return;
   const status = root.querySelector(".lib-import-status");
-  const cancelBtn = /** @type {HTMLElement|null} */ (root.querySelector(".lib-import-cancel"));
-  const pauseBtn = /** @type {HTMLElement|null} */ (root.querySelector(".lib-import-pause"));
   IMPORT_STATE.busy = true;
-  if (cancelBtn) cancelBtn.style.display = "";
-  if (pauseBtn) { pauseBtn.style.display = ""; pauseBtn.dataset.paused = "0"; pauseBtn.textContent = t("library.import.btn.pause"); }
   if (status) status.textContent = t("library.import.progress.starting");
   let unsubscribeProgress = null;
   try {
@@ -239,8 +235,6 @@ async function runImport(invoke, deps) {
     }
     IMPORT_STATE.busy = false;
     IMPORT_STATE.importId = null;
-    if (cancelBtn) cancelBtn.style.display = "none";
-    if (pauseBtn) { pauseBtn.style.display = "none"; pauseBtn.dataset.paused = "0"; }
     try { await window.api.library.evaluatorResume(); } catch (_e) { /* resume on cleanup is best-effort */ }
   }
 }
