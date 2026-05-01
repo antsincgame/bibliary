@@ -12,7 +12,7 @@
  *
  *   XS  ≤ 1B      —  тестовые крошки (qwen3-0.6b)
  *   S   1-5B      —  бытовые роли (extractor / translator / lang-detect)
- *   M   5-12B     —  стандарт качества (judge / evaluator / code-summary)
+ *   M   5-12B     —  стандарт качества (evaluator / code-summary)
  *   L   12-30B    —  тяжёлая генерация / vision-meta
  *   XL  30B+      —  full-power (только когда железо позволяет)
  */
@@ -27,7 +27,6 @@ export type OlympicsRole =
   | "crystallizer"
   | "evaluator"
   | "translator"
-  | "judge"
   | "lang_detector"
   | "ukrainian_specialist"
   /** @deprecated — used only by `vision-describe-shapes`; новые роли: vision_meta / vision_ocr / vision_illustration */
@@ -205,7 +204,7 @@ export interface OlympicsMedalRow {
  * Содержит человекочитаемое объяснение откуда взялся оптимум/чемпион.
  */
 export interface OlympicsRoleReason {
-  /** pref-key роли (extractorModel / judgeModel / ...) */
+  /** pref-key роли (extractorModel / evaluatorModel / visionModelKey / ...) */
   prefKey: string;
   /** Лучшая дисциплина, где выбрана optimum-модель */
   optimumDiscipline?: string;
@@ -255,7 +254,7 @@ export interface OlympicsReport {
    */
   btScores: Record<string, number>;
   /**
-   * Авто-рекомендации: ключ — pref-name (extractorModel/judgeModel/...),
+   * Авто-рекомендации: ключ — pref-name (extractorModel/evaluatorModel/visionModelKey/...),
    * значение — modelKey. По умолчанию это OPTIMUM, а не CHAMPION.
    */
   recommendations: Record<string, string>;

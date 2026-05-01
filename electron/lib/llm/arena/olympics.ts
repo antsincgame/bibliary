@@ -6,8 +6,9 @@
  * в `electron/ipc/arena.ipc.ts`.
  *
  * Дисциплины подобраны под РОЛИ Bibliary: crystallizer / evaluator /
- * translator / judge — то есть именно те модели, которые потом используются
- * в реальной работе приложения.
+ * translator / vision_* — то есть именно те модели, которые потом используются
+ * в реальной работе приложения. Роль `judge` удалена 2026-05-01 (Иt 8А
+ * library-fortress) — не имела ни одного production-вызова.
  *
  * Декомпозиция (Phase 2.2 cross-platform roadmap, 2026-04-30):
  *   - Все типы / интерфейсы → `olympics-types.ts`

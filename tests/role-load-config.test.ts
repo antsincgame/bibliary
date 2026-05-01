@@ -19,7 +19,6 @@ import {
 
 const KNOWN_ROLES = [
   "crystallizer",
-  "judge",
   "vision_meta",
   "vision_ocr",
   "vision_illustration",
@@ -68,7 +67,7 @@ test("role-load-config: inference defaults валидны для каждой р
 test("role-load-config: structured-output роли имеют низкую температуру (≤0.3)", () => {
   /* JSON-генерация и one-token-output требуют детерминизма.
    * Высокая температура → нестабильный JSON / случайные A/B / случайные языки. */
-  const STRUCTURED = ["judge", "lang_detector", "vision_meta", "vision_ocr", "evaluator"];
+  const STRUCTURED = ["lang_detector", "vision_meta", "vision_ocr", "evaluator"];
   const violators: string[] = [];
   for (const role of STRUCTURED) {
     const inf = ROLE_INFERENCE_DEFAULTS[role as never];
@@ -79,12 +78,8 @@ test("role-load-config: structured-output роли имеют низкую те�
   assert.deepEqual(violators, [], `Высокая температура у структурного output:\n  - ${violators.join("\n  - ")}`);
 });
 
-test("role-load-config: judge maxTokens должен быть очень маленьким (≤32)", () => {
-  /* Judge возвращает один токен (A/B). Большой maxTokens → модель пишет
-   * объяснения вместо однозначного ответа → scorer возвращает ноль. */
-  const inf = ROLE_INFERENCE_DEFAULTS.judge;
-  assert.ok(inf.maxTokens <= 32, `judge maxTokens=${inf.maxTokens}, ожидаем ≤32`);
-});
+/* Тест "judge maxTokens ≤32" удалён 2026-05-01 (Иt 8А library-fortress)
+ * вместе с самой ролью `judge` в model-role-resolver / role-load-config. */
 
 test("role-load-config: lang_detector maxTokens должен быть очень маленьким (≤16)", () => {
   const inf = ROLE_INFERENCE_DEFAULTS.lang_detector;

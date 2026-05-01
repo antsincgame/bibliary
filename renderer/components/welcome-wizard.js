@@ -12,10 +12,12 @@ const STEP_COUNT = 4;
  * Onboarding wizard v2 — 4 шага (был 5):
  *   0 Hero       → приветствие
  *   1 Connect    → health-check LM Studio + Qdrant с visible feedback
- *   2 Setup      → железо (auto-detect) + дефолтная модель чата (single picker)
- *                  Блок "кураторские рекомендации" удалён по требованию:
- *                  пользователь умеет качать модели в LM Studio сам.
- *   3 Done       → persist в preferences (onboardingDone, chatModel, URLs)
+ *   2 Setup      → железо (auto-detect) + опциональный picker default-модели
+ *                  для одноразовой автозагрузки в LM Studio. Persist выбора
+ *                  в preferences НЕ выполняется (`chatModel` удалён из
+ *                  PreferencesSchema 2026-05-01, Иt 8А library-fortress) —
+ *                  picker даёт только UX «загрузить модель сейчас».
+ *   3 Done       → persist в preferences (onboardingDone, URLs)
  *
  * Визуально — /2666 HUD-нотация: моноширинный шрифт, кислотный акцент,
  * угловые скобки, статус-бейджи [OK] / [ERR] / [..].
@@ -37,31 +39,22 @@ export function openWelcomeWizard(opts) {
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 
-  /** @type {{ step: number, hardware: any, services: any, chatModel: string, chatModelIsDownloaded: boolean, urlsTouched: { lm: boolean, qd: boolean }, prefsHydrated: boolean }} */
+  /** @type {{ step: number, hardware: any, services: any, chatModel: string, chatModelIsDownloaded: boolean, urlsTouched: { lm: boolean, qd: boolean } }} */
   const STATE = {
     step: 0,
     hardware: null,
     services: null,
+    /* chatModel/chatModelIsDownloaded — pure UX state. С 2026-05-01 (Иt 8А
+       library-fortress) НЕ читаются из prefs и НЕ пишутся в prefs: ключа
+       `chatModel` нет в PreferencesSchema, Zod молча его strip'ил, а
+       никаких production-читателей у него не было. Picker оставлен как
+       одноразовый shortcut «загрузить модель сейчас». */
     chatModel: "",
     chatModelIsDownloaded: false,
     urlsTouched: { lm: false, qd: false },
-    prefsHydrated: false,
   };
 
-  /* A3: гидрация существующих preferences. Если пользователь уже настраивал
-     wizard и переоткрывает его (Settings → Replay onboarding), селектор
-     модели должен предзаполниться его текущим выбором, а не сбрасываться. */
-  void hydrateFromPreferences().then(() => void renderStep());
-
-  async function hydrateFromPreferences() {
-    try {
-      const prefs = /** @type {any} */ (await window.api?.preferences?.getAll());
-      if (prefs && typeof prefs.chatModel === "string" && prefs.chatModel.trim().length > 0) {
-        STATE.chatModel = prefs.chatModel;
-      }
-    } catch { /* defaults */ }
-    STATE.prefsHydrated = true;
-  }
+  void renderStep();
 
   async function renderStep() {
     clear(modal);
@@ -263,8 +256,9 @@ export function openWelcomeWizard(opts) {
 
   /**
    * Один селектор default chat model. Показывает union loaded + downloaded,
-   * downloaded помечены префиксом ↓. Persist в preferences.chatModel при
-   * выборе. Никаких ролевых селекторов / smart-кнопки / curated-блока.
+   * downloaded помечены префиксом ↓. Выбор хранится только в STATE
+   * (одноразовая автозагрузка при finish); с Иt 8А preferences.chatModel
+   * удалён из PreferencesSchema.
    */
   async function buildDefaultModelPicker() {
     /** @type {any[]} */
@@ -301,22 +295,9 @@ export function openWelcomeWizard(opts) {
       }
     }
 
-    /* A3: восстанавливаем сохранённое значение из preferences. Если модель
-       всё ещё доступна в LM Studio — селект подсветит её; если её больше
-       нет (удалили из LM Studio) — сбрасываем + явно уведомляем (S1.2),
-       чтобы пользователь не подумал что выбор сохранился. */
-    if (STATE.chatModel) {
-      const stillAvailable = loadedKeys.has(STATE.chatModel) || downloadedOnlyKeys.has(STATE.chatModel);
-      if (stillAvailable) {
-        select.value = STATE.chatModel;
-        STATE.chatModelIsDownloaded = downloadedOnlyKeys.has(STATE.chatModel);
-      } else {
-        const lostModel = STATE.chatModel;
-        STATE.chatModel = "";
-        STATE.chatModelIsDownloaded = false;
-        showWizardToast(t("ww.setup.model_lost", { model: lostModel }), "info");
-      }
-    }
+    /* Без prefs-гидрации: STATE.chatModel живёт только в рамках одной
+       сессии wizard'а (см. комментарий в STATE). Если пользователь снова
+       открыл wizard — picker стартует пустым. */
 
     select.addEventListener("change", () => {
       STATE.chatModel = select.value;
@@ -481,9 +462,9 @@ export function openWelcomeWizard(opts) {
       );
       next.addEventListener("click", () => {
         /* A4: блок перехода со step 2 (Setup) если модель не выбрана.
-           Без модели onboarding бессмыслен — у нас всё держится на
-           preferences.chatModel. Показываем toast вместо disable, чтобы
-           пользователь понял ПОЧЕМУ кнопка не сработала. */
+           Без модели wizard не сможет автозагрузить модель в LM Studio
+           при finish. Показываем toast вместо disable, чтобы пользователь
+           понял ПОЧЕМУ кнопка не сработала. */
         if (STATE.step === 2 && !STATE.chatModel) {
           showWizardToast(t("ww.setup.no_model_warn"), "info");
           return;
@@ -514,7 +495,8 @@ export function openWelcomeWizard(opts) {
       onboardingDone: true,
       onboardingVersion: ONBOARDING_VERSION,
     };
-    if (STATE.chatModel) patch.chatModel = STATE.chatModel;
+    /* chatModel удалён из PreferencesSchema (Иt 8А) — больше не пишем в
+       prefs. URLs пишутся отдельно через urlInput.change handler. */
     try {
       await window.api.preferences.set(patch);
     } catch { /* ignore */ }

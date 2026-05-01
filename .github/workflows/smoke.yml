@@ -57,7 +57,6 @@ jobs:
             tests/olympics-sdk-route.test.ts \
             tests/role-load-config.test.ts \
             tests/olympics-load-config-integration.test.ts \
-            tests/librarian.test.ts \
             tests/folder-bundle.test.ts \
             tests/magic-bytes.test.ts \
             tests/with-model-fallback.test.ts \

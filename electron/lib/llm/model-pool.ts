@@ -1,7 +1,7 @@
 /**
  * ModelPool — централизованный пул загруженных моделей LM Studio.
  *
- * Цель: при работе пайплайна (импорт книги → crystallizer → judge → translator)
+ * Цель: при работе пайплайна (импорт книги → crystallizer → translator)
  * не выгружать модель A, чтобы загрузить B, а потом обратно A — что добавляет
  * 5-30 секунд каждой переключки. Если в VRAM влезает 3 модели — держим все три,
  * выгружаем самую старую только когда место кончилось.
@@ -66,7 +66,7 @@ import type { ModelRole } from "./model-role-resolver.js";
 
 /** Известные ModelRole — синхронизировано с model-role-resolver.ts. */
 const KNOWN_MODEL_ROLES: ReadonlySet<ModelRole> = new Set<ModelRole>([
-  "crystallizer", "judge", "vision_meta", "vision_ocr", "vision_illustration",
+  "crystallizer", "vision_meta", "vision_ocr", "vision_illustration",
   "evaluator", "ukrainian_specialist", "lang_detector", "translator",
 ]);
 

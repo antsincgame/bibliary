@@ -9,22 +9,6 @@ import { SECTIONS } from "./settings/sections.js";
 /** @returns {any} */
 function api() { return /** @type {any} */ (window).api; }
 
-const MODE_STORAGE_KEY = "bibliary_settings_mode";
-const MODE_RANK = { simple: 0, advanced: 1, pro: 2 };
-
-function readPersistedMode() {
-  try {
-    const v = localStorage.getItem(MODE_STORAGE_KEY);
-    if (v === "simple" || v === "advanced" || v === "pro") return v;
-  } catch { /* localStorage unavailable */ }
-  return "simple";
-}
-
-function persistMode(mode) {
-  try { localStorage.setItem(MODE_STORAGE_KEY, mode); }
-  catch { /* localStorage unavailable */ }
-}
-
 const STATE = {
   /** @type {Record<string, unknown>} */
   prefs: {},
@@ -34,8 +18,6 @@ const STATE = {
   saving: false,
   activeSectionId: "ingest",
   searchQuery: "",
-  /** @type {"simple"|"advanced"|"pro"} */
-  mode: readPersistedMode(),
 };
 
 function optionalT(key) {
@@ -44,8 +26,7 @@ function optionalT(key) {
 }
 
 function getVisibleSections() {
-  const userRank = MODE_RANK[STATE.mode] ?? 0;
-  return SECTIONS.filter((section) => (MODE_RANK[section.mode] ?? 0) <= userRank);
+  return [...SECTIONS];
 }
 
 function filteredFields(section) {
@@ -287,33 +268,6 @@ function buildTextField(field, root) {
   return wrapFieldCard(field, [input, resetBtn], "");
 }
 
-function buildModeSwitcher(root) {
-  const modes = /** @type {const} */ (["simple", "advanced", "pro"]);
-  const buttons = modes.map((mode) =>
-    el("button", {
-      type: "button",
-      class: `settings-mode-btn settings-mode-btn-${mode}${STATE.mode === mode ? " settings-mode-btn-active" : ""}`,
-      title: t(`settings.mode.${mode}.tip`),
-      onclick: () => {
-        STATE.mode = mode;
-        persistMode(mode);
-        const visible = getVisibleSections();
-        if (!visible.some((s) => s.id === STATE.activeSectionId)) {
-          STATE.activeSectionId = visible[0]?.id || "";
-        }
-        render(root);
-      },
-    }, [
-      el("span", { class: "settings-mode-btn-name" }, t(`settings.mode.${mode}`)),
-      el("span", { class: "settings-mode-btn-hint" }, t(`settings.mode.${mode}.hint`)),
-    ])
-  );
-  return el("div", { class: "settings-mode-switcher" }, [
-    el("div", { class: "settings-mode-label" }, t("settings.mode.label")),
-    el("div", { class: "settings-mode-buttons" }, buttons),
-  ]);
-}
-
 function buildField(field, root) {
   if (field.type === "bool") return buildBoolField(field, root);
   if (field.type === "enum") return buildEnumField(field, root);
@@ -434,8 +388,6 @@ function render(root) {
   }));
   root.appendChild(neonDivider());
 
-  root.appendChild(buildModeSwitcher(root));
-
   const search = el("div", { class: "settings-search" }, [
     el("input", {
       class: "settings-search-input",
@@ -467,7 +419,6 @@ function render(root) {
     }, [
       el("span", { class: "settings-rail-icon" }, section.icon),
       el("span", { class: "settings-rail-label" }, t(section.titleKey)),
-      section.mode !== "simple" ? el("span", { class: `settings-mode-badge settings-mode-${section.mode}` }, section.mode.toUpperCase()) : null,
       STATE.searchQuery ? el("span", { class: "settings-rail-count" }, String(matches)) : null,
     ].filter(Boolean));
     rail.appendChild(item);

@@ -7,21 +7,10 @@
  *
  * Each prompt is intentionally MINIMAL — single-token answers where possible,
  * no fuzzy adjectives ("helpful", "fair"), explicit format constraints.
- */
-
-/**
- * Judge — A/B picker. Used hundreds of times in Bradley-Terry matches.
- * Must answer in 1 token to keep arena sub-minute.
  *
- * Anti-bias notes:
- *   - "strict" instead of "fair" (less drift toward neutrality bias).
- *   - Explicit "no other text" — many small models prepend "The answer is".
- *   - Single token cap (`maxTokens: 16`) at call site.
+ * `JUDGE_SYSTEM_PROMPT` удалён 2026-05-01 (Иt 8А library-fortress) — роль
+ * `judge` нигде не использовалась в продакшене и в дисциплинах Олимпиады.
  */
-export const JUDGE_SYSTEM_PROMPT =
-  "You are a precise A/B picker. Compare two short answers. " +
-  "Pick which is factually correct. Output exactly one character: A or B. " +
-  "No prefix, no explanation, no punctuation, no other text.";
 
 /**
  * Lang detector — single-token language code.

@@ -1,8 +1,10 @@
 /**
  * Unit tests for electron/lib/llm/model-role-resolver.ts
  *
- * After the project trim the resolver has 5 roles:
- *   crystallizer, judge, vision_meta, vision_ocr, evaluator
+ * After Иt 8А (library-fortress, 2026-05-01) the resolver знает 8 ролей:
+ *   crystallizer, vision_meta, vision_ocr, vision_illustration,
+ *   evaluator, ukrainian_specialist, lang_detector, translator.
+ * Роль `judge` удалена — не было ни одного production-вызова resolve("judge").
  *
  * Resolve chain: preference → fallback_list → auto_detect → fallback_any → null.
  *
@@ -32,11 +34,9 @@ function makeModel(modelKey: string, overrides: Partial<LoadedModelInfo> = {}): 
 function makePrefs(overrides: Partial<Preferences> = {}): Preferences {
   return {
     extractorModel: "",
-    judgeModel: "",
     visionModelKey: "",
     evaluatorModel: "",
     extractorModelFallbacks: "",
-    judgeModelFallbacks: "",
     visionModelFallbacks: "",
     evaluatorModelFallbacks: "",
     modelRoleCacheTtlMs: 0,
@@ -55,7 +55,6 @@ test("[model-role-resolver] listAllRoles exposes stable UI metadata for all role
   const metas = listAllRoles();
   assert.deepEqual(metas.map((m) => m.role), [
     "crystallizer",
-    "judge",
     "vision_meta",
     "vision_ocr",
     "vision_illustration",
@@ -76,11 +75,11 @@ test("[model-role-resolver] listAllRoles exposes stable UI metadata for all role
 /* ── preference (step 1) ────────────────────────────────────────────── */
 
 describe("[model-role-resolver] preference source", () => {
-  test("resolves explicit preferences for judge, evaluator, crystallizer, and vision_ocr", async () => {
+  test("resolves explicit preferences for evaluator, crystallizer, translator, and vision_ocr", async () => {
     const cases: Array<{ role: ModelRole; pref: Partial<Preferences>; modelKey: string; caps?: Partial<LoadedModelInfo> }> = [
-      { role: "judge", pref: { judgeModel: "judge/main" }, modelKey: "judge/main" },
       { role: "evaluator", pref: { evaluatorModel: "eval/main" }, modelKey: "eval/main" },
       { role: "crystallizer", pref: { extractorModel: "extract/main" }, modelKey: "extract/main" },
+      { role: "translator", pref: { translatorModel: "trans/main" }, modelKey: "trans/main" },
       { role: "vision_ocr", pref: { visionModelKey: "vision/main" }, modelKey: "vision/main", caps: { vision: true } },
     ];
 
@@ -127,10 +126,10 @@ describe("[model-role-resolver] fallback_list source", () => {
     assert.equal(r!.source, "fallback_list");
   });
 
-  test("uses role-specific fallback lists for judge, evaluator, and vision_ocr", async () => {
+  test("uses role-specific fallback lists for evaluator, crystallizer, and vision_ocr", async () => {
     const cases: Array<{ role: ModelRole; pref: Partial<Preferences>; modelKey: string; caps?: Partial<LoadedModelInfo> }> = [
-      { role: "judge", pref: { judgeModelFallbacks: "ghost,judge/fallback" }, modelKey: "judge/fallback" },
       { role: "evaluator", pref: { evaluatorModelFallbacks: "ghost,eval/fallback" }, modelKey: "eval/fallback" },
+      { role: "crystallizer", pref: { extractorModelFallbacks: "ghost,extract/fallback" }, modelKey: "extract/fallback" },
       { role: "vision_ocr", pref: { visionModelFallbacks: "ghost,vision/fallback" }, modelKey: "vision/fallback", caps: { vision: true } },
     ];
 

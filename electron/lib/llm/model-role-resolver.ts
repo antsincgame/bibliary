@@ -3,7 +3,6 @@
  *
  * РОЛИ:
  *   crystallizer          — extractor для dataset-v2 (delta knowledge extraction)
- *   judge                 — критик генераций / pre-flight оценка
  *   vision_meta           — извлечение метаданных книги из обложки (JSON)
  *   vision_ocr            — vision-based OCR страниц книг (plain text)
  *   vision_illustration   — описание иллюстраций для индексации в Qdrant
@@ -35,7 +34,6 @@ import { getPreferencesStore, type Preferences } from "../preferences/store.js";
 
 export type ModelRole =
   | "crystallizer"
-  | "judge"
   | "vision_meta"
   | "vision_ocr"
   | "vision_illustration"
@@ -65,7 +63,6 @@ export interface ResolvedModel {
  */
 const ROLE_REQUIRED_CAPS: Record<ModelRole, Capability[]> = {
   crystallizer: [],
-  judge: [],
   vision_meta: ["vision"],
   vision_ocr: ["vision"],
   vision_illustration: ["vision"],
@@ -81,7 +78,6 @@ const ROLE_REQUIRED_CAPS: Record<ModelRole, Capability[]> = {
  */
 const ROLE_PREFERRED_CAPS: Record<ModelRole, Capability[]> = {
   crystallizer: [],
-  judge: [],
   vision_meta: ["vision"],
   vision_ocr: ["vision"],
   vision_illustration: ["vision"],
@@ -97,7 +93,6 @@ const ROLE_PREFERRED_CAPS: Record<ModelRole, Capability[]> = {
  */
 const ROLE_PREF_KEY: Record<ModelRole, string> = {
   crystallizer: "extractorModel",
-  judge: "judgeModel",
   vision_meta: "visionModelKey",
   vision_ocr: "visionModelKey",
   vision_illustration: "visionModelKey",
@@ -110,7 +105,6 @@ const ROLE_PREF_KEY: Record<ModelRole, string> = {
 /** CSV ключ для fallback chain. null = нет fallback chain. */
 const ROLE_FALLBACKS_PREF_KEY: Record<ModelRole, string | null> = {
   crystallizer: "extractorModelFallbacks",
-  judge: "judgeModelFallbacks",
   vision_meta: "visionModelFallbacks",
   vision_ocr: "visionModelFallbacks",
   vision_illustration: "visionModelFallbacks",
@@ -282,7 +276,6 @@ export interface RoleMeta {
 export function listAllRoles(): RoleMeta[] {
   const roles: ModelRole[] = [
     "crystallizer",
-    "judge",
     "vision_meta",
     "vision_ocr",
     "vision_illustration",

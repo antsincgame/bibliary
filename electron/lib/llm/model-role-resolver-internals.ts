@@ -7,7 +7,6 @@
 
 export type ModelRole =
   | "crystallizer"
-  | "judge"
   | "vision_meta"
   | "vision_ocr"
   | "vision_illustration"
@@ -28,7 +27,6 @@ export type Capability = "vision";
  */
 export const ROLE_REQUIRED_CAPS_INTERNAL: Record<ModelRole, Capability[]> = {
   crystallizer: [],
-  judge: [],
   vision_meta: ["vision"],
   vision_ocr: ["vision"],
   vision_illustration: ["vision"],

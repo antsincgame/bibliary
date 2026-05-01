@@ -81,15 +81,6 @@ export const ROLE_LOAD_CONFIG: Record<ModelRole, LMSLoadConfig> = {
     tryMmap: true,
   },
 
-  /* JUDGE: бинарный A/B выбор. Минимальный контекст. */
-  judge: {
-    contextLength: 2_048,
-    gpu: { ratio: "max" },
-    flashAttention: false,
-    keepModelInMemory: true,
-    tryMmap: true,
-  },
-
   /* TRANSLATOR: страница текста (до 4K input + 4K output). FA полезен. */
   translator: {
     contextLength: 8_192,
@@ -182,9 +173,6 @@ export const ROLE_INFERENCE_DEFAULTS: Record<ModelRole, InferenceDefaults> = {
 
   /* Evaluator: короткий JSON {score, reasoning}. */
   evaluator:            { temperature: 0.2, topP: 0.9, maxTokens: 512 },
-
-  /* Judge: один токен (A или B). Очень детерминистично. */
-  judge:                { temperature: 0.0, topP: 0.5, maxTokens: 16 },
 
   /* Translator: prose. Низкая температура — точность. */
   translator:           { temperature: 0.2, topP: 0.9, maxTokens: 4096 },

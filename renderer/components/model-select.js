@@ -10,10 +10,11 @@ import { t } from "../i18n.js";
  * Источник моделей — ВСЕГДА `window.api.lmstudio.listLoaded()` (унифицируем
  * chat, который раньше использовал OpenAI-совместимый `getModels()`).
  *
- * Persistence — `preferences[role + "Model"]` (chatModel/agentModel/extractorModel/judgeModel),
- * добавлены в схему в коммите 51e1c60 (Phase 3 Удар 1).
+ * Persistence — `preferences[role + "Model"]` (extractorModel — единственный
+ * production-вызов; chat/agent — legacy типы без callers, оставлены для
+ * обратной совместимости jsdoc-аннотаций).
  *
- * @typedef {"chat"|"agent"|"extractor"|"judge"} ModelRole
+ * @typedef {"chat"|"agent"|"extractor"} ModelRole
  *
  * @typedef {Object} LoadedModel
  * @property {string} modelKey
@@ -182,7 +183,7 @@ export function buildModelSelect(opts) {
   let isLoading = false;
 
   async function loadAndApply() {
-    /** @type {{ chatModel?: string, agentModel?: string, extractorModel?: string, judgeModel?: string }} */
+    /** @type {{ chatModel?: string, agentModel?: string, extractorModel?: string }} */
     let prefs = {};
     try {
       prefs = /** @type {any} */ (await window.api.preferences.getAll());

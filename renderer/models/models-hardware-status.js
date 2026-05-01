@@ -32,7 +32,6 @@ let pipelineWidgetUnmount = /** @type {(() => void) | null} */ (null);
 const ROLE_META = {
   crystallizer:         { labelKey: "models.role.crystallizer.label",         helpKey: "models.role.crystallizer.help" },
   evaluator:            { labelKey: "models.role.evaluator.label",            helpKey: "models.role.evaluator.help" },
-  judge:                { labelKey: "models.role.judge.label",                helpKey: "models.role.judge.help" },
   translator:           { labelKey: "models.role.translator.label",           helpKey: "models.role.translator.help" },
   ukrainian_specialist: { labelKey: "models.role.ukrainian_specialist.label", helpKey: "models.role.ukrainian_specialist.help" },
   lang_detector:        { labelKey: "models.role.lang_detector.label",        helpKey: "models.role.lang_detector.help" },

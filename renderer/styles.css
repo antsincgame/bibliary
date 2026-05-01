@@ -3700,16 +3700,6 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   padding: 10px 12px;
   font-style: italic;
 }
-.settings-mode-badge {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 1.5px;
-  padding: 2px 8px;
-  border-radius: 2px;
-  border: 1px solid;
-}
-.settings-mode-advanced { color: var(--cyan); border-color: rgba(0, 240, 255, 0.4); }
-.settings-mode-pro { color: var(--gold); border-color: rgba(255, 215, 0, 0.4); }
 .settings-fields-stack {
   display: flex;
   flex-direction: column;
@@ -5535,63 +5525,6 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   font-size: 12px;
   color: var(--text-dim);
   line-height: 1.5;
-}
-
-/* Settings — mode switcher (Simple / Advanced / Pro) */
-.settings-mode-switcher {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 14px 18px;
-  background: rgba(255,255,255,0.02);
-  border: 1px solid rgba(255,255,255,0.06);
-  border-radius: 8px;
-  margin: 0 0 18px;
-  flex-wrap: wrap;
-}
-.settings-mode-label {
-  font-size: 13px;
-  color: var(--text-primary, #c0c0c0);
-  font-weight: 500;
-}
-.settings-mode-buttons {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.settings-mode-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding: 8px 14px;
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-dim);
-  cursor: pointer;
-  transition: all 0.15s;
-  text-align: left;
-  min-width: 130px;
-}
-.settings-mode-btn:hover {
-  border-color: rgba(255,255,255,0.25);
-  color: var(--text-primary, #c0c0c0);
-}
-.settings-mode-btn-active {
-  border-color: var(--gold-dim, #b89968);
-  background: rgba(184, 153, 104, 0.1);
-  color: var(--gold, #d4a85a);
-}
-.settings-mode-btn-name {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-.settings-mode-btn-hint {
-  font-size: 10px;
-  opacity: 0.75;
-  font-family: var(--font-mono);
 }
 
 /* ─── Создание датасета (Dataset Builder) ─────────────────────────────── */

@@ -33,7 +33,6 @@ export type ModelTag =
   | "chat"
   | "agent"
   | "extractor"
-  | "judge"
   | "fallback";
 
 export interface ModelProfile {

@@ -24,6 +24,7 @@ import {
   renderHardwareStrip,
   refreshAll,
   buildHwStrip,
+  unmountHwStrip,
 } from "./models-hardware-status.js";
 import { buildOlympicsCard } from "./models-page-olympics-controls.js";
 import { renderOlympicsReport } from "./models-page-olympics-report.js";
@@ -133,6 +134,10 @@ export function unmountModels() {
     localeUnsubscribe();
     localeUnsubscribe = null;
   }
+  /* Iter 8А: явная отписка pipeline-status-widget от IPC, чтобы `resilience:
+     scheduler-snapshot` / `resilience:lmstudio-pressure` listeners не висели
+     после ухода с Models page. unmountHwStrip() идемпотентен. */
+  unmountHwStrip();
   ctx.pageRoot = null;
   ctx.busy = false;
   ctx.hardwareSnap = null;

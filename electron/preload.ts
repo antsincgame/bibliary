@@ -481,19 +481,9 @@ contextBridge.exposeInMainWorld("api", {
   },
 
   datasetV2: {
-    startExtraction: (args: {
-      bookSourcePath: string;
-      chapterRange?: { from: number; to: number };
-      extractModel?: string;
-      targetCollection?: string;
-    }): Promise<{
-      jobId: string;
-      bookTitle: string;
-      totalChapters: number;
-      processedChapters: number;
-      totalDelta: { chunks: number; accepted: number; skipped: number };
-      warnings: string[];
-    }> => ipcRenderer.invoke("dataset-v2:start-extraction", args),
+    /* startExtraction (single-book) удалён из preload (Iter 8А) — UI всегда
+       использует startBatch (catalog crystallize button). IPC handler
+       `dataset-v2:start-extraction` сохранён для legacy CLI / scripts. */
     startBatch: (args: {
       bookIds: string[];
       minQuality?: number;
@@ -687,25 +677,18 @@ contextBridge.exposeInMainWorld("api", {
           return res;
         })
         : ipcRenderer.invoke("library:delete-book", { bookId, deleteFiles }),
-    rebuildCache: (): Promise<{ scanned: number; ingested: number; skipped: number; pruned: number; errors: string[] }> =>
-      smokeLibrary ? Promise.resolve({ scanned: smokeLibrary.rows.length, ingested: smokeLibrary.rows.length, skipped: 0, pruned: 0, errors: [] }) : ipcRenderer.invoke("library:rebuild-cache"),
+    /* Iter 8А (library-fortress, 2026-05-01) — удалены мёртвые preload-мосты
+       без renderer-callers: rebuildCache, evaluatorPause, evaluatorCancelCurrent,
+       setEvaluatorModel, evaluatorPrioritize, evaluatorSetSlots, evaluatorGetSlots.
+       Соответствующие IPC handlers в library-catalog-ipc.ts / library-evaluator-ipc.ts
+       пока сохранены — могут понадобиться в будущих UI добавлениях. */
     evaluatorStatus: (): Promise<LibraryEvaluatorStatus> =>
       smokeLibrary ? Promise.resolve({ running: false, paused: false, currentBookId: null, currentTitle: null, queueLength: 0, totalEvaluated: 0, totalFailed: 0 }) : ipcRenderer.invoke("library:evaluator-status"),
-    evaluatorPause: (): Promise<boolean> => smokeLibrary ? Promise.resolve(true) : ipcRenderer.invoke("library:evaluator-pause"),
     evaluatorResume: (): Promise<boolean> => smokeLibrary ? Promise.resolve(true) : ipcRenderer.invoke("library:evaluator-resume"),
-    evaluatorCancelCurrent: (): Promise<boolean> => smokeLibrary ? Promise.resolve(true) : ipcRenderer.invoke("library:evaluator-cancel-current"),
     reevaluate: (bookId: string): Promise<{ ok: boolean; reason?: string }> =>
       smokeLibrary ? Promise.resolve({ ok: true }) : ipcRenderer.invoke("library:evaluator-reevaluate", { bookId }),
     reevaluateAll: (): Promise<{ queued: number }> =>
       smokeLibrary ? Promise.resolve({ queued: smokeLibrary.rows.length }) : ipcRenderer.invoke("library:reevaluate-all"),
-    setEvaluatorModel: (modelKey: string | null): Promise<boolean> =>
-      smokeLibrary ? Promise.resolve(true) : ipcRenderer.invoke("library:evaluator-set-model", modelKey),
-    evaluatorPrioritize: (bookIds: string[]): Promise<{ ok: boolean; queued: number }> =>
-      smokeLibrary ? Promise.resolve({ ok: true, queued: 0 }) : ipcRenderer.invoke("library:evaluator-prioritize", { bookIds }),
-    evaluatorSetSlots: (n: number): Promise<{ ok: boolean; slots: number }> =>
-      smokeLibrary ? Promise.resolve({ ok: true, slots: n }) : ipcRenderer.invoke("library:evaluator-set-slots", n),
-    evaluatorGetSlots: (): Promise<number> =>
-      smokeLibrary ? Promise.resolve(2) : ipcRenderer.invoke("library:evaluator-get-slots"),
     reparseBook: (bookId: string): Promise<{ ok: boolean; chapters?: number; reason?: string }> =>
       smokeLibrary ? Promise.resolve({ ok: true, chapters: 1 }) : ipcRenderer.invoke("library:reparse-book", bookId),
     onImportProgress: (cb: (payload: {
@@ -822,8 +805,8 @@ contextBridge.exposeInMainWorld("api", {
     },
     scanFolder: (folder: string): Promise<{ scanId: string }> =>
       smokeLibrary ? Promise.resolve({ scanId: "scan-smoke" }) : ipcRenderer.invoke("library:scan-folder", { folder }),
-    cancelScan: (scanId: string): Promise<boolean> =>
-      smokeLibrary ? Promise.resolve(true) : ipcRenderer.invoke("library:cancel-scan", scanId),
+    /* cancelScan удалён из preload (Iter 8А): zero renderer-callers. IPC
+       handler `library:cancel-scan` сохранён в library-import-ipc.ts. */
     onScanProgress: (cb: (payload: {
       scanId: string;
       phase: "walking" | "metadata" | "dedup" | "done";

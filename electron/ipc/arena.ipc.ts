@@ -129,7 +129,7 @@ export function registerArenaIpc(): void {
 
     /* Whitelist: только эти ключи разрешено применять. */
     const ALLOWED = new Set([
-      "extractorModel", "judgeModel", "evaluatorModel", "translatorModel",
+      "extractorModel", "evaluatorModel", "translatorModel",
       "visionModelKey",
       "langDetectorModel", "ukrainianSpecialistModel",
     ]);

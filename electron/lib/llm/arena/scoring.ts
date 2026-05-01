@@ -25,7 +25,6 @@ function roleToPrefKey(role: OlympicsRole): string | null {
     case "vision_meta":          return "visionModelKey";
     case "vision_ocr":           return "visionModelKey";
     case "vision_illustration":  return "visionModelKey";
-    case "judge":                return "judgeModel";
     case "evaluator":            return "evaluatorModel";
     case "translator":           return "translatorModel";
     case "lang_detector":        return "langDetectorModel";

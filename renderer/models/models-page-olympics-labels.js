@@ -15,9 +15,9 @@
  * Legacy `vision` намеренно убрана: новые vision_meta/vision_ocr/vision_illustration
  * покрывают её полностью.
  *
- * `judge` намеренно отсутствует: delta-extractor заменил отдельный judge-шаг,
- * так что роль не привязана к видимому селектору на странице моделей.
- * Дисциплина `judge-bst` тоже удалена из disciplines.ts.
+ * `judge` удалена 2026-05-01 (Иt 8А library-fortress): не имела ни одного
+ * production-вызова; delta-extractor заменил отдельный judge-шаг ещё в
+ * Apr 2026, prefs/role-load-config были рудиментом.
  */
 export const ALL_ROLES = [
   { role: "crystallizer",         label: "💎 Кристаллизатор" },
@@ -32,15 +32,14 @@ export const ALL_ROLES = [
 
 /**
  * Литературные названия для ролей (для табов).
+ * `judge` и legacy `vision` удалены 2026-05-01 (Иt 8А): нет production-callers.
  */
 export const ROLE_HUMAN_LABEL = {
   crystallizer:         { icon: "💎", title: "Кристаллизатор знаний", subtitle: "извлечение фактов и связей" },
   evaluator:            { icon: "📚", title: "Литературный критик", subtitle: "оценка качества книги" },
-  judge:                { icon: "⚖️", title: "Судья",               subtitle: "выбор лучшего ответа" },
   translator:           { icon: "🌐", title: "Переводчик",          subtitle: "межъязыковая адаптация" },
   lang_detector:        { icon: "🔤", title: "Лингвист-детектор",   subtitle: "определение языка" },
   ukrainian_specialist: { icon: "🇺🇦", title: "Знаток украинского", subtitle: "генерация на укр." },
-  vision:               { icon: "👁️", title: "Зрение (общее)",     subtitle: "legacy" },
   vision_meta:          { icon: "📖", title: "Хранитель обложек",   subtitle: "метаданные книги" },
   vision_ocr:           { icon: "🖨️", title: "Распознаватель текста", subtitle: "OCR сканированных страниц" },
   vision_illustration:  { icon: "🖼️", title: "Иллюстратор",         subtitle: "описание картинок" },
@@ -91,7 +90,6 @@ export function roleHuman(role) {
 export function prefKeyLabel(k) {
   const MAP = {
     extractorModel:           "Кристаллизатор",
-    judgeModel:               "Критик",
     evaluatorModel:           "Оценщик книг",
     translatorModel:          "Переводчик",
     langDetectorModel:        "Определитель языка",
@@ -105,7 +103,6 @@ export function prefKeyLabel(k) {
 export function roleIcon(prefKey) {
   const MAP = {
     extractorModel:           "💎",
-    judgeModel:               "⚖️",
     evaluatorModel:           "📚",
     translatorModel:          "🌐",
     langDetectorModel:        "🔤",

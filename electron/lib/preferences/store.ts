@@ -3,7 +3,7 @@
  *
  * Pattern: same as ProfileStore (Zod schema, atomic write, lockfile, singleton).
  * Every constant has a sensible default; the file only stores overrides.
- * UI mode (Simple/Advanced/Pro) controls which settings are exposed, not stored.
+ * Settings UI always shows all sections (mode-switcher removed in Иt 8Б).
  */
 
 import { promises as fs } from "fs";
@@ -32,11 +32,6 @@ export const PreferencesSchema = z.object({
   maxParagraphsForDrift: z.number().int().min(100).max(5000).default(800),
   overlapParagraphs: z.number().int().min(0).max(10).default(1),
 
-  // -- Judge & Dedup --
-  judgeScoreThreshold: z.number().min(0).max(1).default(0.6),
-  crossLibDupeThreshold: z.number().min(0).max(1).default(0.85),
-  intraDedupThreshold: z.number().min(0).max(1).default(0.88),
-
   // -- Resilience / Timeouts --
   policyMaxRetries: z.number().int().min(0).max(20).default(3),
   policyBaseBackoffMs: z.number().int().min(100).max(30_000).default(1000),
@@ -60,9 +55,10 @@ export const PreferencesSchema = z.object({
   qdrantSearchLimit: z.number().int().min(1).max(100).default(12),
 
   // -- UI --
-  refreshIntervalMs: z.number().int().min(2000).max(60_000).default(7000),
-  toastTtlMs: z.number().int().min(1000).max(30_000).default(5000),
-  spinDurationMs: z.number().int().min(100).max(3000).default(600),
+  /* refreshIntervalMs / toastTtlMs / spinDurationMs удалены 2026-05-01:
+     ни один production-читатель не использовал их (Models page жёстко
+     задаёт REFRESH_MS=8000, TOAST_TTL_MS=5000 в models-page-internals.js;
+     спиннеры — через CSS-анимации). См. план library-fortress, Иt 8А. */
   resilienceBarHideDelayMs: z.number().int().min(1000).max(30_000).default(4000),
 
   // -- OCR (Phase 6.0, OS-native via @napi-rs/system-ocr + LM Studio vision) --
@@ -137,8 +133,6 @@ export const PreferencesSchema = z.object({
   // -- Selected models per role --
   /** Модель LM Studio для extractor (Crystallizer). Пусто = первая загруженная. */
   extractorModel: z.string().default(""),
-  /** Модель LM Studio для judge (Crystallizer). Пусто = extractorModel. */
-  judgeModel: z.string().default(""),
   /**
    * Модель LM Studio для evaluator (book pre-flight). Пусто = pickEvaluatorModel
    * выберет лучшую автоматически (curated tags + heuristics в book-evaluator.ts).
@@ -146,7 +140,6 @@ export const PreferencesSchema = z.object({
   evaluatorModel: z.string().default(""),
   // -- Per-role fallback chains (CSV modelKey1,modelKey2,...) --
   extractorModelFallbacks: z.string().default(""),
-  judgeModelFallbacks: z.string().default(""),
   evaluatorModelFallbacks: z.string().default(""),
   /** Fallback chain для vision-ролей (CSV modelKey1,modelKey2,...). */
   visionModelFallbacks: z.string().default(""),

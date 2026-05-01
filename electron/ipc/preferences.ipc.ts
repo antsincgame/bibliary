@@ -20,7 +20,6 @@ import { modelRoleResolver } from "../lib/llm/model-role-resolver.js";
  */
 const PROFILE_KEYS = [
   "extractorModel", "extractorModelFallbacks",
-  "judgeModel", "judgeModelFallbacks",
   "evaluatorModel", "evaluatorModelFallbacks",
   "translatorModel", "translatorModelFallbacks", "translatorTargetLang",
   "ukrainianSpecialistModel", "ukrainianSpecialistModelFallbacks",

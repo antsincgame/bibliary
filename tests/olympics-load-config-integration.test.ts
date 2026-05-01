@@ -8,9 +8,13 @@
  * Тесты проверяют:
  *   1. enabled=false → legacy config (2048, FA=true) — backward compat
  *   2. enabled=true + crystallizer → contextLength ≥ 32K (длинные главы)
- *   3. enabled=true + только judge → маленький context (<= 4K)
+ *   3. enabled=true + только lang_detector → маленький context (≤4K)
  *   4. enabled=true + смесь → max берётся правильно
  *   5. enabled=true + 0 ролей → legacy config (защита от пустого input)
+ *
+ * Иt 8А (library-fortress, 2026-05-01): заменили judge на lang_detector
+ * (тот же контракт «маленький context») — роль `judge` удалена из
+ * model-role-resolver / OlympicsRole.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -34,14 +38,14 @@ test("computeOlympicsLoadConfig: только crystallizer → 32K + FA", () => 
   assert.equal(cfg.flashAttention, true, "FA должен быть включён для длинных контекстов");
 });
 
-test("computeOlympicsLoadConfig: только judge → маленький context (≤4K)", () => {
-  const cfg = computeOlympicsLoadConfig(["judge"], true);
+test("computeOlympicsLoadConfig: только lang_detector → маленький context (≤4K)", () => {
+  const cfg = computeOlympicsLoadConfig(["lang_detector"], true);
   assert.ok((cfg.contextLength ?? 0) <= 4_096,
-    `Expected ≤4K context for judge, got ${cfg.contextLength}`);
+    `Expected ≤4K context for lang_detector, got ${cfg.contextLength}`);
 });
 
-test("computeOlympicsLoadConfig: crystallizer + judge → max берётся от crystallizer (32K)", () => {
-  const cfg = computeOlympicsLoadConfig(["crystallizer", "judge"], true);
+test("computeOlympicsLoadConfig: crystallizer + lang_detector → max берётся от crystallizer (32K)", () => {
+  const cfg = computeOlympicsLoadConfig(["crystallizer", "lang_detector"], true);
   assert.ok((cfg.contextLength ?? 0) >= 32_768,
     `Expected ≥32K (crystallizer dominates), got ${cfg.contextLength}`);
 });

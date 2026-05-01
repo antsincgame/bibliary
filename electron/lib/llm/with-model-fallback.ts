@@ -70,7 +70,6 @@ export interface FallbackOptions<T> {
 
 const PREF_KEYS: Record<ModelRole, { primary: string; fallback: string | null }> = {
   crystallizer:         { primary: "extractorModel",           fallback: "extractorModelFallbacks" },
-  judge:                { primary: "judgeModel",               fallback: "judgeModelFallbacks" },
   vision_meta:          { primary: "visionModelKey",           fallback: "visionModelFallbacks" },
   vision_ocr:           { primary: "visionModelKey",           fallback: "visionModelFallbacks" },
   vision_illustration:  { primary: "visionModelKey",           fallback: "visionModelFallbacks" },

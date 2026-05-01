@@ -20,8 +20,11 @@
  * АРХИТЕКТУРНЫЙ КОНТРАКТ:
  *   - Scheduler НЕ загружает модели — это работа ModelPool.
  *   - Scheduler НЕ знает про LM Studio — оперирует абстрактными task'ами.
- *   - Scheduler НЕ интегрируется в import.ts в этой итерации (пока используется
- *     только через unit tests). Интеграция — отдельный поход.
+ *   - Production-интеграция (Iter 7+ smart-import-pipeline): converters/{calibre,
+ *     cbz, multi-tiff}.ts оборачивают heavy CPU-операции в `enqueue("heavy")`,
+ *     evaluator-queue.ts — в `enqueue("medium")`, illustration-worker.ts — в
+ *     `enqueue("heavy")`. Парсер-пул в import.ts остаётся отдельным CPU-bound
+ *     orchestrator-ом (см. docs/smart-import-pipeline.md).
  *
  * NB: light/medium/heavy именуются по характеру МОДЕЛИ, не задачи.
  *     Задача "extract metadata from cover" сама по себе лёгкая, но если

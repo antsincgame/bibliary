@@ -5,8 +5,9 @@
  *   - `Discipline` interface — контракт одного теста
  *   - `OLYMPICS_DISCIPLINES` — полный набор дисциплин по ролям
  *     (crystallizer / evaluator / translator / lang_detector / ukrainian_specialist / vision_*).
- *     Роль `judge` намеренно отсутствует: судья оценивает дельты в production
- *     pipeline и калибруется через `judgeModel` напрямую, без Olympics-теста.
+ *     Роль `judge` удалена 2026-05-01 (Иt 8А library-fortress) — у неё не
+ *     было ни одного production-вызова resolve("judge"), а delta-extractor
+ *     заменил отдельный judge-шаг ещё раньше.
  *   - `stripThinkingBlock`, `tryParseJson`, `ukLangScore` — общие helpers
  *
  * Тесты scorer-ов: `tests/olympics-scorers.test.ts`.
