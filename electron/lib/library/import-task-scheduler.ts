@@ -164,10 +164,42 @@ function snap(lane: Lane): { running: number; queued: number } {
 
 let defaultScheduler: ImportTaskScheduler | null = null;
 
-/** Singleton для интеграции из import.ts (будущая итерация). */
+/**
+ * Singleton scheduler. Создаётся лениво с дефолтными лимитами;
+ * `applyImportSchedulerPrefs(prefs)` вызывается из preferences.ipc
+ * `applyRuntimeSideEffects` чтобы синхронизировать с актуальными prefs
+ * (Иt 8Б: schedulerLight/Medium/HeavyConcurrency как single source of truth).
+ */
 export function getImportScheduler(): ImportTaskScheduler {
   if (!defaultScheduler) defaultScheduler = new ImportTaskScheduler();
   return defaultScheduler;
+}
+
+/**
+ * Применить лимиты из preferences к singleton scheduler.
+ * Вызывается из bootstrap (после initPreferencesStore) и из IPC
+ * applyRuntimeSideEffects (после каждого preferences:set).
+ *
+ * Не пересоздаёт scheduler: setLimit лишь меняет capacity, бегущие
+ * задачи продолжаются, новые слоты освобождаются по мере завершения.
+ */
+export function applyImportSchedulerPrefs(prefs: {
+  schedulerLightConcurrency?: number;
+  schedulerMediumConcurrency?: number;
+  schedulerHeavyConcurrency?: number;
+}): void {
+  const scheduler = getImportScheduler();
+  if (typeof prefs.schedulerLightConcurrency === "number") {
+    scheduler.setLimit("light", prefs.schedulerLightConcurrency);
+    /* io lane всегда наследует light для FS-bound задач (зарезервировано). */
+    scheduler.setLimit("io", prefs.schedulerLightConcurrency);
+  }
+  if (typeof prefs.schedulerMediumConcurrency === "number") {
+    scheduler.setLimit("medium", prefs.schedulerMediumConcurrency);
+  }
+  if (typeof prefs.schedulerHeavyConcurrency === "number") {
+    scheduler.setLimit("heavy", prefs.schedulerHeavyConcurrency);
+  }
 }
 
 export function _resetImportSchedulerForTests(): void {

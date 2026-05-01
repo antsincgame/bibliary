@@ -166,6 +166,73 @@ export const PreferencesSchema = z.object({
    */
   modelRoleCacheTtlMs: z.number().int().min(0).default(30_000),
 
+  // ==========================================================================
+  // Smart Import Pipeline (Иt 8Б library-fortress, 2026-05-01)
+  //
+  // Все ключи ниже до Иt 8Б были hardcoded константами или env-only. Теперь
+  // — Settings = single source of truth (см. plan: library_fortress_phalanx).
+  // applyRuntimeSideEffects распространяет изменения на живые singletons.
+  // ==========================================================================
+
+  // -- ImportTaskScheduler lanes (per Perplexity research: semaphore + token bucket) --
+  /** Параллелизм light-lane (мелкие LLM-задачи ≤8 GB). Default 8. */
+  schedulerLightConcurrency: z.number().int().min(1).max(32).default(8),
+  /** Параллелизм medium-lane (8..16 GB модели: evaluator). Default 3. */
+  schedulerMediumConcurrency: z.number().int().min(1).max(8).default(3),
+  /** Параллелизм heavy-lane (>16 GB / vision: illustration, vision-ocr, calibre). Default 1. */
+  schedulerHeavyConcurrency: z.number().int().min(1).max(4).default(1),
+
+  // -- Parser pool (CPU-bound, отдельно от scheduler) --
+  /**
+   * Размер parser pool в import.ts. 0 = auto (CPU-1, max 4 — защита от heap fragmentation
+   * при многочасовом импорте DJVU). >0 = явный override (приоритет: prefs > env > CPU).
+   * Env BIBLIARY_PARSER_POOL_SIZE по-прежнему уважается если prefs=0.
+   */
+  parserPoolSize: z.number().int().min(0).max(16).default(0),
+
+  // -- Evaluator queue --
+  /** Сколько evaluator слотов одновременно. Default 2 (баланс RAM/throughput). */
+  evaluatorSlots: z.number().int().min(1).max(8).default(2),
+
+  // -- Heavy lane rate limiter (vision-OCR DDoS protection) --
+  /**
+   * Лимит запросов в минуту к vision-OCR модели per-modelKey.
+   * Книга в 1000 страниц без текста = 1000 vision запросов; rpm 60 = 1/sec.
+   * Env BIBLIARY_VISION_OCR_RPM по-прежнему уважается если prefs выставлен на default.
+   */
+  visionOcrRpm: z.number().int().min(1).max(600).default(60),
+
+  // -- Illustration worker --
+  /**
+   * Внутренний параллелизм описания иллюстраций per-book. Default 4.
+   * До Иt 8Б был hardcoded VISION_PARALLELISM в illustration-worker.ts.
+   */
+  illustrationParallelism: z.number().int().min(1).max(16).default(4),
+
+  // -- Converter cache --
+  /**
+   * Максимальный размер converter cache (data/converters-cache/) в байтах.
+   * 0 = без лимита. Default 5 GB (соответствует DEFAULT_MAX_BYTES в cache.ts).
+   * LRU eviction при превышении.
+   * Env BIBLIARY_CONVERTER_CACHE_MAX_BYTES по-прежнему работает (приоритет: prefs > env > default).
+   */
+  converterCacheMaxBytes: z.number().int().min(0).default(5 * 1024 * 1024 * 1024),
+
+  // -- Calibre integration --
+  /**
+   * Явный путь к ebook-convert (Calibre). Пусто = автодетект через PATH /
+   * стандартные локации (Program Files / /usr/bin / /opt/homebrew/bin).
+   */
+  calibrePathOverride: z.string().default(""),
+
+  // -- Cross-format dedup tuning --
+  /**
+   * Если true — при наличии и DjVu, и PDF одной книги, выбираем DjVu (меньше,
+   * есть OCR-слой от FineReader). По умолчанию false: PDF приоритетнее (текст
+   * чище). Roadmap пункт из docs/smart-import-pipeline.md v0.8.0.
+   */
+  preferDjvuOverPdf: z.boolean().default(false),
+
   // -- Onboarding wizard (Phase 3) --
   /** True если пользователь прошёл/skip-нул welcome wizard. Заменяет legacy localStorage. */
   onboardingDone: z.boolean().default(false),

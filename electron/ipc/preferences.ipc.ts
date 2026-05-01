@@ -8,6 +8,9 @@ import { setQdrantUrl } from "../lib/qdrant/http-client.js";
 import { refreshLmStudioClient } from "../lmstudio-client.js";
 import { syncMarkerEnvFromPrefs } from "../lib/library/marker-sidecar.js";
 import { modelRoleResolver } from "../lib/llm/model-role-resolver.js";
+import { applyImportSchedulerPrefs } from "../lib/library/import-task-scheduler.js";
+import { applyEvaluatorPrefs } from "../lib/library/evaluator-queue.js";
+import { applyHeavyLaneRateLimiterPrefs } from "../lib/llm/heavy-lane-rate-limiter.js";
 
 /**
  * Whitelist полей, входящих в «профиль моделей» (export/import).
@@ -66,8 +69,12 @@ function sanitizeImportedProfile(raw: unknown): Partial<ProfileSnapshot> {
  * preferences file write happens earlier (atomic + locked); this only
  * pushes the new numbers into in-memory configuration of long-lived
  * runtime modules (watchdog timing, file-lock defaults, endpoint cache, ...).
+ *
+ * Exported (Иt 8Б): main.ts вызывает после initPreferencesStore чтобы
+ * Settings-driven singletons получили актуальные лимиты на старте, а не
+ * ждали первого `preferences:set`.
  */
-function applyRuntimeSideEffects(prefs: Preferences): void {
+export function applyRuntimeSideEffects(prefs: Preferences): void {
   configureWatchdog({
     pollIntervalMs: prefs.healthPollIntervalMs,
     failThreshold: prefs.healthFailThreshold,
@@ -89,6 +96,18 @@ function applyRuntimeSideEffects(prefs: Preferences): void {
   /* Role resolver caches resolved models for `modelRoleCacheTtlMs` —
      invalidate now so changes to model keys and fallbacks are visible on next IPC call. */
   modelRoleResolver.invalidate();
+  /* Иt 8Б — Smart Import Pipeline: Settings = single source of truth.
+     applyRuntimeSideEffects распространяет изменения на живые singletons.
+     parserPoolSize / illustrationParallelism / converterCacheMaxBytes /
+     calibrePathOverride / preferDjvuOverPdf читаются из prefs lazy
+     по месту использования (не нужен push). */
+  applyImportSchedulerPrefs({
+    schedulerLightConcurrency: prefs.schedulerLightConcurrency,
+    schedulerMediumConcurrency: prefs.schedulerMediumConcurrency,
+    schedulerHeavyConcurrency: prefs.schedulerHeavyConcurrency,
+  });
+  applyEvaluatorPrefs({ evaluatorSlots: prefs.evaluatorSlots });
+  applyHeavyLaneRateLimiterPrefs({ visionOcrRpm: prefs.visionOcrRpm });
 }
 
 export function registerPreferencesIpc(): void {

@@ -85,9 +85,33 @@ let cachedResolution: CalibreToolResolution | null | undefined = undefined;
 /**
  * Найти `ebook-convert` бинарник в системе. Кеширует результат — повторные
  * вызовы не делают лишнего I/O. Возвращает `null` если Calibre не установлен.
+ *
+ * Приоритет (Иt 8Б):
+ *   1. prefs.calibrePathOverride — явный путь от пользователя через Settings.
+ *   2. candidateRoots() — стандартные локации (Program Files / /usr/bin / etc).
+ *   3. PATH через `ebook-convert --version`.
  */
 export async function resolveCalibreBinary(): Promise<CalibreToolResolution | null> {
   if (cachedResolution !== undefined) return cachedResolution;
+
+  /* 1. prefs.calibrePathOverride — single source of truth для override. */
+  try {
+    const { getPreferencesStore } = await import("../../preferences/store.js");
+    const prefs = await getPreferencesStore().getAll();
+    const override = prefs.calibrePathOverride?.trim();
+    if (override) {
+      try {
+        await fs.access(override);
+        cachedResolution = { binary: override };
+        return cachedResolution;
+      } catch {
+        /* override не работает — продолжаем к candidateRoots. */
+        console.warn(`[calibre-cli] calibrePathOverride "${override}" недоступен, fallback на автодетект`);
+      }
+    }
+  } catch {
+    /* PreferencesStore не инициализирован (тесты / ранний bootstrap). */
+  }
 
   const exeName = platformExeName("ebook-convert");
   for (const root of candidateRoots()) {

@@ -72,6 +72,15 @@ export interface PreDedupDecision {
   supersededBy?: string;
 }
 
+export interface PreDedupOptions {
+  /**
+   * Если true — DjVu приоритетнее PDF (обмен 80↔70). По умолчанию false:
+   * PDF выигрывает, потому что текстовый слой обычно чище. Roadmap-флаг
+   * из docs/smart-import-pipeline.md, реализован Иt 8Б.
+   */
+  preferDjvuOverPdf?: boolean;
+}
+
 /**
  * Stateful pre-dedup registry for one import session.
  * Create one instance per `importFolderToLibrary` call.
@@ -80,6 +89,13 @@ export class CrossFormatPreDedup {
   private readonly seen = new Map<string, SeenEntry>();
   /** Files that were registered but later superseded — caller may log them. */
   readonly superseded: Array<{ skipped: string; keptBy: string }> = [];
+  private readonly priorityOverrides: Record<string, number>;
+
+  constructor(opts: PreDedupOptions = {}) {
+    this.priorityOverrides = opts.preferDjvuOverPdf
+      ? { djvu: 90, djv: 89 } /* выше pdf=80 */
+      : {};
+  }
 
   /**
    * Register a candidate file.
@@ -92,7 +108,7 @@ export class CrossFormatPreDedup {
     const ext = path.extname(filePath).slice(1).toLowerCase();
     const base = path.basename(filePath, path.extname(filePath)).toLowerCase();
     const key = `${dir.toLowerCase()}|${base}`;
-    const priority = FORMAT_PRIORITY[ext] ?? -1;
+    const priority = this.priorityOverrides[ext] ?? FORMAT_PRIORITY[ext] ?? -1;
 
     const existing = this.seen.get(key);
 

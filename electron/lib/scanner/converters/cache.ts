@@ -169,9 +169,28 @@ export async function setCachedConvert(
 /**
  * LRU eviction: удалить oldest-accessed файлы пока total bytes > max.
  * Async fire-and-forget — caller не ждёт.
+ *
+ * Приоритет maxBytes (Иt 8Б):
+ *   1. prefs.converterCacheMaxBytes — single source of truth.
+ *   2. env BIBLIARY_CONVERTER_CACHE_MAX_BYTES — legacy override.
+ *   3. DEFAULT_MAX_BYTES (5 GB) — последний резерв.
  */
 async function evictIfOverLimit(cacheDir: string): Promise<void> {
-  const maxBytes = readPositiveIntEnv("BIBLIARY_CONVERTER_CACHE_MAX_BYTES", DEFAULT_MAX_BYTES);
+  let maxBytes: number | null = null;
+  try {
+    const { getPreferencesStore } = await import("../../preferences/store.js");
+    const prefs = await getPreferencesStore().getAll();
+    if (typeof prefs.converterCacheMaxBytes === "number") {
+      maxBytes = prefs.converterCacheMaxBytes;
+    }
+  } catch {
+    /* PreferencesStore не инициализирован — fallback на env. */
+  }
+  if (maxBytes === null) {
+    maxBytes = readPositiveIntEnv("BIBLIARY_CONVERTER_CACHE_MAX_BYTES", DEFAULT_MAX_BYTES);
+  }
+  /* maxBytes === 0 → отключено (без лимита). */
+  if (maxBytes <= 0) return;
 
   let entries: import("fs").Dirent[];
   try {

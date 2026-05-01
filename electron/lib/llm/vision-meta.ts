@@ -411,8 +411,21 @@ export async function extractMetadataFromCover(
     return { ok: false, error: "empty image buffer" };
   }
 
+  /* Иt 8Б: resolver-first. modelRoleResolver — single source of truth для
+     роли vision_meta (preference + fallback chain + capability filter +
+     cache TTL). pickVisionModels остаётся как fallback если resolver не дал
+     результат (например, ни одной vision-модели не загружено). */
+  let preferredModelKey = opts.modelKey;
+  if (!preferredModelKey?.trim() && !opts.listLoadedImpl) {
+    try {
+      const { modelRoleResolver } = await import("./model-role-resolver.js");
+      const resolved = await modelRoleResolver.resolve("vision_meta");
+      if (resolved?.modelKey) preferredModelKey = resolved.modelKey;
+    } catch { /* resolver не инициализирован (тесты) — fall through */ }
+  }
+
   let candidates = (await pickVisionModels({
-    preferredModelKey: opts.modelKey,
+    preferredModelKey,
     listLoadedImpl: opts.listLoadedImpl,
   })).slice(0, getMaxModelAttempts(opts.maxModelAttempts));
 

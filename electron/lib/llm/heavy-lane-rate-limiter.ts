@@ -35,7 +35,7 @@ export interface HeavyLaneRateLimiterOptions {
 }
 
 export class HeavyLaneRateLimiter {
-  private readonly limit: number;
+  private limit: number;
   private readonly now: () => number;
   /** Ключ — modelKey, значение — отсортированный по возрастанию массив таймстампов. */
   private readonly timestamps = new Map<string, number[]>();
@@ -45,6 +45,17 @@ export class HeavyLaneRateLimiter {
   constructor(opts: HeavyLaneRateLimiterOptions = {}) {
     this.limit = Math.max(1, Math.floor(opts.limitPerMinute ?? envLimit() ?? DEFAULT_LIMIT_PER_MINUTE));
     this.now = opts.now ?? (() => Date.now());
+  }
+
+  /**
+   * Обновить лимит на лету (Иt 8Б — Settings → applyRuntimeSideEffects).
+   * Бегущие acquire не отменяются; новый лимит применится при следующих
+   * acquireInternal проверках. Снижение лимита может «подвиснуть» текущие
+   * запросы пока окно не сожмётся — это ожидаемое поведение.
+   */
+  updateLimit(newLimit: number): void {
+    if (!Number.isFinite(newLimit) || newLimit < 1) return;
+    this.limit = Math.floor(newLimit);
   }
 
   /**
@@ -163,6 +174,16 @@ let defaultLimiter: HeavyLaneRateLimiter | null = null;
 export function getHeavyLaneRateLimiter(): HeavyLaneRateLimiter {
   if (!defaultLimiter) defaultLimiter = new HeavyLaneRateLimiter();
   return defaultLimiter;
+}
+
+/**
+ * Применить vision-OCR rate из preferences (Иt 8Б).
+ * Вызывается из applyRuntimeSideEffects.
+ */
+export function applyHeavyLaneRateLimiterPrefs(prefs: { visionOcrRpm?: number }): void {
+  if (typeof prefs.visionOcrRpm === "number" && prefs.visionOcrRpm >= 1) {
+    getHeavyLaneRateLimiter().updateLimit(prefs.visionOcrRpm);
+  }
 }
 
 /* NB: Тестам обычно нужен изолированный экземпляр HeavyLaneRateLimiter с

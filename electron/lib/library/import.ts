@@ -105,19 +105,35 @@ async function importArchiveSequential(absPath: string, opts: Omit<ImportFolderO
 const PER_FILE_TIMEOUT_MS = 8 * 60 * 1000;
 
 /**
- * Размер parser pool по умолчанию = cpus-1, минимум 1, максимум 4.
+ * Размер parser pool. Приоритет (Иt 8Б):
+ *   1. prefs.parserPoolSize > 0 — явный override из Settings UI.
+ *   2. ENV `BIBLIARY_PARSER_POOL_SIZE` (если prefs == 0 / not set) — для CI/batch.
+ *   3. cpus-1, ceiling 4 — авто-дефолт.
  *
  * Жёсткий ceiling в 4 воркера предотвращает OOM при многочасовых сессиях импорта
  * тяжёлых DJVU-книг (каждый воркер держит ~6–10 MB PNG-буферов + OCR-текст).
  * На 8-ядерной машине cpus-1 = 7 воркеров приводит к heap fragmentation и краш после
- * 4+ часов непрерывного импорта. ENV-override позволяет превысить ceiling для CI/batch.
+ * 4+ часов непрерывного импорта. Override (prefs или env) позволяет превысить ceiling.
+ *
+ * Async чтобы прочитать PreferencesStore (single source of truth с Иt 8Б).
  */
-function resolveParserPoolSize(): number {
+async function resolveParserPoolSize(): Promise<number> {
+  /* 1. prefs.parserPoolSize — single source of truth. 0 = auto. */
+  try {
+    const { getPreferencesStore } = await import("../preferences/store.js");
+    const prefs = await getPreferencesStore().getAll();
+    const fromPrefs = prefs.parserPoolSize;
+    if (typeof fromPrefs === "number" && fromPrefs >= 1) return fromPrefs;
+  } catch {
+    /* PreferencesStore не инициализирован (тесты / ранний bootstrap) — fallback. */
+  }
+  /* 2. ENV override (legacy / CI). */
   const env = process.env.BIBLIARY_PARSER_POOL_SIZE?.trim();
   if (env) {
     const n = Number(env);
     if (Number.isInteger(n) && n >= 1) return n;
   }
+  /* 3. Auto: cpus-1, ceiling 4. */
   const cpus = typeof os.cpus === "function" ? os.cpus().length : 1;
   const SAFE_POOL_CEILING = 4;
   return Math.min(Math.max(1, cpus - 1), SAFE_POOL_CEILING);
@@ -212,8 +228,17 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
   /* Cross-format pre-dedup: одна инстанция на всю сессию импорта папки.
      Только прямые книжные файлы (не архивы) проверяются здесь.
      Правило: Book.pdf + Book.djvu → один basename, побеждает epub>pdf>djvu.
-     Book v1.pdf + Book v2.pdf → разные basename → обе проходят. */
-  const crossFormatDedup = new CrossFormatPreDedup();
+     Book v1.pdf + Book v2.pdf → разные basename → обе проходят.
+     Иt 8Б: prefs.preferDjvuOverPdf инвертирует pdf vs djvu приоритет. */
+  let preferDjvuOverPdf = false;
+  try {
+    const { getPreferencesStore } = await import("../preferences/store.js");
+    const prefs = await getPreferencesStore().getAll();
+    preferDjvuOverPdf = prefs.preferDjvuOverPdf === true;
+  } catch {
+    /* PreferencesStore не инициализирован — default false. */
+  }
+  const crossFormatDedup = new CrossFormatPreDedup({ preferDjvuOverPdf });
 
   /* Stage 1.5: expander. Архивы синхронно распаковывает, yields каждую
      книгу как отдельный ImportTask. Counter `discovered` нарастает по
@@ -310,8 +335,8 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
     emit("scan-complete");
   }
 
-  /* Stage 2: parser pool. Конкуренция = cpus-1 (CPU-bound parsing). */
-  const poolSize = resolveParserPoolSize();
+  /* Stage 2: parser pool. Размер из prefs/env/CPU (см. resolveParserPoolSize). */
+  const poolSize = await resolveParserPoolSize();
   const pool = runWithConcurrency(
     expandTasks(),
     poolSize,

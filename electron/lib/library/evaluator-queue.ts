@@ -247,6 +247,17 @@ export function getEvaluatorSlotCount(): number {
   return slotCount;
 }
 
+/**
+ * Применить лимит evaluator slots из preferences (Иt 8Б).
+ * Вызывается из preferences.ipc.applyRuntimeSideEffects при boot и каждом
+ * preferences:set. Тонкая обёртка над setEvaluatorSlots — не меняет семантику.
+ */
+export function applyEvaluatorPrefs(prefs: { evaluatorSlots?: number }): void {
+  if (typeof prefs.evaluatorSlots === "number" && prefs.evaluatorSlots >= 1) {
+    setEvaluatorSlots(prefs.evaluatorSlots);
+  }
+}
+
 /** Override для модели эвалюатора. null -- авто-выбор через pickEvaluatorModel. */
 export function setEvaluatorModel(modelKey: string | null): void {
   modelOverride = modelKey;

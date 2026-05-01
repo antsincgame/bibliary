@@ -196,6 +196,12 @@ if (!gotLock) {
     /* Sync Marker feature flag from preferences to ENV so marker-sidecar.ts
        can read it synchronously without a preferences store dependency. */
     syncMarkerEnvFromPrefs(prefs.useMarkerExtractor);
+    /* Иt 8Б — propagate Smart Import Pipeline prefs to live singletons
+       (scheduler lanes, evaluator slots, vision-OCR rate limiter) ДО любого
+       импорта или Olympics. applyRuntimeSideEffects идемпотентен — IPC
+       preferences:set вызывает его повторно для runtime-обновлений. */
+    const { applyRuntimeSideEffects } = await import("./ipc/preferences.ipc.js");
+    applyRuntimeSideEffects(prefs);
     /* Resolve endpoints from preferences once and propagate the result
        into the live QDRANT_URL binding. Without this, modules that
        import { QDRANT_URL } at module-init read the env-only value. */

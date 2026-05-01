@@ -305,11 +305,23 @@ export async function processIllustrations(
    * одновременно (ограничено GPU/CPU memory pressure, но не CPU-bound).
    * Без pool: 100 картинок × 6 сек = 10 минут. С pool=4: ≈2.5 мин.
    *
+   * Иt 8Б: размер pool читается из prefs.illustrationParallelism (default 4).
+   * До 8Б был hardcoded VISION_PARALLELISM = 4. Settings — single source of truth.
+   *
    * Защита: locking bookMd / mdModified / counters через async ticks
    * (single-threaded JS — race-free для счётчиков, но enrichMarkdownAltText
    * читает и пишет одну переменную bookMd, поэтому делаем этот шаг
    * последовательно через mdQueue). */
-  const VISION_PARALLELISM = 4;
+  let visionParallelism = 4;
+  try {
+    const { getPreferencesStore } = await import("../preferences/store.js");
+    const prefs = await getPreferencesStore().getAll();
+    if (typeof prefs.illustrationParallelism === "number" && prefs.illustrationParallelism >= 1) {
+      visionParallelism = prefs.illustrationParallelism;
+    }
+  } catch {
+    /* PreferencesStore не инициализирован (тесты) — оставляем default 4. */
+  }
 
   /* Сериализуем только md-патчинг — остальные шаги (vision call, qdrant index)
    * полностью независимые по entries. */
@@ -419,7 +431,7 @@ export async function processIllustrations(
     getModelPool().withModel(
       modelKey,
       { role: "vision_illustration", ttlSec: 3600, gpuOffload: "max" },
-      () => runPool(entries, VISION_PARALLELISM),
+      () => runPool(entries, visionParallelism),
     ),
   );
   /* Финальная синхронизация md-очереди — гарантирует что bookMd зафиксирован
