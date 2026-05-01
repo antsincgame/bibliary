@@ -223,37 +223,18 @@ export function renderOlympicsReport(report) {
    * Раньше показывали 7 (=уникальных prefs), это путало пользователя — он видит
    * 9 категорий, ожидает 9 чемпионов. Теперь = (число aggregates с champion). */
   const rolesWithOptimum = aggregates.filter((a) => a.optimum).length;
-  const rolesWithChampion = aggregates.filter((a) => a.champion).length;
 
-  let useChampion = false;
-  const champBadge = el("span", { class: "mp-olympics-champion-badge", style: "display:none" }, "🏆");
   const distributeBtn = el("button", {
     class: "btn btn-primary",
     type: "button",
-    disabled: recsKeys.length === 0 && byScoreKeys.length === 0,
+    disabled: recsKeys.length === 0,
     onclick: () => {
-      const target = useChampion ? byScore : recs;
-      void applyRecommendations(target, refresh);
+      void applyRecommendations(recs, refresh);
     },
   }, [
     el("span", { class: "mp-olympics-distribute-label" }, t("models.olympics.distribute")),
-    champBadge,
-    el("span", { class: "mp-olympics-distribute-count" },
-      ` (${useChampion ? rolesWithChampion : rolesWithOptimum})`),
+    el("span", { class: "mp-olympics-distribute-count" }, ` (${rolesWithOptimum})`),
   ]);
-
-  if (window.api?.preferences?.getAll) {
-    void window.api.preferences.getAll().then((prefs) => {
-      useChampion = prefs?.olympicsUseChampion === true;
-      const lbl = distributeBtn.querySelector(".mp-olympics-distribute-label");
-      const cnt = distributeBtn.querySelector(".mp-olympics-distribute-count");
-      if (lbl) lbl.textContent = useChampion
-        ? t("models.olympics.distribute_champion")
-        : t("models.olympics.distribute");
-      if (cnt) cnt.textContent = ` (${useChampion ? rolesWithChampion : rolesWithOptimum})`;
-      champBadge.style.display = useChampion ? "" : "none";
-    }).catch(() => { /* ignore */ });
-  }
 
   const recsHeader = el("div", { class: "mp-olympics-recs-header" }, [
     el("h3", {}, t("models.olympics.recommendations")),
@@ -261,6 +242,84 @@ export function renderOlympicsReport(report) {
     el("div", { class: "mp-olympics-apply-buttons" }, [distributeBtn]),
   ]);
   root.appendChild(recsHeader);
+
+  /* ── Probe phase + Adaptive elimination + EcoTune (Lightning Olympics) ── */
+  const probeStats = report.probeStats;
+  const adaptiveStats = report.adaptiveElimination;
+  const tuneSuggestions = Array.isArray(report.autoTuneSuggestions) ? report.autoTuneSuggestions : [];
+
+  if (probeStats || adaptiveStats || tuneSuggestions.length > 0) {
+    const lightningBox = el("details", { class: "mp-olympics-lightning-stats", open: tuneSuggestions.length > 0 ? "open" : undefined }, [
+      el("summary", { class: "mp-olympics-lightning-summary" },
+        `🚀 Lightning Olympics: probe + adaptive + EcoTune auto-tune`),
+    ]);
+
+    if (probeStats) {
+      const probeBox = el("div", { class: "mp-olympics-lightning-section" }, [
+        el("h4", {}, "🎯 Probe phase (Arena-Lite)"),
+        el("p", { class: "mp-olympics-lightning-stat" },
+          `Протестировано: ${probeStats.totalProbed} · отсеяно: ${probeStats.eliminated} · cutoff=${probeStats.cutoff}`),
+      ]);
+      const scores = probeStats.scores ?? {};
+      const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+      if (sorted.length > 0) {
+        probeBox.appendChild(el("div", { class: "mp-olympics-probe-grid" },
+          sorted.map(([key, score]) => {
+            const sc = Math.round(score * 100);
+            const level = sc >= 70 ? "good" : sc >= 40 ? "mid" : "bad";
+            return el("div", { class: `mp-olympics-probe-row mp-olympics-row-${level}` }, [
+              el("span", { class: "mp-olympics-probe-key" }, key),
+              el("span", { class: "mp-olympics-probe-score" }, `${sc}/100`),
+            ]);
+          }),
+        ));
+      }
+      lightningBox.appendChild(probeBox);
+    }
+
+    if (adaptiveStats && adaptiveStats.skippedDisciplines > 0) {
+      lightningBox.appendChild(el("div", { class: "mp-olympics-lightning-section" }, [
+        el("h4", {}, "⏭️ Adaptive elimination"),
+        el("p", { class: "mp-olympics-lightning-stat" },
+          `Пропущено дисциплин для отстающих моделей: ${adaptiveStats.skippedDisciplines} (gap ≥ 35%)`),
+      ]));
+    }
+
+    if (tuneSuggestions.length > 0) {
+      const tuneBox = el("div", { class: "mp-olympics-lightning-section" }, [
+        el("h4", {}, "🔧 EcoTune auto-tune (рекомендации параметров)"),
+        el("p", { class: "mp-card-sub" },
+          "Детерминированный анализ результатов: для каждой роли — оптимальные temperature / max_tokens / top_p. " +
+          "Применить можно вручную в Settings → Models → Inference (или будущий «Apply Tune»). " +
+          "Источник: EcoTune EMNLP 2025."),
+      ]);
+      const grid = el("div", { class: "mp-olympics-tune-grid" });
+      grid.appendChild(el("div", { class: "mp-olympics-tune-header" }, [
+        el("span", {}, "Роль"),
+        el("span", {}, "temp"),
+        el("span", {}, "max_tok"),
+        el("span", {}, "top_p"),
+        el("span", {}, "conf"),
+        el("span", {}, "обоснование"),
+      ]));
+      for (const s of tuneSuggestions) {
+        const confLevel = s.confidence === "high" ? "good" : s.confidence === "medium" ? "mid" : "bad";
+        const confLabel = s.confidence === "high" ? "✓ high" : s.confidence === "medium" ? "~ med" : "? low";
+        grid.appendChild(el("div", { class: `mp-olympics-tune-row mp-olympics-tune-conf-${confLevel}` }, [
+          el("span", { class: "mp-olympics-tune-role", title: `→ ${s.prefKey}` }, s.role),
+          el("span", { class: "mp-olympics-tune-num" }, String(s.suggestedTemperature)),
+          el("span", { class: "mp-olympics-tune-num" }, String(s.suggestedMaxTokens)),
+          el("span", { class: "mp-olympics-tune-num" }, String(s.suggestedTopP)),
+          el("span", { class: `mp-olympics-tune-conf` }, confLabel),
+          el("span", { class: "mp-olympics-tune-rationale" }, s.rationale),
+        ]));
+      }
+      tuneBox.appendChild(grid);
+      lightningBox.appendChild(tuneBox);
+    }
+
+    root.appendChild(lightningBox);
+  }
 
   for (const agg of aggregates) {
     const top = (agg.perModel ?? []).slice(0, 3);

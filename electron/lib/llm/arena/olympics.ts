@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Bibliary Olympics — реальный турнир локальных моделей через LM Studio.
  *
  * Не зависит от Electron — pure-Node, использует прямой fetch на
@@ -145,14 +145,49 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
     allModelInfos.filter((m) => m.capabilities.reasoning).map((m) => m.key),
   );
 
-  const selectedInfos = pickModelsForOlympicsV1(
+  /* ── Probe pool: расширенный пул для PROBE-фазы (Arena-Lite EMNLP 2025).
+   *
+   * КРИТИЧЕСКИЙ FIX (Шерлок v0.4.8): probe-фаза ДО фикса работала на уже
+   * capped пуле (selectedInfos === maxModels), поэтому условие
+   * `selectedInfos.length > maxModels` было ВСЕГДА false в типичном
+   * Lightning-сценарии и probe просто не запускался.
+   *
+   * Решение: получаем расширенный пул (×3 от maxModels или 24, что больше)
+   * БЕЗ применения cap'а, прогоняем probe на нём, затем передаём survivors
+   * как `explicit` обратно в picker для финального cap + family-dedup.
+   *
+   * Если maxModels не задан или testAll=true или есть explicit `opts.models` —
+   * probe не нужен (пользователь уже сам определил пул). */
+  const PROBE_POOL_MULTIPLIER = 3;
+  const probeShouldRun = !!(
+    !opts.testAll
+    && (!opts.models || opts.models.length === 0)
+    && opts.maxModels && opts.maxModels > 0
+  );
+  const probePoolCap = probeShouldRun
+    ? Math.max(opts.maxModels! * PROBE_POOL_MULTIPLIER, 24)
+    : (opts.maxModels ?? 6);
+  const probePool = pickModelsForOlympicsV1(
     allModelInfos,
     opts.models,
-    opts.maxModels,
+    probePoolCap,
     opts.weightClasses,
     opts.testAll,
   );
-  const models = selectedInfos.map((m) => m.key);
+
+  /* selectedInfos и models объявляются как `let` — после probe-фазы они
+   * могут быть пересобраны через второй вызов picker'а с survivors как
+   * explicit-list. */
+  let selectedInfos: LmsModelInfo[] = probeShouldRun && probePool.length > opts.maxModels!
+    ? probePool  // временно держим расширенный пул для probe-фазы
+    : pickModelsForOlympicsV1(
+        allModelInfos,
+        opts.models,
+        opts.maxModels,
+        opts.weightClasses,
+        opts.testAll,
+      );
+  let models = selectedInfos.map((m) => m.key);
   if (models.length < 2) {
     const wc = (opts.weightClasses ?? ["s", "m"]).join(",");
     throw new Error(
@@ -166,6 +201,8 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
     models,
     visionCount: visionCapableKeys.size,
     reasoningCount: reasoningCapableKeys.size,
+    probeShouldRun,
+    probePoolSize: probePool.length,
   });
 
   let targetDisciplines = opts.disciplines
@@ -255,15 +292,16 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
    * каждую модель. Модели со score < PROBE_CUTOFF исключаются из полного
    * прогона — экономит 30–50% времени при наличии "сломанных" моделей.
    *
-   * Probe запускается ТОЛЬКО в Lightning mode (olympicsLightning=true) или
-   * при maxModels > 0 (т.е. явный фильтр). В Standard mode — каждая модель
-   * получает честный шанс на полном турнире. */
+   * Probe запускается когда задан maxModels-cap И есть запас моделей сверх
+   * cap'а — то есть НА РАСШИРЕННОМ пуле (probePool, см. выше), который
+   * специально не закаплен. После probe survivors отдаются в picker как
+   * `explicit`-list для финальной фильтрации (family-dedup + cap). */
   const probeDiscipline = OLYMPICS_DISCIPLINES.find((d) => d.id === "lang-detect-en");
   const PROBE_CUTOFF = 0.4;
   const probeScores = new Map<string, number>();
 
-  if (probeDiscipline && opts.maxModels && opts.maxModels > 0 && selectedInfos.length > opts.maxModels) {
-    log("info", `PROBE PHASE: testing ${selectedInfos.length} models with "${probeDiscipline.id}" (cutoff=${PROBE_CUTOFF})`);
+  if (probeShouldRun && probeDiscipline && probePool.length > opts.maxModels!) {
+    log("info", `PROBE PHASE: testing ${selectedInfos.length} models with "${probeDiscipline.id}" (cutoff=${PROBE_CUTOFF}, target_max=${opts.maxModels})`);
     for (const info of selectedInfos) {
       if (opts.signal?.aborted) break;
       const probeLoadResult = await lmsLoadModel(lmsUrl, info.key, log, opts.signal, undefined, transport);
@@ -287,18 +325,40 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
       await new Promise((res) => setTimeout(res, 800));
     }
     const sortedByProbe = [...probeScores.entries()].sort((a, b) => b[1] - a[1]);
-    const survivors = sortedByProbe.filter(([, s]) => s >= PROBE_CUTOFF).slice(0, opts.maxModels);
-    const eliminated = sortedByProbe.filter(([k]) => !survivors.some(([sk]) => sk === k));
+    /* Survivors: те, что прошли cutoff. Финальный cap применяется через
+     * второй вызов picker'а — он добавит family-dedup и финальный rank. */
+    const survivors = sortedByProbe.filter(([, s]) => s >= PROBE_CUTOFF).map(([k]) => k);
+    const eliminated = sortedByProbe.filter(([k]) => !survivors.includes(k));
     if (eliminated.length > 0) {
       log("info", `PROBE ELIMINATED ${eliminated.length} models: ${eliminated.map(([k, s]) => `${k}(${(s * 100).toFixed(0)})`).join(", ")}`);
-      const survivorKeys = new Set(survivors.map(([k]) => k));
-      const newSelected: typeof selectedInfos = [];
-      for (const info of selectedInfos) {
-        if (survivorKeys.has(info.key)) newSelected.push(info);
-      }
-      selectedInfos.splice(0, selectedInfos.length, ...newSelected);
-      models.splice(0, models.length, ...newSelected.map((m) => m.key));
+    } else {
+      log("info", `PROBE: all ${probeScores.size} models passed cutoff ${PROBE_CUTOFF}`);
     }
+
+    /* Применяем cap+family-dedup к survivors. Если все провалили cutoff —
+     * fallback: top-K по probe-score (всегда оставляем хоть кого-то для
+     * прогона, иначе турнир пустой). */
+    const finalKeys = survivors.length >= 2
+      ? survivors
+      : sortedByProbe.slice(0, Math.max(opts.maxModels!, 2)).map(([k]) => k);
+
+    selectedInfos = pickModelsForOlympicsV1(
+      allModelInfos,
+      finalKeys,
+      opts.maxModels,
+      opts.weightClasses,
+      opts.testAll,
+    );
+    /* Picker возвращает по explicit-list — может вернуть < maxModels (если
+     * family-dedup сработал агрессивно). Это OK. */
+    if (selectedInfos.length < 2) {
+      throw new Error(
+        `После probe-фазы осталось только ${selectedInfos.length} моделей (cutoff=${PROBE_CUTOFF}). ` +
+        `Загрузи модели получше или подними cutoff в коде.`,
+      );
+    }
+    models = selectedInfos.map((m) => m.key);
+    log("info", `PROBE PHASE done: selected ${models.length} models for full Olympics: ${models.join(", ")}`);
   }
 
   /* Per-role tuning toggle (default off — legacy 2048/temp=0.2). */

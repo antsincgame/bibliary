@@ -86,9 +86,16 @@ export function mountModels(root) {
   void refreshHardware(false).then(() => refresh());
 
   /* Restore last Olympics report from disk — user sees results even after
-   * app restart without re-running the tournament. */
+   * app restart without re-running the tournament.
+   *
+   * Race-guard: если пользователь успел нажать «Run Olympics» пока promise
+   * ещё резолвится — не затирать свежесброшенный UI. resetOlympicsUI()
+   * выставляет ctx.olympicsBusy=true; busy уйдёт в false только после
+   * завершения runOlympics — к этому моменту renderOlympicsReport уже
+   * отработает с НОВЫМ отчётом. */
   if (typeof window.api?.arena?.getLastReport === "function") {
     void window.api.arena.getLastReport().then((report) => {
+      if (ctx.olympicsBusy) return;
       if (report && typeof report === "object" && (report.medals || report.roleAggregates)) {
         renderOlympicsReport(report);
       }

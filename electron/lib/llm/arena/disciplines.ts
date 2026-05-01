@@ -1,10 +1,12 @@
-﻿/**
+/**
  * Olympics disciplines — fixtures + scorers for role-based LLM evaluation.
  *
  * Извлечён из `olympics.ts` (Mahakala рефакторинг 2026-04-30). Содержит:
  *   - `Discipline` interface — контракт одного теста
  *   - `OLYMPICS_DISCIPLINES` — полный набор дисциплин по ролям
- *     (crystallizer / evaluator / translator / judge / lang_detector / vision_*)
+ *     (crystallizer / evaluator / translator / lang_detector / ukrainian_specialist / vision_*).
+ *     Роль `judge` намеренно отсутствует: судья оценивает дельты в production
+ *     pipeline и калибруется через `judgeModel` напрямую, без Olympics-теста.
  *   - `stripThinkingBlock`, `tryParseJson`, `ukLangScore` — общие helpers
  *
  * Тесты scorer-ов: `tests/olympics-scorers.test.ts`.

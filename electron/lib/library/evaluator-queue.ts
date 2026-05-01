@@ -64,6 +64,14 @@ interface EvaluatorDeps {
    * остаются на старом auto-pick поведении через `pickEvaluatorModel`).
    */
   readEvaluatorPrefs: () => Promise<{ preferred?: string; fallbacks?: string[] }>;
+  /**
+   * Загрузить preferred модель в LM Studio ДО pickEvaluatorModel.
+   * Closes Шерлок-bug v0.4.6: picker возвращает preferred ТОЛЬКО если она
+   * уже в loaded; иначе скоринг может выбрать другую (более крупную) модель.
+   * По дефолту дёргает lmstudio-client `loadModel`. Тесты — no-op.
+   * Не throw: ошибка → warn → picker идёт по fallback пути.
+   */
+  ensurePreferredLoaded: (modelKey: string) => Promise<void>;
 }
 
 async function defaultReadEvaluatorPrefs(): Promise<{ preferred?: string; fallbacks?: string[] }> {
@@ -83,12 +91,20 @@ async function defaultReadEvaluatorPrefs(): Promise<{ preferred?: string; fallba
   }
 }
 
+async function defaultEnsurePreferredLoaded(modelKey: string): Promise<void> {
+  const { listLoaded, loadModel } = await import("../../lmstudio-client.js");
+  const loaded = await listLoaded();
+  if (loaded.some((m) => m.modelKey === modelKey)) return;
+  await loadModel(modelKey, { ttlSec: 900, gpuOffload: "max" });
+}
+
 const defaultDeps: EvaluatorDeps = {
   evaluateBook: (s, o) => evaluateBookImpl(s, o),
   pickEvaluatorModel: (opts) => pickEvaluatorModelImpl(opts),
   readFile: (p) => fs.readFile(p, "utf-8"),
   writeFile: (p, c) => fs.writeFile(p, c, "utf-8"),
   readEvaluatorPrefs: defaultReadEvaluatorPrefs,
+  ensurePreferredLoaded: defaultEnsurePreferredLoaded,
 };
 
 let deps: EvaluatorDeps = defaultDeps;
@@ -482,14 +498,35 @@ async function evaluateOneInSlot(bookId: string, slot: SlotState): Promise<void>
             хотя бы одна loaded LLM есть.
        `allowAutoLoad: false` запрещает скрытую загрузку моделей с диска. */
     const evaluatorPrefs = await deps.readEvaluatorPrefs();
-    /* allowAutoLoad: true когда preferred модель задана (Olympics / пользователь
-     * выбрал в UI). Если pref пуст — безопасный false, чтобы не загружать
-     * случайную модель и не убить VRAM. */
+    /* Pre-load PREFERRED модели ДО pickEvaluatorModel.
+     *
+     * КРИТИЧЕСКИЙ FIX (Шерлок v0.4.6): pickEvaluatorModel(allowAutoLoad=true)
+     * возвращает preferred ТОЛЬКО если она уже в loaded. Иначе — отправляет
+     * preferred в общий пул кандидатов и выбирает по СКОРИНГУ. Результат:
+     * юзер указал "qwen-3-8b", а picker загрузил "deepseek-r1-32b" с
+     * лучшим скором. Это нарушает контракт «выбор пользователя сильнее
+     * любой эвристики», заявленный в комментарии к pickEvaluatorModel.
+     *
+     * Решение: явно загружаем preferred в LM Studio, потом picker найдёт её
+     * в loaded и вернёт. allowAutoLoad: false — никакая heuristic не сможет
+     * переопределить выбор юзера.
+     *
+     * Pre-load выполняется только для НЕпустого preferred. При пустом —
+     * picker берёт лучшую loaded с allowAutoLoad: false (без скрытой
+     * догрузки чужих моделей). */
     const hasPreferred = !!evaluatorPrefs.preferred;
+    if (hasPreferred && !modelOverride && evaluatorPrefs.preferred) {
+      try {
+        await deps.ensurePreferredLoaded(evaluatorPrefs.preferred);
+      } catch (err) {
+        console.warn(`[evaluator-queue] pre-load "${evaluatorPrefs.preferred}" failed (will fallback to picker scoring):`, err);
+        /* НЕ прерываем — picker попробует CSV fallbacks или скорит loaded. */
+      }
+    }
     const model = modelOverride ?? (await deps.pickEvaluatorModel({
       preferred: evaluatorPrefs.preferred,
       fallbacks: evaluatorPrefs.fallbacks,
-      allowAutoLoad: hasPreferred,
+      allowAutoLoad: false,
     }));
     if (!model) {
       const reason = evaluatorPrefs.preferred

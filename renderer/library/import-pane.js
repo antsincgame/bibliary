@@ -14,7 +14,7 @@ import { el } from "../dom.js";
 import { t } from "../i18n.js";
 import { IMPORT_STATE } from "./state.js";
 import { buildEvaluatorPanel, refreshEvaluatorState } from "./evaluator.js";
-import { showLibraryToast } from "./toast.js";
+/* showLibraryToast import removed — cancel button was removed (v0.5.0). */
 import { buildLogPanel, hydrateLogSnapshot } from "./import-pane-log.js";
 import {
   importFromFolder,
@@ -56,40 +56,7 @@ export function buildImportPane(deps) {
     onclick: () => importFromFiles(deps),
   }, t("library.import.btn.pickFiles"));
 
-  const pauseBtn = el("button", {
-    type: "button",
-    class: "lib-btn lib-import-pause",
-    style: "display:none",
-    onclick: async () => {
-      const isPaused = pauseBtn.dataset.paused === "1";
-      try {
-        if (isPaused) {
-          await window.api.library.evaluatorResume();
-          pauseBtn.dataset.paused = "0";
-          pauseBtn.textContent = t("library.import.btn.pause");
-        } else {
-          await window.api.library.evaluatorPause();
-          pauseBtn.dataset.paused = "1";
-          pauseBtn.textContent = t("library.import.btn.resume");
-        }
-      } catch (_e) { console.warn("[import] pause/resume failed:", _e); }
-    },
-  }, t("library.import.btn.pause"));
-
-  const cancelBtn = el("button", {
-    type: "button",
-    class: "lib-btn lib-import-cancel",
-    style: "display:none",
-    onclick: async () => {
-      if (IMPORT_STATE.importId) {
-        try { await window.api.library.cancelImport(IMPORT_STATE.importId); }
-        catch (_e) {
-          console.warn("[import] cancelImport failed:", _e);
-          showLibraryToast({ kind: "error", message: t("library.import.cancelFailed") });
-        }
-      }
-    },
-  }, t("library.import.btn.cancel"));
+  /* pause/cancel кнопки удалены (v0.5.0) — импортом управляет система. */
 
   const opts = el("div", { class: "lib-import-opts" }, [
     el("label", { class: "lib-import-opt", title: t("library.import.opt.tooltip.scanArchives") }, [
@@ -123,7 +90,7 @@ export function buildImportPane(deps) {
 
   const body = el("div", { class: "lib-import-body" }, [
     dropzone,
-    el("div", { class: "lib-import-actions" }, [pickFolderBtn, pickFilesBtn, pauseBtn, cancelBtn]),
+    el("div", { class: "lib-import-actions" }, [pickFolderBtn, pickFilesBtn]),
     opts,
     status,
     logPanel,

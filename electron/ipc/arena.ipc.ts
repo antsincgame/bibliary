@@ -83,36 +83,13 @@ export function registerArenaIpc(): void {
       if (win && !win.isDestroyed()) win.webContents.send(channel, data);
     };
 
-    /* Read prefs once for per-role tuning toggle. */
     const prefs = await getPreferencesStore().getAll();
-    /* Lightning preset (см. docs/lightning-olympics.md): один тумблер в UI
-     * перекрывает несколько частных настроек на лету. Это «macro-pref»:
-     *   weightClasses → ["s"]   (только мелкие модели)
-     *   testAll       → false   (не пробежать всё)
-     *   maxModels     → 5       (top-K фильтр)
-     *   timeout       → 30s     (вместо 90s — Lightning не для медленного reasoning)
-     * Если Lightning выключен — работают индивидуальные prefs/args. */
-    const lightning = prefs.olympicsLightning === true;
-    const requestedWeightClasses = Array.isArray(args.weightClasses)
-      ? (args.weightClasses as Array<"xs"|"s"|"m"|"l"|"xl"|"unknown">)
-      : undefined;
-    const finalWeightClasses = lightning ? (["s"] as const) : requestedWeightClasses;
-    const finalTestAll = lightning ? false : (args.testAll === true);
-    const finalMaxModels = lightning
-      ? 5
-      : (typeof args.maxModels === "number" ? args.maxModels : undefined);
-    const finalTimeout = lightning ? 30_000 : undefined;
     try {
       const report = await runOlympics({
         models: Array.isArray(args.models) ? (args.models as string[]) : undefined,
         disciplines: Array.isArray(args.disciplines) ? (args.disciplines as string[]) : undefined,
-        maxModels: finalMaxModels,
-        weightClasses: finalWeightClasses as Array<"xs"|"s"|"m"|"l"|"xl"|"unknown"> | undefined,
-        testAll: finalTestAll,
-        perDisciplineTimeoutMs: finalTimeout,
+        testAll: args.testAll === true,
         roles: Array.isArray(args.roles) ? (args.roles as OlympicsRole[]) : undefined,
-        roleLoadConfigEnabled: prefs.olympicsRoleLoadConfigEnabled === true,
-        useLmsSDK: prefs.olympicsUseLmsSDK === true,
         signal: ctrl.signal,
         onProgress: (ev) => send("arena:olympics-progress", ev),
       });
@@ -191,19 +168,30 @@ export function registerArenaIpc(): void {
 
   async function ensureRecommendedModelsLoaded(recs: Partial<Preferences>): Promise<void> {
     const PRIORITY_KEYS = ["extractorModel", "visionModelKey", "evaluatorModel"] as const;
-    const modelKeysToLoad = new Set<string>();
+    /* Build PRIORITY-ORDERED list, не Set: первые 2 — гарантированно
+     * extractorModel/visionModelKey/evaluatorModel (если заданы), остальные —
+     * вспомогательные роли. Раньше Set дедуплицировал но порядок
+     * insertion-зависимый: если evaluator оказался впереди extractor по
+     * `Object.entries`, то slice(0,2) мог дать [evaluator, vision] вместо
+     * [extractor, vision]. */
+    const orderedKeys: string[] = [];
+    const seen = new Set<string>();
     for (const pk of PRIORITY_KEYS) {
       const val = (recs as Record<string, unknown>)[pk];
-      if (typeof val === "string" && val.trim().length > 0) {
-        modelKeysToLoad.add(val.trim());
+      if (typeof val === "string" && val.trim().length > 0 && !seen.has(val.trim())) {
+        const k = val.trim();
+        orderedKeys.push(k);
+        seen.add(k);
       }
     }
     for (const [, val] of Object.entries(recs)) {
-      if (typeof val === "string" && val.trim().length > 0) {
-        modelKeysToLoad.add(val.trim());
+      if (typeof val === "string" && val.trim().length > 0 && !seen.has(val.trim())) {
+        const k = val.trim();
+        orderedKeys.push(k);
+        seen.add(k);
       }
     }
-    if (modelKeysToLoad.size === 0) return;
+    if (orderedKeys.length === 0) return;
 
     let loaded: Array<{ modelKey: string }>;
     try {
@@ -212,11 +200,41 @@ export function registerArenaIpc(): void {
       return;
     }
     const alreadyLoaded = new Set(loaded.map((m) => m.modelKey));
-    const toLoad = [...modelKeysToLoad].filter((k) => !alreadyLoaded.has(k));
+    const toLoad = orderedKeys.filter((k) => !alreadyLoaded.has(k));
     if (toLoad.length === 0) return;
 
     const MAX_AUTO_LOAD = 2;
     const selected = toLoad.slice(0, MAX_AUTO_LOAD);
+    const targetSet = new Set(selected);
+
+    /* VRAM safety: если в LM Studio УЖЕ загружено много моделей (≥3) и среди
+     * них есть НЕ-recommended — выгружаем "лишние" перед загрузкой новых.
+     * Иначе риск OOM/freeze: 2 новые × gpuOffload=max поверх 3+ старых
+     * на 8GB VRAM = практически гарантированный hang LM Studio.
+     *
+     * Правило: оставляем те loaded модели, которые ЕСТЬ в orderedKeys
+     * (юзер их явно рекомендовал), всё остальное выгружаем. Это безопасный
+     * "garbage collect" перед заездом новых рекомендаций. */
+    const VRAM_PRESSURE_THRESHOLD = 3;
+    if (loaded.length >= VRAM_PRESSURE_THRESHOLD) {
+      const recommendedSet = new Set(orderedKeys);
+      const toEvict = loaded
+        .map((m) => m.modelKey)
+        .filter((k) => !recommendedSet.has(k) && !targetSet.has(k));
+      if (toEvict.length > 0) {
+        console.log(`[arena] VRAM cleanup: ${loaded.length} loaded, evicting ${toEvict.length} non-recommended: ${toEvict.join(", ")}`);
+        const { unloadModel } = await import("../lmstudio-client.js");
+        for (const evictKey of toEvict) {
+          try {
+            await unloadModel(evictKey);
+            console.log(`[arena] VRAM cleanup OK: "${evictKey}" unloaded`);
+          } catch (err) {
+            console.warn(`[arena] VRAM cleanup "${evictKey}" failed (non-fatal):`, err);
+          }
+        }
+      }
+    }
+
     console.log(`[arena] auto-load: attempting ${selected.length} models: ${selected.join(", ")}`);
     for (const modelKey of selected) {
       try {

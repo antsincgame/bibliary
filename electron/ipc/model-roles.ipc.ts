@@ -7,9 +7,11 @@ import {
   type ResolvedModel,
   type RoleMeta,
 } from "../lib/llm/model-role-resolver.js";
+import { getPreferencesStore } from "../lib/preferences/store.js";
 
 export interface RoleSnapshotEntry extends RoleMeta {
   resolved: ResolvedModel | null;
+  prefValue: string;
 }
 
 const VALID_ROLES = new Set<ModelRole>(listAllRoles().map((meta) => meta.role));
@@ -23,6 +25,10 @@ function sanitizeRolesArg(input: unknown): ModelRole[] | undefined {
 export async function getRoleSnapshot(roles?: ModelRole[]): Promise<RoleSnapshotEntry[]> {
   const requested = roles && roles.length > 0 ? new Set<ModelRole>(roles) : null;
   const metas = listAllRoles().filter((meta) => !requested || requested.has(meta.role));
+  let prefs: Record<string, unknown> = {};
+  try {
+    prefs = await getPreferencesStore().getAll() as Record<string, unknown>;
+  } catch { /* prefs not available — prefValue stays empty */ }
   const entries: RoleSnapshotEntry[] = [];
   for (const meta of metas) {
     let resolved: ResolvedModel | null = null;
@@ -31,7 +37,9 @@ export async function getRoleSnapshot(roles?: ModelRole[]): Promise<RoleSnapshot
     } catch {
       resolved = null;
     }
-    entries.push({ ...meta, resolved });
+    const raw = prefs[meta.prefKey];
+    const prefValue = typeof raw === "string" ? raw.trim() : "";
+    entries.push({ ...meta, resolved, prefValue });
   }
   return entries;
 }

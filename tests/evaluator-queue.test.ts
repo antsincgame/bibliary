@@ -516,11 +516,18 @@ test("evaluator-queue passes prefs.evaluatorModel into pickEvaluatorModel (no si
 
   let receivedOpts: { preferred?: string; fallbacks?: string[]; allowAutoLoad?: boolean } | null = null;
   let usedModel = "";
+  let preLoadedKey = "";
   _setEvaluatorDepsForTests({
     readEvaluatorPrefs: async () => ({
       preferred: "user-selected-model",
       fallbacks: ["fallback-a", "fallback-b"],
     }),
+    /* Pre-load (новый контракт v0.4.9): evaluator-queue САМ загружает
+       preferred в LM Studio до picker'а — это гарантирует, что preferred
+       будет в loaded и picker вернёт ИМЕННО её, без скоринга. */
+    ensurePreferredLoaded: async (key: string) => {
+      preLoadedKey = key;
+    },
     pickEvaluatorModel: async (opts) => {
       receivedOpts = opts ?? null;
       /* Эмулируем поведение нового pickEvaluatorModel: preferred есть и в loaded
@@ -539,7 +546,8 @@ test("evaluator-queue passes prefs.evaluatorModel into pickEvaluatorModel (no si
   assert.ok(receivedOpts, "pickEvaluatorModel received options");
   assert.equal(receivedOpts!.preferred, "user-selected-model");
   assert.deepEqual(receivedOpts!.fallbacks, ["fallback-a", "fallback-b"]);
-  assert.equal(receivedOpts!.allowAutoLoad, true, "auto-load разрешён когда preferred модель задана (Olympics / Settings)");
+  assert.equal(receivedOpts!.allowAutoLoad, false, "после pre-load picker НЕ должен иметь права на скрытую догрузку другой модели");
+  assert.equal(preLoadedKey, "user-selected-model", "ensurePreferredLoaded был вызван с выбранной пользователем моделью");
   assert.equal(usedModel, "user-selected-model", "evaluateBook получил выбранную в Settings модель");
 });
 
@@ -556,6 +564,11 @@ test("evaluator-queue marks book failed with descriptive reason when preferred m
 
   _setEvaluatorDepsForTests({
     readEvaluatorPrefs: async () => ({ preferred: "ghost-model", fallbacks: [] }),
+    /* В тестовой среде нет LM Studio — без явной подмены defaultEnsurePreferredLoaded
+       упадёт с network error (хоть и не фатально). Эмулируем «модель не нашлась». */
+    ensurePreferredLoaded: async () => {
+      throw new Error("test: no LM Studio — model not loadable");
+    },
     /* pickEvaluatorModel реально посмотрит loaded и вернёт null —
        allowAutoLoad=false запрещает скрытую загрузку чужой модели. */
     pickEvaluatorModel: async () => null,

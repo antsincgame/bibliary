@@ -370,7 +370,8 @@ body::after {
 #library-root .lib-pane-import.lib-pane-active,
 #library-root .lib-pane-search.lib-pane-active,
 #library-root .lib-pane-collections.lib-pane-active {
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* Cards */
@@ -4772,22 +4773,15 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   width: 100%;
 }
 
-/* Лог импорта вырывается из 880px ограничения на всю ширину контейнера —
-   так логи читаются как настоящая консоль, а не узкая колонка по центру.
-   Размер вычисляется относительно viewport: -50vw / +50vw. */
+/* Лог-панель импорта — без горизонтального вылезания за пределы контейнера.
+   Ранее margin-left/right вырывали панель из 880px на весь viewport, что
+   порождало горизонтальный скрол. Теперь лог ограничен шириной родителя. */
 .lib-import-body > .lib-import-log-panel {
-  width: calc(100vw - 80px);
-  max-width: calc(100vw - 80px);
-  margin-left: calc(-1 * (100vw - 880px) / 2 + 40px);
-  margin-right: calc(-1 * (100vw - 880px) / 2 + 40px);
-}
-@media (max-width: 920px) {
-  .lib-import-body > .lib-import-log-panel {
-    width: 100%;
-    max-width: 100%;
-    margin-left: 0;
-    margin-right: 0;
-  }
+  width: 100%;
+  max-width: 100%;
+  margin-left: 0;
+  margin-right: 0;
+  box-sizing: border-box;
 }
 
 .lib-import-dropzone {
@@ -7141,6 +7135,118 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   color: #f87171;
   font-style: italic;
   padding: 4px 0;
+}
+
+/* ── Lightning Olympics: probe + adaptive + EcoTune (v0.4.9) ── */
+.mp-olympics-lightning-stats {
+  margin: 16px 0;
+  padding: 12px 14px;
+  background: rgba(96, 165, 250, 0.06);
+  border: 1px solid rgba(96, 165, 250, 0.20);
+  border-radius: 6px;
+}
+.mp-olympics-lightning-summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 12px;
+  color: #60a5fa;
+  list-style: none;
+  user-select: none;
+}
+.mp-olympics-lightning-summary::-webkit-details-marker { display: none; }
+.mp-olympics-lightning-summary::before {
+  content: "▸ ";
+  display: inline-block;
+  margin-right: 4px;
+  transition: transform 0.15s;
+}
+.mp-olympics-lightning-stats[open] > .mp-olympics-lightning-summary::before {
+  transform: rotate(90deg);
+}
+.mp-olympics-lightning-section {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(96, 165, 250, 0.15);
+}
+.mp-olympics-lightning-section h4 {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 0 0 6px;
+  color: var(--text-primary, #e5e7eb);
+}
+.mp-olympics-lightning-stat {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin: 0 0 8px;
+}
+.mp-olympics-probe-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+}
+.mp-olympics-probe-row {
+  display: contents;
+}
+.mp-olympics-probe-key {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mp-olympics-probe-score {
+  text-align: right;
+  white-space: nowrap;
+}
+.mp-olympics-tune-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 0.5fr 0.7fr 0.5fr 0.6fr 2.5fr;
+  gap: 2px 8px;
+  font-family: var(--font-mono, monospace);
+  font-size: 10.5px;
+  padding-top: 4px;
+}
+.mp-olympics-tune-header {
+  display: contents;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 9.5px;
+}
+.mp-olympics-tune-header > span {
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border, #2a2a2a);
+}
+.mp-olympics-tune-row {
+  display: contents;
+}
+.mp-olympics-tune-row > span {
+  padding: 3px 0;
+}
+.mp-olympics-tune-role {
+  color: #93c5fd;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mp-olympics-tune-num {
+  text-align: right;
+  color: var(--text-primary, #e5e7eb);
+}
+.mp-olympics-tune-conf {
+  font-size: 10px;
+  text-align: center;
+}
+.mp-olympics-tune-conf-good .mp-olympics-tune-conf { color: #6ee7a0; }
+.mp-olympics-tune-conf-mid  .mp-olympics-tune-conf { color: #fbbf24; }
+.mp-olympics-tune-conf-bad  .mp-olympics-tune-conf { color: #f87171; }
+.mp-olympics-tune-rationale {
+  font-size: 10px;
+  color: var(--text-secondary);
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ─────────────────── Семантический поиск (route: search) ─────────────────── */

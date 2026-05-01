@@ -13,31 +13,11 @@ import {
   errMsg,
   showToast,
 } from "./models-page-internals.js";
-import { ALL_ROLES } from "./models-page-olympics-labels.js";
+/* ALL_ROLES больше не используется — advanced-настройки с чекбоксами ролей удалены. */
 import { renderOlympicsReport } from "./models-page-olympics-report.js";
 import { refresh } from "./models-hardware-status.js";
 
-/**
- * Простой helper: создать чекбокс, привязанный к pref-ключу. Загружает текущее
- * значение из preferences, при изменении сохраняет обратно.
- *
- * @param {string} prefKey
- * @param {string=} domId
- */
-function bindPrefCheckbox(prefKey, domId) {
-  const cb = el("input", domId ? { id: domId, type: "checkbox" } : { type: "checkbox" });
-  if (window.api?.preferences?.getAll) {
-    void window.api.preferences.getAll().then((prefs) => {
-      cb.checked = prefs?.[prefKey] === true;
-    }).catch(() => { /* ignore */ });
-  }
-  cb.addEventListener("change", () => {
-    if (window.api?.preferences?.set) {
-      void window.api.preferences.set({ [prefKey]: cb.checked });
-    }
-  });
-  return cb;
-}
+/* bindPrefCheckbox удалён — advanced-настройки с чекбоксами убраны. */
 
 /**
  * Карточка Олимпиады. Главный экран — простой и понятный («для бабушек»):
@@ -113,165 +93,12 @@ export function buildOlympicsCard() {
     /* Зона результатов (медальный зачёт + рекомендации). */
     el("div", { id: "mp-olympics-results", class: "mp-olympics-results" }, ""),
 
-    /* ── Advanced: всё, что нужно редко. Свёрнуто по умолчанию. ── */
-    buildOlympicsAdvanced(),
+    /* Advanced-настройки удалены: бабушкам не понятно. Олимпиада
+     * всегда работает с максимальным охватом (testAll + все роли). */
   ]);
 }
 
-function buildOlympicsAdvanced() {
-  return el("details", { class: "mp-olympics-advanced" }, [
-    el("summary", { class: "mp-olympics-advanced-summary" }, t("models.olympics.advanced")),
-    el("p", { class: "mp-olympics-advanced-hint" }, t("models.olympics.advanced.hint")),
-
-    /* — 🚀 Lightning preset — macro-toggle (см. docs/lightning-olympics.md) — */
-    el("div", { class: "mp-olympics-preset-box" }, [
-      el("label", { class: "mp-olympics-option mp-olympics-option-lightning" }, [
-        bindPrefCheckbox("olympicsLightning", "mp-olympics-lightning"),
-        el("span", { class: "mp-olympics-option-strong" }, "🚀 Lightning Olympics"),
-        el("span", { class: "mp-olympics-option-hint" },
-          "Молниеносная аттестация: только S-класс, top-5 по probe, timeout=30s. " +
-          "Прогон 60–90с вместо 5–15 мин. Подробнее: docs/lightning-olympics.md."),
-      ]),
-    ]),
-
-    /* — Авто-применение: оптимум (по умолчанию) или чемпион — */
-    el("label", { class: "mp-olympics-option" }, [
-      bindPrefCheckbox("olympicsUseChampion", "mp-olympics-use-champion"),
-      el("span", {}, t("models.olympics.advanced.use_champion")),
-      el("span", { class: "mp-olympics-option-hint" }, t("models.olympics.advanced.use_champion_hint")),
-    ]),
-
-    /* — Фильтр класса + testAll (отключаются если Lightning ON) — */
-    el("label", { class: "mp-olympics-option" }, [
-      bindPrefCheckbox("olympicsTestAll", "mp-olympics-testall"),
-      el("span", {}, t("models.olympics.option.test_all")),
-      el("span", { class: "mp-olympics-option-hint" }, t("models.olympics.option.test_all_hint")),
-    ]),
-    el("label", { class: "mp-olympics-option" }, [
-      el("span", {}, t("models.olympics.option.weight_classes")),
-      (() => {
-        const sel = el("select", { id: "mp-olympics-classes", class: "mp-olympics-select" }, [
-          el("option", { value: "s,m" }, "S+M (1–12B) — стандарт"),
-          el("option", { value: "s" }, "Только S (1–5B) — слабое железо"),
-          el("option", { value: "m,l" }, "M+L (5–30B) — сильное железо"),
-          el("option", { value: "s,m,l" }, "S+M+L — широкий охват"),
-        ]);
-        sel.value = "s,m";
-        if (window.api?.preferences?.getAll) {
-          void window.api.preferences.getAll().then((prefs) => {
-            const saved = typeof prefs?.olympicsWeightClasses === "string" ? prefs.olympicsWeightClasses : "s,m";
-            if (saved && sel.querySelector(`option[value="${saved}"]`)) sel.value = saved;
-          }).catch(() => { /* ignore */ });
-        }
-        sel.addEventListener("change", () => {
-          if (window.api?.preferences?.set) {
-            void window.api.preferences.set({ olympicsWeightClasses: sel.value });
-          }
-        });
-        return sel;
-      })(),
-    ]),
-
-    /* — Экспертные тумблеры — */
-    el("label", { class: "mp-olympics-option" }, [
-      bindPrefCheckbox("olympicsRoleLoadConfigEnabled", "mp-olympics-role-tuning"),
-      el("span", {}, t("models.olympics.option.role_tuning")),
-      el("span", { class: "mp-olympics-option-hint" }, t("models.olympics.option.role_tuning_hint")),
-    ]),
-    el("label", { class: "mp-olympics-option" }, [
-      bindPrefCheckbox("olympicsUseLmsSDK", "mp-olympics-use-sdk"),
-      el("span", {}, t("models.olympics.option.use_sdk")),
-      el("span", { class: "mp-olympics-option-hint" }, t("models.olympics.option.use_sdk_hint")),
-    ]),
-
-    /* — Какие роли тестировать — */
-    el("div", { class: "mp-olympics-roles" }, [
-      el("span", { class: "mp-olympics-roles-label" }, t("models.olympics.advanced.roles_label")),
-      el("p", { class: "mp-olympics-roles-hint" }, t("models.olympics.advanced.roles_hint")),
-      el("div", { class: "mp-olympics-roles-grid" },
-        ALL_ROLES.map((r) =>
-          el("label", { class: "mp-olympics-role-check" }, [
-            el("input", { type: "checkbox", "data-role": r.role, checked: true }),
-            el("span", {}, r.label),
-          ])
-        ),
-      ),
-    ]),
-
-    /* — Профиль: экспорт / импорт — */
-    el("div", { class: "mp-olympics-profile-row" }, [
-      el("button", {
-        class: "btn btn-ghost btn-sm",
-        type: "button",
-        title: t("models.olympics.advanced.export_hint"),
-        onclick: () => void exportProfileViaDialog(),
-      }, t("models.olympics.advanced.export")),
-      el("button", {
-        class: "btn btn-ghost btn-sm",
-        type: "button",
-        title: t("models.olympics.advanced.import_hint"),
-        onclick: () => void importProfileViaDialog(),
-      }, t("models.olympics.advanced.import")),
-      el("button", {
-        class: "btn btn-ghost btn-xs",
-        type: "button",
-        title: "Скачать профиль как JSON-файл (без диалога)",
-        onclick: () => void downloadProfileAsBlob(),
-      }, "↓ JSON"),
-    ]),
-    el("p", { class: "mp-olympics-advanced-hint" }, t("models.olympics.advanced.export_hint")),
-  ]);
-}
-
-/* ─── Profile export / import ──────────────────────────────────────── */
-
-async function exportProfileViaDialog() {
-  if (!window.api?.preferences?.exportProfile) {
-    showToast(t("models.olympics.advanced.export_unavailable"), "error");
-    return;
-  }
-  try {
-    const res = await window.api.preferences.exportProfile();
-    if (!res?.path) return;
-    showToast(t("models.olympics.advanced.export_done", { path: res.path }), "success");
-  } catch (e) {
-    showToast(errMsg(e), "error");
-  }
-}
-
-async function importProfileViaDialog() {
-  if (!window.api?.preferences?.importProfile) {
-    showToast(t("models.olympics.advanced.import_unavailable"), "error");
-    return;
-  }
-  try {
-    const res = await window.api.preferences.importProfile();
-    if (!res?.path) return;
-    showToast(t("models.olympics.advanced.import_done", { keys: String(res.appliedKeys.length) }), "success");
-    await refresh();
-  } catch (e) {
-    showToast(errMsg(e), "error");
-  }
-}
-
-async function downloadProfileAsBlob() {
-  if (!window.api?.preferences?.getProfile) return;
-  try {
-    const file = await window.api.preferences.getProfile();
-    const blob = new Blob([JSON.stringify(file, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    const stamp = new Date().toISOString().replace(/[:T]/g, "-").slice(0, 19);
-    a.href = url;
-    a.download = `bibliary-profile-${stamp}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  } catch (e) {
-    showToast(errMsg(e), "error");
-  }
-}
+/* buildOlympicsAdvanced + profile export/import — удалены (UX-упрощение v0.5.0). */
 
 /* ─── Лог + UI помощники ───────────────────────────────────────────────
  *
@@ -518,34 +345,22 @@ async function runOlympicsAndShow() {
     });
   }
 
-  const testAllEl = ctx.pageRoot?.querySelector("#mp-olympics-testall");
-  const classesEl = ctx.pageRoot?.querySelector("#mp-olympics-classes");
-  const testAll = testAllEl?.checked === true;
-  const wcStr = classesEl?.value ?? "s,m";
-  const weightClasses = wcStr.split(",").map((s) => s.trim()).filter(Boolean);
-  const roleChecks = ctx.pageRoot?.querySelectorAll(".mp-olympics-role-check input[data-role]") ?? [];
-  const roles = [];
-  for (const cb of roleChecks) {
-    if (cb.checked) roles.push(cb.getAttribute("data-role"));
-  }
-  if (roles.length === 0) {
-    const msg = "Выбери хотя бы одну роль для Олимпиады";
-    appendOlympicsLog(logEl, `✗ ${msg}`, "bad");
-    showToast(msg, "error");
-    ctx.olympicsBusy = false;
-    setOlympicsButtons(false);
-    if (typeof unsub === "function") unsub();
-    return;
-  }
-
   try {
-    const report = await window.api.arena.runOlympics({ testAll, weightClasses, roles });
+    const report = await window.api.arena.runOlympics({ testAll: true });
     appendOlympicsLog(logEl, t("models.olympics.done", { ms: ((report.totalDurationMs ?? 0) / 1000).toFixed(1) }), "good");
     renderOlympicsReport(report);
     showToast(t("models.olympics.success"), "success");
-    /* ── Авто-применение ролей. По умолчанию применяется «оптимум»; в Advanced
-     *    можно включить olympicsUseChampion — тогда применится «чемпион». */
-    await autoApplyOlympicsRecommendations(report);
+    /* Авто-применение: используем оптимум (лучший баланс качество/скорость). */
+    const recs = report.recommendations ?? {};
+    if (Object.keys(recs).length > 0 && window.api?.arena?.applyOlympicsRecommendations) {
+      try {
+        await window.api.arena.applyOlympicsRecommendations({ recommendations: recs });
+        showToast(`⭐ ${t("models.olympics.distribute_done")} (${Object.keys(recs).length})`, "success");
+        void refresh();
+      } catch (applyErr) {
+        console.warn("[models] auto-apply failed:", applyErr);
+      }
+    }
   } catch (e) {
     const msg = errMsg(e);
     const isAbort = msg.includes("aborted") || msg.includes("abort") || msg.includes("cancel");
@@ -574,38 +389,4 @@ async function cancelOlympics() {
   }
 }
 
-/**
- * Авто-применение рекомендаций после успешного прогона Олимпиады.
- *
- * @param {{ recommendations?: Record<string, string>; recommendationsByScore?: Record<string, string> }} report
- */
-async function autoApplyOlympicsRecommendations(report) {
-  if (!window.api?.arena?.applyOlympicsRecommendations) return;
-
-  let useChampion = false;
-  if (window.api?.preferences?.getAll) {
-    try {
-      const prefs = await window.api.preferences.getAll();
-      useChampion = prefs?.olympicsUseChampion === true;
-    } catch { /* ignore — fallback to optimum */ }
-  }
-
-  const target = useChampion
-    ? (report.recommendationsByScore ?? {})
-    : (report.recommendations ?? {});
-  const keys = Object.keys(target);
-  if (keys.length === 0) return;
-
-  /* applyRecommendations показывает свой собственный toast — а тут хочется
-     показать badge "🏆"/"⭐" + count. Поэтому inline IPC-call. */
-  try {
-    await window.api.arena.applyOlympicsRecommendations({ recommendations: target });
-    showToast(
-      `${useChampion ? "🏆" : "⭐"} ${t("models.olympics.distribute_done")} (${keys.length})`,
-      "success",
-    );
-    void refresh();
-  } catch (e) {
-    console.warn("[models] auto-apply failed:", e);
-  }
-}
+/* autoApplyOlympicsRecommendations удалён — инлайнена в runOlympicsAndShow. */

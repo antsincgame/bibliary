@@ -234,20 +234,21 @@ function renderRoles(roleMap, loaded, downloaded) {
     const label = meta.labelKey ? t(meta.labelKey) : role;
     const help = meta.helpKey ? t(meta.helpKey) : "";
 
-    const current = entry.resolved?.modelKey ?? "";
+    const prefVal = entry.prefValue ?? "";
     const select = el("select", { class: "mp-role-select" });
 
-    const autoOpt = el("option", { value: "" }, t("models.role.auto"));
-    select.appendChild(autoOpt);
+    const defaultOpt = el("option", { value: "" },
+      prefVal ? t("models.role.auto") : t("models.role.not_selected"));
+    select.appendChild(defaultOpt);
 
     for (const m of allModels) {
-      const opt = el("option", { value: m.key }, m.loaded ? `● ${m.key}` : `○ ${m.key}`);
-      if (m.key === current) opt.selected = true;
+      const opt = el("option", { value: m.key }, m.loaded ? `● ${m.key}` : m.key);
+      if (m.key === prefVal) opt.selected = true;
       select.appendChild(opt);
     }
 
-    if (current && !allModels.some((m) => m.key === current)) {
-      const opt = el("option", { value: current, selected: "selected" }, `${current} (${t("models.role.not_loaded")})`);
+    if (prefVal && !allModels.some((m) => m.key === prefVal)) {
+      const opt = el("option", { value: prefVal, selected: "selected" }, `${prefVal} (${t("models.role.not_loaded")})`);
       select.appendChild(opt);
     }
 

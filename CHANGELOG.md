@@ -4,6 +4,111 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-05-01 — UX Revolution: простота для бабушек
+
+Масштабная чистка UI: удалены все «экспертные» настройки, Lightning mode,
+advanced-панель Олимпиады, ручное управление evaluator-queue. Олимпиада
+стала one-click: нажал «Запустить» → получил результат → модели
+автоматически назначены на роли пайплайна.
+
+### Removed
+
+- **Lightning Olympics** — удалён из UI и бэкенда (настройка и код).
+  Олимпиада теперь всегда testAll (тестирует все модели).
+- **Advanced settings Олимпиады** — вся секция удалена: чекбоксы ролей,
+  весовые классы, per-role tuning, SDK toggle, профили экспорт/импорт.
+- **Evaluator queue controls** — слоты, пауза, отмена текущей оценки
+  удалены из UI. Управление автоматическое.
+- **Import pause/cancel buttons** — убраны из панели импорта.
+
+### Fixed
+
+- **Role selects показывают «Не выбрано»** вместо «Авто (лучшая из
+  загруженных)» когда пользователь не назначил модель явно. Раньше
+  во время Олимпиады динамически загружаемые модели мелькали в списке ролей,
+  создавая ложное впечатление что они «назначены».
+- **Кнопка «Распределить»** — работает: сохраняет оптимум-модели
+  в preferences и обновляет role-selects.
+- **Горизонтальный скрол** на странице импорта — убран. Log-панель больше
+  не вырывается за пределы контейнера.
+
+### Changed
+
+- `model-roles.ipc.ts`: `RoleSnapshotEntry` теперь содержит `prefValue` —
+  явно сохранённое значение из preferences (не resolved, а именно prefs).
+  Это позволяет UI отличать «юзер выбрал модель» от «авто-резолв подставил
+  загруженную».
+
+---
+
+## [0.4.9] — 2026-05-01 — Sherlok+OM round 2: probe rewrite + evaluator fix + EcoTune UI
+
+После повторного `/sherlok /om` аудита v0.4.5 → v0.4.8 найдены 7 дефектов.
+Все исправлены атомарно в режиме Mahakala (lint+typecheck+tests чисты, baseline 564 pass / 8 fail сохранён).
+
+### Fixed
+
+- **#1 Probe phase реально работает** (CRITICAL). До фикса условие
+  `selectedInfos.length > maxModels` было всегда false в Lightning auto-pick,
+  потому что `pickModelsForOlympicsV1` уже применил cap=5. Теперь probe берёт
+  расширенный пул `max(maxModels × 3, 24)` БЕЗ cap'а, прогоняет survivors
+  через cutoff=0.4, передаёт их в picker как `explicit` для финального
+  family-dedup + cap. Probe теперь действительно отсеивает «сломанные» модели.
+- **#2 Evaluator больше не загружает «не ту» модель** (CRITICAL).
+  `pickEvaluatorModel(allowAutoLoad=true)` возвращал preferred ТОЛЬКО если
+  она уже в loaded — иначе скоринг мог выбрать другую (более крупную) модель,
+  нарушая контракт «выбор пользователя сильнее эвристики». Теперь
+  `evaluator-queue` САМ загружает preferred ДО picker'а через новый DI hook
+  `ensurePreferredLoaded`, picker получает `allowAutoLoad: false`.
+- **#3 EcoTune suggestions показываются в UI**. До фикса
+  `report.autoTuneSuggestions` вычислялись и сохранялись на диск, но в
+  отчёте Олимпиады их не было — мёртвая фича для пользователя. Добавлен
+  collapsible блок «🚀 Lightning Olympics» с тремя секциями: Probe phase
+  (per-model scores), Adaptive elimination (счётчик skipped), EcoTune
+  auto-tune (таблица temp/max_tok/top_p + confidence + rationale).
+- **#4 Restore-on-mount не затирает свежий UI** (race fix).
+  `getLastReport()` теперь проверяет `ctx.olympicsBusy` перед
+  `renderOlympicsReport(...)` — если пользователь уже нажал «Run Olympics»,
+  старый отчёт не подменяет новый прогон.
+- **#5 VRAM safety при auto-load**. `ensureRecommendedModelsLoaded` при
+  ≥3 уже загруженных моделях выгружает «не-recommended» через
+  `unloadModel(...)` ПЕРЕД новой загрузкой. Снижает риск OOM/freeze
+  LM Studio на 8GB VRAM. Также priority-ordered selection (extractor →
+  vision → evaluator) гарантирует, что slice(0, 2) берёт нужные две.
+- **#6 Folder-bundle sidecars получают prefs.visionModelKey**.
+  `describe-sidecars.ts` зовёт `extractMetadataFromCover(buf, {})` с
+  пустыми опциями — vision-meta lazy-load не срабатывал. Теперь
+  передаём `prefs.visionModelKey` явно.
+- **#7 Stale doc-comment** в `disciplines.ts` обновлён (judge удалён из
+  Olympics, остался только в pipeline через judgeModel).
+
+### Changed
+
+- **EvaluatorDeps**: добавлен hook `ensurePreferredLoaded(modelKey)`. По
+  дефолту дёргает `lmstudio-client.loadModel`, в тестах — заменяемая
+  no-op/fail-функция. Закрывает gap «pickEvaluatorModel-mock не покрывал
+  pre-load».
+- **Probe gate condition**: `probeShouldRun = !testAll && !explicit-models &&
+  maxModels > 0`. Условие чище и не зависит от случайной длины пула.
+
+### Tests
+
+- `tests/evaluator-queue.test.ts`: тест «passes prefs.evaluatorModel into
+  pickEvaluatorModel» обновлён под новый контракт (`allowAutoLoad: false`,
+  проверка вызова `ensurePreferredLoaded`).
+- Все тесты проходят: 564 pass / 8 fail (baseline env-зависимый, без
+  регрессий относительно v0.4.8).
+
+### Mahakala verdict
+
+```
+БАЗОВЫЙ СНИМОК v0.4.8: tsc 0, lint 0, tests 564/8
+ФИНАЛЬНЫЙ СНИМОК v0.4.9: tsc 0, lint 0, tests 564/8
+ВЕРДИКТ: БЕЗОПАСНО ✅ — продукт защищён, регрессий нет.
+```
+
+---
+
 ## [0.4.8] — 2026-05-01 — Probe phase + Adaptive elimination + EcoTune auto-tune
 
 ### Added
