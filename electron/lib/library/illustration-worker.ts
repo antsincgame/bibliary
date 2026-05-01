@@ -314,7 +314,6 @@ export async function processIllustrations(
    * последовательно через mdQueue). */
   let visionParallelism = 4;
   try {
-    const { getPreferencesStore } = await import("../preferences/store.js");
     const prefs = await getPreferencesStore().getAll();
     if (typeof prefs.illustrationParallelism === "number" && prefs.illustrationParallelism >= 1) {
       visionParallelism = prefs.illustrationParallelism;
