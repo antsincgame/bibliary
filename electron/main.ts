@@ -16,12 +16,10 @@ import {
   initResilienceLayer,
   coordinator,
   telemetry,
-  configureFileLockDefaults,
 } from "./lib/resilience";
 import { initPreferencesStore } from "./lib/preferences/store.js";
-import { syncMarkerEnvFromPrefs } from "./lib/library/marker-sidecar.js";
 import { registerExtractionPipeline } from "./lib/dataset-v2/coordinator-pipeline";
-import { startWatchdog, stopWatchdog, configureWatchdog } from "./lib/resilience/lmstudio-watchdog";
+import { startWatchdog, stopWatchdog } from "./lib/resilience/lmstudio-watchdog";
 import {
   startSchedulerSnapshotBroadcaster,
   stopSchedulerSnapshotBroadcaster,
@@ -184,22 +182,11 @@ if (!gotLock) {
     const prefsStore = initPreferencesStore(dataDir);
     await prefsStore.ensureDefaults();
     const prefs = await prefsStore.getAll();
-    configureWatchdog({
-      pollIntervalMs: prefs.healthPollIntervalMs,
-      failThreshold: prefs.healthFailThreshold,
-      livenessTimeoutMs: prefs.watchdogLivenessTimeoutMs,
-    });
-    configureFileLockDefaults({
-      retries: prefs.lockRetries,
-      stale: prefs.lockStaleMs,
-    });
-    /* Sync Marker feature flag from preferences to ENV so marker-sidecar.ts
-       can read it synchronously without a preferences store dependency. */
-    syncMarkerEnvFromPrefs(prefs.useMarkerExtractor);
-    /* Иt 8Б — propagate Smart Import Pipeline prefs to live singletons
-       (scheduler lanes, evaluator slots, vision-OCR rate limiter) ДО любого
-       импорта или Olympics. applyRuntimeSideEffects идемпотентен — IPC
-       preferences:set вызывает его повторно для runtime-обновлений. */
+    /* Иt 8В CRITICAL.1 — единственная точка propagation prefs → singletons.
+       applyRuntimeSideEffects покрывает: watchdog, file-lock, marker-env,
+       endpoints (LM/Qdrant), role resolver, scheduler lanes, evaluator slots,
+       heavy-lane rate limiter. Идемпотентен — IPC preferences:set вызывает
+       его повторно для runtime-обновлений. Никаких ручных вызовов выше. */
     const { applyRuntimeSideEffects } = await import("./ipc/preferences.ipc.js");
     applyRuntimeSideEffects(prefs);
     /* Resolve endpoints from preferences once and propagate the result
