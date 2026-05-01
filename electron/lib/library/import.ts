@@ -88,9 +88,9 @@ async function importArchiveSequential(absPath: string, opts: Omit<ImportFolderO
  * Архитектура (Фаза 2 «streaming ingest»):
  *   1. Scanner — async generator, идёт по FS параллельно с парсером.
  *      Прогресс начинает течь с первого найденного файла.
- *   2. Parser pool — N одновременных книг (default = cpus-1, override через
- *      ENV `BIBLIARY_PARSER_POOL_SIZE`). CPU-задача безопасна параллельно
- *      с GPU-эвалюацией.
+ *   2. Parser pool — N одновременных книг. Приоритет размера (см. `resolveParserPoolSize`):
+ *      `prefs.parserPoolSize` > ENV `BIBLIARY_PARSER_POOL_SIZE` > `cpus-1` (ceiling 4).
+ *      CPU-задача безопасна параллельно с GPU-эвалюацией.
  *   3. Per-file timeout — 8 минут на книгу (битые PDF ловятся в Фазе 3
  *      воркер-тредом, здесь пока taimeout-abort).
  *   4. Counters обновляются по мере завершения slot'ов; порядок выдачи !=

@@ -4,10 +4,13 @@
  * Контракт:
  *   - На startup читает из cache-db все книги с `status='imported'`
  *     и добавляет их в FIFO.
- *   - N параллельных слотов (default 2, runtime 1..16 через
- *     `setEvaluatorSlots`, env `BIBLIARY_EVAL_SLOTS`). Каждый слот --
- *     отдельная корутина, тянет из общей очереди. Это даёт честный
- *     parallelism для лёгких моделей и не убивает GPU при тяжёлых:
+ *   - N параллельных слотов. Источники конфигурации (приоритет, Иt 8Б):
+ *     `prefs.evaluatorSlots` (single source of truth, Settings UI) > env
+ *     `BIBLIARY_EVAL_SLOTS` (только до первого `applyRuntimeSideEffects`,
+ *     для CI / batch) > default 2. Runtime смена через `setEvaluatorSlots`
+ *     или `applyEvaluatorPrefs(prefs)` (вызывается из `applyRuntimeSideEffects`).
+ *     Каждый слот -- отдельная корутина, тянет из общей очереди. Это даёт
+ *     честный parallelism для лёгких моделей и не убивает GPU при тяжёлых:
  *     юзер сам выкручивает слайдер. С пользовательской кристаллизацией
  *     не конкурируем -- chatWithPolicy сериализует доступ к модели
  *     внутри LM Studio, очередь просто ждёт.
