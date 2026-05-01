@@ -33,6 +33,11 @@ import {
   getHeavyLaneRateLimiter,
 } from "../electron/lib/llm/heavy-lane-rate-limiter.ts";
 
+import {
+  applyEvaluatorPrefs,
+  getEvaluatorSlotCount,
+} from "../electron/lib/library/evaluator-queue.ts";
+
 import { CrossFormatPreDedup } from "../electron/lib/library/cross-format-prededup.ts";
 
 let tmpDir: string;
@@ -150,6 +155,38 @@ describe("[Settings 8Б] HeavyLaneRateLimiter.updateLimit / applyHeavyLaneRateLi
     applyHeavyLaneRateLimiterPrefs({ visionOcrRpm: before === 200 ? 100 : 200 });
     const after = getHeavyLaneRateLimiter().getLimit();
     assert.notEqual(after, before, "limit должен измениться после apply");
+  });
+});
+
+/* ── EvaluatorQueue: applyEvaluatorPrefs закрывает evaluatorSlots gap (Иt 8В.CRITICAL.3) ── */
+
+describe("[Settings 8В] applyEvaluatorPrefs propagates evaluatorSlots to live worker", () => {
+  test("apply меняет getEvaluatorSlotCount()", () => {
+    const before = getEvaluatorSlotCount();
+    const target = before === 4 ? 6 : 4;
+    applyEvaluatorPrefs({ evaluatorSlots: target });
+    assert.equal(getEvaluatorSlotCount(), target);
+    /* Восстанавливаем — другие тесты могут зависеть от стартового значения. */
+    applyEvaluatorPrefs({ evaluatorSlots: before });
+    assert.equal(getEvaluatorSlotCount(), before);
+  });
+
+  test("undefined / 0 / отрицательные значения — no-op (валидация >= 1)", () => {
+    const before = getEvaluatorSlotCount();
+    applyEvaluatorPrefs({});
+    assert.equal(getEvaluatorSlotCount(), before, "пустой объект не должен трогать slotCount");
+    applyEvaluatorPrefs({ evaluatorSlots: 0 });
+    assert.equal(getEvaluatorSlotCount(), before, "0 < 1 — игнор");
+    applyEvaluatorPrefs({ evaluatorSlots: -3 });
+    assert.equal(getEvaluatorSlotCount(), before, "отрицательное — игнор");
+  });
+
+  test("MAX_SLOT_COUNT кепом обрезает экстремальные значения", () => {
+    const before = getEvaluatorSlotCount();
+    applyEvaluatorPrefs({ evaluatorSlots: 9999 });
+    const after = getEvaluatorSlotCount();
+    assert.ok(after <= 16, `slotCount должен быть кепом MAX_SLOT_COUNT=16, получили ${after}`);
+    applyEvaluatorPrefs({ evaluatorSlots: before });
   });
 });
 
