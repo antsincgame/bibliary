@@ -12,6 +12,7 @@ import { applyImportSchedulerPrefs } from "../lib/library/import-task-scheduler.
 import { applyEvaluatorPrefs } from "../lib/library/evaluator-queue.js";
 import { applyHeavyLaneRateLimiterPrefs } from "../lib/llm/heavy-lane-rate-limiter.js";
 import { applyCalibrePathPrefs } from "../lib/scanner/converters/calibre-cli.js";
+import { applyIllustrationSemaphorePrefs } from "../lib/library/illustration-semaphore.js";
 
 /**
  * Whitelist полей, входящих в «профиль моделей» (export/import).
@@ -112,6 +113,7 @@ export function applyRuntimeSideEffects(prefs: Preferences): void {
   applyEvaluatorPrefs({ evaluatorSlots: prefs.evaluatorSlots });
   applyHeavyLaneRateLimiterPrefs({ visionOcrRpm: prefs.visionOcrRpm });
   applyCalibrePathPrefs({ calibrePathOverride: prefs.calibrePathOverride });
+  applyIllustrationSemaphorePrefs({ illustrationParallelBooks: prefs.illustrationParallelBooks });
 }
 
 export function registerPreferencesIpc(): void {

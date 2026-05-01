@@ -22,7 +22,7 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import { pickVisionModels } from "../llm/vision-meta.js";
 import { modelRoleResolver } from "../llm/model-role-resolver.js";
-import { getPreferencesStore } from "../preferences/store.js";
+import { readPipelinePrefsOrNull } from "../preferences/store.js";
 import { getModelPool } from "../llm/model-pool.js";
 import { getImportScheduler } from "./import-task-scheduler.js";
 
@@ -234,12 +234,12 @@ export async function processIllustrations(
    * pickVisionModels() для backward-compat. */
   let modelKey: string | null = null;
   let fallbackModelKeys: string[] = [];
+  const prefsResolve = await readPipelinePrefsOrNull();
   try {
     const resolved = await modelRoleResolver.resolve("vision_illustration");
     if (resolved) modelKey = resolved.modelKey;
     /* Дополнительные кандидаты из CSV-fallback prefs (для retry в worker). */
-    const prefs = await getPreferencesStore().getAll();
-    const fbCsv = prefs.visionModelFallbacks?.trim() || "";
+    const fbCsv = prefsResolve?.visionModelFallbacks?.trim() || "";
     if (fbCsv) {
       fallbackModelKeys = fbCsv.split(",").map((s: string) => s.trim()).filter((k: string) => k && k !== modelKey);
     }
@@ -254,8 +254,7 @@ export async function processIllustrations(
        * могли дёрнуть load одной vision-модели одновременно → OOM на тяжёлых
        * Qwen-VL. Pool.acquire дедуплицирует через runOnChain. Immediate release
        * безопасен — withModel ниже снова возьмёт refCount. */
-      const prefs2 = await getPreferencesStore().getAll();
-      const prefVision = prefs2.visionModelKey?.trim() || "";
+      const prefVision = prefsResolve?.visionModelKey?.trim() || "";
       if (prefVision) {
         try {
           onProgress?.(`Loading vision model "${prefVision}" from prefs...`);
@@ -312,15 +311,10 @@ export async function processIllustrations(
    * (single-threaded JS — race-free для счётчиков, но enrichMarkdownAltText
    * читает и пишет одну переменную bookMd, поэтому делаем этот шаг
    * последовательно через mdQueue). */
-  let visionParallelism = 4;
-  try {
-    const prefs = await getPreferencesStore().getAll();
-    if (typeof prefs.illustrationParallelism === "number" && prefs.illustrationParallelism >= 1) {
-      visionParallelism = prefs.illustrationParallelism;
-    }
-  } catch {
-    /* PreferencesStore не инициализирован (тесты) — оставляем default 4. */
-  }
+  const prefs = await readPipelinePrefsOrNull();
+  const visionParallelism = (typeof prefs?.illustrationParallelism === "number" && prefs.illustrationParallelism >= 1)
+    ? prefs.illustrationParallelism
+    : 4;
 
   /* Сериализуем только md-патчинг — остальные шаги (vision call, qdrant index)
    * полностью независимые по entries. */

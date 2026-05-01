@@ -19,7 +19,9 @@
  *   GPU/RAM budget для 4B vision-модели и не валит LM Studio.
  *
  *   Lower bound (capacity=1) — последовательная обработка, безопасно для
- *   слабых машин. Override через env `BIBLIARY_ILLUSTRATION_PARALLEL_BOOKS`.
+ *   слабых машин. Конфиг — `prefs.illustrationParallelBooks` (Settings UI).
+ *   Иt 8В.CRITICAL.2: env `BIBLIARY_ILLUSTRATION_PARALLEL_BOOKS` удалён по
+ *   приказу Царя об отказе от env-tunables пайплайна.
  *
  * АРХИТЕКТУРА:
  *   - FIFO очередь — порядок импорта сохраняется, нет starvation поздних книг.
@@ -29,11 +31,7 @@
  *     всех в очереди.
  */
 
-const DEFAULT_CAPACITY = (() => {
-  const raw = process.env.BIBLIARY_ILLUSTRATION_PARALLEL_BOOKS;
-  const parsed = raw ? Number(raw) : NaN;
-  return Number.isFinite(parsed) && parsed >= 1 && parsed <= 16 ? parsed : 2;
-})();
+const DEFAULT_CAPACITY = 2;
 
 class IllustrationSemaphore {
   private capacity: number;
@@ -123,6 +121,18 @@ export async function runIllustrationJob<T>(task: () => Promise<T>): Promise<T> 
 /** Дождаться полного завершения всех illustration jobs (для shutdown). */
 export async function drainIllustrationJobs(): Promise<void> {
   return sharedSemaphore.drain();
+}
+
+/**
+ * Применить лимит illustrationParallelBooks из preferences (Иt 8В.MEDIUM.10).
+ * Вызывается из `preferences.ipc.applyRuntimeSideEffects` при boot и каждом
+ * `preferences:set`. Изменение capacity на лету пробуждает ожидающих в очереди
+ * (см. setCapacity). Тонкая обёртка — не меняет семантику.
+ */
+export function applyIllustrationSemaphorePrefs(prefs: { illustrationParallelBooks?: number }): void {
+  if (typeof prefs.illustrationParallelBooks === "number" && prefs.illustrationParallelBooks >= 1) {
+    sharedSemaphore.setCapacity(prefs.illustrationParallelBooks);
+  }
 }
 
 /** Только для тестов — экспортируем класс для standalone instances. */

@@ -12,7 +12,8 @@
  * Default: 60 запросов в минуту (1 страница в секунду — посильно для
  * 22 GB Qwen-VL на типичном железе RTX 4090, не доводит до перегрева).
  *
- * Конфиг через env BIBLIARY_VISION_OCR_RPM или передаётся в конструктор.
+ * Конфиг через `prefs.visionOcrRpm` (Settings UI, Иt 8В.CRITICAL.2 убрал env)
+ * или передаётся в конструктор для тестов. Runtime смена — `applyHeavyLaneRateLimiterPrefs`.
  *
  * Контракт acquire():
  *   - Если в окне последней минуты < limit запросов → возвращает immediately.
@@ -43,7 +44,7 @@ export class HeavyLaneRateLimiter {
   private readonly chains = new Map<string, Promise<unknown>>();
 
   constructor(opts: HeavyLaneRateLimiterOptions = {}) {
-    this.limit = Math.max(1, Math.floor(opts.limitPerMinute ?? envLimit() ?? DEFAULT_LIMIT_PER_MINUTE));
+    this.limit = Math.max(1, Math.floor(opts.limitPerMinute ?? DEFAULT_LIMIT_PER_MINUTE));
     this.now = opts.now ?? (() => Date.now());
   }
 
@@ -135,13 +136,6 @@ export class HeavyLaneRateLimiter {
       ts.shift();
     }
   }
-}
-
-function envLimit(): number | undefined {
-  const raw = process.env.BIBLIARY_VISION_OCR_RPM?.trim();
-  if (!raw) return undefined;
-  const n = Number.parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
 function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> {

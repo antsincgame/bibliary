@@ -780,6 +780,7 @@ export default {
   "settings.evaluatorSlots": "Evaluator parallel slots (LLM book scoring)",
   "settings.visionOcrRpm": "Vision-OCR: requests per minute per model (DDoS guard)",
   "settings.illustrationParallelism": "Illustration descriptions: parallelism per book",
+  "settings.illustrationParallelBooks": "Illustration descriptions: parallel books (semaphore)",
   "settings.converterCacheMaxBytes": "Converter cache: max bytes (0 = unlimited)",
   "settings.calibrePathOverride": "Calibre: ebook-convert path (empty = autodetect)",
   "settings.preferDjvuOverPdf": "Prefer DJVU over PDF when both exist (default: PDF wins)",

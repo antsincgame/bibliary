@@ -4,11 +4,11 @@
  * Контракт:
  *   - На startup читает из cache-db все книги с `status='imported'`
  *     и добавляет их в FIFO.
- *   - N параллельных слотов. Источники конфигурации (приоритет, Иt 8Б):
- *     `prefs.evaluatorSlots` (single source of truth, Settings UI) > env
- *     `BIBLIARY_EVAL_SLOTS` (только до первого `applyRuntimeSideEffects`,
- *     для CI / batch) > default 2. Runtime смена через `setEvaluatorSlots`
- *     или `applyEvaluatorPrefs(prefs)` (вызывается из `applyRuntimeSideEffects`).
+ *   - N параллельных слотов. Источники конфигурации (Иt 8В.CRITICAL.2):
+ *     `prefs.evaluatorSlots` (single source of truth, Settings UI) > default 2.
+ *     На module-init используется default; `applyEvaluatorPrefs(prefs)` подтянет
+ *     значение из store при boot main.ts (см. `applyRuntimeSideEffects`).
+ *     Runtime смена через `setEvaluatorSlots` или `applyEvaluatorPrefs(prefs)`.
  *     Каждый слот -- отдельная корутина, тянет из общей очереди. Это даёт
  *     честный parallelism для лёгких моделей и не убивает GPU при тяжёлых:
  *     юзер сам выкручивает слайдер. С пользовательской кристаллизацией
@@ -82,8 +82,9 @@ interface EvaluatorDeps {
 
 async function defaultReadEvaluatorPrefs(): Promise<{ preferred?: string; fallbacks?: string[] }> {
   try {
-    const { getPreferencesStore } = await import("../preferences/store.js");
-    const prefs = await getPreferencesStore().getAll();
+    const { readPipelinePrefsOrNull } = await import("../preferences/store.js");
+    const prefs = await readPipelinePrefsOrNull();
+    if (!prefs) return {};
     const preferred = prefs.evaluatorModel?.trim() || undefined;
     const fallbacks = (prefs.evaluatorModelFallbacks ?? "")
       .split(",")
@@ -157,8 +158,9 @@ let modelOverride: string | null = null;
 /**
  * Slot pool — N независимых корутин-воркеров. Каждый слот тянет из общей
  * `queue`, оценивает книгу, идёт за следующей. Дефолт = 2 (защита VRAM
- * на тяжёлых reasoning-моделях). Override через ENV `BIBLIARY_EVAL_SLOTS`
- * или runtime `setEvaluatorSlots`.
+ * на тяжёлых reasoning-моделях). Конфиг — `prefs.evaluatorSlots` (Settings UI),
+ * runtime смена через `setEvaluatorSlots` / `applyEvaluatorPrefs`.
+ * Иt 8В.CRITICAL.2: env `BIBLIARY_EVAL_SLOTS` удалён.
  *
  * Slot state ведём в Map по индексу — это позволяет UI показывать ВСЕ
  * текущие книги (не только одну как раньше). Контракт `getEvaluatorStatus`
@@ -175,15 +177,7 @@ interface SlotState {
 const DEFAULT_SLOT_COUNT = 2;
 const MAX_SLOT_COUNT = 16; /* sane upper bound — никто не запустит >16 LLM параллельно */
 
-function resolveSlotCount(): number {
-  const raw = process.env.BIBLIARY_EVAL_SLOTS?.trim();
-  if (!raw) return DEFAULT_SLOT_COUNT;
-  const n = Number(raw);
-  if (!Number.isInteger(n) || n < 1) return DEFAULT_SLOT_COUNT;
-  return Math.min(n, MAX_SLOT_COUNT);
-}
-
-let slotCount = resolveSlotCount();
+let slotCount = DEFAULT_SLOT_COUNT;
 const slots: SlotState[] = [];
 
 function ensureSlots(): void {
@@ -684,7 +678,7 @@ export function _resetEvaluatorForTests(): void {
     s.controller = null;
   }
   slots.length = 0;
-  slotCount = resolveSlotCount();
+  slotCount = DEFAULT_SLOT_COUNT;
   ensureSlots();
   ee.removeAllListeners();
   deps = defaultDeps;

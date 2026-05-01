@@ -37,7 +37,8 @@ async function setupTestEnv(): Promise<TestEnv> {
     BIBLIARY_DATA_DIR: process.env.BIBLIARY_DATA_DIR,
     BIBLIARY_LIBRARY_DB: process.env.BIBLIARY_LIBRARY_DB,
     BIBLIARY_LIBRARY_ROOT: process.env.BIBLIARY_LIBRARY_ROOT,
-    BIBLIARY_EVAL_SLOTS: process.env.BIBLIARY_EVAL_SLOTS,
+    /* BIBLIARY_EVAL_SLOTS убран в Иt 8В.CRITICAL.2 (полный отказ от env пайплайна).
+       Слоты конфигурируются только через `prefs.evaluatorSlots` и `setEvaluatorSlots`. */
   };
 
   process.env.BIBLIARY_DATA_DIR = dataDir;

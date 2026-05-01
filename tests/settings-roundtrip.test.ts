@@ -44,6 +44,11 @@ import {
   _resetCalibreResolutionForTests,
 } from "../electron/lib/scanner/converters/calibre-cli.ts";
 
+import {
+  applyIllustrationSemaphorePrefs,
+  getIllustrationSemaphore,
+} from "../electron/lib/library/illustration-semaphore.ts";
+
 import { CrossFormatPreDedup } from "../electron/lib/library/cross-format-prededup.ts";
 
 let tmpDir: string;
@@ -69,6 +74,7 @@ describe("[Settings 8Б] PreferencesSchema contains all Smart Import Pipeline ke
     "evaluatorSlots",
     "visionOcrRpm",
     "illustrationParallelism",
+    "illustrationParallelBooks",
     "converterCacheMaxBytes",
     "calibrePathOverride",
     "preferDjvuOverPdf",
@@ -86,6 +92,7 @@ describe("[Settings 8Б] PreferencesSchema contains all Smart Import Pipeline ke
     assert.equal(defaults.evaluatorSlots, 2);
     assert.equal(defaults.visionOcrRpm, 60);
     assert.equal(defaults.illustrationParallelism, 4);
+    assert.equal(defaults.illustrationParallelBooks, 2);
     assert.equal(defaults.converterCacheMaxBytes, 5 * 1024 * 1024 * 1024);
     assert.equal(defaults.calibrePathOverride, "");
     assert.equal(defaults.preferDjvuOverPdf, false);
@@ -242,6 +249,68 @@ describe("[Settings 8В] applyCalibrePathPrefs invalidates resolveCalibreBinary 
     applyCalibrePathPrefs({ calibrePathOverride: fake }); /* same value → no-op */
     const r2 = await resolveCalibreBinary();
     assert.equal(r2?.binary, r1?.binary, "no-op apply не должен трогать кеш — resolve вернёт прежнее");
+  });
+});
+
+/* ── IllustrationSemaphore: applyIllustrationSemaphorePrefs управляет capacity (Иt 8В.MEDIUM.10) ── */
+
+describe("[Settings 8В] applyIllustrationSemaphorePrefs propagates illustrationParallelBooks", () => {
+  test("apply меняет shared semaphore capacity", () => {
+    const sem = getIllustrationSemaphore();
+    const before = sem.getStatus().capacity;
+    const target = before === 5 ? 7 : 5;
+    applyIllustrationSemaphorePrefs({ illustrationParallelBooks: target });
+    assert.equal(sem.getStatus().capacity, target);
+    /* Восстанавливаем — другие тесты могут зависеть. */
+    applyIllustrationSemaphorePrefs({ illustrationParallelBooks: before });
+    assert.equal(sem.getStatus().capacity, before);
+  });
+
+  test("undefined / 0 / отрицательные значения — no-op (валидация >= 1)", () => {
+    const sem = getIllustrationSemaphore();
+    const before = sem.getStatus().capacity;
+    applyIllustrationSemaphorePrefs({});
+    assert.equal(sem.getStatus().capacity, before, "пустой объект не должен трогать capacity");
+    applyIllustrationSemaphorePrefs({ illustrationParallelBooks: 0 });
+    assert.equal(sem.getStatus().capacity, before, "0 < 1 — игнор");
+    applyIllustrationSemaphorePrefs({ illustrationParallelBooks: -2 });
+    assert.equal(sem.getStatus().capacity, before, "отрицательное — игнор");
+  });
+});
+
+/* ── Иt 8В.CRITICAL.2 anti-regression: env-переменные пайплайна должны быть удалены ── */
+
+describe("[Settings 8В] CRITICAL.2 — pipeline env-переменные не читаются (anti-regression)", () => {
+  /* Ставим заведомо невалидные значения env. Если pipeline-модули где-то читают
+     эти env (regression), их default-ы / runtime поведение поменяются. */
+  const PIPELINE_ENV_VARS = [
+    "BIBLIARY_EVAL_SLOTS",
+    "BIBLIARY_VISION_OCR_RPM",
+    "BIBLIARY_PARSER_POOL_SIZE",
+    "BIBLIARY_ILLUSTRATION_PARALLEL_BOOKS",
+    "BIBLIARY_CONVERTER_CACHE_MAX_BYTES",
+  ];
+
+  test("env-переменные пайплайна не должны упоминаться в process.env-чтениях electron/lib", async () => {
+    /* Грепом по исходникам: не должно быть `process.env.BIBLIARY_EVAL_SLOTS` etc.
+       Тест читает файлы с известными чтениями и проверяет отсутствие. */
+    const fs = await import("node:fs");
+    const sources = [
+      "electron/lib/library/evaluator-queue.ts",
+      "electron/lib/llm/heavy-lane-rate-limiter.ts",
+      "electron/lib/library/import.ts",
+      "electron/lib/library/illustration-semaphore.ts",
+      "electron/lib/scanner/converters/cache.ts",
+    ];
+    for (const src of sources) {
+      const content = fs.readFileSync(src, "utf-8");
+      for (const env of PIPELINE_ENV_VARS) {
+        assert.ok(
+          !content.includes(`process.env.${env}`) && !content.includes(`process.env["${env}"]`),
+          `${src} всё ещё читает process.env.${env} — нарушение Иt 8В.CRITICAL.2`,
+        );
+      }
+    }
   });
 });
 

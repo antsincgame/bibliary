@@ -27,6 +27,7 @@ import { detectCompositeHtmlDir } from "./composite-html-detector.js";
 import * as os from "os";
 import { importBookFromFile } from "./import-book.js";
 import { importCompositeHtmlBook } from "./import-composite-html.js";
+import { readPipelinePrefsOrNull } from "../preferences/store.js";
 import type { ImportResult, ImportFolderOptions, ProgressEvent, ProgressEventPhase, ImportFolderResult } from "./import-types.js";
 
 export type {
@@ -89,8 +90,8 @@ async function importArchiveSequential(absPath: string, opts: Omit<ImportFolderO
  *   1. Scanner — async generator, идёт по FS параллельно с парсером.
  *      Прогресс начинает течь с первого найденного файла.
  *   2. Parser pool — N одновременных книг. Приоритет размера (см. `resolveParserPoolSize`):
- *      `prefs.parserPoolSize` > ENV `BIBLIARY_PARSER_POOL_SIZE` > `cpus-1` (ceiling 4).
- *      CPU-задача безопасна параллельно с GPU-эвалюацией.
+ *      `prefs.parserPoolSize` > `cpus-1` (ceiling 4). CPU-задача безопасна
+ *      параллельно с GPU-эвалюацией. Иt 8В.CRITICAL.2: env удалён.
  *   3. Per-file timeout — 8 минут на книгу (битые PDF ловятся в Фазе 3
  *      воркер-тредом, здесь пока taimeout-abort).
  *   4. Counters обновляются по мере завершения slot'ов; порядок выдачи !=
@@ -105,35 +106,22 @@ async function importArchiveSequential(absPath: string, opts: Omit<ImportFolderO
 const PER_FILE_TIMEOUT_MS = 8 * 60 * 1000;
 
 /**
- * Размер parser pool. Приоритет (Иt 8Б):
- *   1. prefs.parserPoolSize > 0 — явный override из Settings UI.
- *   2. ENV `BIBLIARY_PARSER_POOL_SIZE` (если prefs == 0 / not set) — для CI/batch.
- *   3. cpus-1, ceiling 4 — авто-дефолт.
+ * Размер parser pool. Приоритет (Иt 8В.CRITICAL.2):
+ *   1. prefs.parserPoolSize > 0 — явный override из Settings UI (SSoT).
+ *   2. cpus-1, ceiling 4 — авто-дефолт.
  *
  * Жёсткий ceiling в 4 воркера предотвращает OOM при многочасовых сессиях импорта
  * тяжёлых DJVU-книг (каждый воркер держит ~6–10 MB PNG-буферов + OCR-текст).
  * На 8-ядерной машине cpus-1 = 7 воркеров приводит к heap fragmentation и краш после
- * 4+ часов непрерывного импорта. Override (prefs или env) позволяет превысить ceiling.
+ * 4+ часов непрерывного импорта. prefs.parserPoolSize позволяет превысить ceiling.
  *
- * Async чтобы прочитать PreferencesStore (single source of truth с Иt 8Б).
+ * Async чтобы прочитать PreferencesStore через `readPipelinePrefsOrNull`
+ * (helper из Иt 8В.MEDIUM.7 — единый dynamic-import).
  */
 async function resolveParserPoolSize(): Promise<number> {
-  /* 1. prefs.parserPoolSize — single source of truth. 0 = auto. */
-  try {
-    const { getPreferencesStore } = await import("../preferences/store.js");
-    const prefs = await getPreferencesStore().getAll();
-    const fromPrefs = prefs.parserPoolSize;
-    if (typeof fromPrefs === "number" && fromPrefs >= 1) return fromPrefs;
-  } catch {
-    /* PreferencesStore не инициализирован (тесты / ранний bootstrap) — fallback. */
-  }
-  /* 2. ENV override (legacy / CI). */
-  const env = process.env.BIBLIARY_PARSER_POOL_SIZE?.trim();
-  if (env) {
-    const n = Number(env);
-    if (Number.isInteger(n) && n >= 1) return n;
-  }
-  /* 3. Auto: cpus-1, ceiling 4. */
+  const prefs = await readPipelinePrefsOrNull();
+  const fromPrefs = prefs?.parserPoolSize;
+  if (typeof fromPrefs === "number" && fromPrefs >= 1) return fromPrefs;
   const cpus = typeof os.cpus === "function" ? os.cpus().length : 1;
   const SAFE_POOL_CEILING = 4;
   return Math.min(Math.max(1, cpus - 1), SAFE_POOL_CEILING);
@@ -229,15 +217,10 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
      Только прямые книжные файлы (не архивы) проверяются здесь.
      Правило: Book.pdf + Book.djvu → один basename, побеждает epub>pdf>djvu.
      Book v1.pdf + Book v2.pdf → разные basename → обе проходят.
-     Иt 8Б: prefs.preferDjvuOverPdf инвертирует pdf vs djvu приоритет. */
-  let preferDjvuOverPdf = false;
-  try {
-    const { getPreferencesStore } = await import("../preferences/store.js");
-    const prefs = await getPreferencesStore().getAll();
-    preferDjvuOverPdf = prefs.preferDjvuOverPdf === true;
-  } catch {
-    /* PreferencesStore не инициализирован — default false. */
-  }
+     Иt 8Б: prefs.preferDjvuOverPdf инвертирует pdf vs djvu приоритет.
+     Иt 8В.MEDIUM.7: чтение через readPipelinePrefsOrNull (один statмент). */
+  const prefs = await readPipelinePrefsOrNull();
+  const preferDjvuOverPdf = prefs?.preferDjvuOverPdf === true;
   const crossFormatDedup = new CrossFormatPreDedup({ preferDjvuOverPdf });
 
   /* Stage 1.5: expander. Архивы синхронно распаковывает, yields каждую

@@ -27,6 +27,7 @@ import * as path from "path";
 import { execFile as _execFile } from "child_process";
 import { promisify } from "util";
 import { platformExeName } from "../../platform.js";
+import { readPipelinePrefsOrNull } from "../../preferences/store.js";
 
 const execFile = promisify(_execFile);
 
@@ -95,22 +96,17 @@ export async function resolveCalibreBinary(): Promise<CalibreToolResolution | nu
   if (cachedResolution !== undefined) return cachedResolution;
 
   /* 1. prefs.calibrePathOverride — single source of truth для override. */
-  try {
-    const { getPreferencesStore } = await import("../../preferences/store.js");
-    const prefs = await getPreferencesStore().getAll();
-    const override = prefs.calibrePathOverride?.trim();
-    if (override) {
-      try {
-        await fs.access(override);
-        cachedResolution = { binary: override };
-        return cachedResolution;
-      } catch {
-        /* override не работает — продолжаем к candidateRoots. */
-        console.warn(`[calibre-cli] calibrePathOverride "${override}" недоступен, fallback на автодетект`);
-      }
+  const prefs = await readPipelinePrefsOrNull();
+  const override = prefs?.calibrePathOverride?.trim();
+  if (override) {
+    try {
+      await fs.access(override);
+      cachedResolution = { binary: override };
+      return cachedResolution;
+    } catch {
+      /* override не работает — продолжаем к candidateRoots. */
+      console.warn(`[calibre-cli] calibrePathOverride "${override}" недоступен, fallback на автодетект`);
     }
-  } catch {
-    /* PreferencesStore не инициализирован (тесты / ранний bootstrap). */
   }
 
   const exeName = platformExeName("ebook-convert");

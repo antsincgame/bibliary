@@ -11,9 +11,10 @@
  *     изменении файла (mtime change) или переименовании (path change).
  *   - Value = converted file (.epub / .pdf) в `<cacheDir>/<sha>.<ext>`.
  *   - Storage: `<projectRoot>/data/converters-cache/` по умолчанию,
- *     override через `BIBLIARY_CONVERTER_CACHE_DIR` env.
- *   - Eviction: LRU при превышении max bytes (default 5 GB, override через
- *     `BIBLIARY_CONVERTER_CACHE_MAX_BYTES`).
+ *     override через `BIBLIARY_CONVERTER_CACHE_DIR` env (системная настройка
+ *     путей — не относится к pipeline-tunables, оставлена).
+ *   - Eviction: LRU при превышении max bytes. Конфиг — `prefs.converterCacheMaxBytes`
+ *     (Settings UI, default 5 GB). Иt 8В.CRITICAL.2: env удалён.
  *   - Atomic writes: tmpFile → rename, чтобы не получить partial cache entry
  *     при abort/crash в середине.
  *
@@ -32,6 +33,7 @@
 import { promises as fs, existsSync } from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
+import { readPipelinePrefsOrNull } from "../../preferences/store.js";
 
 export interface CachedConvertResult {
   kind: "delegate";
@@ -43,13 +45,6 @@ export interface CachedConvertResult {
 }
 
 const DEFAULT_MAX_BYTES = 5 * 1024 * 1024 * 1024;
-
-function readPositiveIntEnv(name: string, fallback: number): number {
-  const raw = process.env[name]?.trim();
-  if (!raw) return fallback;
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? n : fallback;
-}
 
 function resolveDataDir(): string {
   /* Совпадает с pattern из ocr-cache.ts — без прямой Electron зависимости. */
@@ -170,25 +165,15 @@ export async function setCachedConvert(
  * LRU eviction: удалить oldest-accessed файлы пока total bytes > max.
  * Async fire-and-forget — caller не ждёт.
  *
- * Приоритет maxBytes (Иt 8Б):
+ * Приоритет maxBytes (Иt 8В.CRITICAL.2 — env удалён):
  *   1. prefs.converterCacheMaxBytes — single source of truth.
- *   2. env BIBLIARY_CONVERTER_CACHE_MAX_BYTES — legacy override.
- *   3. DEFAULT_MAX_BYTES (5 GB) — последний резерв.
+ *   2. DEFAULT_MAX_BYTES (5 GB) — fallback если store не инициализирован.
  */
 async function evictIfOverLimit(cacheDir: string): Promise<void> {
-  let maxBytes: number | null = null;
-  try {
-    const { getPreferencesStore } = await import("../../preferences/store.js");
-    const prefs = await getPreferencesStore().getAll();
-    if (typeof prefs.converterCacheMaxBytes === "number") {
-      maxBytes = prefs.converterCacheMaxBytes;
-    }
-  } catch {
-    /* PreferencesStore не инициализирован — fallback на env. */
-  }
-  if (maxBytes === null) {
-    maxBytes = readPositiveIntEnv("BIBLIARY_CONVERTER_CACHE_MAX_BYTES", DEFAULT_MAX_BYTES);
-  }
+  const prefs = await readPipelinePrefsOrNull();
+  const maxBytes = typeof prefs?.converterCacheMaxBytes === "number"
+    ? prefs.converterCacheMaxBytes
+    : DEFAULT_MAX_BYTES;
   /* maxBytes === 0 → отключено (без лимита). */
   if (maxBytes <= 0) return;
 

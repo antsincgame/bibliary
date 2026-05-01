@@ -209,6 +209,14 @@ export const PreferencesSchema = z.object({
    */
   illustrationParallelism: z.number().int().min(1).max(16).default(4),
 
+  /**
+   * Иt 8В.MEDIUM.10: книги, импортируемые параллельно через illustration-worker
+   * (semaphore по bookId). Раньше было только env `BIBLIARY_ILLUSTRATION_PARALLEL_BOOKS`,
+   * теперь Settings = single source of truth (приказ Царя об отказе от env).
+   * 1 = строго последовательно (для слабых машин), 2 = default, до 16 для мощных.
+   */
+  illustrationParallelBooks: z.number().int().min(1).max(16).default(2),
+
   // -- Converter cache --
   /**
    * Максимальный размер converter cache (data/converters-cache/) в байтах.
@@ -357,4 +365,22 @@ export function initPreferencesStore(dataDir: string): FsPreferencesStore {
 export function getPreferencesStore(): FsPreferencesStore {
   if (!instance) throw new Error("PreferencesStore not initialised. Call initPreferencesStore() in bootstrap.");
   return instance;
+}
+
+/**
+ * Lazy-friendly доступ к prefs из модулей, которые могут грузиться ДО
+ * `initPreferencesStore` (тесты, ранний bootstrap). Возвращает `null` вместо
+ * throw — caller выбирает свой fallback (обычно `??` на DEFAULT_*).
+ *
+ * Цель (Иt 8В.MEDIUM.7): убрать копипасту `try { const { getPreferencesStore } =
+ * await import("..."); const prefs = await getPreferencesStore().getAll(); } catch {}`
+ * из 5+ модулей пайплайна. Один статический import + одна строка вместо
+ * dynamic import + try/catch блока.
+ */
+export async function readPipelinePrefsOrNull(): Promise<Preferences | null> {
+  try {
+    return await getPreferencesStore().getAll();
+  } catch {
+    return null;
+  }
 }

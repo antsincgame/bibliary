@@ -103,6 +103,7 @@ export const SECTIONS = Object.freeze([
       { key: "evaluatorSlots", type: "int", min: 1, max: 8, labelKey: "settings.evaluatorSlots" },
       { key: "visionOcrRpm", type: "int", min: 1, max: 600, labelKey: "settings.visionOcrRpm" },
       { key: "illustrationParallelism", type: "int", min: 1, max: 16, labelKey: "settings.illustrationParallelism" },
+      { key: "illustrationParallelBooks", type: "int", min: 1, max: 16, labelKey: "settings.illustrationParallelBooks" },
       { key: "converterCacheMaxBytes", type: "int", min: 0, max: 50_000_000_000, labelKey: "settings.converterCacheMaxBytes" },
       { key: "calibrePathOverride", type: "text", labelKey: "settings.calibrePathOverride", placeholder: "C:\\Program Files\\Calibre2\\ebook-convert.exe" },
     ],

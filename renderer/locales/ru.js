@@ -775,6 +775,7 @@ export default {
   "settings.evaluatorSlots": "Параллельные слоты evaluator (LLM-оценка книг)",
   "settings.visionOcrRpm": "Vision-OCR: запросов в минуту per-model (DDoS-защита)",
   "settings.illustrationParallelism": "Описание иллюстраций: параллелизм per-book",
+  "settings.illustrationParallelBooks": "Описание иллюстраций: параллельных книг (semaphore)",
   "settings.converterCacheMaxBytes": "Converter cache: лимит в байтах (0 = без лимита)",
   "settings.calibrePathOverride": "Calibre: путь к ebook-convert (пусто = автодетект)",
   "settings.preferDjvuOverPdf": "При дубликате DJVU+PDF предпочитать DJVU (по умолчанию: PDF)",
