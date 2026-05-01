@@ -188,7 +188,6 @@ async function findThematicBoundaries(
 async function splitByThematicDrift(
   paragraphs: string[],
   signal?: AbortSignal,
-  safeLimit: number = SAFE_LIMIT,
   driftTh: number = DRIFT_THRESHOLD,
   maxPara: number = MAX_PARAGRAPHS_FOR_DRIFT,
 ): Promise<string[][]> {
@@ -287,7 +286,7 @@ export async function chunkChapter(args: ChunkChapterArgs): Promise<SemanticChun
     }
 
     console.log(`[chunker]   block "${block.heading}" too big (${bw} words), splitting by drift...`);
-    const subChunks = await splitByThematicDrift(block.paragraphs, args.signal, safeLimit, driftTh, maxParaDrift);
+    const subChunks = await splitByThematicDrift(block.paragraphs, args.signal, driftTh, maxParaDrift);
     console.log(`[chunker]   → ${subChunks.length} sub-chunks`);
     for (const sub of subChunks) {
       rawChunks.push({ heading: block.heading, paragraphs: sub });

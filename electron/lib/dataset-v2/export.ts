@@ -18,7 +18,6 @@ import { assertValidCollectionName } from "./types.js";
 import { iterAcceptedConcepts, type AcceptedConcept } from "./concept-loader.js";
 import {
   type ShareGPTLine,
-  type ChatMLLine,
   type DatasetFormat,
   shareGptToChatML,
   shareGptLinesToJsonl,

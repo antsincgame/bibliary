@@ -14,7 +14,7 @@
  */
 
 import * as path from "path";
-import { parseBook, detectExt, type SupportedExt } from "../scanner/parsers/index.js";
+import { parseBook, detectExt } from "../scanner/parsers/index.js";
 import { isOcrSupported } from "../scanner/ocr/index.js";
 import { extractBookImages } from "./image-extractors.js";
 import { computeFileSha256, bookIdFromSha } from "./sha-stream.js";

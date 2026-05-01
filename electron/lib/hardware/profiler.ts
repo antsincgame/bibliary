@@ -58,11 +58,6 @@ let cache: HardwareInfo | null = null;
 let cacheAt = 0;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 час
 
-function clearHardwareCache(): void {
-  cache = null;
-  cacheAt = 0;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Главный entry
 // ─────────────────────────────────────────────────────────────────────────────

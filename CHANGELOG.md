@@ -25,6 +25,9 @@ Probe-фаза и adaptive elimination сохранены в `olympics.ts` (ко
   «Lightning Olympics: probe + adaptive + EcoTune» — раздел переименован.
 - **Probe/adaptive UI** убран из `models-page-olympics-report.js`.
   Код в `olympics.ts` сохранён — активируется когда `opts.maxModels` задан.
+- **Import hygiene cleanup** — удалены неиспользуемые импорты/символы в
+  `arena.ipc.ts`, `dataset-v2/*`, `library/*`, `lmstudio-client.ts`, `main.ts`,
+  `disciplines.ts`. Прогон `tsc --noUnusedLocals --noUnusedParameters` теперь чист.
 
 ## [0.5.0] — 2026-05-01 — UX Revolution: простота для бабушек
 

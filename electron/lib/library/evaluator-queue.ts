@@ -31,7 +31,6 @@ import {
 } from "./book-evaluator.js";
 import { buildSurrogate } from "./surrogate-builder.js";
 import {
-  parseFrontmatter,
   parseBookMarkdownChapters,
   replaceFrontmatter,
 } from "./md-converter.js";

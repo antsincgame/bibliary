@@ -6,8 +6,6 @@ import {
   buildHumanBookPath,
   resolveWithMaxPathGuard,
   extractSphereFromImportPath,
-  resolveCollisionSuffix,
-  type HumanBookPath,
 } from "./path-sanitizer.js";
 import { promises as fs } from "fs";
 

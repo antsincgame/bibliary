@@ -145,10 +145,6 @@ interface OpenAiChatResponse {
   };
 }
 
-interface OpenAiModelsResponse {
-  data: Array<{ id: string }>;
-}
-
 export interface DownloadedModelInfo {
   modelKey: string;
   displayName?: string;

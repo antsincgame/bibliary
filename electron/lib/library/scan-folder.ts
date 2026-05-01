@@ -8,11 +8,11 @@
 import { promises as fs } from "fs";
 import * as path from "path";
 import { detectExt } from "../scanner/parsers/index.js";
-import { SUPPORTED_BOOK_EXTS, type SupportedBookFormat } from "./types.js";
+import { SUPPORTED_BOOK_EXTS } from "./types.js";
 import { walkSupportedFiles } from "./file-walker.js";
 import { computeFileSha256 } from "./sha-stream.js";
 import { parseFilename } from "./filename-parser.js";
-import { buildWorkKey, normalizeIsbn, getFormatPriority } from "./revision-dedup.js";
+import { buildWorkKey, getFormatPriority } from "./revision-dedup.js";
 import {
   findFuzzyDuplicates,
   type BookFingerprint,

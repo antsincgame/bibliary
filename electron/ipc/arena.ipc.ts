@@ -83,7 +83,6 @@ export function registerArenaIpc(): void {
       if (win && !win.isDestroyed()) win.webContents.send(channel, data);
     };
 
-    const prefs = await getPreferencesStore().getAll();
     try {
       const report = await runOlympics({
         models: Array.isArray(args.models) ? (args.models as string[]) : undefined,

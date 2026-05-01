@@ -213,15 +213,6 @@ export function buildPromptWithGuard(
   };
 }
 
-function buildPrompt(
-  template: string,
-  chunk: SemanticChunk,
-  thesis: string,
-  memory: ChapterMemory,
-): string {
-  return buildPromptWithGuard(template, chunk, thesis, memory).prompt;
-}
-
 async function tryOneAttempt(
   prompt: string,
   llm: DeltaExtractCallbacks["llm"],

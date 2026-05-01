@@ -374,7 +374,6 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
       "where k is the range of input values. The trade-off is space: counting sort needs Θ(k) auxiliary memory.\"",
     maxTokens: 384,
     score: (a) => {
-      const lower = a.toLowerCase();
       const ruChars = (a.match(/[а-яА-ЯёЁ]/g)?.length ?? 0);
       const enLetters = (a.match(/[a-zA-Z]/g)?.length ?? 0);
       let s = 0;
