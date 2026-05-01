@@ -14,7 +14,6 @@ import { el } from "../dom.js";
 import { t } from "../i18n.js";
 import { IMPORT_STATE } from "./state.js";
 import { buildEvaluatorPanel, refreshEvaluatorState } from "./evaluator.js";
-/* showLibraryToast import removed — cancel button was removed (v0.5.0). */
 import { buildLogPanel, hydrateLogSnapshot } from "./import-pane-log.js";
 import {
   importFromFolder,
@@ -56,7 +55,6 @@ export function buildImportPane(deps) {
     onclick: () => importFromFiles(deps),
   }, t("library.import.btn.pickFiles"));
 
-  /* pause/cancel кнопки удалены (v0.5.0) — импортом управляет система. */
 
   const opts = el("div", { class: "lib-import-opts" }, [
     el("label", { class: "lib-import-opt", title: t("library.import.opt.tooltip.scanArchives") }, [

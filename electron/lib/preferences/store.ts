@@ -155,37 +155,6 @@ export const PreferencesSchema = z.object({
   /** Версия пройденного wizard. Позволяет показать wizard повторно при major update. */
   onboardingVersion: z.number().int().min(0).max(1000).default(0),
 
-  // -- Olympics: per-role LM Studio tuning --
-  /**
-   * Если true — Олимпиада грузит каждую модель с per-role load config
-   * (см. electron/lib/llm/role-load-config.ts) и использует per-role
-   * inference defaults (temperature/topP). Default false — старое
-   * поведение (фиксированный context_length=2048, temp=0.2/0.6).
-   *
-   * Включай если есть VRAM ≥ 8 ГБ и нужен реалистичный замер crystallizer
-   * с длинным контекстом (32K) — модели будут оценены на той длине, на
-   * которой реально работают в production.
-   */
-  olympicsRoleLoadConfigEnabled: z.boolean().default(false),
-
-  /**
-   * Если true — Олимпиада грузит модели через TypeScript SDK
-   * (`@lmstudio/sdk` v1.5+), что позволяет передавать ВСЕ параметры
-   * `LLMLoadModelConfig` (gpu.ratio / keepModelInMemory / tryMmap /
-   * flashAttention / contextLength). REST endpoint
-   * `/api/v1/models/load` принимает только {model, context_length,
-   * flash_attention, echo_load_config} — gpu/mmap игнорируются.
-   *
-   * Default false — REST путь (более стабильный, mock-able в тестах).
-   * При sdk=true и любой ошибке SDK runtime автоматически откатывается
-   * на REST с предупреждением в лог Олимпиады (Mahakala-страховка).
-   *
-   * Имеет смысл включать одновременно с `olympicsRoleLoadConfigEnabled`,
-   * иначе SDK получит только contextLength/flashAttention и преимущество
-   * над REST исчезнет.
-   */
-  olympicsUseLmsSDK: z.boolean().default(false),
-
 
 });
 

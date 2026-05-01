@@ -1,8 +1,7 @@
 // @ts-check
 /**
- * Карточка Олимпиады — главный экран («для бабушек»):
- *   — большая кнопка «Запустить Олимпиаду»
- *   — после прогона: медальный зачёт + рекомендации (роли применяются автоматически)
+ * Карточка Олимпиады — простой одно-кнопочный UI:
+ * «Запустить» → медальный зачёт + рекомендации → авто-применение.
  *
  * Извлечено из `models-page.js` (Phase 2.4 cross-platform roadmap, 2026-04-30).
  */
@@ -17,12 +16,6 @@ import {
 import { renderOlympicsReport } from "./models-page-olympics-report.js";
 import { refresh } from "./models-hardware-status.js";
 
-/**
- * Карточка Олимпиады. Главный экран — простой и понятный:
- *   — большая кнопка «Запустить Олимпиаду»
- *   — после прогона: медальный зачёт + рекомендации (роли применяются автоматически)
- *   — Олимпиада всегда запускает с полным охватом (testAll + все роли).
- */
 export function buildOlympicsCard() {
   return el("section", { class: "mp-card mp-card-compact mp-olympics-card" }, [
     el("h2", { class: "mp-card-title" }, t("models.olympics.title")),
