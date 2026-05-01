@@ -43,6 +43,7 @@ import {
 } from "./evaluator-persist.js";
 import { isAbortError } from "../resilience/lm-request-policy.js";
 import { getImportScheduler } from "./import-task-scheduler.js";
+import { readPipelinePrefsOrNull } from "../preferences/store.js";
 import type { BookCatalogMeta } from "./types.js";
 import type { EvaluationResult } from "./types.js";
 
@@ -82,7 +83,6 @@ interface EvaluatorDeps {
 
 async function defaultReadEvaluatorPrefs(): Promise<{ preferred?: string; fallbacks?: string[] }> {
   try {
-    const { readPipelinePrefsOrNull } = await import("../preferences/store.js");
     const prefs = await readPipelinePrefsOrNull();
     if (!prefs) return {};
     const preferred = prefs.evaluatorModel?.trim() || undefined;

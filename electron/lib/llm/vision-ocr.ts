@@ -90,7 +90,7 @@ export async function recognizeWithVisionLlm(
           /* DDoS-защита heavy lane: книга в 1000 страниц без текстового слоя
              не должна забить vision-LLM очередь. Лимит per-modelKey, default
              60 запросов в минуту, конфигурируется через prefs.visionOcrRpm
-             или env BIBLIARY_VISION_OCR_RPM. Sliding window — не throttling:
+             (Иt 8В.CRITICAL.2: env удалён). Sliding window — не throttling:
              простаивающие минуты «возвращают кредит». При aborted signal
              limiter throws — try/catch ниже handle. */
           await rateLimiter.acquire(modelKey, opts.signal);

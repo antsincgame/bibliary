@@ -21,6 +21,7 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import type { ClassifiedFile, BookBundle } from "./classifier.js";
 import type { SidecarDescription } from "./markdown-builder.js";
+import { readPipelinePrefsOrNull } from "../../preferences/store.js";
 
 export interface DescribeSidecarsOptions {
   /** Параллельный поток описаний. Default 2 (LM Studio плохо переносит >2 параллели). */
@@ -145,7 +146,6 @@ async function defaultDescribeImage(absPath: string): Promise<string | null> {
      * lazy-load не сработает (проверяет только opts.modelKey, не prefs).
      * Решает gap, найденный Шерлоком v0.4.6: sidecars описывали "no vision
      * model loaded", даже когда юзер выбрал её в Settings. */
-    const { readPipelinePrefsOrNull } = await import("../../preferences/store.js");
     const prefs = await readPipelinePrefsOrNull();
     const result = await extractMetadataFromCover(buf, {
       modelKey: prefs?.visionModelKey?.trim() || undefined,

@@ -185,8 +185,8 @@ export const PreferencesSchema = z.object({
   // -- Parser pool (CPU-bound, отдельно от scheduler) --
   /**
    * Размер parser pool в import.ts. 0 = auto (CPU-1, max 4 — защита от heap fragmentation
-   * при многочасовом импорте DJVU). >0 = явный override (приоритет: prefs > env > CPU).
-   * Env BIBLIARY_PARSER_POOL_SIZE по-прежнему уважается если prefs=0.
+   * при многочасовом импорте DJVU). >0 = явный override.
+   * Иt 8В.CRITICAL.2: env BIBLIARY_PARSER_POOL_SIZE удалён — Settings = SSoT.
    */
   parserPoolSize: z.number().int().min(0).max(16).default(0),
 
@@ -198,7 +198,7 @@ export const PreferencesSchema = z.object({
   /**
    * Лимит запросов в минуту к vision-OCR модели per-modelKey.
    * Книга в 1000 страниц без текста = 1000 vision запросов; rpm 60 = 1/sec.
-   * Env BIBLIARY_VISION_OCR_RPM по-прежнему уважается если prefs выставлен на default.
+   * Иt 8В.CRITICAL.2: env BIBLIARY_VISION_OCR_RPM удалён — Settings = SSoT.
    */
   visionOcrRpm: z.number().int().min(1).max(600).default(60),
 
@@ -222,7 +222,7 @@ export const PreferencesSchema = z.object({
    * Максимальный размер converter cache (data/converters-cache/) в байтах.
    * 0 = без лимита. Default 5 GB (соответствует DEFAULT_MAX_BYTES в cache.ts).
    * LRU eviction при превышении.
-   * Env BIBLIARY_CONVERTER_CACHE_MAX_BYTES по-прежнему работает (приоритет: prefs > env > default).
+   * Иt 8В.CRITICAL.2: env BIBLIARY_CONVERTER_CACHE_MAX_BYTES удалён — Settings = SSoT.
    */
   converterCacheMaxBytes: z.number().int().min(0).default(5 * 1024 * 1024 * 1024),
 
