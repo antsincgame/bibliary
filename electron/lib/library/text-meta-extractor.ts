@@ -15,6 +15,7 @@
 
 import { getLmStudioUrl } from "../endpoints/index.js";
 import { modelRoleResolver } from "../llm/model-role-resolver.js";
+import { getImportScheduler } from "./import-task-scheduler.js";
 
 export interface TextMeta {
   title?: string;
@@ -84,35 +85,42 @@ export async function extractTextMetaFromBookText(
   const timer = setTimeout(() => ctrl.abort("timeout"), timeoutMs);
 
   try {
-    const resp = await fetch(`${baseUrl}/v1/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: modelKey,
-        temperature: 0,
-        max_tokens: 400,
-        response_format: { type: "json_object" },
-        chat_template_kwargs: { enable_thinking: false },
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userText },
-        ],
-      }),
-      signal: ctrl.signal,
-    });
-    if (!resp.ok) {
-      const errText = await resp.text().catch(() => "");
-      return { ok: false, error: `LM Studio HTTP ${resp.status}: ${errText.slice(0, 200)}`, warnings, model: modelKey };
-    }
-    const data = (await resp.json()) as { choices?: Array<{ message?: { content?: string } }> };
-    const content = (data.choices?.[0]?.message?.content ?? "").trim();
-    if (!content) return { ok: false, error: "empty response from LLM", warnings, model: modelKey };
+    /* Иt 8В.MAIN.1.3: scheduler observability — text-meta-extractor (роль
+       crystallizer) идёт через medium lane. Crystallizer = text-only inference,
+       3KB sample, max_tokens=400 — короткий запрос (обычно <10s), но всё ещё
+       расходует одну medium-модель (8..16 GB), поэтому конкурирует с
+       evaluator. medium concurrency=3 даёт умеренный параллелизм без OOM. */
+    return await getImportScheduler().enqueue("medium", async () => {
+      const resp = await fetch(`${baseUrl}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: modelKey,
+          temperature: 0,
+          max_tokens: 400,
+          response_format: { type: "json_object" },
+          chat_template_kwargs: { enable_thinking: false },
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content: userText },
+          ],
+        }),
+        signal: ctrl.signal,
+      });
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => "");
+        return { ok: false, error: `LM Studio HTTP ${resp.status}: ${errText.slice(0, 200)}`, warnings, model: modelKey };
+      }
+      const data = (await resp.json()) as { choices?: Array<{ message?: { content?: string } }> };
+      const content = (data.choices?.[0]?.message?.content ?? "").trim();
+      if (!content) return { ok: false, error: "empty response from LLM", warnings, model: modelKey };
 
-    const parsed = parseMetaJson(content);
-    if (!parsed) {
-      return { ok: false, error: "failed to parse JSON response", warnings, model: modelKey };
-    }
-    return { ok: true, meta: parsed, warnings, model: modelKey };
+      const parsed = parseMetaJson(content);
+      if (!parsed) {
+        return { ok: false, error: "failed to parse JSON response", warnings, model: modelKey };
+      }
+      return { ok: true, meta: parsed, warnings, model: modelKey };
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     if (ctrl.signal.aborted && ctrl.signal.reason === "timeout") {

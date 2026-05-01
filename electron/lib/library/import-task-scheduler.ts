@@ -33,10 +33,18 @@
 
 import type { ModelWeight } from "../llm/model-size-classifier.js";
 
-export type TaskLane = "io" | ModelWeight;
+/**
+ * Иt 8В.MAIN.1.5: io lane удалена как мёртвая — за всю историю Pipeline
+ * (Iter 7+ smart-import) ни один caller её не использовал. Все архивные
+ * extract / atomic copy уже сериализованы внутри собственных модулей
+ * (archive-extractor через node-stream-zip, converters/cache через
+ * fs.rename). Если в будущем появится FS-bound задача требующая глобального
+ * лимита — вернуть `"io"` в TaskLane и SchedulerSnapshot.
+ */
+export type TaskLane = ModelWeight;
 
 export interface ImportSchedulerOptions {
-  /** Лимит параллелизма для io/light задач. Default: 8. */
+  /** Лимит для light (≤ 8 GB модели). Default: 8. */
   lightConcurrency?: number;
   /** Лимит для medium. Default: 3. */
   mediumConcurrency?: number;
@@ -45,7 +53,6 @@ export interface ImportSchedulerOptions {
 }
 
 export interface SchedulerSnapshot {
-  io: { running: number; queued: number };
   light: { running: number; queued: number };
   medium: { running: number; queued: number };
   heavy: { running: number; queued: number };
@@ -72,7 +79,6 @@ export class ImportTaskScheduler {
 
   constructor(opts: ImportSchedulerOptions = {}) {
     this.lanes = {
-      io: { limit: opts.lightConcurrency ?? DEFAULT_LIGHT_CONCURRENCY, running: 0, queue: [] },
       light: { limit: opts.lightConcurrency ?? DEFAULT_LIGHT_CONCURRENCY, running: 0, queue: [] },
       medium: { limit: opts.mediumConcurrency ?? DEFAULT_MEDIUM_CONCURRENCY, running: 0, queue: [] },
       heavy: { limit: opts.heavyConcurrency ?? DEFAULT_HEAVY_CONCURRENCY, running: 0, queue: [] },
@@ -102,7 +108,6 @@ export class ImportTaskScheduler {
    */
   getSnapshot(): SchedulerSnapshot {
     return {
-      io: snap(this.lanes.io),
       light: snap(this.lanes.light),
       medium: snap(this.lanes.medium),
       heavy: snap(this.lanes.heavy),
@@ -191,8 +196,6 @@ export function applyImportSchedulerPrefs(prefs: {
   const scheduler = getImportScheduler();
   if (typeof prefs.schedulerLightConcurrency === "number") {
     scheduler.setLimit("light", prefs.schedulerLightConcurrency);
-    /* io lane всегда наследует light для FS-bound задач (зарезервировано). */
-    scheduler.setLimit("io", prefs.schedulerLightConcurrency);
   }
   if (typeof prefs.schedulerMediumConcurrency === "number") {
     scheduler.setLimit("medium", prefs.schedulerMediumConcurrency);

@@ -95,7 +95,7 @@ describe("Iter 7: scheduler observability semantics", () => {
   it("snapshot после reset = пустой", () => {
     const scheduler = new ImportTaskScheduler();
     const snap = scheduler.getSnapshot();
-    expect(snap.io.running).toBe(0);
+    /* Иt 8В.MAIN.1.5: io lane удалена — проверяем только 3 lane'а. */
     expect(snap.light.running).toBe(0);
     expect(snap.medium.running).toBe(0);
     expect(snap.heavy.running).toBe(0);

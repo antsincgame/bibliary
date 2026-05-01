@@ -18,6 +18,7 @@ import { z } from "zod";
 import { listLoaded } from "../../lmstudio-client.js";
 import { getLmStudioUrl } from "../endpoints/index.js";
 import { getModelPool } from "./model-pool.js";
+import { getImportScheduler } from "../library/import-task-scheduler.js";
 
 /**
  * Маркеры vision-моделей в modelKey/architecture. Это эвристика стратегии,
@@ -468,14 +469,24 @@ export async function extractMetadataFromCover(
      LM Studio load path via ModelPool. In production, keep pooled loading. */
   const useDirectModelRequest = !!(opts.fetcherImpl || opts.listLoadedImpl);
   const pool = useDirectModelRequest ? null : getModelPool();
+  /* Иt 8В.MAIN.1.2: scheduler observability — vision-meta cover расходует
+     vision-модель на GPU, идёт через heavy lane (как vision-OCR и
+     vision-illustration). Тестовый путь (useDirectModelRequest) обходит
+     scheduler — изолированные fetcherImpl-тесты не должны зависеть от
+     singleton scheduler state. Production путь — всегда через enqueue. */
+  const scheduler = useDirectModelRequest ? null : getImportScheduler();
   for (const candidate of candidates) {
-    const result = useDirectModelRequest
-      ? await requestMetaFromModel(imageBuffer, candidate.modelKey, opts)
-      : await pool!.withModel(
-        candidate.modelKey,
-        { role: "vision_meta", ttlSec: 1800, gpuOffload: "max" },
-        () => requestMetaFromModel(imageBuffer, candidate.modelKey, opts),
-      );
+    const runInference = (): Promise<VisionMetaResult> =>
+      useDirectModelRequest
+        ? requestMetaFromModel(imageBuffer, candidate.modelKey, opts)
+        : pool!.withModel(
+          candidate.modelKey,
+          { role: "vision_meta", ttlSec: 1800, gpuOffload: "max" },
+          () => requestMetaFromModel(imageBuffer, candidate.modelKey, opts),
+        );
+    const result = scheduler
+      ? await scheduler.enqueue("heavy", runInference)
+      : await runInference();
     if (!result.ok || !result.meta) {
       const reason = result.error ?? "unknown error";
       attempts.push({ model: candidate.modelKey, ok: false, reason });

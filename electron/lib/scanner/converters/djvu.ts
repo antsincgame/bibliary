@@ -35,6 +35,8 @@ import { tmpdir } from "os";
 import { randomUUID } from "crypto";
 import { runDdjvuToPdf, runDjvutxt, getDjvuInstallHint } from "../parsers/djvu-cli.js";
 import { isQualityText } from "../extractors/quality-heuristic.js";
+import { getImportScheduler } from "../../library/import-task-scheduler.js";
+import { getCachedConvert, setCachedConvert } from "./cache.js";
 
 export type DjvuConvertResult =
   | {
@@ -98,6 +100,21 @@ export async function convertDjvu(
     };
   }
 
+  /* Иt 8В.MAIN.3: cache check ДО expensive ddjvu→pdf конвертации.
+     500-page DjVu = 30-60 sec ddjvu + 200 MB PDF. Повторный re-import
+     (mtime не изменился) хитит cache мгновенно. Cache key invalidates на
+     mtime/size — оригинальный DjVu не должен быть тронут. */
+  const cached = await getCachedConvert(srcPath, "djvu", "pdf");
+  if (cached) {
+    return {
+      kind: "delegate",
+      path: cached.path,
+      ext: "pdf",
+      warnings: [...warnings, ...cached.warnings],
+      cleanup: cached.cleanup,
+    };
+  }
+
   /* Шаг 2 — конвертируем в имиджевый PDF и делегируем pdfParser. */
   const pdfPath = path.join(tmpdir(), `bibliary-djvu-${randomUUID()}.pdf`);
   /* Универсальный cleanup для pdfPath — пытается удалить файл если он существует.
@@ -112,7 +129,13 @@ export async function convertDjvu(
   };
 
   try {
-    await runDdjvuToPdf(srcPath, pdfPath, opts.signal);
+    /* Иt 8В.MAIN.1.4: scheduler observability + CPU-fairness — ddjvu -format=pdf
+       это CPU-bound растеризация (не GPU). Большая DjVu-книга (300+ страниц,
+       150-300 MB) занимает 10-60 секунд при 100% CPU. medium lane (concurrency=3)
+       не даёт 4 параллельным импортам одновременно запустить ddjvu и съесть
+       все ядра, оставив парсер-пул без CPU. heavy lane (=1) был бы слишком
+       строг — ddjvu не конкурирует с GPU-моделями за VRAM. */
+    await getImportScheduler().enqueue("medium", () => runDdjvuToPdf(srcPath, pdfPath, opts.signal));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     warnings.push(`ddjvu -format=pdf failed: ${msg.slice(0, 200)}`);
@@ -127,6 +150,13 @@ export async function convertDjvu(
       cleanup: cleanupPdfPath,
     };
   }
+
+  /* Иt 8В.MAIN.3: успешный convert → пишем в cache async (fire-and-forget).
+     Кэш скопирует файл в `<cacheDir>/<sha>.pdf` через atomic rename, поэтому
+     возвращаемый pdfPath остаётся валидным до cleanup() caller'а. */
+  void setCachedConvert(srcPath, "djvu", pdfPath, "pdf").catch((err) => {
+    console.warn("[converters/djvu] cache write failed:", err);
+  });
 
   return {
     kind: "delegate",

@@ -80,10 +80,9 @@ describe("scheduler-snapshot-broadcaster — emit поведение", () => {
     forceBroadcastSchedulerSnapshot();
     expect(win.webContents.sentEvents.length).toBe(1);
     expect(win.webContents.sentEvents[0]?.channel).toBe("resilience:scheduler-snapshot");
-    /* Snapshot shape — все 4 lanes присутствуют */
+    /* Snapshot shape — 3 lanes присутствуют (Иt 8В.MAIN.1.5: io удалена). */
     const payload = win.webContents.sentEvents[0]?.payload as Record<string, unknown>;
     expect(payload).toBeDefined();
-    expect(payload.io).toBeDefined();
     expect(payload.light).toBeDefined();
     expect(payload.medium).toBeDefined();
     expect(payload.heavy).toBeDefined();

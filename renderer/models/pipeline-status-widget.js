@@ -29,10 +29,13 @@ import { el, clear } from "../dom.js";
 
 /**
  * @typedef {Object} SchedulerSnapshot
- * @property {LaneCounters} io
  * @property {LaneCounters} light
  * @property {LaneCounters} medium
  * @property {LaneCounters} heavy
+ *
+ * Иt 8В.MAIN.1.5: io lane удалена из scheduler — была мёртвая (нет
+ * production caller'ов). Если вернётся — добавить обратно `io: LaneCounters`
+ * и buildLaneRow в DOM.
  */
 
 /**
@@ -44,7 +47,6 @@ import { el, clear } from "../dom.js";
  */
 
 const EMPTY_SNAPSHOT = /** @type {SchedulerSnapshot} */ ({
-  io:     { running: 0, queued: 0 },
   light:  { running: 0, queued: 0 },
   medium: { running: 0, queued: 0 },
   heavy:  { running: 0, queued: 0 },

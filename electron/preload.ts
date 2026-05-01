@@ -263,13 +263,11 @@ contextBridge.exposeInMainWorld("api", {
      * payload: SchedulerSnapshot из import-task-scheduler.ts.
      */
     onSchedulerSnapshot: (callback: (snapshot: {
-      io: { running: number; queued: number };
       light: { running: number; queued: number };
       medium: { running: number; queued: number };
       heavy: { running: number; queued: number };
     }) => void): (() => void) => {
       const listener = (_e: unknown, payload: {
-        io: { running: number; queued: number };
         light: { running: number; queued: number };
         medium: { running: number; queued: number };
         heavy: { running: number; queued: number };

@@ -24,6 +24,7 @@ import { pickVisionModels } from "./vision-meta.js";
 import { modelRoleResolver } from "./model-role-resolver.js";
 import { getHeavyLaneRateLimiter } from "./heavy-lane-rate-limiter.js";
 import { getModelPool } from "./model-pool.js";
+import { getImportScheduler } from "../library/import-task-scheduler.js";
 
 export interface VisionOcrResult {
   text: string;
@@ -76,6 +77,13 @@ export async function recognizeWithVisionLlm(
   const rateLimiter = getHeavyLaneRateLimiter();
   const pool = getModelPool();
 
+  /* Иt 8В.MAIN.1.1: scheduler observability — vision-OCR обёрнут в
+     `enqueue("heavy")`, чтобы pipeline-status-widget видел running/queued
+     счётчик в реальном времени. heavy concurrency=1 уже гарантирует
+     сериализацию vision-OCR с другими heavy задачами (vision-meta,
+     vision-illustration, calibre/cbz/multi-tiff) — сходится с тем что
+     ModelPool через runOnChain дедуплицирует acquire тех же моделей. */
+  const scheduler = getImportScheduler();
   for (const { modelKey } of models) {
     try {
       /* Иt 8Б: lifecycle tracking через ModelPool.withModel — refCount++
@@ -83,7 +91,7 @@ export async function recognizeWithVisionLlm(
          модель пока мы её используем. role: "vision_ocr" → ROLE_LOAD_CONFIG
          автоматически применит правильные contextLength/gpuOffload.
          HTTP fetch остаётся ВНУТРИ — @lmstudio/sdk multimodal ограничен. */
-      const result = await pool.withModel(
+      const result = await scheduler.enqueue("heavy", () => pool.withModel(
         modelKey,
         { role: "vision_ocr", ttlSec: 3600, gpuOffload: "max" },
         async () => {
@@ -134,7 +142,7 @@ export async function recognizeWithVisionLlm(
           const text = (json.choices?.[0]?.message?.content || "").trim();
           return { ok: true as const, text };
         },
-      );
+      ));
 
       if (result.ok) {
         return {
