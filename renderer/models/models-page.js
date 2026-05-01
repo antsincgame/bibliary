@@ -27,6 +27,7 @@ import {
 } from "./models-hardware-status.js";
 import { buildOlympicsCard } from "./models-page-olympics-controls.js";
 import { renderOlympicsReport } from "./models-page-olympics-report.js";
+import { buildAdvancedPanel } from "./models-page-advanced.js";
 
 let refreshTimer = null;
 let preferencesUnsubscribe = null;
@@ -70,6 +71,7 @@ function buildLayout() {
       el("h2", { class: "mp-card-title" }, t("models.roles.title")),
       el("p", { class: "mp-card-sub" }, t("models.header.sub_simple")),
       el("div", { id: "mp-roles", class: "mp-roles-list mp-roles-list-compact" }, t("models.card.loading")),
+      buildAdvancedPanel(),
     ]),
   ]);
 }

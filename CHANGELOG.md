@@ -4,6 +4,23 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] — 2026-05-01 — Advanced settings panel under roles
+
+Добавлена едва заметная панель дополнительных настроек внизу карточки «Ролей» —
+скрытая через `<details>` (раскрывается кликом на «⚙ Настройки»). Предназначена
+для технически подготовленных пользователей, не мозолит глаза обычным.
+
+### Added
+
+- **Панель дополнительных настроек** (`renderer/models/models-page-advanced.js`)
+  под списком ролей пайплайна. Содержит:
+  - *Подключение*: LM Studio URL, Qdrant URL (text inputs).
+  - *Обработка*: параллелизм импорта (1–16), онлайн-поиск ISBN, Vision-meta LLM, OCR.
+  Настройки сохраняются мгновенно через `window.api.preferences.set`.
+  Панель загружает актуальные значения из preferences каждый раз при открытии.
+- **CSS**: класс `.mp-adv-panel` — плавное появление (opacity 0.45→1 при hover/open),
+  монокромная микро-типографика `Share Tech Mono` 9–11 px.
+
 ## [0.5.2] — 2026-05-01 — Test repair: vision-meta DI, parser warning contract, log filename uniqueness
 
 Шесть из семи vision-meta тестов и тест на «битый PDF» падали потому что

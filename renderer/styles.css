@@ -62,6 +62,39 @@
 .mp-roles-list-compact { gap: 6px; margin-top: 4px; }
 .mp-role-row-compact { padding: 8px 10px; }
 @media (max-width: 900px) { .mp-grid { grid-template-columns: 1fr; } .mp-role-row { grid-template-columns: 1fr; } }
+
+/* ── Advanced settings panel — barely noticeable collapsible ── */
+.mp-adv-panel { opacity: 0.45; transition: opacity 0.25s; margin-top: 10px; }
+.mp-adv-panel:hover, .mp-adv-panel[open] { opacity: 1; }
+.mp-adv-summary {
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-dim);
+  cursor: pointer; list-style: none; display: inline-flex; align-items: center;
+  gap: 5px; padding: 2px 0; user-select: none; letter-spacing: 0.06em;
+}
+.mp-adv-summary::-webkit-details-marker { display: none; }
+.mp-adv-summary::before { content: "▸"; font-size: 8px; transition: transform 0.15s; display: inline-block; }
+.mp-adv-panel[open] .mp-adv-summary::before { transform: rotate(90deg); }
+.mp-adv-body {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px;
+  padding: 10px 0 2px; border-top: 1px solid rgba(0, 240, 255, 0.06); margin-top: 6px;
+}
+.mp-adv-section { display: flex; flex-direction: column; gap: 5px; }
+.mp-adv-section-title {
+  font-family: var(--font-mono); font-size: 9px; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 2px;
+}
+.mp-adv-row { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.mp-adv-row-check { justify-content: flex-start; gap: 7px; }
+.mp-adv-label { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); flex: 1; }
+.mp-adv-input {
+  background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(0, 240, 255, 0.1);
+  color: var(--text-primary); font-family: var(--font-mono); font-size: 11px;
+  padding: 3px 6px; border-radius: 0; width: 148px;
+}
+.mp-adv-input:focus { outline: none; border-color: rgba(0, 240, 255, 0.3); }
+.mp-adv-input-num { width: 56px; }
+.mp-adv-check { accent-color: rgba(0, 240, 255, 0.7); width: 13px; height: 13px; cursor: pointer; flex-shrink: 0; }
+@media (max-width: 900px) { .mp-adv-body { grid-template-columns: 1fr; } }
 :root {
   /* Phase 5.0 -- Neon design tokens v2 */
 
