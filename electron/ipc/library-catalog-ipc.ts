@@ -142,9 +142,10 @@ export function registerLibraryCatalogIpc(): void {
   );
 
   /**
-   * Iter 12 P6.1: lightweight cover URL probe для catalog thumbnail.
-   * Читает первые 8 KB book.md и достаёт `[img-cover]: URL`. Без полного
-   * чтения файла (markdown может быть до 5 MB), в 50× быстрее чем readBookMd.
+   * Lightweight cover URL probe для catalog thumbnail.
+   * Image-refs в book.md находятся в КОНЦЕ файла (buildImageRefs в md-converter).
+   * Стратегия: читаем последние 4 KB (tail) — там гарантированно [img-cover]: URL
+   * для всех книг стандартного формата. Fallback: первые 4 KB для legacy base64.
    * Вызывается через IntersectionObserver per-row только когда thumb виден.
    */
   ipcMain.handle(
@@ -156,13 +157,30 @@ export function registerLibraryCatalogIpc(): void {
       try {
         const fh = await fs.open(meta.mdPath, "r");
         try {
-          const buf = Buffer.alloc(8 * 1024);
-          const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
-          const head = buf.slice(0, bytesRead).toString("utf-8");
-          const cas = head.match(/^\[img-cover\]:\s*(bibliary-asset:\/\/sha256\/[a-f0-9]{64})\s*$/m);
+          const CHUNK = 4 * 1024;
+          const stat = await fh.stat();
+          const fileSize = stat.size;
+
+          /* Читаем хвост файла — там всегда image refs секция. */
+          const tailOffset = Math.max(0, fileSize - CHUNK);
+          const tailBuf = Buffer.alloc(Math.min(CHUNK, fileSize));
+          const { bytesRead: tailRead } = await fh.read(tailBuf, 0, tailBuf.length, tailOffset);
+          const tail = tailBuf.slice(0, tailRead).toString("utf-8");
+          const cas = tail.match(/^\[img-cover\]:\s*(bibliary-asset:\/\/sha256\/[a-f0-9]{64})\s*$/m);
           if (cas) return cas[1];
-          const b64 = head.match(/^\[img-cover\]:\s*(data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+)\s*$/m);
-          if (b64) return b64[1];
+
+          /* Fallback: читаем голову для legacy base64 Data URI. */
+          if (fileSize > CHUNK) {
+            const headBuf = Buffer.alloc(CHUNK);
+            const { bytesRead: headRead } = await fh.read(headBuf, 0, headBuf.length, 0);
+            const head = headBuf.slice(0, headRead).toString("utf-8");
+            const b64 = head.match(/^\[img-cover\]:\s*(data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+)\s*$/m);
+            if (b64) return b64[1];
+          } else {
+            /* Маленький файл — tail уже содержит всё содержимое. */
+            const b64 = tail.match(/^\[img-cover\]:\s*(data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+)\s*$/m);
+            if (b64) return b64[1];
+          }
           return null;
         } finally {
           await fh.close();
