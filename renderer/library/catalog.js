@@ -21,6 +21,82 @@ const CATALOG_PAGE_SIZE = 100;
 /** @type {ReturnType<typeof setTimeout> | null} */
 let debounceTimer = null;
 
+/* Iter 12 P6.1: cover thumb cache + IntersectionObserver lazy-load.
+   Phalanx Risk Mitigation #4 (Google review): без observer 5000 catalog rows
+   на старте делают 5000 IPC одновременно → renderer freeze. С observer запросы
+   только для visible rows + 200px margin. */
+const COVER_URL_CACHE = new Map();
+const COVER_PENDING = new Set();
+let COVER_OBSERVER = null;
+
+function loadCoverForCell(cell, bookId) {
+  if (!cell || !bookId) return;
+  if (COVER_PENDING.has(bookId)) return;
+
+  const cached = COVER_URL_CACHE.get(bookId);
+  if (cached !== undefined) {
+    applyCoverToCell(cell, cached);
+    return;
+  }
+
+  COVER_PENDING.add(bookId);
+  void (async () => {
+    try {
+      const url = await window.api.library.getCoverUrl(bookId);
+      COVER_URL_CACHE.set(bookId, url ?? null);
+      applyCoverToCell(cell, url ?? null);
+    } catch {
+      COVER_URL_CACHE.set(bookId, null);
+    } finally {
+      COVER_PENDING.delete(bookId);
+    }
+  })();
+}
+
+function applyCoverToCell(cell, url) {
+  if (!cell) return;
+  clear(cell);
+  if (url) {
+    cell.appendChild(el("img", {
+      class: "lib-catalog-cover-thumb",
+      src: url,
+      alt: "",
+      loading: "lazy",
+      decoding: "async",
+    }));
+  } else {
+    cell.appendChild(el("div", { class: "lib-catalog-cover-thumb-empty" }));
+  }
+}
+
+/** @param {HTMLElement} root */
+function attachCoverThumbObserver(root) {
+  if (typeof IntersectionObserver === "undefined") {
+    /* Fallback: загрузить все обложки немедленно (старые браузеры). */
+    for (const cell of root.querySelectorAll(".lib-catalog-cell-cover[data-book-id]")) {
+      const bid = /** @type {HTMLElement} */ (cell).dataset.bookId;
+      if (bid) loadCoverForCell(/** @type {HTMLElement} */ (cell), bid);
+    }
+    return;
+  }
+  if (!COVER_OBSERVER) {
+    COVER_OBSERVER = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const cell = /** @type {HTMLElement} */ (entry.target);
+        const bid = cell.dataset.bookId;
+        if (bid) {
+          loadCoverForCell(cell, bid);
+          COVER_OBSERVER.unobserve(cell);
+        }
+      }
+    }, { rootMargin: "200px 0px", threshold: 0.01 });
+  }
+  for (const cell of root.querySelectorAll(".lib-catalog-cell-cover[data-book-id]")) {
+    COVER_OBSERVER.observe(cell);
+  }
+}
+
 function filterCatalog(rows) {
   return filterCatalogPure(rows, CATALOG.filters);
 }
@@ -131,7 +207,7 @@ export function renderCatalogTable(root) {
       ? `${t("library.catalog.empty.title")} — ${t("library.catalog.empty.body")}`
       : t("library.catalog.empty.filtered");
     tbody.appendChild(el("tr", { class: "lib-catalog-empty-row" }, [
-      el("td", { colspan: "8", class: "lib-empty-cell" }, msg),
+      el("td", { colspan: "9", class: "lib-empty-cell" }, msg),
     ]));
     updateLoadMoreButton(root);
     return;
@@ -166,11 +242,16 @@ export function renderCatalogTable(root) {
       title: errorText || statusText,
     }, errorText && row.status === "failed" ? `${statusText}: ${errorText}` : statusText);
 
+    /* Iter 12 P6.1: cover thumb с lazy IntersectionObserver. */
+    const coverCell = el("td", { class: "lib-catalog-cell-cover", "data-book-id": row.id }, [
+      el("div", { class: "lib-catalog-cover-thumb-empty" }),
+    ]);
     const tr = el("tr", {
       class: `lib-catalog-row ${statusClass(row.status)} ${q !== null ? qualityClass(q) : ""}`,
       "data-book-id": row.id,
     }, [
       el("td", { class: "lib-catalog-cell-cb" }, [cb]),
+      coverCell,
       titleCell,
       el("td", { class: "lib-catalog-cell-author" }, displayAuthor),
       el("td", { class: "lib-catalog-cell-year" }, row.year ? String(row.year) : ""),
@@ -182,6 +263,7 @@ export function renderCatalogTable(root) {
     tbody.appendChild(tr);
   }
   updateLoadMoreButton(root);
+  attachCoverThumbObserver(root);
 }
 
 function updateLoadMoreButton(root) {
@@ -285,6 +367,7 @@ export function buildCatalogTable() {
   const thead = el("thead", {}, [
     el("tr", {}, [
       el("th", { class: "lib-catalog-th-cb" }),
+      el("th", { class: "lib-catalog-th-cover" }),
       el("th", {}, t("library.catalog.col.title")),
       el("th", {}, t("library.catalog.col.author")),
       el("th", { class: "lib-catalog-th-year" }, t("library.catalog.col.year")),

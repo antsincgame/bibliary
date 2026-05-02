@@ -14,6 +14,10 @@ import { IMPORT_STATE, STATE } from "./state.js";
 import { refreshCollectionViews } from "./collection-views.js";
 import { showLibraryToast } from "./toast.js";
 import { showConfirm } from "../components/ui-dialog.js";
+import { rerenderBooksPanel, resetBooksState } from "./import-pane-books.js";
+import { rerenderStatusBar } from "./import-pane-statusbar.js";
+
+const IN_FLIGHT_TRIM = 200;
 
 /**
  * Эффективное значение OCR для конкретного импорта: учитывает per-book override
@@ -118,30 +122,69 @@ async function runImport(invoke, deps) {
   if (!root) return;
   const status = root.querySelector(".lib-import-status");
   IMPORT_STATE.busy = true;
+  resetBooksState();
+  rerenderStatusBar();
   if (status) status.textContent = t("library.import.progress.starting");
   let unsubscribeProgress = null;
   try {
     if (typeof window.api?.library?.onImportProgress === "function") {
       unsubscribeProgress = window.api.library.onImportProgress((evt) => {
-        if (!status) return;
         if (evt?.importId && !IMPORT_STATE.importId) {
           IMPORT_STATE.importId = evt.importId;
         }
         const discovered = Number(evt?.discovered ?? 0);
         const processed = Number(evt?.processed ?? 0);
+        IMPORT_STATE.aggregate.discovered = Math.max(IMPORT_STATE.aggregate.discovered, discovered);
+        IMPORT_STATE.aggregate.processed = Math.max(IMPORT_STATE.aggregate.processed, processed);
+
         if (evt?.phase === "file-start") {
-          const file = String(evt?.currentFile || "").split(/[\\/]/).pop() || t("library.import.progress.unknownFile");
-          status.textContent = t("library.import.progress.processing", {
-            file,
+          const filePath = String(evt?.currentFile || "");
+          const fileName = filePath.split(/[\\/]/).pop() || t("library.import.progress.unknownFile");
+          if (filePath) {
+            IMPORT_STATE.inFlight.set(filePath, {
+              filePath,
+              fileName,
+              status: "processing",
+              startedAt: Date.now(),
+            });
+            trimInFlight();
+          }
+          if (status) status.textContent = t("library.import.progress.processing", {
+            file: fileName,
             done: String(processed),
             total: String(Math.max(discovered, processed)),
           });
         } else if (evt?.phase === "processed") {
-          status.textContent = t("library.import.progress.copying", {
+          const filePath = String(evt?.currentFile || "");
+          const outcome = String(evt?.outcome || "skipped");
+          /* Map IPC outcome → BookProgress status (added/duplicate/skipped/failed). */
+          const status_ = (outcome === "added" || outcome === "duplicate" || outcome === "skipped" || outcome === "failed")
+            ? outcome : "skipped";
+          if (filePath) {
+            const existing = IMPORT_STATE.inFlight.get(filePath);
+            const fileName = filePath.split(/[\\/]/).pop() || filePath;
+            IMPORT_STATE.inFlight.set(filePath, {
+              filePath,
+              fileName,
+              status: status_,
+              startedAt: existing?.startedAt ?? Date.now(),
+              finishedAt: Date.now(),
+              outcome,
+              errorMessage: typeof evt?.errorMessage === "string" ? evt.errorMessage : undefined,
+              warnings: Array.isArray(evt?.fileWarnings) ? evt.fileWarnings.slice(0, 5) : undefined,
+              duplicateReason: typeof evt?.duplicateReason === "string" ? evt.duplicateReason : undefined,
+            });
+          }
+          if (status_ === "added") IMPORT_STATE.aggregate.added++;
+          else if (status_ === "duplicate") IMPORT_STATE.aggregate.duplicate++;
+          else if (status_ === "skipped") IMPORT_STATE.aggregate.skipped++;
+          else if (status_ === "failed") IMPORT_STATE.aggregate.failed++;
+
+          if (status) status.textContent = t("library.import.progress.copying", {
             done: String(processed),
             total: String(Math.max(discovered, processed)),
           });
-          if (evt?.outcome === "duplicate" && evt?.existingBookId) {
+          if (outcome === "duplicate" && evt?.existingBookId) {
             const msgKey = evt?.duplicateReason === "duplicate_older_revision"
               ? "library.import.toast.duplicateOlder"
               : "library.import.toast.duplicateSha";
@@ -156,14 +199,21 @@ async function runImport(invoke, deps) {
             });
           }
         } else {
-          status.textContent = t("library.import.progress.scanning", {
+          if (status) status.textContent = t("library.import.progress.scanning", {
             found: String(discovered),
           });
         }
+        rerenderBooksPanel();
+        rerenderStatusBar();
       });
     }
     const res = await invoke();
     IMPORT_STATE.importId = res.importId || null;
+    if (typeof res?.added === "number") IMPORT_STATE.aggregate.added = res.added;
+    if (typeof res?.duplicate === "number") IMPORT_STATE.aggregate.duplicate = res.duplicate;
+    if (typeof res?.skipped === "number") IMPORT_STATE.aggregate.skipped = res.skipped;
+    if (typeof res?.failed === "number") IMPORT_STATE.aggregate.failed = res.failed;
+    rerenderStatusBar();
     if (status) status.textContent = t("library.import.progress.done", {
       added: String(res.added ?? 0),
       skipped: String((res.skipped ?? 0) + (res.duplicate ?? 0) + (res.failed ?? 0)),
@@ -181,6 +231,24 @@ async function runImport(invoke, deps) {
     IMPORT_STATE.busy = false;
     IMPORT_STATE.importId = null;
     try { await window.api.library.evaluatorResume(); } catch (_e) { /* resume on cleanup is best-effort */ }
+  }
+}
+
+/**
+ * Bound memory: keep only last IN_FLIGHT_TRIM (200) entries. При импорте
+ * 5000+ файлов карта не разрастается.
+ */
+function trimInFlight() {
+  if (IMPORT_STATE.inFlight.size <= IN_FLIGHT_TRIM) return;
+  /* Remove oldest finished entries first. */
+  const finished = [];
+  for (const [k, v] of IMPORT_STATE.inFlight) {
+    if (v.status !== "processing") finished.push([k, v.finishedAt ?? v.startedAt]);
+  }
+  finished.sort((a, b) => /** @type {number} */ (a[1]) - /** @type {number} */ (b[1]));
+  const toRemove = IMPORT_STATE.inFlight.size - IN_FLIGHT_TRIM;
+  for (let i = 0; i < toRemove && i < finished.length; i++) {
+    IMPORT_STATE.inFlight.delete(/** @type {string} */ (finished[i][0]));
   }
 }
 

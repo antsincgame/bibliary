@@ -116,10 +116,49 @@ export type TelemetryEvent =
       name: string;
       oldLimit: number;
       newLimit: number;
-      reason: "increase" | "decrease_failure" | "decrease_latency";
+      reason: "increase" | "decrease_failure" | "decrease_latency" | "decrease_pressure";
       successRate: number;
       p95LatencyMs: number;
       windowSize: number;
+      ts: string;
+    }
+  | {
+      /**
+       * Memory pressure detected (RAM/VRAM/RSS превысили threshold).
+       * Срабатывает не чаще раза в 30s по каждому виду (throttle).
+       */
+      type: "memory.pressure";
+      kind: "ram" | "vram" | "rss";
+      freeBytes?: number;
+      rssBytes?: number;
+      totalBytes?: number;
+      utilization?: number;
+      source?: string;
+      ts: string;
+    }
+  | {
+      /**
+       * VRAM probe был отключён (nvidia-smi/wmic упали). Caching стратегия:
+       * один fail → не пытаемся снова до перезапуска приложения.
+       */
+      type: "memory.vram_probe_disabled";
+      reason: "first_failure" | "no_devices";
+      ts: string;
+    }
+  | {
+      /**
+       * Iter 12 P1.2: HARD+REPLACE editions — старая ревизия удалена в пользу
+       * новой с более высоким revisionScore. Audit trail для пользователя.
+       */
+      type: "revision.replaced";
+      oldBookId: string;
+      newBookId: string;
+      oldTitle: string;
+      newTitle: string;
+      oldFormat?: string;
+      newFormat?: string;
+      oldYear?: number;
+      newYear?: number;
       ts: string;
     }
   | {

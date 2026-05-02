@@ -99,3 +99,28 @@ test("import: newer revision is kept when older already exists", async (t) => {
   assert.equal(second.outcome, "added");
   assert.notEqual(second.bookId, first.bookId);
 });
+
+test("Iter 12 P1.2: HARD+REPLACE — newer revision evicts older after success", async (t) => {
+  const sb = await makeSandbox("rev-replace");
+  t.after(sb.cleanup);
+  const { getBookById } = await import("../electron/lib/library/cache-db.ts");
+
+  const olderPath = path.join(sb.tempRoot, "Neural_Systems.txt");
+  const newerPath = path.join(sb.tempRoot, "Neural_Systems_2nd_Edition_2024.txt");
+  await writeFile(olderPath, `${BODY}\nolder first\n`, "utf8");
+  await writeFile(newerPath, `${BODY}\nnewer second\n`, "utf8");
+
+  const first = await importBookFromFile(olderPath);
+  assert.equal(first.outcome, "added");
+  const oldBookId = first.bookId!;
+  assert.ok(getBookById(oldBookId), "old book must be in DB before replace");
+
+  const second = await importBookFromFile(newerPath);
+  assert.equal(second.outcome, "added");
+  assert.notEqual(second.bookId, oldBookId);
+
+  /* Phalanx P1.2: старая ревизия удалена из DB ПОСЛЕ успеха новой. */
+  assert.equal(getBookById(oldBookId), null, "old book must be removed from DB after replace");
+  /* Новая ревизия осталась. */
+  assert.ok(getBookById(second.bookId!), "new book must remain");
+});

@@ -16,8 +16,14 @@ const STATE = {
   defaults: {},
   dirty: false,
   saving: false,
-  activeSectionId: "ingest",
+  activeSectionId: "general",
   searchQuery: "",
+  /* Iter 12: legacy-разделы (resilience/pipeline/ui/ingest) скрыты по умолчанию.
+     Сохраняется в localStorage между сессиями для опытных пользователей. */
+  showAdvanced: (() => {
+    try { return localStorage.getItem("settings.showAdvanced") === "true"; }
+    catch { return false; }
+  })(),
 };
 
 function optionalT(key) {
@@ -26,7 +32,14 @@ function optionalT(key) {
 }
 
 function getVisibleSections() {
-  return [...SECTIONS];
+  if (STATE.showAdvanced) return [...SECTIONS];
+  return SECTIONS.filter((s) => s.advanced !== true);
+}
+
+function setShowAdvanced(next) {
+  STATE.showAdvanced = next;
+  try { localStorage.setItem("settings.showAdvanced", String(next)); }
+  catch { /* localStorage может быть недоступен в strict-режиме */ }
 }
 
 function filteredFields(section) {
@@ -268,6 +281,25 @@ function buildTextField(field, root) {
   return wrapFieldCard(field, [input, resetBtn], "");
 }
 
+function buildTextareaField(field, root) {
+  const value = String(STATE.prefs[field.key] ?? STATE.defaults[field.key] ?? "");
+  const dflt = String(STATE.defaults[field.key] ?? "");
+  const input = el("textarea", {
+    class: "settings-textarea",
+    rows: String(field.rows || 4),
+    placeholder: field.placeholder || "",
+    spellcheck: "true",
+  });
+  input.value = value;
+  input.addEventListener("input", () => {
+    STATE.prefs[field.key] = String(input.value);
+    STATE.dirty = true;
+    updateSaveUi(root);
+  });
+  const resetBtn = buildResetBtn(field.key, dflt, () => { input.value = dflt; }, value === dflt, root);
+  return wrapFieldCard(field, [input, resetBtn], "");
+}
+
 function buildField(field, root) {
   if (field.type === "bool") return buildBoolField(field, root);
   if (field.type === "enum") return buildEnumField(field, root);
@@ -275,6 +307,7 @@ function buildField(field, root) {
   if (field.type === "password") return buildPasswordField(field, root);
   if (field.type === "url") return buildUrlField(field, root);
   if (field.type === "text") return buildTextField(field, root);
+  if (field.type === "textarea") return buildTextareaField(field, root);
   return buildNumberField(field, root);
 }
 
@@ -404,6 +437,23 @@ function render(root) {
 
   const shell = el("div", { class: "settings-shell" });
   const rail = el("nav", { class: "settings-rail", "aria-label": "Settings sections" });
+
+  /* Advanced toggle: показывает/скрывает legacy-разделы (resilience/pipeline/ui/ingest). */
+  const advToggle = el("button", {
+    class: `settings-rail-item settings-advanced-toggle${STATE.showAdvanced ? " is-on" : ""}`,
+    type: "button",
+    title: t("settings.advanced.tooltip"),
+    onclick: () => {
+      setShowAdvanced(!STATE.showAdvanced);
+      render(root);
+    },
+  }, [
+    el("span", { class: "settings-rail-icon" }, "ADV"),
+    el("span", { class: "settings-rail-label" },
+      STATE.showAdvanced ? t("settings.advanced.hide") : t("settings.advanced.show")),
+  ]);
+  rail.appendChild(advToggle);
+
   for (const section of visibleSections) {
     const matches = filteredFields(section).length;
     const isActive = !STATE.searchQuery && section.id === STATE.activeSectionId;

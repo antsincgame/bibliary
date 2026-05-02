@@ -19,6 +19,7 @@ import {
   registerForRevisionDedup,
   findIsbnMatch,
   getFormatPriority,
+  replaceBookRevision,
 } from "./revision-dedup.js";
 import { parseFilename } from "./filename-parser.js";
 import type { ImportFolderOptions, ImportResult } from "./import-types.js";
@@ -139,8 +140,12 @@ export async function importBookFromFile(
     warnings.push(`ISBN match: better format (${convResult.meta.originalFormat}) supersedes ${isbnHit.bookId} (${isbnHit.title})`);
   }
 
-  /* Tier 2: Revision-level дедуп одной и той же книги с разными бинарниками. */
+  /* Tier 2: Revision-level дедуп одной и той же книги с разными бинарниками.
+     Iter 12 P1.2: HARD+REPLACE strategy — старая ревизия удаляется ПОСЛЕ
+     успешного импорта новой (deferred to end of function). */
   const latest = findLatestRevisionMatch(convResult.meta, absPath);
+  /** id старой ревизии для replace ПОСЛЕ успешного upsertBook нового. */
+  let pendingReplaceOldId: string | null = null;
   if (latest && latest.bookId !== convResult.meta.id) {
     const candidateScore = computeRevisionScore(convResult.meta, absPath);
     if (candidateScore < latest.score) {
@@ -156,7 +161,10 @@ export async function importBookFromFile(
       };
     }
     if (candidateScore > latest.score) {
-      warnings.push(`newer revision detected: supersedes ${latest.bookId} (${latest.title})`);
+      pendingReplaceOldId = latest.bookId;
+      warnings.push(
+        `newer revision: superseding ${latest.bookId} (${latest.title}); will replace after successful import`,
+      );
     } else {
       warnings.push(`same revision score as ${latest.bookId}; keeping both variants`);
     }
@@ -267,6 +275,20 @@ export async function importBookFromFile(
   upsertBook(finalMeta, mdPath);
   registerForNearDup(finalMeta, finalMeta.id);
   registerForRevisionDedup(finalMeta);
+
+  /* Iter 12 P1.2: HARD+REPLACE — удалить старую слабую ревизию ТОЛЬКО ПОСЛЕ
+     полного успеха нового импорта. Best-effort: ошибка не возвращается как
+     failed (новая книга уже в DB), а только пишется в warnings. */
+  if (pendingReplaceOldId) {
+    try {
+      const r = await replaceBookRevision(pendingReplaceOldId, finalMeta);
+      if (r.warnings.length > 0) warnings.push(...r.warnings);
+      if (r.ok) warnings.push(`replaced old revision ${pendingReplaceOldId} → ${finalMeta.id}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      warnings.push(`replaceBookRevision threw (non-fatal): ${msg}`);
+    }
+  }
 
   if (convResult.images.length > 0) {
     const blobsRoot = getBlobsRoot(root);

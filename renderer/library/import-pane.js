@@ -15,6 +15,8 @@ import { t } from "../i18n.js";
 import { IMPORT_STATE } from "./state.js";
 import { buildEvaluatorPanel, refreshEvaluatorState } from "./evaluator.js";
 import { buildLogPanel, hydrateLogSnapshot } from "./import-pane-log.js";
+import { buildBooksPanel } from "./import-pane-books.js";
+import { buildImportStatusBar } from "./import-pane-statusbar.js";
 import {
   importFromFolder,
   importFromFiles,
@@ -125,17 +127,50 @@ export function buildImportPane(deps) {
 
   const status = el("div", { class: "lib-import-status", "aria-live": "polite" }, "");
   const logPanel = buildLogPanel();
+  const booksPanel = buildBooksPanel();
+  const statusBar = buildImportStatusBar();
 
   const evaluatorPanel = buildEvaluatorPanel();
 
-  const body = el("div", { class: "lib-import-body" }, [
-    dropzone,
-    el("div", { class: "lib-import-actions" }, [
-      pickFolderBtn, pickFilesBtn, cancelImportBtn, rebuildCacheBtn,
-    ]),
-    opts,
-    status,
+  /* Двухвкладочная console: Logs / Books in flight.
+     Контент-обёртка переключает .is-active классы через data-tab. */
+  const tabLogs = el("button", {
+    type: "button",
+    class: "lib-import-console-tab is-active",
+    "data-tab": "logs",
+    onclick: () => switchConsoleTab(consoleEl, "logs"),
+  }, t("library.import.console.tab.logs"));
+  const tabBooks = el("button", {
+    type: "button",
+    class: "lib-import-console-tab",
+    "data-tab": "books",
+    onclick: () => switchConsoleTab(consoleEl, "books"),
+  }, t("library.import.console.tab.books"));
+
+  logPanel.classList.add("lib-import-console-pane", "is-active");
+  /** @type {HTMLElement} */ (logPanel).dataset.tab = "logs";
+  booksPanel.classList.add("lib-import-console-pane");
+  /** @type {HTMLElement} */ (booksPanel).dataset.tab = "books";
+
+  const consoleHeader = el("div", { class: "lib-import-console-tabs" }, [tabLogs, tabBooks]);
+  const consoleEl = el("div", { class: "lib-import-console" }, [
+    consoleHeader,
+    statusBar,
     logPanel,
+    booksPanel,
+  ]);
+
+  /* Top-half: drop zone + actions + opts + status. Bottom: full-width console. */
+  const body = el("div", { class: "lib-import-body" }, [
+    el("div", { class: "lib-import-controls" }, [
+      dropzone,
+      el("div", { class: "lib-import-actions" }, [
+        pickFolderBtn, pickFilesBtn, cancelImportBtn, rebuildCacheBtn,
+      ]),
+      opts,
+      status,
+    ]),
+    consoleEl,
     evaluatorPanel,
   ]);
 
@@ -180,6 +215,26 @@ export function buildImportPane(deps) {
   });
 
   return el("div", { class: "lib-pane lib-pane-import" }, [body]);
+}
+
+/**
+ * Переключение вкладок консоли импорта.
+ * @param {HTMLElement} consoleEl
+ * @param {"logs"|"books"} tab
+ */
+function switchConsoleTab(consoleEl, tab) {
+  for (const btn of consoleEl.querySelectorAll(".lib-import-console-tab")) {
+    /** @type {HTMLElement} */ (btn).classList.toggle(
+      "is-active",
+      /** @type {HTMLElement} */ (btn).dataset.tab === tab,
+    );
+  }
+  for (const pane of consoleEl.querySelectorAll(".lib-import-console-pane")) {
+    /** @type {HTMLElement} */ (pane).classList.toggle(
+      "is-active",
+      /** @type {HTMLElement} */ (pane).dataset.tab === tab,
+    );
+  }
 }
 
 /** @param {HTMLElement} root */

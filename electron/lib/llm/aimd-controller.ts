@@ -59,7 +59,11 @@ export interface AimdControllerOptions {
   emit?: (event: AimdAdjustedEvent) => void;
 }
 
-export type AimdAdjustReason = "increase" | "decrease_failure" | "decrease_latency";
+export type AimdAdjustReason =
+  | "increase"
+  | "decrease_failure"
+  | "decrease_latency"
+  | "decrease_pressure";
 
 export interface AimdAdjustedEvent {
   name: string;
@@ -257,6 +261,43 @@ export class AimdController {
     this.currentLimit = this.opts.initialLimit;
     this.window.clear();
     this.lastAdjustedAt = 0;
+  }
+
+  /**
+   * Принудительный soft decrease при memory pressure (внешний триггер).
+   *
+   * Phalanx Risk Mitigation #3 (Google review):
+   *  1. Сначала пытаемся triggernуть V8 major GC (если процесс запущен с
+   *     --expose-gc) — V8 ленится при долго-живущих heap, и `freemem<2GB`
+   *     может висеть просто потому что major GC не отработал.
+   *  2. Soft additive decrease (-1) вместо мультипликативного 0.5 —
+   *     избегаем срыва concurrency в 0 в отсутствие реальных fail/latency
+   *     сигналов; AIMD пирамида никогда не зависает (minLimit ≥ 1).
+   *  3. Игнорируем cooldown — pressure это редкое событие, нельзя ждать.
+   */
+  forceDecreaseOnPressure(): { oldLimit: number; newLimit: number } | null {
+    try {
+      const gc = (globalThis as { gc?: () => void }).gc;
+      if (typeof gc === "function") gc();
+    } catch (_e) {
+      /* ignore: --expose-gc not enabled */
+    }
+    const newLimit = Math.max(this.opts.minLimit, this.currentLimit - 1);
+    if (newLimit === this.currentLimit) return null;
+    const oldLimit = this.currentLimit;
+    this.currentLimit = newLimit;
+    this.lastAdjustedAt = this.opts.now();
+    this.opts.emit({
+      name: this.opts.name,
+      oldLimit,
+      newLimit,
+      reason: "decrease_pressure",
+      successRate: this.window.size() === 0 ? 1 : this.window.successRate(),
+      p95LatencyMs: this.window.size() === 0 ? 0 : this.window.p95Latency(),
+      windowSize: this.window.size(),
+    });
+    this.opts.onLimitChange?.(newLimit, "decrease_pressure");
+    return { oldLimit, newLimit };
   }
 }
 

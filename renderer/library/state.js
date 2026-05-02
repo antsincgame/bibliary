@@ -116,12 +116,38 @@ export const BATCH = {
   collection: null,
 };
 
+/** @typedef {{
+ *   filePath: string;
+ *   fileName: string;
+ *   status: "processing"|"added"|"duplicate"|"skipped"|"failed";
+ *   startedAt: number;
+ *   finishedAt?: number;
+ *   outcome?: string;
+ *   errorMessage?: string;
+ *   warnings?: string[];
+ *   duplicateReason?: string;
+ * }} BookProgress */
+
 export const IMPORT_STATE = {
   busy: false,
   /** @type {string|null} */
   importId: null,
   scanArchives: true,
   recursive: true,
+  /** Map<filePath, BookProgress> — per-book live state.
+   *  Old entries trimmed to last 200 to keep memory bounded. */
+  /** @type {Map<string, BookProgress>} */
+  inFlight: new Map(),
+  aggregate: {
+    discovered: 0,
+    processed: 0,
+    added: 0,
+    duplicate: 0,
+    skipped: 0,
+    failed: 0,
+    /** @type {number|null} */
+    startedAt: null,
+  },
 };
 
 /** @type {{ query: string, results: Array<any>, searching: boolean, error: string }} */

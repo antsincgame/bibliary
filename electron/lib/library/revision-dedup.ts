@@ -1,6 +1,11 @@
-import { listBooksForRevisionDedup, type RevisionDedupBook } from "./cache-db.js";
+import { listBooksForRevisionDedup, type RevisionDedupBook, getBookById, deleteBook } from "./cache-db.js";
+import { unregisterFromNearDup } from "./near-dup-detector.js";
+import { resolveCatalogSidecarPaths } from "./storage-contract.js";
+import { getPriority } from "./format-priority.js";
 import type { BookCatalogMeta, SupportedBookFormat } from "./types.js";
+import { promises as fs } from "node:fs";
 import * as path from "node:path";
+import * as telemetry from "../resilience/telemetry.js";
 
 export interface RevisionDedupMatch {
   bookId: string;
@@ -191,17 +196,13 @@ export function findIsbnMatch(isbn: string | undefined): { bookId: string; title
 
 // ── Format preference ───────────────────────────────────────────────────────
 
-const FORMAT_PRIORITY: Record<string, number> = {
-  epub: 5,
-  pdf: 4,
-  djvu: 3,
-  fb2: 2,
-  docx: 1,
-  txt: 0,
-};
-
+/**
+ * Iter 12 P6.2: используем единый format-priority.ts (Phalanx unification).
+ * Старая локальная мапа была на 6 форматов, новая — на 22 (epub/pdf/djvu/fb2/
+ * docx/azw3/mobi/rtf/odt/lit/lrf/snb/pdb/prc/chm/cbz/cbr/tcr/txt/html).
+ */
 export function getFormatPriority(format: string): number {
-  return FORMAT_PRIORITY[format] ?? -1;
+  return getPriority(format);
 }
 
 export function findLatestRevisionMatch(
@@ -219,5 +220,91 @@ export function findLatestRevisionMatch(
     .sort((a, b) => b.revisionScore - a.revisionScore || a.id.localeCompare(b.id));
   const best = sorted[0];
   return { bookId: best.id, score: best.revisionScore, title: best.title };
+}
+
+/**
+ * Iter 12 P1.2: HARD+REPLACE strategy — удалить старую (более слабую)
+ * ревизию ПОСЛЕ успешного импорта новой.
+ *
+ * Phalanx Risk Mitigation #2 (Google review):
+ *   - Оригиналы пользователя НЕ трогаем — только library/<bookId>/.
+ *   - Удаление ТОЛЬКО после успеха нового кандидата (caller отвечает).
+ *   - Sidecars (md, original, meta.json, illustrations.json) удаляем
+ *     индивидуально (не rmdir bookDir, т.к. там может быть ещё одна книга
+ *     в legacy-layout: data/library/<lang>/<domain>/<author>/).
+ *   - Telemetry event `revision.replaced` пишет old/new id+title для аудита.
+ *   - Best-effort: если remove файла упал — логгируем warning, не throw
+ *     (новая книга уже добавлена; пусть лучше старые orphan-файлы остануся,
+ *     чем пользователь потеряет обе книги).
+ *   - Qdrant orphan-vectors не убиваем здесь — это делают периодические
+ *     scanner-ы (см. library:delete-book IPC).
+ */
+export async function replaceBookRevision(
+  oldBookId: string,
+  newMeta: BookCatalogMeta,
+): Promise<{ ok: boolean; warnings: string[] }> {
+  const warnings: string[] = [];
+  const oldMeta = getBookById(oldBookId);
+  if (!oldMeta) {
+    warnings.push(`replaceBookRevision: old book ${oldBookId} not in DB anymore (skipped)`);
+    return { ok: false, warnings };
+  }
+
+  /* DB row delete first — атомарная транзакция в better-sqlite3. Если
+     дальше упадёт, в DB новая книга уже есть (caller вызвал upsertBook),
+     старая пропала. Это лучше чем оставить две конкурирующие записи. */
+  try {
+    deleteBook(oldBookId);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    warnings.push(`replaceBookRevision: deleteBook(${oldBookId}) failed: ${msg}`);
+    return { ok: false, warnings };
+  }
+
+  /* Files cleanup — best-effort. Если что-то упадёт, оставим orphan-файлы. */
+  try {
+    const sidecars = await resolveCatalogSidecarPaths(oldMeta);
+    const targets = [
+      oldMeta.mdPath,
+      sidecars.originalPath,
+      sidecars.metaPath,
+      sidecars.illustrationsPath,
+    ];
+    for (const p of targets) {
+      try { await fs.rm(p, { force: true }); }
+      catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        warnings.push(`replaceBookRevision: rm ${path.basename(p)} failed: ${msg}`);
+      }
+    }
+    /* Best-effort: попытка удалить пустую bookDir. ENOTEMPTY игнорируем. */
+    await fs.rmdir(sidecars.bookDir).catch(() => undefined);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    warnings.push(`replaceBookRevision: sidecars cleanup failed: ${msg}`);
+  }
+
+  /* In-memory caches: near-dup tracker и revision-dedup index. */
+  try {
+    unregisterFromNearDup(oldMeta);
+    resetRevisionDedupCache();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    warnings.push(`replaceBookRevision: cache cleanup failed: ${msg}`);
+  }
+
+  telemetry.logEvent({
+    type: "revision.replaced",
+    oldBookId,
+    newBookId: newMeta.id,
+    oldTitle: oldMeta.title,
+    newTitle: newMeta.title,
+    oldFormat: oldMeta.originalFormat,
+    newFormat: newMeta.originalFormat,
+    oldYear: oldMeta.year,
+    newYear: newMeta.year,
+  });
+
+  return { ok: true, warnings };
 }
 

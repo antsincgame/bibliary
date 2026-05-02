@@ -53,6 +53,7 @@ export async function openBook(bookId, root) {
     readerContainer = el("div", { class: "lib-reader" });
   }
 
+  root.classList.add("lib-reader-open");
   catalogBody = root.querySelector(".lib-catalog-body");
   if (catalogBody) catalogBody.style.display = "none";
 
@@ -82,7 +83,8 @@ export async function openBook(bookId, root) {
     let bodyMd = stripFrontmatter(content.markdown);
     const coverDataUrl = extractCoverDataUrl(content.markdown);
     if (coverDataUrl) {
-      bodyMd = bodyMd.replace(/^!\[Cover\]\[img-cover\]\s*$/m, "");
+      bodyMd = bodyMd.replace(/^!\[[^\]]*\]\[img-cover\]\s*\r?\n?/gm, "");
+      bodyMd = bodyMd.replace(/^\[img-cover\]:\s*\S+\s*\r?\n?/gm, "");
     }
     const html = renderMarkdown(bodyMd);
 
@@ -108,6 +110,7 @@ export function closeReader(root) {
   const reader = root.querySelector(".lib-reader");
   if (reader) reader.remove();
   readerContainer = null;
+  root.classList.remove("lib-reader-open");
   if (catalogBody) {
     catalogBody.style.display = "";
     catalogBody = null;
@@ -134,13 +137,47 @@ function renderReader(root) {
   const shownAuthor = displayBookAuthor(meta);
   const shownTags = displayBookTags(meta);
 
+  /* Iter 12 P2.1: clickable cover (lightbox) + actions toolbar. */
+  const coverImg = coverDataUrl ? el("img", {
+    class: "lib-reader-cover lib-reader-cover-clickable",
+    src: coverDataUrl,
+    alt: shownTitle || t("library.reader.coverAlt"),
+    title: t("library.reader.cover.clickHint"),
+    onclick: () => openCoverLightbox(coverDataUrl, shownTitle),
+  }) : null;
+
+  const toolbar = el("div", { class: "lib-reader-actions-toolbar" }, [
+    el("button", {
+      class: "lib-btn lib-btn-ghost lib-reader-action",
+      type: "button",
+      title: t("library.reader.action.openOriginal.tooltip"),
+      onclick: async () => {
+        const r = await window.api.library.openOriginal(currentBook.bookId);
+        if (!r.ok) {
+          const { showAlert } = await import("../components/ui-dialog.js");
+          await showAlert(t("library.reader.action.openOriginal.failed", { reason: r.reason || "" }));
+        }
+      },
+    }, t("library.reader.action.openOriginal")),
+    el("button", {
+      class: "lib-btn lib-btn-ghost lib-reader-action",
+      type: "button",
+      title: t("library.reader.action.revealInFolder.tooltip"),
+      onclick: async () => {
+        await window.api.library.revealInFolder(currentBook.bookId);
+      },
+    }, t("library.reader.action.revealInFolder")),
+    coverDataUrl ? el("button", {
+      class: "lib-btn lib-btn-ghost lib-reader-action",
+      type: "button",
+      title: t("library.reader.action.saveCover.tooltip"),
+      onclick: () => downloadCover(coverDataUrl, shownTitle),
+    }, t("library.reader.action.saveCover")) : null,
+  ].filter(Boolean));
+
   const header = el("div", { class: "lib-reader-header" }, [
     buildBackButton(root),
-    coverDataUrl ? el("img", {
-      class: "lib-reader-cover",
-      src: coverDataUrl,
-      alt: shownTitle || t("library.reader.coverAlt"),
-    }) : null,
+    coverImg,
     el("div", { class: "lib-reader-meta" }, [
       el("h1", { class: "lib-reader-title" }, shownTitle),
       shownAuthor
@@ -158,12 +195,98 @@ function renderReader(root) {
             /** @param {string} tag */ (tag) => el("span", { class: "lib-reader-tag" }, tag)
           ))
         : null,
+      toolbar,
     ].filter(Boolean)),
   ]);
 
+  /* Iter 12 P2.1: «meaningful body» check (Phalanx Risk Mitigation #5).
+     Не просто length<200, а wordCount + sentenceCount. */
+  const meaningful = isMeaningfulMarkdown(html);
   const body = el("div", { class: "lib-reader-body", html });
 
   readerContainer.append(header, body);
+  if (!meaningful && coverDataUrl) {
+    readerContainer.appendChild(buildEmptyBodyBanner(currentBook.bookId));
+  }
+}
+
+/**
+ * Phalanx Risk Mitigation #5 (Google review): не просто length, а смысл.
+ * Считаем words и sentences после strip markdown syntax.
+ * @param {string} html
+ * @returns {boolean}
+ */
+function isMeaningfulMarkdown(html) {
+  if (typeof html !== "string") return false;
+  const stripped = html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&[a-z]+;/gi, " ")
+    .trim();
+  const words = stripped.split(/\s+/).filter((w) => w.length > 1);
+  if (words.length < 50) return false;
+  const sentences = stripped.split(/[.!?]\s+/).filter((s) => s.trim().length > 5);
+  if (sentences.length < 3) return false;
+  return true;
+}
+
+/** @param {string} bookId */
+function buildEmptyBodyBanner(bookId) {
+  return el("div", { class: "lib-reader-empty-banner" }, [
+    el("div", { class: "lib-reader-empty-banner-text" }, t("library.reader.empty.body")),
+    el("button", {
+      class: "lib-btn lib-btn-primary",
+      type: "button",
+      onclick: () => window.api.library.openOriginal(bookId),
+    }, t("library.reader.empty.openOriginal")),
+  ]);
+}
+
+/** @param {string} src @param {string} alt */
+function openCoverLightbox(src, alt) {
+  const lightbox = el("div", {
+    class: "lib-reader-lightbox",
+    role: "dialog",
+    "aria-modal": "true",
+    onclick: (ev) => {
+      if (ev.target === ev.currentTarget) lightbox.remove();
+    },
+  }, [
+    el("img", { class: "lib-reader-lightbox-img", src, alt: alt || "" }),
+    el("button", {
+      class: "lib-reader-lightbox-close",
+      type: "button",
+      "aria-label": t("library.reader.cover.close"),
+      onclick: () => lightbox.remove(),
+    }, "×"),
+  ]);
+  document.body.appendChild(lightbox);
+  /* Esc close. */
+  const onKey = (ev) => {
+    if (ev.key === "Escape") {
+      lightbox.remove();
+      document.removeEventListener("keydown", onKey);
+    }
+  };
+  document.addEventListener("keydown", onKey);
+}
+
+/** @param {string} src @param {string} title */
+function downloadCover(src, title) {
+  const a = document.createElement("a");
+  a.href = src;
+  const safeTitle = String(title || "cover").replace(/[/\\?%*:|"<>]/g, "_");
+  /* Если data: URL — derive ext из mime. CAS bibliary-asset:// — pasenovay sha + .img. */
+  let ext = "img";
+  if (src.startsWith("data:image/")) {
+    const m = src.match(/^data:image\/([a-zA-Z0-9.+-]+);/);
+    if (m) ext = m[1].replace("svg+xml", "svg");
+  } else {
+    ext = "png";
+  }
+  a.download = `${safeTitle}.${ext}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 export function isReaderOpen() {

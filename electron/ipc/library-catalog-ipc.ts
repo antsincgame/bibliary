@@ -9,7 +9,7 @@
  * Извлечено из `library.ipc.ts` (Phase 3.1 cross-platform roadmap, 2026-04-30).
  */
 
-import { ipcMain } from "electron";
+import { ipcMain, shell } from "electron";
 import { promises as fs } from "fs";
 import {
   query as queryCache,
@@ -96,6 +96,79 @@ export function registerLibraryCatalogIpc(): void {
         return { markdown, mdPath: meta.mdPath };
       } catch (e) {
         console.warn(`[library:read-book-md] ${bookId}:`, e instanceof Error ? e.message : e);
+        return null;
+      }
+    }
+  );
+
+  /**
+   * Iter 12 P2.1: open original book file via OS handler.
+   * Возвращает ok=true если shell.openPath отработал, иначе reason.
+   */
+  ipcMain.handle(
+    "library:open-original",
+    async (_e, bookId: string): Promise<{ ok: boolean; reason?: string }> => {
+      if (typeof bookId !== "string") return { ok: false, reason: "bookId required" };
+      const meta = getBookById(bookId);
+      if (!meta) return { ok: false, reason: "not-found" };
+      try {
+        const sidecars = await resolveCatalogSidecarPaths(meta);
+        const result = await shell.openPath(sidecars.originalPath);
+        if (result) return { ok: false, reason: result };
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  );
+
+  /**
+   * Iter 12 P2.1: reveal book directory в системном проводнике.
+   */
+  ipcMain.handle(
+    "library:reveal-in-folder",
+    async (_e, bookId: string): Promise<{ ok: boolean; reason?: string }> => {
+      if (typeof bookId !== "string") return { ok: false, reason: "bookId required" };
+      const meta = getBookById(bookId);
+      if (!meta) return { ok: false, reason: "not-found" };
+      try {
+        const sidecars = await resolveCatalogSidecarPaths(meta);
+        shell.showItemInFolder(sidecars.originalPath);
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  );
+
+  /**
+   * Iter 12 P6.1: lightweight cover URL probe для catalog thumbnail.
+   * Читает первые 8 KB book.md и достаёт `[img-cover]: URL`. Без полного
+   * чтения файла (markdown может быть до 5 MB), в 50× быстрее чем readBookMd.
+   * Вызывается через IntersectionObserver per-row только когда thumb виден.
+   */
+  ipcMain.handle(
+    "library:get-cover-url",
+    async (_e, bookId: string): Promise<string | null> => {
+      if (typeof bookId !== "string") return null;
+      const meta = getBookById(bookId);
+      if (!meta) return null;
+      try {
+        const fh = await fs.open(meta.mdPath, "r");
+        try {
+          const buf = Buffer.alloc(8 * 1024);
+          const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
+          const head = buf.slice(0, bytesRead).toString("utf-8");
+          const cas = head.match(/^\[img-cover\]:\s*(bibliary-asset:\/\/sha256\/[a-f0-9]{64})\s*$/m);
+          if (cas) return cas[1];
+          const b64 = head.match(/^\[img-cover\]:\s*(data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+)\s*$/m);
+          if (b64) return b64[1];
+          return null;
+        } finally {
+          await fh.close();
+        }
+      } catch (e) {
+        console.warn(`[library:get-cover-url] ${bookId}:`, e instanceof Error ? e.message : e);
         return null;
       }
     }

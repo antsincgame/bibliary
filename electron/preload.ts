@@ -704,6 +704,20 @@ contextBridge.exposeInMainWorld("api", {
       smokeLibrary
         ? Promise.resolve({ markdown: "---\ntitle: Cybernetic Predictive Devices\n---\n# Cybernetic Predictive Devices\nSmoke reader body.", mdPath: "smoke.md" })
         : ipcRenderer.invoke("library:read-book-md", bookId),
+    /* Iter 12 P6.1: lightweight cover-url probe для catalog thumbnails. */
+    getCoverUrl: (bookId: string): Promise<string | null> =>
+      smokeLibrary
+        ? Promise.resolve(null)
+        : ipcRenderer.invoke("library:get-cover-url", bookId),
+    /* Iter 12 P2.1: reader actions toolbar. */
+    openOriginal: (bookId: string): Promise<{ ok: boolean; reason?: string }> =>
+      smokeLibrary
+        ? Promise.resolve({ ok: true })
+        : ipcRenderer.invoke("library:open-original", bookId),
+    revealInFolder: (bookId: string): Promise<{ ok: boolean; reason?: string }> =>
+      smokeLibrary
+        ? Promise.resolve({ ok: true })
+        : ipcRenderer.invoke("library:reveal-in-folder", bookId),
     deleteBook: (
       bookId: string,
       deleteFiles?: boolean,

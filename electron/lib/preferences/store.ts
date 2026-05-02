@@ -31,6 +31,14 @@ export const PreferencesSchema = z.object({
   driftThreshold: z.number().min(0).max(1).default(0.45),
   maxParagraphsForDrift: z.number().int().min(100).max(5000).default(800),
   overlapParagraphs: z.number().int().min(0).max(10).default(1),
+  /**
+   * Кастомный промпт для семантического чанкера — пользователь описывает,
+   * как именно резать книгу на смысловые части (например: «Резать по
+   * главам, оставляя в каждом чанке тематически связные параграфы»).
+   * Пусто = используется встроенный промпт. Применяется в дополнение к
+   * chunkSafeLimit/chunkMinWords как hint для drift detection.
+   */
+  chunkerCustomPrompt: z.string().max(2000).default(""),
 
   // -- Resilience / Timeouts --
   policyMaxRetries: z.number().int().min(0).max(20).default(3),
@@ -181,6 +189,14 @@ export const PreferencesSchema = z.object({
   schedulerMediumConcurrency: z.number().int().min(1).max(8).default(3),
   /** Параллелизм heavy-lane (>16 GB / vision: illustration, vision-ocr, calibre). Default 1. */
   schedulerHeavyConcurrency: z.number().int().min(1).max(4).default(1),
+
+  /**
+   * Adaptive scheduling — авто-подстройка concurrency через AIMD при импорте.
+   * Использует latency feedback и memory pressure (RAM/VRAM/RSS) для урезания
+   * heavy/medium lane при перегрузке. Включена по умолчанию для защиты крепости.
+   * Phalanx Risk Mitigation: minConcurrency=1 жёстко, GC try, soft decrease.
+   */
+  adaptiveSchedulingEnabled: z.boolean().default(true),
 
   // -- Parser pool (CPU-bound, отдельно от scheduler) --
   /**

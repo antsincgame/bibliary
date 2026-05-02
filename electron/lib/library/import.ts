@@ -28,6 +28,7 @@ import * as os from "os";
 import { importBookFromFile } from "./import-book.js";
 import { importCompositeHtmlBook } from "./import-composite-html.js";
 import { readPipelinePrefsOrNull } from "../preferences/store.js";
+import { beginImport as beginAdaptive, endImport as endAdaptive } from "./adaptive-bootstrap.js";
 import type { ImportResult, ImportFolderOptions, ProgressEvent, ProgressEventPhase, ImportFolderResult } from "./import-types.js";
 
 export type {
@@ -161,6 +162,10 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
   if (!opts.importRoot) {
     opts.importRoot = folderPath;
   }
+
+  /* Iter 12 P5: adaptive scheduling — AIMD attached к heavy/medium lanes,
+     memory probe (RAM 5s / VRAM 30s) gated by активный импорт. */
+  await beginAdaptive();
 
   const result: ImportFolderResult = {
     total: 0,
@@ -401,6 +406,8 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
        идемпотентен, повторная очистка через finishOne уже завершённых
        slot'ов — no-op. */
     await archiveTracker.cleanupAll();
+    /* Detach AIMD + stop memory probe (если последний активный импорт). */
+    endAdaptive();
   }
 
   result.total = counters.processed;
