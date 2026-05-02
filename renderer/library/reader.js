@@ -205,7 +205,10 @@ function renderReader(root) {
   const body = el("div", { class: "lib-reader-body", html });
 
   readerContainer.append(header, body);
-  if (!meaningful && coverDataUrl) {
+  /* Показываем баннер при любом "не осмысленном" контенте — независимо от
+     наличия обложки. Книги с failed-import часто не имеют ни обложки, ни
+     нормального текста (только стаб "Import failed."). */
+  if (!meaningful) {
     readerContainer.appendChild(buildEmptyBodyBanner(currentBook.bookId));
   }
 }
@@ -243,12 +246,25 @@ function buildEmptyBodyBanner(bookId) {
 
 /** @param {string} src @param {string} alt */
 function openCoverLightbox(src, alt) {
+  /* Keydown listener добавляется один раз и снимается при ЛЮБОМ способе
+     закрытия — через кнопку, backdrop, или Escape. */
+  /** @type {((ev: KeyboardEvent) => void)|null} */
+  let onKey = null;
+
+  const close = () => {
+    lightbox.remove();
+    if (onKey) {
+      document.removeEventListener("keydown", onKey);
+      onKey = null;
+    }
+  };
+
   const lightbox = el("div", {
     class: "lib-reader-lightbox",
     role: "dialog",
     "aria-modal": "true",
     onclick: (ev) => {
-      if (ev.target === ev.currentTarget) lightbox.remove();
+      if (ev.target === ev.currentTarget) close();
     },
   }, [
     el("img", { class: "lib-reader-lightbox-img", src, alt: alt || "" }),
@@ -256,16 +272,13 @@ function openCoverLightbox(src, alt) {
       class: "lib-reader-lightbox-close",
       type: "button",
       "aria-label": t("library.reader.cover.close"),
-      onclick: () => lightbox.remove(),
+      onclick: () => close(),
     }, "×"),
   ]);
   document.body.appendChild(lightbox);
-  /* Esc close. */
-  const onKey = (ev) => {
-    if (ev.key === "Escape") {
-      lightbox.remove();
-      document.removeEventListener("keydown", onKey);
-    }
+
+  onKey = (ev) => {
+    if (ev.key === "Escape") close();
   };
   document.addEventListener("keydown", onKey);
 }

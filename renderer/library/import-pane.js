@@ -206,13 +206,15 @@ export function buildImportPane(deps) {
     }
   };
   updateImportUiState();
-  const cancelPoller = setInterval(updateImportUiState, 500);
-  /* Cleanup при размонтировании body — слушаем DOMNodeRemoved (mostly
-     deprecated, но Electron поддерживает). Альтернатива — MutationObserver,
-     но для одного панель-rebuild interval acceptable. */
-  body.addEventListener("DOMNodeRemoved", (ev) => {
-    if (ev.target === body) clearInterval(cancelPoller);
-  });
+  /* Интервал самоочищается если body вышел из документа (безопаснее чем
+     DOMNodeRemoved, который не срабатывает при удалении родителя). */
+  const cancelPoller = setInterval(() => {
+    if (!document.contains(body)) {
+      clearInterval(cancelPoller);
+      return;
+    }
+    updateImportUiState();
+  }, 500);
 
   return el("div", { class: "lib-pane lib-pane-import" }, [body]);
 }
