@@ -49,6 +49,18 @@ export interface StartExtractionArgs {
    * выполняется cross-library dedup. Если не указано — `DEFAULT_COLLECTION`.
    */
   targetCollection?: string;
+  /**
+   * Иt 8Г.3: stable book identifier (UUID/SHA-derived) для:
+   *   - payload Qdrant (более стабильный ключ чем bookSourcePath, который
+   *     может меняться при перемещении файла);
+   *   - delete-on-reimport: перед upsert новых точек книги — удалить старые
+   *     `must.bookId === args.bookId` (нет orphan vectors при reimport).
+   *
+   * Optional для backward-compat: legacy callers (одиночный extract по
+   * пути без каталога) могут опустить — тогда bookId не пишется и
+   * delete-on-reimport не выполняется.
+   */
+  bookId?: string;
 }
 
 export interface StartExtractionResult {
@@ -211,7 +223,7 @@ export async function runExtraction(
     const warnings: string[] = [];
     let processed = 0;
 
-    const { fetchQdrantJson, QDRANT_URL } = await import("../qdrant/http-client.js");
+    const { fetchQdrantJson, QDRANT_URL, deletePointsByFilter } = await import("../qdrant/http-client.js");
     const { EMBEDDING_DIM } = await import("../scanner/embedding.js");
     const { ensureQdrantCollection } = await import("../qdrant/collection-config.js");
     console.log(`[extraction] Qdrant: ${QDRANT_URL} → collection "${targetCollection}" (dim=${EMBEDDING_DIM})`);
@@ -225,10 +237,33 @@ export async function runExtraction(
         payloadIndexes: [
           { field: "bookSourcePath", type: "keyword" },
           { field: "domain", type: "keyword" },
+          /* Иt 8Г.3: bookId index для O(log N) delete-by-filter и фильтра
+             выборок. Безопасно для legacy коллекций — Qdrant создаёт индекс
+             поверх существующих payload (поле может отсутствовать в части
+             точек, индекс просто их не покрывает). */
+          { field: "bookId", type: "keyword" },
         ],
       });
     } catch (createErr) {
       console.warn(`[extraction] collection create failed (will try upsert anyway): ${createErr instanceof Error ? createErr.message : createErr}`);
+    }
+
+    /* Иt 8Г.3: delete-on-reimport — удаляем точки этой книги ДО upsert
+       новых, чтобы не было orphan vectors после rechunk/reextraction.
+       Условие: bookId передан (новый код) — иначе legacy путь без cleanup. */
+    if (args.bookId) {
+      try {
+        const res = await deletePointsByFilter(targetCollection, [
+          { field: "bookId", value: args.bookId },
+        ]);
+        console.log(`[extraction] reimport cleanup: deleted points for bookId="${args.bookId}" → ${res.status}`);
+      } catch (deleteErr) {
+        /* Не падаем: коллекция может быть пустой или новой; upsert ниже
+           всё равно поедет. Но логируем — это потенциально orphan-источник. */
+        const msg = deleteErr instanceof Error ? deleteErr.message : String(deleteErr);
+        console.warn(`[extraction] reimport cleanup failed (continuing with upsert): ${msg}`);
+        warnings.push(`reimport-cleanup-failed: ${msg.slice(0, 120)}`);
+      }
     }
 
     for (let ci = range.from; ci < Math.min(range.to, totalChapters); ci++) {
@@ -320,6 +355,12 @@ export async function runExtraction(
                 relations: delta.relations,
                 bookSourcePath: delta.bookSourcePath,
                 acceptedAt: delta.acceptedAt,
+                /* Иt 8Г.3: stable id (UUID/SHA-derived) — выживает
+                   перемещение файла, позволяет точечный delete-by-filter
+                   при reimport. Optional spread: legacy callers без
+                   bookId не получают ключ в payload (consistent с тем что
+                   delete-on-reimport тоже пропускается). */
+                ...(args.bookId ? { bookId: args.bookId } : {}),
               },
             }],
           }),

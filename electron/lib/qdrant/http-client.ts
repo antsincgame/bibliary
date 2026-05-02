@@ -68,3 +68,35 @@ export async function fetchQdrantJson<T>(url: string, options?: QdrantFetchOptio
     clearTimeout(timer);
   }
 }
+
+/**
+ * Иt 8Г.3: shared helper для delete points-by-filter.
+ *
+ * Раньше каждый caller (scanner.ipc, dataset-v2 reject-accepted, future
+ * reimport cleanup) собирал inline fetch-вызов с одинаковым телом. Helper
+ * нормализует контракт: `must`-фильтр со списком пар (field, exactValue),
+ * `wait=true` для синхронного применения (важно для re-imports — следующий
+ * upsert не должен видеть старые точки).
+ *
+ * Returns: `{ status: "ok" | "acknowledged", operation_id?: number }` —
+ * Qdrant API контракт.
+ *
+ * Если delete не нашёл точек — это OK (idempotency); ошибка только при
+ * HTTP failure / 4xx-5xx response (через fetchQdrantJson).
+ */
+export async function deletePointsByFilter(
+  collection: string,
+  matchers: Array<{ field: string; value: string | number }>,
+  options?: { timeoutMs?: number },
+): Promise<{ status: string; operation_id?: number }> {
+  const must = matchers.map(({ field, value }) => ({ key: field, match: { value } }));
+  return fetchQdrantJson<{ status: string; operation_id?: number }>(
+    `${QDRANT_URL}/collections/${collection}/points/delete?wait=true`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filter: { must } }),
+      timeoutMs: options?.timeoutMs ?? QDRANT_TIMEOUT_MS,
+    },
+  );
+}
