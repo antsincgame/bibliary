@@ -56,7 +56,15 @@ export interface BatchRunnerDeps {
   setBookStatus: (
     id: string,
     status: BookStatus,
-    extras?: { conceptsAccepted?: number; conceptsExtracted?: number; lastError?: string | null },
+    extras?: {
+      conceptsAccepted?: number;
+      conceptsExtracted?: number;
+      /** Иt 8Г.2: общее число semantic chunks подано на extraction. */
+      chunksTotal?: number;
+      /** Иt 8Г.2: JSON-снимок chunker-провенанса (TEXT). */
+      chunkerProvenance?: string | null;
+      lastError?: string | null;
+    },
   ) => boolean;
   runExtraction: (
     args: {
@@ -130,6 +138,15 @@ export async function runBatchExtraction(
         { bookId: book.id, bookIndex: i + 1, bookTotal: eligible.length },
       );
       console.log(`[batch] ✓ "${book.title}" done: ${r.totalDelta.accepted} accepted / ${r.totalDelta.chunks} chunks / ${r.totalChapters} chapters`);
+      /* Иt 8Г.2: provenance-снимок чанкера для lineage и debug.
+         Стабильный JSON-shape: {model, accepted, chunks, ts}. Расширяется
+         additively (новые поля через optional). Хранится как TEXT в SQLite. */
+      const chunkerProvenance = JSON.stringify({
+        model: args.extractModel ?? null,
+        accepted: r.totalDelta.accepted,
+        chunks: r.totalDelta.chunks,
+        ts: new Date().toISOString(),
+      });
       if (r.totalDelta.accepted > 0) {
         results.push({
           bookId: book.id, bookTitle: r.bookTitle, totalChapters: r.totalChapters,
@@ -138,6 +155,8 @@ export async function runBatchExtraction(
         deps.setBookStatus(book.id, "indexed", {
           conceptsAccepted: r.totalDelta.accepted,
           conceptsExtracted: r.totalDelta.chunks,
+          chunksTotal: r.totalDelta.chunks,
+          chunkerProvenance,
           lastError: null,
         });
         deps.emit({ stage: "batch", phase: "book-done", bookIndex: i + 1, bookId: book.id, accepted: r.totalDelta.accepted });
@@ -148,6 +167,8 @@ export async function runBatchExtraction(
         deps.setBookStatus(book.id, "failed", {
           conceptsAccepted: 0,
           conceptsExtracted: r.totalDelta.chunks,
+          chunksTotal: r.totalDelta.chunks,
+          chunkerProvenance,
           lastError: reason,
         });
         skipped.push({ bookId: book.id, reason });

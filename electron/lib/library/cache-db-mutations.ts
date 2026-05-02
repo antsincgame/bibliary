@@ -7,13 +7,15 @@ INSERT INTO books (
   word_count, chapter_count, original_format, source_archive, sphere,
   domain, quality_score, conceptual_density, originality, is_fiction_or_water,
   verdict_reason, evaluator_reasoning, evaluator_model, evaluated_at,
-  concepts_extracted, concepts_accepted, status, last_error, md_path
+  concepts_extracted, concepts_accepted, chunks_total, chunker_provenance,
+  status, last_error, md_path
 ) VALUES (
   @id, @sha256, @title, @author, @title_ru, @author_ru, @title_en, @author_en, @year, @isbn, @publisher,
   @word_count, @chapter_count, @original_format, @source_archive, @sphere,
   @domain, @quality_score, @conceptual_density, @originality, @is_fiction_or_water,
   @verdict_reason, @evaluator_reasoning, @evaluator_model, @evaluated_at,
-  @concepts_extracted, @concepts_accepted, @status, @last_error, @md_path
+  @concepts_extracted, @concepts_accepted, @chunks_total, @chunker_provenance,
+  @status, @last_error, @md_path
 )
 ON CONFLICT(id) DO UPDATE SET
   sha256              = excluded.sha256,
@@ -42,6 +44,8 @@ ON CONFLICT(id) DO UPDATE SET
   evaluated_at        = excluded.evaluated_at,
   concepts_extracted  = excluded.concepts_extracted,
   concepts_accepted   = excluded.concepts_accepted,
+  chunks_total        = excluded.chunks_total,
+  chunker_provenance  = excluded.chunker_provenance,
   status              = excluded.status,
   last_error          = excluded.last_error,
   md_path             = excluded.md_path
@@ -96,6 +100,8 @@ export function upsertBook(meta: BookCatalogMeta, mdPath: string): void {
     evaluated_at: meta.evaluatedAt ?? null,
     concepts_extracted: meta.conceptsExtracted ?? null,
     concepts_accepted: meta.conceptsAccepted ?? null,
+    chunks_total: meta.chunksTotal ?? null,
+    chunker_provenance: meta.chunkerProvenance ?? null,
     status: meta.status,
     last_error: meta.lastError ?? null,
     md_path: mdPath,
@@ -140,7 +146,15 @@ export function deleteBook(id: string): void {
 export function setBookStatus(
   id: string,
   status: BookStatus,
-  extras?: { conceptsAccepted?: number; conceptsExtracted?: number; lastError?: string | null },
+  extras?: {
+    conceptsAccepted?: number;
+    conceptsExtracted?: number;
+    /** Иt 8Г.2: общее число semantic chunks (не «прошедших LLM», а всех). */
+    chunksTotal?: number;
+    /** Иt 8Г.2: JSON-снимок chunker-провенанса (TEXT). */
+    chunkerProvenance?: string | null;
+    lastError?: string | null;
+  },
 ): boolean {
   const db = openCacheDb();
   const fields: string[] = ["status = @status"];
@@ -152,6 +166,14 @@ export function setBookStatus(
   if (typeof extras?.conceptsExtracted === "number") {
     fields.push("concepts_extracted = @concepts_extracted");
     params.concepts_extracted = extras.conceptsExtracted;
+  }
+  if (typeof extras?.chunksTotal === "number") {
+    fields.push("chunks_total = @chunks_total");
+    params.chunks_total = extras.chunksTotal;
+  }
+  if (extras && "chunkerProvenance" in extras) {
+    fields.push("chunker_provenance = @chunker_provenance");
+    params.chunker_provenance = extras.chunkerProvenance ?? null;
   }
   if (extras && "lastError" in extras) {
     fields.push("last_error = @last_error");

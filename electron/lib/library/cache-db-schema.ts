@@ -32,6 +32,10 @@ CREATE TABLE IF NOT EXISTS books (
   -- crystallizer
   concepts_extracted  INTEGER,
   concepts_accepted   INTEGER,
+  -- chunker provenance (Иt 8Г.2): JSON-string {model, chunkBytes, accepted, ts}
+  -- chunks_total: общее число semantic chunks отправленных на extraction
+  chunker_provenance  TEXT,
+  chunks_total        INTEGER,
   -- lifecycle
   status              TEXT NOT NULL,
   last_error          TEXT,
@@ -74,6 +78,11 @@ CREATE VIRTUAL TABLE IF NOT EXISTS books_fts USING fts5(
  *   v4 → v5: sphere column + idx_books_sphere, idx_books_author indexes.
  *   v5 → v6: title_ru, author_ru + rebuild books_fts (RU/EN bibliographic search).
  *   v6 → v7: book_tags_ru + FTS tags index EN+RU keywords.
+ *   v7 → v8: chunker_provenance TEXT (JSON) + chunks_total INTEGER (Иt 8Г.2).
+ *            chunks_total дополняет concepts_extracted: extracted = «прошли LLM»,
+ *            chunks_total = «всего semantic chunks подано в pipeline».
+ *            chunker_provenance = JSON со снимком: модель chunker'а, средний
+ *            размер chunk'а, дата операции — для дебага и провенанса извлечения.
  */
 export function applyMigrations(db: Database.Database): void {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number } | undefined;
@@ -182,5 +191,20 @@ export function applyMigrations(db: Database.Database): void {
         FROM books b;
     `);
     db.pragma("user_version = 7");
+  }
+
+  if (current < 8) {
+    /* Иt 8Г.2: provenance чанкера + общее число chunks. ALTER ADD COLUMN
+       идемпотентно через table_info — установка проходит для new DBs (через
+       SCHEMA_SQL уже создано) и для legacy DBs (только тогда добавит). */
+    const cols = db.pragma("table_info(books)") as Array<{ name: string }>;
+    const existing = new Set(cols.map((c) => c.name));
+    if (!existing.has("chunker_provenance")) {
+      db.exec("ALTER TABLE books ADD COLUMN chunker_provenance TEXT");
+    }
+    if (!existing.has("chunks_total")) {
+      db.exec("ALTER TABLE books ADD COLUMN chunks_total INTEGER");
+    }
+    db.pragma("user_version = 8");
   }
 }

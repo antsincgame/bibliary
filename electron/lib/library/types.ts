@@ -122,6 +122,12 @@ export interface BookCatalogMeta {
   // ── crystallization outputs ──
   conceptsExtracted?: number;
   conceptsAccepted?: number;
+  /** Иt 8Г.2: общее число semantic chunks отправленных на extraction
+   *  (≥ conceptsExtracted: extracted = «прошли LLM», chunks_total = всего). */
+  chunksTotal?: number;
+  /** Иt 8Г.2: JSON-снимок провенанса чанкера для дебага и lineage:
+   *  {model, chunkBytes, accepted, ts}. Хранится как TEXT в SQLite. */
+  chunkerProvenance?: string;
   // ── lifecycle ──
   status: BookStatus;
   /** Last runtime failure, shown in Catalog to explain `failed` status. */

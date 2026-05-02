@@ -235,7 +235,24 @@ test("runBatchExtraction sets crystallizing → indexed on success", async (t) =
   assert.equal(calls[0].status, "crystallizing");
   assert.deepEqual(calls[0].extras, { lastError: null });
   assert.equal(calls[1].status, "indexed");
-  assert.deepEqual(calls[1].extras, { conceptsAccepted: 7, conceptsExtracted: 12, lastError: null });
+  /* Иt 8Г.2: extras расширились chunksTotal + chunkerProvenance (JSON-snapshot). */
+  const indexedExtras = calls[1].extras as {
+    conceptsAccepted?: number;
+    conceptsExtracted?: number;
+    chunksTotal?: number;
+    chunkerProvenance?: string;
+    lastError?: string | null;
+  };
+  assert.equal(indexedExtras.conceptsAccepted, 7);
+  assert.equal(indexedExtras.conceptsExtracted, 12);
+  assert.equal(indexedExtras.chunksTotal, 12);
+  assert.equal(indexedExtras.lastError, null);
+  const prov = JSON.parse(indexedExtras.chunkerProvenance ?? "{}") as {
+    accepted: number; chunks: number; ts: string;
+  };
+  assert.equal(prov.accepted, 7);
+  assert.equal(prov.chunks, 12);
+  assert.ok(typeof prov.ts === "string", "provenance.ts is ISO timestamp");
 
   const cached = getBookById(book.id);
   assert.equal(cached?.status, "indexed");

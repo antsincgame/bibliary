@@ -29,6 +29,10 @@ export interface BookRow {
   evaluated_at: string | null;
   concepts_extracted: number | null;
   concepts_accepted: number | null;
+  /** Иt 8Г.2: общее число semantic chunks подано на extraction. */
+  chunks_total: number | null;
+  /** Иt 8Г.2: JSON-снимок chunker-провенанса (TEXT). */
+  chunker_provenance: string | null;
   status: string;
   last_error: string | null;
   md_path: string;
@@ -71,6 +75,8 @@ export function rowToMeta(
     evaluatedAt: row.evaluated_at ?? undefined,
     conceptsExtracted: row.concepts_extracted ?? undefined,
     conceptsAccepted: row.concepts_accepted ?? undefined,
+    chunksTotal: row.chunks_total ?? undefined,
+    chunkerProvenance: row.chunker_provenance ?? undefined,
     status: row.status as BookStatus,
     lastError: row.last_error ?? undefined,
     mdPath: row.md_path,
