@@ -127,7 +127,15 @@ class SampleWindow {
     const arr: number[] = [];
     for (let i = 0; i < this.filled; i += 1) arr.push(this.buffer[i].latencyMs);
     arr.sort((a, b) => a - b);
-    const idx = Math.min(arr.length - 1, Math.floor(arr.length * 0.95));
+    const n = arr.length;
+    /* Для малых выборок (n < 20) P95 нестабилен — возвращаем медиану чтобы
+       избежать over-aggressive decrease. При n >= 20 используем формулу
+       nearest-rank: ceil(p * n) - 1, обрезаем до [0, n-1]. */
+    if (n < 20) {
+      const midIdx = Math.floor(n / 2);
+      return arr[midIdx];
+    }
+    const idx = Math.min(n - 1, Math.ceil(n * 0.95) - 1);
     return arr[idx];
   }
 }

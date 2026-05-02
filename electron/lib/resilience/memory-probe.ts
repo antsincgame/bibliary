@@ -114,6 +114,9 @@ class MemoryProbe {
 
   start(): void {
     if (this.ramTimer !== null) return;
+    /* Сброс кэша ошибок VRAM при каждом start(): GPU-драйвер мог
+       восстановиться между stop()/start() (напр., после перезагрузки драйвера). */
+    this.vramDisabled = false;
     /* Immediate first sample, then interval. */
     void this.sampleAll();
     this.ramTimer = setInterval(() => {

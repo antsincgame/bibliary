@@ -46,6 +46,7 @@ import {
   SUPPORTED_FILE_FILTERS,
   broadcastImportProgress,
 } from "./library-ipc-state.js";
+import { beginImport as beginAdaptive, endImport as endAdaptive } from "../lib/library/adaptive-bootstrap.js";
 
 export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | null): void {
   ipcMain.handle("library:pick-folder", async (): Promise<string | null> => {
@@ -243,7 +244,9 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
         });
       };
       let endStatus: "ok" | "failed" | "cancelled" = "ok";
+      let adaptiveStarted = false;
       try {
+        try { await beginAdaptive(); adaptiveStarted = true; } catch { /* не блокируем импорт */ }
         const aggregate = { total: 0, added: 0, duplicate: 0, skipped: 0, failed: 0, warnings: [] as string[] };
         for (let i = 0; i < paths.length; i++) {
           if (ctrl.signal.aborted) break;
@@ -336,6 +339,7 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
         });
         throw err;
       } finally {
+        if (adaptiveStarted) endAdaptive();
         activeImports.delete(importId);
         await logger.endSession({ status: endStatus });
       }
