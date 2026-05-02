@@ -4884,6 +4884,9 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   background: transparent;
   box-shadow: none;
 }
+/* Специфичность 0,3,0 — перекрывает .lib-import-log-panel { display:flex } (0,1,0).
+   Гарантирует что неактивная вкладка скрыта независимо от собственных display-правил панели. */
+.lib-import-console .lib-import-console-pane:not(.is-active) { display: none; }
 
 /* Status bar — между tabs и панелями. */
 .lib-import-statusbar {
@@ -4953,9 +4956,25 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   flex: 1;
   min-height: 240px;
   max-height: 480px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.lib-import-books-header { flex-shrink: 0; }
+.lib-import-books-list {
+  flex: 1;
   overflow-y: auto;
   padding: 8px 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 6px;
+  align-content: start;
 }
+.lib-import-books-counter-processing { background: rgba(0, 240, 255, 0.14); color: var(--cyan); border: 1px solid rgba(0, 240, 255, 0.35); }
+.lib-import-books-counter-added      { background: rgba(106, 217, 122, 0.14); color: #6ad97a; border: 1px solid rgba(106, 217, 122, 0.35); }
+.lib-import-books-counter-failed     { background: rgba(220, 60, 60, 0.18); color: #ff7373; border: 1px solid rgba(220, 60, 60, 0.4); }
+.lib-import-books-counter-skipped    { background: rgba(170, 170, 170, 0.12); color: #aaa; border: 1px solid rgba(170, 170, 170, 0.25); }
+.lib-import-books-counter-dup        { background: rgba(245, 193, 74, 0.14); color: #f5c14a; border: 1px solid rgba(245, 193, 74, 0.32); }
 .lib-import-books-empty {
   padding: 36px 12px;
   text-align: center;
@@ -4963,11 +4982,6 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   font-size: 11px;
   color: var(--text-dim);
   letter-spacing: 0.06em;
-}
-.lib-import-books-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 6px;
 }
 .lib-import-book-card {
   display: flex;
@@ -7713,4 +7727,56 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   gap: 8px;
   flex-wrap: wrap;
   margin-top: 4px;
+}
+
+/* ============================================================
+   Native Reader (foliate-js iframe overlay) — Phase A+B Iter 9.1
+   ============================================================ */
+.lib-native-reader-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: #0a0a14;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  animation: libNativeReaderFade var(--motion-fast, 150ms) ease-out;
+}
+@keyframes libNativeReaderFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.lib-native-reader-frame {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+  /* foliate-js сам поддерживает light/dark через color-scheme. */
+  color-scheme: light dark;
+}
+.lib-native-reader-close {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  z-index: 10001;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.20);
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--motion-fast, 150ms) ease;
+  font-family: var(--font-mono, monospace);
+}
+.lib-native-reader-close:hover {
+  background: rgba(255, 215, 0, 0.20);
+  border-color: var(--gold, #ffd700);
+  color: var(--gold, #ffd700);
 }

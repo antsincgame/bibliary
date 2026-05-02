@@ -24,12 +24,44 @@ let BOOKS_PANEL_REF = null;
 export function buildBooksPanel() {
   if (BOOKS_PANEL_REF) return BOOKS_PANEL_REF;
 
+  const counterProcessing = el("span", {
+    class: "lib-import-log-counter lib-import-books-counter-processing",
+    title: t("library.import.books.counter.processing"),
+  }, "0");
+  const counterAdded = el("span", {
+    class: "lib-import-log-counter lib-import-books-counter-added",
+    title: t("library.import.books.counter.added"),
+  }, "0");
+  const counterFailed = el("span", {
+    class: "lib-import-log-counter lib-import-books-counter-failed",
+    title: t("library.import.books.counter.failed"),
+  }, "0");
+  const counterSkipped = el("span", {
+    class: "lib-import-log-counter lib-import-books-counter-skipped",
+    title: t("library.import.books.counter.skipped"),
+  }, "0");
+  const counterDup = el("span", {
+    class: "lib-import-log-counter lib-import-books-counter-dup",
+    title: t("library.import.books.counter.duplicate"),
+  }, "0");
+
+  const header = el("div", { class: "lib-import-log-header lib-import-books-header" }, [
+    el("span", { class: "lib-import-log-title" }, t("library.import.books.title")),
+    counterProcessing, counterAdded, counterFailed, counterSkipped, counterDup,
+    el("span", { class: "lib-import-log-spacer" }),
+  ]);
+
   const list = el("div", { class: "lib-import-books-list", role: "list" });
   const empty = el("div", { class: "lib-import-books-empty" }, t("library.import.books.empty"));
 
-  const panel = el("div", { class: "lib-import-books-panel" }, [list, empty]);
+  const panel = el("div", { class: "lib-import-books-panel" }, [header, list, empty]);
   /** @type {any} */ (panel)._list = list;
   /** @type {any} */ (panel)._empty = empty;
+  /** @type {any} */ (panel)._counterProcessing = counterProcessing;
+  /** @type {any} */ (panel)._counterAdded = counterAdded;
+  /** @type {any} */ (panel)._counterFailed = counterFailed;
+  /** @type {any} */ (panel)._counterSkipped = counterSkipped;
+  /** @type {any} */ (panel)._counterDup = counterDup;
 
   BOOKS_PANEL_REF = panel;
   return panel;
@@ -41,11 +73,21 @@ export function buildBooksPanel() {
  */
 export function rerenderBooksPanel() {
   if (!BOOKS_PANEL_REF) return;
-  const list = /** @type {HTMLElement} */ (/** @type {any} */ (BOOKS_PANEL_REF)._list);
-  const empty = /** @type {HTMLElement} */ (/** @type {any} */ (BOOKS_PANEL_REF)._empty);
+  const p = /** @type {any} */ (BOOKS_PANEL_REF);
+  const list = /** @type {HTMLElement} */ (p._list);
+  const empty = /** @type {HTMLElement} */ (p._empty);
   if (!list || !empty) return;
 
+  /* Обновляем счётчики из aggregate. */
+  const agg = IMPORT_STATE.aggregate;
   const entries = Array.from(IMPORT_STATE.inFlight.values());
+  const processingCount = entries.filter((e) => e.status === "processing").length;
+  if (p._counterProcessing) p._counterProcessing.textContent = String(processingCount);
+  if (p._counterAdded) p._counterAdded.textContent = String(agg.added ?? 0);
+  if (p._counterFailed) p._counterFailed.textContent = String(agg.failed ?? 0);
+  if (p._counterSkipped) p._counterSkipped.textContent = String(agg.skipped ?? 0);
+  if (p._counterDup) p._counterDup.textContent = String(agg.duplicate ?? 0);
+
   if (entries.length === 0) {
     clear(list);
     empty.style.display = "";
