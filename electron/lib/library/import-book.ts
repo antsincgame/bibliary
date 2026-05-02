@@ -12,6 +12,7 @@ import { extractSphereFromImportPath } from "./path-sanitizer.js";
 import { processIllustrations } from "./illustration-worker.js";
 import { runIllustrationJob } from "./illustration-semaphore.js";
 import { findNearDuplicate, registerForNearDup } from "./near-dup-detector.js";
+import { getImportScheduler } from "./import-task-scheduler.js";
 import {
   computeRevisionScore,
   findLatestRevisionMatch,
@@ -45,10 +46,16 @@ export async function importBookFromFile(
 
   /* SHA-256 потоково (см. sha-stream.ts) — считаем ДО парсинга. Парсинг
      5–500 МБ книги стоит секунды CPU; SHA — миллисекунды чтения. Если файл
-     уже в каталоге, экономим всю парсинг-работу. */
+     уже в каталоге, экономим всю парсинг-работу.
+
+     Post-Иt 8В audit: оборачиваем в `getImportScheduler().enqueue("light", ...)` —
+     это ОЖИВЛЯЕТ light lane, который до сих пор был "архитектурным резервом"
+     без production caller'ов. SHA-256 streaming идеально подходит: I/O-bound,
+     дешёвый CPU, естественный lightweight async. light concurrency=8 даёт
+     до 8 параллельных хешей, видимых в pipeline-status-widget. */
   let sha256: string;
   try {
-    sha256 = await computeFileSha256(absPath, opts.signal);
+    sha256 = await getImportScheduler().enqueue("light", () => computeFileSha256(absPath, opts.signal));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { outcome: "failed", warnings, error: `sha-256 failed: ${msg}`, sourceArchive: opts.sourceArchive };

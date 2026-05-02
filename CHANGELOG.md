@@ -109,6 +109,23 @@ busy/idle/VRAM/weight» через новый `model-pool-snapshot-broadcaster`.
 - `eslint . --max-warnings=0` clean.
 - `npm test` 770/769 pass / 0 fail / 1 skip (Иt 8В baseline 752 → +18 новых, 0 регрессий).
 
+### Иt 8В audit-followup (2026-05-02): light lane revival
+
+Полный аудит крепости (/omnissiah + /mahakala + /sherlok + /diamond-buddha + /chainlogic + /perplexity-search) после закрытия Иt 8В подтвердил: ересей нет, MAIN.1-4 реально работают, IPC контракты согласованы, cascade partial failure изолирован per-page.
+
+Найдено + исправлено сразу:
+- **`light` lane revival** — до Иt 8В не имел production caller'ов (UI всегда показывал 0/0). Обёрнут `computeFileSha256` в `getImportScheduler().enqueue("light", ...)` в [electron/lib/library/import-book.ts](electron/lib/library/import-book.ts):51-58. SHA-256 streaming идеально подходит для light: I/O-bound, дешёвый CPU, естественный lightweight async. light concurrency=8 даёт до 8 параллельных хешей, видимых в pipeline-status-widget.
+
+Найдено + перенесено в Ит 9 (Resilience Hardening):
+- **#A1 HIGH:** ModelPool race `makeRoom` vs fast-path `acquire` (non-atomic critical section). Решение: per-model AsyncMutex Map.
+- **#A2 HIGH:** `unloadAllHeavyInternal` обходит refCount при OOM-recovery. Решение: graceful degradation вместо forced eviction pinned моделей.
+- **#M4:** vision-meta heavy конкурирует с OCR/Calibre на одной heavy-очереди (head-of-line blocking).
+- **#M5:** parseDjvu per-page вызывает recognize* напрямую без cascade. Refactor требует careful preservation семантики `djvuOcrProvider` через `disabledTiers`.
+- **#M6:** Calibre `ebook-convert` (CPU) сейчас в **heavy** lane вместе с GPU vision — переоценить.
+- **#M7:** Системный OS OCR не обёрнут в scheduler — масштабируется с parser pool.
+
+Полный chainlogic план для критических #A1+#A2 в плановом файле `library_fortress_phalanx_2a6a92fe.plan.md` (секция «Иt 8В audit-followup»).
+
 ---
 
 ## [Unreleased] — Iter 7 — Scheduler Observability + Pipeline UI Widget Mount
