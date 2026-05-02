@@ -3,7 +3,7 @@
   "version": "0.7.1",
   "type": "module",
   "main": "dist-electron/main.js",
-  "description": "Vector knowledge store — natural language concepts for site generation",
+  "description": "Local book library → structured Markdown → Qdrant vector collections → ChatML JSONL fine-tuning datasets",
   "engines": {
     "node": ">=18"
   },
@@ -47,7 +47,8 @@
     "dead-code": "knip --no-progress",
     "prepare": "husky",
     "setup:djvulibre": "node scripts/download-djvulibre-win.cjs",
-    "setup:7zip": "node scripts/download-7zip-win.cjs"
+    "setup:7zip": "node scripts/download-7zip-win.cjs",
+    "setup:foliate-js": "node scripts/download-foliate-js.cjs"
   },
   "dependencies": {
     "@firecrawl/pdf-inspector": "^1.8.0",

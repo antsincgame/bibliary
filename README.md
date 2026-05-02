@@ -6,11 +6,18 @@
 
 ---
 
-## Что это и что это НЕ
+## Что это
 
-### Bibliary — это НЕ RAG
+### Bibliary — это пайплайн знаний, не RAG-чат
 
-Bibliary не отвечает на вопросы по книгам. Это не чат-бот, не retrieval-augmented generation, не «спроси свою библиотеку».
+**Что удалено:** в v0.3.0 был вырезан RAG-чат (hybrid-поиск, BM25, BGE-rerank, help-kb). Bibliary больше не отвечает на вопросы о книгах в режиме диалога.
+
+**Что осталось:** две параллельных дороги через одни и те же книги:
+- **Путь A — Dataset:** book.md → semantic chunks → LLM-кристаллизатор → концепты в Qdrant → ChatML JSONL
+- **Путь B — Search:** book.md → raw chunks → vector embeddings → Qdrant → семантический поиск по смыслу
+
+Путь A — главный: создание датасетов для дообучения LLM.  
+Путь B — служебный: проверить что попало в коллекцию, найти нужную книгу по смыслу.
 
 ### Bibliary — это пайплайн знаний
 
@@ -151,40 +158,44 @@ bibliary/
           ▼
  import-book.ts:
    1. SHA-256 streaming → дедупликация (файл уже есть? → duplicate)
-   2. convertBookToMarkdown(file):
+   2. convertBookToMarkdown(file):          [md-converter.ts]
        a. parseBook(file) → ParseResult{sections[], metadata}
           └─ parsers/: PDF/DJVU/EPUB/FB2/DOCX/TXT/HTML...
           └─ OCR fallback если sections пусты
        b. ISBN lookup → Open Library / Google Books
        c. extractBookImages → CAS upload → bibliary-asset://sha256/...
        d. generateSyntheticCoverSvg если обложки нет
-       e. buildBody(chapters) + buildImageRefs(cas_urls)
-       f. Возвращает ConvertedBook{meta, markdown, images}
+       e. buildBody(## chapters) + buildImageRefs(cas_urls) + buildFrontmatter
    3. Сохранить book.md + original.{ext} на диск
    4. upsertBook в SQLite (status='imported')
    5. Поставить в evaluator-queue
           │
-          ▼ [async, после импорта]
+          ▼ [async, evaluator-queue]
  book-evaluator.ts:
    parseBookMarkdownChapters(book.md) → суррогатный документ
    LLM(evaluator role) → qualityScore, domain, tags, isFictionOrWater
-   replaceFrontmatter(book.md) → обновлённый YAML
+   replaceFrontmatter(book.md) → обновлённый YAML frontmatter
    upsertBook(status='evaluated')
           │
-          ▼ [по кнопке "Кристаллизовать" в каталоге]
- dataset-v2 / scanner/ingest.ts:
-   parseBookMarkdownChapters(book.md) → chapters[]
-   chunker.ts → BookChunk[] (~900 символов, структурные границы)
-   embedPassage(chunk.text) → Float32[384]
-   Qdrant.upsert(collection, chunks+vectors)
+          ├─────────────────────────────────────────────┐
+          ▼ ПУТЬ A: Кристаллизация                     ▼ ПУТЬ B: Raw Ingest (Browse)
+ dataset-v2/extraction-runner.ts:            scanner/ingest.ts:
+   ⚠ Парсит original.{ext} заново              Парсит original.{ext} заново
+   (book.md используется для каталога,         parseBook → chunkBook (chunker.ts)
+    оригинал — для экстракции)                 ~900 символов, структурные границы
+   parseBook → semantic-chunker.ts            embedPassage("passage: " + chunk)
+   chunkChapter() + cosine drift              Float32[384] → Qdrant upsert
+   delta-extractor.ts:
+     LLM(crystallizer) → концепты            ← Используется в семантическом поиске
+   embed(essence) → Qdrant upsert
    upsertBook(status='indexed')
           │
-          ▼ [раздел "Датасеты"]
- dataset-v2/extraction-runner.ts:
-   Qdrant.search(collection) → chunks
-   LLM(crystallizer role) → Q&A пары T1/T2/T3
-   export.ts → ChatML JSONL файл
+          ▼ [раздел Crystal / Датасеты]
+ dataset-v2/concept-loader.ts → Qdrant.scroll(collection) → концепты
+ dataset-v2/export.ts → ChatML JSONL (T1/T2/T3) + reasoning traces
 ```
+
+**Ключевой архитектурный факт:** `book.md` — каноническое хранилище для каталога, ридера и оценщика. Кристаллизация и raw-ingest **повторно парсят** `original.{ext}` — это гарантирует что LLM видит максимально сырой текст, а не переформатированный Markdown.
 
 ---
 
