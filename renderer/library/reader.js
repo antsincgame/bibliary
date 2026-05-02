@@ -10,6 +10,7 @@ import { t } from "../i18n.js";
 import { fmtWords, fmtQuality } from "./format.js";
 import { renderMarkdown } from "../markdown.js";
 import { displayBookTitle, displayBookAuthor, displayBookTags } from "./display-meta.js";
+import { openNativeReader, canOpenNatively } from "./native-reader.js";
 
 /** @type {{ bookId: string; meta: any; html: string; coverDataUrl: string | null } | null} */
 let currentBook = null;
@@ -146,7 +147,30 @@ function renderReader(root) {
     onclick: () => openCoverLightbox(coverDataUrl, shownTitle),
   }) : null;
 
+  /* Расширение в каталоге для решения о Native Reader. Phase A+B Iter 9.1.
+     foliate-js рендерит EPUB/MOBI/AZW3/FB2/CBZ/PDF в iframe-overlay. */
+  const originalExt =
+    typeof meta.originalFormat === "string"
+      ? meta.originalFormat.replace(/^\./, "").toLowerCase()
+      : "";
+  const showNativeReader = Boolean(originalExt) && canOpenNatively(originalExt);
+
   const toolbar = el("div", { class: "lib-reader-actions-toolbar" }, [
+    showNativeReader ? el("button", {
+      class: "lib-btn lib-btn-primary lib-reader-action",
+      type: "button",
+      title: t("library.reader.action.readNative.tooltip"),
+      onclick: async () => {
+        try {
+          await openNativeReader(currentBook.bookId, originalExt);
+        } catch (err) {
+          const { showAlert } = await import("../components/ui-dialog.js");
+          await showAlert(t("library.reader.action.readNative.failed", {
+            reason: err instanceof Error ? err.message : String(err),
+          }));
+        }
+      },
+    }, t("library.reader.action.readNative")) : null,
     el("button", {
       class: "lib-btn lib-btn-ghost lib-reader-action",
       type: "button",
@@ -167,7 +191,7 @@ function renderReader(root) {
         const r = await window.api.library.revealInFolder(currentBook.bookId);
         if (!r.ok) {
           const { showAlert } = await import("../components/ui-dialog.js");
-          await showAlert(t("library.reader.action.openOriginal.failed", { reason: r.reason || "" }));
+          await showAlert(t("library.reader.action.revealInFolder.failed", { reason: r.reason || "" }));
         }
       },
     }, t("library.reader.action.revealInFolder")),

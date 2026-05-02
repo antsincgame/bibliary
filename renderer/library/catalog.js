@@ -243,7 +243,14 @@ export function renderCatalogTable(root) {
     }, errorText && row.status === "failed" ? `${statusText}: ${errorText}` : statusText);
 
     /* Iter 12 P6.1: cover thumb с lazy IntersectionObserver. */
-    const coverCell = el("td", { class: "lib-catalog-cell-cover", "data-book-id": row.id }, [
+    const coverCell = el("td", {
+      class: "lib-catalog-cell-cover lib-catalog-cell-clickable",
+      "data-book-id": row.id,
+      onclick: () => {
+        const pane = root.closest(".lib-pane-catalog") || root;
+        openBook(row.id, pane);
+      },
+    }, [
       el("div", { class: "lib-catalog-cover-thumb-empty" }),
     ]);
     const tr = el("tr", {

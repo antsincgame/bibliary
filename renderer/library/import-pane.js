@@ -21,6 +21,7 @@ import {
   importFromFolder,
   importFromFiles,
   installImportDropHandlers,
+  scanFolderForDuplicates,
 } from "./import-pane-actions.js";
 
 export { pushImportPaneLog } from "./import-pane-log.js";
@@ -100,6 +101,15 @@ export function buildImportPane(deps) {
   }, t("library.catalog.btn.rebuild"));
 
 
+  const scanStatus = el("div", { class: "lib-import-scan-status" });
+  const scanReport = el("div", { class: "lib-import-scan-report" });
+  const scanBtn = el("button", {
+    type: "button",
+    class: "lib-btn lib-btn-ghost lib-import-scan-btn",
+    title: t("library.import.btn.scanDuplicates.tooltip"),
+    onclick: () => scanFolderForDuplicates(scanStatus, scanReport),
+  }, t("library.import.btn.scanDuplicates"));
+
   const opts = el("div", { class: "lib-import-opts" }, [
     el("label", { class: "lib-import-opt", title: t("library.import.opt.tooltip.scanArchives") }, [
       archiveCb, t("library.import.opt.scanArchives"),
@@ -165,10 +175,12 @@ export function buildImportPane(deps) {
     el("div", { class: "lib-import-controls" }, [
       dropzone,
       el("div", { class: "lib-import-actions" }, [
-        pickFolderBtn, pickFilesBtn, cancelImportBtn, rebuildCacheBtn,
+        pickFolderBtn, pickFilesBtn, scanBtn, cancelImportBtn, rebuildCacheBtn,
       ]),
       opts,
       status,
+      scanStatus,
+      scanReport,
     ]),
     consoleEl,
     evaluatorPanel,
@@ -196,6 +208,7 @@ export function buildImportPane(deps) {
     };
     setDisabled(/** @type {HTMLElement} */ (pickFolderBtn));
     setDisabled(/** @type {HTMLElement} */ (pickFilesBtn));
+    setDisabled(/** @type {HTMLElement} */ (scanBtn));
     setDisabled(/** @type {HTMLElement} */ (rebuildCacheBtn));
     if (busy) {
       dropzone.setAttribute("aria-disabled", "true");

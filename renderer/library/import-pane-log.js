@@ -191,8 +191,17 @@ function appendLogRow(entry) {
   const row = el("div", {
     class: `lib-import-log-row lib-import-log-${entry.level}${hasDetails ? " lib-import-log-row-expandable" : ""}`,
     /* Двойной клик копирует одну строку — без контекстного меню для скорости. */
-    ondblclick: async () => {
-      try { await navigator.clipboard.writeText(formatLogLineForCopy(entry)); } catch { /* swallow */ }
+    ondblclick: async (ev) => {
+      try {
+        await navigator.clipboard.writeText(formatLogLineForCopy(entry));
+        const target = /** @type {HTMLElement} */ (ev.currentTarget);
+        target.classList.add("lib-import-log-row-copied");
+        setTimeout(() => target.classList.remove("lib-import-log-row-copied"), 600);
+      } catch {
+        await showAlert(t("library.import.log.copyFailed", {
+          msg: "clipboard unavailable",
+        }));
+      }
     },
   }, [headerRow]);
 
