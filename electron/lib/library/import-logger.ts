@@ -223,6 +223,53 @@ class ImportLogger {
     return [...this.ring];
   }
 
+  /**
+   * Загружает записи последних сессий с диска в ring-буфер.
+   * Вызывается при первом обращении к snapshot когда ring пуст (app restart).
+   * Читает до 3 последних .jsonl файлов, берёт не более RING_BUFFER_SIZE записей.
+   * Идемпотентно: если ring уже заполнен — no-op.
+   */
+  async loadLastDiskSession(): Promise<void> {
+    if (this.ring.length > 0) return;
+    const dir = this.resolveLogsDir();
+    try {
+      let files: string[];
+      try {
+        files = await fs.readdir(dir);
+      } catch {
+        return; /* logs dir doesn't exist yet */
+      }
+      const jsonlFiles = files
+        .filter((f) => f.endsWith(".jsonl") && f.startsWith("import-"))
+        .sort()
+        .reverse()
+        .slice(0, 3);
+
+      const entries: ImportLogEntry[] = [];
+      for (const file of [...jsonlFiles].reverse()) {
+        let content: string;
+        try {
+          content = await fs.readFile(path.join(dir, file), "utf-8");
+        } catch {
+          continue;
+        }
+        for (const line of content.split("\n")) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          try {
+            entries.push(JSON.parse(trimmed) as ImportLogEntry);
+          } catch {
+            /* skip malformed lines */
+          }
+        }
+      }
+      const slice = entries.slice(-RING_BUFFER_SIZE);
+      for (const e of slice) this.ring.push(e);
+    } catch {
+      /* tolerate: log restore is best-effort */
+    }
+  }
+
   /** Подписка на новые события. Возвращает функцию отписки. */
   subscribe(listener: (entry: ImportLogEntry) => void): () => void {
     this.ee.on("log", listener);

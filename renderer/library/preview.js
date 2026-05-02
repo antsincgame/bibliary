@@ -48,7 +48,7 @@ export function renderPreview(root, deps) {
   const header = el("div", { class: "lib-preview-header" }, [
     el("div", { class: "lib-preview-title" }, STATE.previewBook.fileName),
     el("button", { class: "lib-preview-close", type: "button", "aria-label": t("library.preview.close"),
-      onclick: () => { STATE.previewBook = null; renderPreview(root, deps); deps.renderBooks(root.querySelector(".lib-list"), root); } }, "x"),
+      onclick: () => { STATE.previewBook = null; renderPreview(root, deps); deps.renderBooks(root.querySelector(".lib-list"), root); } }, "×"),
   ]);
   pane.appendChild(header);
   if (STATE.previewState === "loading") {

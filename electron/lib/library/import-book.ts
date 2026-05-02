@@ -22,6 +22,7 @@ import {
   replaceBookRevision,
 } from "./revision-dedup.js";
 import { parseFilename } from "./filename-parser.js";
+import { generateSyntheticCoverSvg } from "./cover-generator.js";
 import type { ImportFolderOptions, ImportResult } from "./import-types.js";
 
 const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] as const;
@@ -170,13 +171,40 @@ export async function importBookFromFile(
     }
   }
 
+  /* Синтетическая обложка: если парсер не нашёл img-cover (TXT, FB2 без картинок,
+     PDF без первой страницы), генерируем SVG-обложку в стиле академической литературы.
+     Хранится в CAS как image/svg+xml — нативно рендерится Chromium в <img> без доп. deps. */
+  const hasCover = convResult.images.some((img) => img.id === "img-cover");
+  if (!hasCover) {
+    try {
+      const svgString = generateSyntheticCoverSvg({
+        title: convResult.meta.title,
+        author: convResult.meta.author,
+        year: convResult.meta.year,
+        domain: convResult.meta.domain,
+        language: convResult.meta.language,
+        publisher: convResult.meta.publisher,
+        sphere: convResult.meta.sphere,
+      });
+      convResult.images.unshift({
+        id: "img-cover",
+        buffer: Buffer.from(svgString, "utf-8"),
+        mimeType: "image/svg+xml",
+        caption: "Generated cover",
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      warnings.push(`synthetic-cover: generation failed: ${msg}`);
+    }
+  }
+
   /* Save images to CAS (.blobs/) and set assetUrl on each ImageRef.
      Skip blobs that are suspiciously small or fail a basic PNG-magic check —
      this prevents broken-icon placeholders in the reader when libvips produces
      a corrupt buffer (known sharp/ORC issue on Windows portable builds). */
   const root = await getLibraryRoot();
   for (const img of convResult.images) {
-    if (img.buffer.length < 64) {
+    if (img.mimeType !== "image/svg+xml" && img.buffer.length < 64) {
       warnings.push(`CAS skipped ${img.id}: buffer too small (${img.buffer.length} bytes)`);
       img.buffer = Buffer.alloc(0);
       continue;

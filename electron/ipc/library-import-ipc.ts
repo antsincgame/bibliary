@@ -347,7 +347,9 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
   );
 
   ipcMain.handle("library:import-log-snapshot", async (): Promise<ImportLogEntry[]> => {
-    return getImportLogger().snapshot();
+    const logger = getImportLogger();
+    await logger.loadLastDiskSession();
+    return logger.snapshot();
   });
 
   ipcMain.handle("library:cancel-import", async (_e, importId: string): Promise<boolean> => {

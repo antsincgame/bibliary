@@ -213,7 +213,7 @@ function renderReader(root) {
      наличия обложки. Книги с failed-import часто не имеют ни обложки, ни
      нормального текста (только стаб "Import failed."). */
   if (!meaningful) {
-    readerContainer.appendChild(buildEmptyBodyBanner(currentBook.bookId));
+    readerContainer.appendChild(buildEmptyBodyBanner(currentBook.bookId, meta));
   }
 }
 
@@ -236,10 +236,26 @@ function isMeaningfulMarkdown(html) {
   return true;
 }
 
-/** @param {string} bookId */
-function buildEmptyBodyBanner(bookId) {
+/**
+ * @param {string} bookId
+ * @param {any} [meta]
+ */
+function buildEmptyBodyBanner(bookId, meta) {
+  const status = meta?.status;
+  let reasonText = t("library.reader.empty.body");
+  if (status === "unsupported") {
+    reasonText = t("library.reader.empty.unsupported");
+  } else if (status === "failed") {
+    const warn = Array.isArray(meta?.warnings) && meta.warnings.length > 0
+      ? meta.warnings[0]
+      : null;
+    reasonText = warn
+      ? t("library.reader.empty.failed", { reason: warn })
+      : t("library.reader.empty.failedGeneric");
+  }
+
   return el("div", { class: "lib-reader-empty-banner" }, [
-    el("div", { class: "lib-reader-empty-banner-text" }, t("library.reader.empty.body")),
+    el("div", { class: "lib-reader-empty-banner-text" }, reasonText),
     el("button", {
       class: "lib-btn lib-btn-primary",
       type: "button",
@@ -294,22 +310,44 @@ function openCoverLightbox(src, alt) {
 }
 
 /** @param {string} src @param {string} title */
-function downloadCover(src, title) {
-  const a = document.createElement("a");
-  a.href = src;
+async function downloadCover(src, title) {
   const safeTitle = String(title || "cover").replace(/[/\\?%*:|"<>]/g, "_");
-  /* Если data: URL — derive ext из mime. CAS bibliary-asset:// — pasenovay sha + .img. */
-  let ext = "img";
   if (src.startsWith("data:image/")) {
     const m = src.match(/^data:image\/([a-zA-Z0-9.+-]+);/);
-    if (m) ext = m[1].replace("svg+xml", "svg");
-  } else {
-    ext = "png";
+    const ext = m ? m[1].replace("svg+xml", "svg") : "img";
+    const a = document.createElement("a");
+    a.href = src;
+    a.download = `${safeTitle}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    return;
   }
-  a.download = `${safeTitle}.${ext}`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  /* bibliary-asset:// — fetch to get blob with correct MIME type. */
+  try {
+    const resp = await fetch(src);
+    const blob = await resp.blob();
+    const mime = blob.type || "";
+    const ext = mime.includes("svg") ? "svg"
+      : mime.includes("png") ? "png"
+      : mime.includes("jpeg") || mime.includes("jpg") ? "jpg"
+      : mime.includes("webp") ? "webp" : "img";
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = `${safeTitle}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 2000);
+  } catch {
+    const a = document.createElement("a");
+    a.href = src;
+    a.download = `${safeTitle}.img`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
 }
 
 export function isReaderOpen() {
