@@ -187,7 +187,7 @@ export const PreferencesSchema = z.object({
   schedulerLightConcurrency: z.number().int().min(1).max(32).default(8),
   /** Параллелизм medium-lane (8..16 GB модели: evaluator). Default 3. */
   schedulerMediumConcurrency: z.number().int().min(1).max(8).default(3),
-  /** Параллелизм heavy-lane (>16 GB / vision: illustration, vision-ocr, calibre). Default 1. */
+  /** Параллелизм heavy-lane (>16 GB / vision: illustration, vision-ocr, ddjvu→PDF). Default 1. */
   schedulerHeavyConcurrency: z.number().int().min(1).max(4).default(1),
 
   /**
@@ -241,13 +241,6 @@ export const PreferencesSchema = z.object({
    * Иt 8В.CRITICAL.2: env BIBLIARY_CONVERTER_CACHE_MAX_BYTES удалён — Settings = SSoT.
    */
   converterCacheMaxBytes: z.number().int().min(0).default(5 * 1024 * 1024 * 1024),
-
-  // -- Calibre integration --
-  /**
-   * Явный путь к ebook-convert (Calibre). Пусто = автодетект через PATH /
-   * стандартные локации (Program Files / /usr/bin / /opt/homebrew/bin).
-   */
-  calibrePathOverride: z.string().default(""),
 
   // -- Cross-format dedup tuning --
   /**

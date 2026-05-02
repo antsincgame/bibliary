@@ -1,39 +1,29 @@
 /**
  * Converters dispatcher — единая точка `convertToParseable(srcPath, ext)`.
  *
- * Маршрутизирует расширение в нужный converter:
+ * Phase A+B Iter 9.6 (rev. 2 colibri-roadmap.md): Calibre cascade удалён
+ * полностью. Текущий dispatcher маршрутизирует только:
  *   - `djvu`/`djv` → `convertDjvu` (двухступенчатый, см. converters/djvu.ts)
- *   - `mobi`/`azw`/`azw3`/`pdb`/`prc`/`chm`/`lit`/`lrf`/`snb`/`tcr` → `convertViaCalibre`
- *   - `cbz`/`cbr` → `convertCbz` (multi-page PDF через pdf-lib + JSZip/7z)
- *   - multi-page TIFF → `convertMultiTiff` (через parsers/tiff.ts wrapper, не dispatcher)
  *
- * Возвращает унифицированный `ConvertResult` с `kind: "text-extracted" | "delegate"`.
- * Caller (PARSERS dispatcher в `parsers/index.ts` через wrapper-парсеры) делегирует
- * к соответствующему примитивному parser'у (epub/pdf/...).
+ * CBZ/CBR парсятся через `parsers/cbz.ts` напрямую (без convert-стадии);
+ * `convertCbz` остаётся как отдельный API для multi-page PDF, но не идёт
+ * через этот dispatcher.
+ *
+ * MOBI/AZW/AZW3/PRC/PDB/CHM теперь парсятся **напрямую** через
+ * `parsers/palm-mobi.ts` и `parsers/chm.ts` без converter-cascade.
+ * Это упрощает архитектуру — две стадии (convert→delegate) превратились
+ * в одну стадию (parse).
  *
  * АРХИТЕКТУРНЫЙ КОНТРАКТ:
- *   - Converter сам решает heavy lane scheduling (calibre — да, djvu — нет).
+ *   - Converter сам решает heavy lane scheduling (djvu — да).
  *   - Cleanup ВСЕГДА callable: caller вызывает в finally без проверок.
- *   - Никогда не throw на business errors (Calibre absent, ddjvu failed) —
- *     возвращает text-extracted с warnings, чтобы импорт корректно показал
- *     status="failed" с понятной причиной.
+ *   - Никогда не throw на business errors — возвращает text-extracted с warnings.
  */
 
 import { convertDjvu, type DjvuConvertResult } from "./djvu.js";
-import { convertViaCalibre, type CalibreConvertResult } from "./calibre.js";
 
 /** Унифицированный результат конвертации. */
-export type ConvertResult = DjvuConvertResult | CalibreConvertResult;
-
-/** Список расширений которые требуют Calibre конвертации в EPUB.
- *  Iter 6В: .rb удалён — Ruby исходники доминируют в реальных библиотеках
- *  (921 файл .rb в D:\Bibliarifull, 0 Rocket eBook). */
-export const CALIBRE_INPUT_EXTS: ReadonlySet<string> = new Set([
-  "mobi", "azw", "azw3", "azw4",
-  "pdb", "prc",
-  "chm",
-  "lit", "lrf", "snb", "tcr",
-]);
+export type ConvertResult = DjvuConvertResult;
 
 export interface ConvertToParseableOptions {
   signal?: AbortSignal;
@@ -61,12 +51,8 @@ export async function convertToParseable(
     });
   }
 
-  if (CALIBRE_INPUT_EXTS.has(e)) {
-    return convertViaCalibre(srcPath, { signal: opts.signal });
-  }
-
   /* Не нужна конвертация — например epub/pdf парсятся напрямую. */
   return null;
 }
 
-export type { DjvuConvertResult, CalibreConvertResult };
+export type { DjvuConvertResult };

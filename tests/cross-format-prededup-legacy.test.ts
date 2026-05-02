@@ -1,11 +1,14 @@
 /**
- * Cross-format pre-dedup для Calibre-cascade форматов.
+ * Cross-format pre-dedup для legacy MOBI/AZW/AZW3/PDB/PRC/CHM форматов.
  *
- * Проверяет что приоритеты MOBI/AZW/AZW3/PDB/PRC/CHM настроены правильно:
- *   - EPUB и PDF по-прежнему выигрывают (структурированные форматы > legacy)
+ * Phase A+B Iter 9.6 (rev. 2 colibri-roadmap.md): Calibre cascade удалён,
+ * MOBI/AZW3 теперь парсятся pure-JS (palm-mobi.ts), CHM через 7zip. Но
+ * приоритеты dedup остаются прежними — структурированные форматы лучше
+ * чем сканы PalmDB:
+ *   - EPUB и PDF по-прежнему выигрывают (структурированные > Palm legacy)
  *   - AZW3 > AZW = MOBI (KF8 модернее)
  *   - PDB = PRC (одинаковый Palm-формат)
- *   - CHM ниже всех (теряет TOC при конвертации)
+ *   - CHM ниже всех (теряет TOC при extract → composite-html)
  */
 
 import { describe, it, beforeEach } from "node:test";

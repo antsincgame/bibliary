@@ -30,21 +30,27 @@ export type BookStatus =
   | "failed"        // парсер или эвалюатор упали
   | "unsupported";  // парсер не смог собрать ни одной главы
 
-/** Поддерживаемые форматы книг. */
+/** Поддерживаемые форматы книг.
+ *
+ * Phase A+B Iter 9.6 (rev. 2 colibri-roadmap.md): удалены мёртвые форматы
+ * TCR (Psion 90s), LIT (MS Reader 2012), LRF (Sony 2010), SNB (Shanda).
+ * В реальных русских торрент-дампах их доля <0.01%. Calibre cascade удалён
+ * полностью. Поддержка legacy MOBI/AZW/AZW3/PRC/PDB/CHM теперь нативная JS:
+ *   MOBI/AZW/AZW3/PRC/PDB → palm-mobi.ts (PalmDoc LZ77 + MOBI EXTH)
+ *   CHM → 7zip extract → composite-html-detector
+ *   DJVU/DJV → djvu.ts (djvutxt + DjVuLibre, без UI-рендера)
+ */
 export type SupportedBookFormat =
   | "pdf" | "epub" | "fb2" | "txt" | "docx" | "djvu" | "djv"
   | "doc" | "rtf" | "odt" | "html" | "htm"
   | "mobi" | "azw" | "azw3" | "pdb" | "prc" | "chm"
-  | "tcr" | "lit" | "lrf" | "snb"
   | "cbz" | "cbr";
 
-/** Canonical set — single source of truth for book extensions across the pipeline.
- *  Iter 6В: .rb удалён — Ruby исходники доминируют в реальных библиотеках. */
+/** Canonical set — single source of truth for book extensions across the pipeline. */
 export const SUPPORTED_BOOK_EXTS: ReadonlySet<SupportedBookFormat> = new Set([
   "pdf", "epub", "fb2", "txt", "docx", "djvu", "djv",
   "doc", "rtf", "odt", "html", "htm",
   "mobi", "azw", "azw3", "pdb", "prc", "chm",
-  "tcr", "lit", "lrf", "snb",
   "cbz", "cbr",
 ]);
 
@@ -134,6 +140,14 @@ export interface BookCatalogMeta {
   lastError?: string;
   /** Список warnings от парсера/эвалюатора. */
   warnings?: string[];
+  // ── layout (Versator scientific layout pipeline) ──
+  /**
+   * Версия применённой layout-схемы (typograf + callouts + drop caps +
+   * sidenotes + KaTeX). `undefined` или 0 → legacy book.md без вёрстки.
+   * При bump LAYOUT_VERSION в layout-pipeline.ts старые книги остаются
+   * работоспособными, но не получают новых стилей до явной re-rendering.
+   */
+  layoutVersion?: number;
 }
 
 /** Одна картинка, извлечённая из книги. */

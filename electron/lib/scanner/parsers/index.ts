@@ -12,10 +12,13 @@ import { docParser } from "./doc.js";
 import { rtfParser } from "./rtf.js";
 import { odtParser } from "./odt.js";
 import { htmlParser, htmParser } from "./html.js";
+/* Phase A+B Iter 9.6 (rev. 2): native JS-only Calibre replacement.
+   MOBI/AZW/AZW3/PRC/PDB → palm-mobi.ts (PalmDoc LZ77 + MOBI EXTH).
+   CHM → chm.ts (7zip → composite-html). Никакого Calibre cascade. */
 import {
-  mobiParser, azwParser, azw3Parser, pdbParser, prcParser, chmParser,
-  tcrParser, litParser, lrfParser, snbParser,
-} from "./calibre-formats.js";
+  mobiParser, azwParser, azw3Parser, pdbParser, prcParser,
+} from "./palm-mobi.js";
+import { chmParser } from "./chm.js";
 import { cbzParser, cbrParser } from "./cbz.js";
 import { tiffParser, tiffAlternateParser } from "./tiff.js";
 
@@ -35,21 +38,16 @@ const PARSERS: Record<SupportedExt, BookParser> = {
   djvu: djvuParser,
   /* DOS-эра 3-char alias, реально встречается у старых сканов */
   djv: djvuParser,
-  /* Calibre-cascade форматы (MOBI/AZW/PDB/CHM): одна обёртка
-     parseViaCalibre → ebook-convert → EPUB → epubParser. См. calibre-formats.ts. */
+  /* Phase A+B Iter 9.5 — native JS parsers, без Calibre. PalmDoc LZ77 +
+     MOBI EXTH metadata. KF8/AZW3 Huffman не извлекает текст для импорта;
+     добавляется по metadata, открывается во внешней читалке. */
   mobi: mobiParser,
   azw:  azwParser,
   azw3: azw3Parser,
   pdb:  pdbParser,
   prc:  prcParser,
+  /* CHM = 7zip extract → composite-html-detector. */
   chm:  chmParser,
-  /* Iter 6Б — расширение Calibre cascade на нишевые legacy форматы.
-     .rb удалён в Iter 6В: 921 файл .rb в реальной библиотеке D:\Bibliarifull
-     оказались Ruby исходниками, а не Rocket eBook (deprecated 2003). */
-  tcr:  tcrParser,
-  lit:  litParser,
-  lrf:  lrfParser,
-  snb:  snbParser,
   /* Iter 6Б — комиксы/манга через свой PDF converter (pdf-lib + 7z). */
   cbz:  cbzParser,
   cbr:  cbrParser,

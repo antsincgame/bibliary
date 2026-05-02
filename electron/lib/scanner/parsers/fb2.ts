@@ -2,6 +2,7 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import { XMLParser } from "fast-xml-parser";
 import { cleanParagraph, type BookParser, type ParseResult, type BookSection } from "./types.js";
+import { decodeBuffer } from "../encoding-detector.js";
 
 interface Fb2Section {
   title?: { p?: string | string[] | { "#text"?: string } } | string;
@@ -48,10 +49,17 @@ function flattenSection(section: Fb2Section, level: 1 | 2 | 3): BookSection[] {
 
 async function parseFb2(filePath: string): Promise<ParseResult> {
   const buf = await fs.readFile(filePath);
-  let xml = buf.toString("utf8");
+  /* Phase A+B Iter 9.2 (rev. 2): FB2 файлы из Либрусека/Флибусты часто
+     в windows-1251 с XML declaration `<?xml encoding="windows-1251"?>`.
+     decodeBuffer({ parseXmlDeclaration: true }) парсит её и применяет iconv. */
+  const decoded = decodeBuffer(buf, { parseXmlDeclaration: true });
+  let xml = decoded.text;
   if (xml.charCodeAt(0) === 0xfeff) xml = xml.slice(1);
 
-  const warnings: string[] = [];
+  const warnings: string[] = [...decoded.warnings];
+  if (decoded.encoding !== "utf-8") {
+    warnings.push(`detected encoding ${decoded.encoding} via ${decoded.source}`);
+  }
   const parser = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: "@_",

@@ -4884,9 +4884,17 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   background: transparent;
   box-shadow: none;
 }
-/* Специфичность 0,3,0 — перекрывает .lib-import-log-panel { display:flex } (0,1,0).
-   Гарантирует что неактивная вкладка скрыта независимо от собственных display-правил панели. */
-.lib-import-console .lib-import-console-pane:not(.is-active) { display: none; }
+/* HARD GUARD (Phase A+B Iter 9.7 hotfix 2026-05-02): неактивная панель ДОЛЖНА быть
+   скрыта при любых обстоятельствах. !important нужен потому что:
+     - .lib-import-log-panel { display: flex }  имеет 0,1,0 specificity
+     - .lib-import-books-panel { flex: 1; min-height: 240px } может приподнимать
+     - дочерние правила display: grid внутри лога перекрывают нашу попытку скрыть
+   Спецификация CSS: !important всегда побеждает не-!important. Безопасно
+   потому что ни одно правило в проекте не использует !important на
+   .lib-import-console-pane.is-active (verified through full grep). */
+.lib-import-console .lib-import-console-pane:not(.is-active) {
+  display: none !important;
+}
 
 /* Status bar — между tabs и панелями. */
 .lib-import-statusbar {
@@ -4976,6 +4984,7 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
 .lib-import-books-counter-skipped    { background: rgba(170, 170, 170, 0.12); color: #aaa; border: 1px solid rgba(170, 170, 170, 0.25); }
 .lib-import-books-counter-dup        { background: rgba(245, 193, 74, 0.14); color: #f5c14a; border: 1px solid rgba(245, 193, 74, 0.32); }
 .lib-import-books-empty {
+  grid-column: 1 / -1;
   padding: 36px 12px;
   text-align: center;
   font-family: var(--font-mono);
@@ -7730,53 +7739,342 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
 }
 
 /* ============================================================
-   Native Reader (foliate-js iframe overlay) — Phase A+B Iter 9.1
+   LIB READER — BIBLIARY SCIENTIFIC THEME (Versator, Iter C+D+E)
+   ============================================================
+   Премиум научная типографика для book.md в библиотеке.
+   Источник вдохновения: Tufte CSS, ET Book, Latin Modern.
+   Шрифты — системные (без вендоринга): Charter / Iowan Old Style /
+   "Apple Garamond" / Cambria / Georgia. На любой ОС находит
+   достойный serif. Бесплатно, мгновенно, всегда работает.
    ============================================================ */
-.lib-native-reader-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 10000;
-  background: #0a0a14;
-  display: flex;
-  align-items: stretch;
-  justify-content: stretch;
-  animation: libNativeReaderFade var(--motion-fast, 150ms) ease-out;
+
+:root {
+  --lib-reader-font-serif:
+    "Charter", "Iowan Old Style", "Apple Garamond", "ITC Garamond",
+    "Garamond", "Cambria", "Georgia", "Times New Roman", serif;
+  --lib-reader-font-mono:
+    "JetBrains Mono", "Cascadia Code", "Fira Code", "Consolas",
+    "Menlo", monospace;
+  --lib-reader-text: #f0e8d8;
+  --lib-reader-text-muted: rgba(240, 232, 216, 0.65);
+  --lib-reader-accent: var(--gold, #ffd700);
+  --lib-reader-page: #14141a;
+  --lib-reader-paper: rgba(255, 250, 240, 0.04);
+  --lib-reader-rule: rgba(255, 215, 0, 0.18);
+  --lib-reader-callout-note-color: #6db3ff;
+  --lib-reader-callout-tip-color: #4adb95;
+  --lib-reader-callout-warning-color: #ffa940;
+  --lib-reader-callout-important-color: #ff5577;
 }
-@keyframes libNativeReaderFade {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-.lib-native-reader-frame {
-  flex: 1;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  background: #fff;
-  /* foliate-js сам поддерживает light/dark через color-scheme. */
-  color-scheme: light dark;
-}
-.lib-native-reader-close {
-  position: absolute;
-  top: 12px;
-  right: 16px;
-  z-index: 10001;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.20);
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
+
+/* === Базовая премиум-типографика body === */
+.lib-reader-body {
+  font-family: var(--lib-reader-font-serif);
   font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
+  line-height: 1.7;
+  letter-spacing: 0.005em;
+  color: var(--lib-reader-text);
+  max-width: 38em;
+  margin: 0 auto;
+  padding: 4px 0 64px;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "kern" 1, "liga" 1, "calt" 1, "onum" 1;
+  hyphens: auto;
+}
+.lib-reader-body p {
+  margin: 0 0 1.2em;
+  text-align: justify;
+  text-justify: inter-word;
+}
+.lib-reader-body h1,
+.lib-reader-body h2,
+.lib-reader-body h3 {
+  font-family: var(--lib-reader-font-serif);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--lib-reader-text);
+  margin-top: 1.6em;
+  margin-bottom: 0.6em;
+  line-height: 1.25;
+}
+.lib-reader-body h1 {
+  font-size: 1.8em;
+  text-align: center;
+  font-style: italic;
+  color: var(--lib-reader-accent);
+  border-bottom: 1px solid var(--lib-reader-rule);
+  padding-bottom: 0.4em;
+}
+.lib-reader-body h2 {
+  font-size: 1.4em;
+  font-variant: small-caps;
+  letter-spacing: 0.04em;
+  color: var(--lib-reader-accent);
+}
+.lib-reader-body h3 {
+  font-size: 1.15em;
+  font-style: italic;
+}
+
+/* === Drop caps (буквица) === */
+.lib-reader-body .lib-reader-dropcap {
+  float: left;
+  font-family: var(--lib-reader-font-serif);
+  font-size: 4.2em;
+  line-height: 0.85;
+  font-weight: 600;
+  font-style: italic;
+  color: var(--lib-reader-accent);
+  margin: 0.05em 0.1em 0 0;
+  padding: 0.05em 0.1em 0 0;
+  text-shadow: 0 2px 12px rgba(255, 215, 0, 0.2);
+}
+
+/* === Definitions (термины) === */
+.lib-reader-body .lib-reader-dfn {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--lib-reader-accent);
+  border-bottom: 1px dotted var(--lib-reader-accent);
+  padding-bottom: 1px;
+}
+
+/* === Scientific blockquote === */
+.lib-reader-body blockquote {
+  margin: 1.4em 0;
+  padding: 0.6em 1.2em;
+  border-left: 3px solid var(--lib-reader-accent);
+  background: var(--lib-reader-paper);
+  font-style: italic;
+  color: var(--lib-reader-text-muted);
+  border-radius: 0 4px 4px 0;
+}
+.lib-reader-body blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+/* === Callouts (Внимание / Совет / Важно / Замечание) === */
+.lib-reader-body .lib-reader-callout {
+  margin: 1.6em 0;
+  padding: 1em 1.2em 1em 3.2em;
+  position: relative;
+  border-left: 4px solid;
+  background: var(--lib-reader-paper);
+  border-radius: 0 6px 6px 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+.lib-reader-body .lib-reader-callout::before {
+  content: "";
+  position: absolute;
+  top: 1em;
+  left: 1em;
+  width: 1.4em;
+  height: 1.4em;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all var(--motion-fast, 150ms) ease;
-  font-family: var(--font-mono, monospace);
+  font-family: var(--lib-reader-font-mono);
+  font-size: 0.9em;
+  font-weight: 700;
+  color: #14141a;
 }
-.lib-native-reader-close:hover {
-  background: rgba(255, 215, 0, 0.20);
-  border-color: var(--gold, #ffd700);
-  color: var(--gold, #ffd700);
+.lib-reader-body .lib-reader-callout-label {
+  font-family: var(--lib-reader-font-serif);
+  font-variant: small-caps;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  font-size: 0.85em;
+  margin-bottom: 0.4em;
 }
+.lib-reader-body .lib-reader-callout-body {
+  font-style: normal;
+}
+.lib-reader-body .lib-reader-callout-body p {
+  margin-bottom: 0.6em;
+}
+.lib-reader-body .lib-reader-callout-body p:last-child {
+  margin-bottom: 0;
+}
+.lib-reader-body .lib-reader-callout-note {
+  border-left-color: var(--lib-reader-callout-note-color);
+}
+.lib-reader-body .lib-reader-callout-note::before {
+  content: "i";
+  background: var(--lib-reader-callout-note-color);
+  font-style: italic;
+}
+.lib-reader-body .lib-reader-callout-note .lib-reader-callout-label {
+  color: var(--lib-reader-callout-note-color);
+}
+.lib-reader-body .lib-reader-callout-tip {
+  border-left-color: var(--lib-reader-callout-tip-color);
+}
+.lib-reader-body .lib-reader-callout-tip::before {
+  content: "✓";
+  background: var(--lib-reader-callout-tip-color);
+}
+.lib-reader-body .lib-reader-callout-tip .lib-reader-callout-label {
+  color: var(--lib-reader-callout-tip-color);
+}
+.lib-reader-body .lib-reader-callout-warning {
+  border-left-color: var(--lib-reader-callout-warning-color);
+}
+.lib-reader-body .lib-reader-callout-warning::before {
+  content: "!";
+  background: var(--lib-reader-callout-warning-color);
+}
+.lib-reader-body .lib-reader-callout-warning .lib-reader-callout-label {
+  color: var(--lib-reader-callout-warning-color);
+}
+.lib-reader-body .lib-reader-callout-important {
+  border-left-color: var(--lib-reader-callout-important-color);
+}
+.lib-reader-body .lib-reader-callout-important::before {
+  content: "★";
+  background: var(--lib-reader-callout-important-color);
+}
+.lib-reader-body .lib-reader-callout-important .lib-reader-callout-label {
+  color: var(--lib-reader-callout-important-color);
+}
+
+/* === Tufte sidenotes (Iter D) — CSS-only через :checked === */
+.lib-reader-body .margin-toggle {
+  display: none; /* checkbox-input скрыт, используется только для state */
+}
+.lib-reader-body .sidenote-number {
+  counter-increment: sidenote-counter;
+  cursor: pointer;
+}
+.lib-reader-body .sidenote-number::after {
+  content: counter(sidenote-counter);
+  font-family: var(--lib-reader-font-mono);
+  font-size: 0.7em;
+  vertical-align: super;
+  color: var(--lib-reader-accent);
+  margin: 0 0.1em;
+  font-weight: 700;
+}
+.lib-reader-body .sidenote {
+  display: block;
+  float: right;
+  clear: right;
+  margin-right: -50%;
+  width: 45%;
+  margin-top: 0.3em;
+  margin-bottom: 1em;
+  font-size: 0.82em;
+  line-height: 1.5;
+  vertical-align: baseline;
+  position: relative;
+  color: var(--lib-reader-text-muted);
+  border-left: 2px solid var(--lib-reader-rule);
+  padding-left: 0.8em;
+}
+.lib-reader-body .sidenote::before {
+  content: counter(sidenote-counter) " ";
+  font-family: var(--lib-reader-font-mono);
+  font-size: 0.85em;
+  color: var(--lib-reader-accent);
+  margin-right: 0.2em;
+  font-weight: 700;
+}
+.lib-reader-body {
+  counter-reset: sidenote-counter;
+}
+/* На узких экранах sidenote скрывается, появляется по клику. */
+@media screen and (max-width: 1180px) {
+  .lib-reader-body .sidenote {
+    display: none;
+    float: none;
+    width: 100%;
+    margin: 0.6em 0;
+    margin-right: 0;
+  }
+  .lib-reader-body .margin-toggle:checked + .sidenote {
+    display: block;
+  }
+  .lib-reader-body .sidenote-number {
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-decoration-color: var(--lib-reader-accent);
+  }
+}
+
+/* === KaTeX overrides — Bibliary aesthetic === */
+.lib-reader-body .katex {
+  font-size: 1.06em; /* KaTeX по умолчанию 1.21 — для нашего body избыточно */
+  color: var(--lib-reader-text);
+}
+.lib-reader-body .katex-display {
+  margin: 1.4em 0;
+  padding: 0.6em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: var(--lib-reader-paper);
+  border-radius: 6px;
+  border: 1px solid var(--lib-reader-rule);
+}
+.lib-reader-body .katex-display > .katex {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+/* === Code blocks (внутри книг) === */
+.lib-reader-body code {
+  font-family: var(--lib-reader-font-mono);
+  font-size: 0.9em;
+  background: rgba(255, 215, 0, 0.08);
+  color: var(--lib-reader-accent);
+  padding: 0.1em 0.4em;
+  border-radius: 3px;
+  border: 1px solid var(--lib-reader-rule);
+}
+.lib-reader-body pre {
+  font-family: var(--lib-reader-font-mono);
+  font-size: 0.9em;
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--lib-reader-text);
+  padding: 1em;
+  border-radius: 6px;
+  border-left: 3px solid var(--lib-reader-accent);
+  overflow-x: auto;
+  margin: 1.4em 0;
+  line-height: 1.5;
+}
+.lib-reader-body pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
+}
+
+/* === Lists === */
+.lib-reader-body ul,
+.lib-reader-body ol {
+  padding-left: 1.4em;
+  margin: 1em 0;
+}
+.lib-reader-body li {
+  margin: 0.4em 0;
+}
+.lib-reader-body ul li::marker {
+  color: var(--lib-reader-accent);
+}
+
+/* === Horizontal rule === */
+.lib-reader-body hr {
+  border: none;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--lib-reader-accent),
+    transparent
+  );
+  margin: 2.4em auto;
+  width: 60%;
+}
+

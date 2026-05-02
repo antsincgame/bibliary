@@ -81,3 +81,6 @@ data/e2e-reports/
 
 # Import audit logs
 data/logs/
+
+# Olympics report — runtime artifact (не для VCS)
+data/olympics-report.json

@@ -11,7 +11,6 @@ import { modelRoleResolver } from "../lib/llm/model-role-resolver.js";
 import { applyImportSchedulerPrefs } from "../lib/library/import-task-scheduler.js";
 import { applyEvaluatorPrefs } from "../lib/library/evaluator-queue.js";
 import { applyHeavyLaneRateLimiterPrefs } from "../lib/llm/heavy-lane-rate-limiter.js";
-import { applyCalibrePathPrefs } from "../lib/scanner/converters/calibre-cli.js";
 import { applyIllustrationSemaphorePrefs } from "../lib/library/illustration-semaphore.js";
 
 /**
@@ -98,13 +97,13 @@ export function applyRuntimeSideEffects(prefs: Preferences): void {
   /* Role resolver caches resolved models for `modelRoleCacheTtlMs` —
      invalidate now so changes to model keys and fallbacks are visible on next IPC call. */
   modelRoleResolver.invalidate();
-  /* Иt 8Б — Smart Import Pipeline: Settings = single source of truth.
+  /* Smart Import Pipeline: Settings = single source of truth.
      applyRuntimeSideEffects распространяет изменения на живые singletons.
      parserPoolSize / illustrationParallelism / converterCacheMaxBytes /
      preferDjvuOverPdf читаются из prefs lazy по месту использования
-     (не нужен push). calibrePathOverride — особый случай: он кеширует
-     результат resolveCalibreBinary(), смена override без invalidate
-     останется незамеченной — поэтому отдельный push (Иt 8В.CRITICAL.4). */
+     (не нужен push).
+     Phase A+B Iter 9.6 (rev. 2): calibrePathOverride удалён — Calibre
+     больше не используется в импорт-pipeline. */
   applyImportSchedulerPrefs({
     schedulerLightConcurrency: prefs.schedulerLightConcurrency,
     schedulerMediumConcurrency: prefs.schedulerMediumConcurrency,
@@ -112,7 +111,6 @@ export function applyRuntimeSideEffects(prefs: Preferences): void {
   });
   applyEvaluatorPrefs({ evaluatorSlots: prefs.evaluatorSlots });
   applyHeavyLaneRateLimiterPrefs({ visionOcrRpm: prefs.visionOcrRpm });
-  applyCalibrePathPrefs({ calibrePathOverride: prefs.calibrePathOverride });
   applyIllustrationSemaphorePrefs({ illustrationParallelBooks: prefs.illustrationParallelBooks });
 }
 

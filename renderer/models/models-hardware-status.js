@@ -302,7 +302,7 @@ export function buildHwStrip() {
   ]);
 
   /* Iter 7: pipeline-status-widget — live VRAM pressure + scheduler lanes counters.
-     Виден только когда что-то идёт через scheduler (calibre/cbz/multi-tiff
+     Виден только когда что-то идёт через scheduler (cbz/multi-tiff/ddjvu→PDF
      converters, evaluator, illustration). Empty state — нули, не отвлекает. */
   const pipelineHost = el("div", { id: "mp-pipeline-status", class: "mp-pipeline-status" }, []);
 

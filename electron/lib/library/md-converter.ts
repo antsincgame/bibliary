@@ -14,6 +14,7 @@
  */
 
 import * as path from "path";
+import { applyLayout, shouldRenderMath } from "./layout-pipeline.js";
 import { parseBook, detectExt } from "../scanner/parsers/index.js";
 import { isOcrSupported } from "../scanner/ocr/index.js";
 import { extractBookImages } from "./image-extractors.js";
@@ -53,6 +54,7 @@ const NUMERIC_KEYS: ReadonlySet<string> = new Set([
   "originality",
   "conceptsExtracted",
   "conceptsAccepted",
+  "layoutVersion",
 ]);
 
 const BOOLEAN_KEYS: ReadonlySet<string> = new Set(["isFictionOrWater"]);
@@ -104,6 +106,10 @@ function buildFrontmatter(meta: BookCatalogMeta): string {
   if (meta.warnings && meta.warnings.length > 0) {
     lines.push(`warnings:`);
     for (const w of meta.warnings) lines.push(`  - ${escapeYaml(w)}`);
+  }
+  // layout (Versator)
+  if (typeof meta.layoutVersion === "number" && meta.layoutVersion > 0) {
+    lines.push(`layoutVersion: ${meta.layoutVersion}`);
   }
   lines.push("---");
   return lines.join("\n");
@@ -633,6 +639,22 @@ export async function convertBookToMarkdown(
     /* Никогда не должно упасть, но страхуемся — детектор не должен ломать импорт. */
   }
 
+  const rawBody = buildBody(chapters, images);
+
+  /* Versator (build-time scientific layout):
+     - typograf: «ёлочки», em-dashes, NBSP;
+     - callouts: «Внимание:» → стилизованные блоки;
+     - definitions: «X — это Y» → <dfn>;
+     - sidenotes: footnotes → Tufte-style margin notes;
+     - drop caps: первая буква каждой главы;
+     - math: $...$ через KaTeX (auto, если в тексте есть формулы).
+     Pure-JS, без LLM, без сетевых вызовов. См. layout-pipeline.ts. */
+  const layoutLang: "ru" | "en" = detectedLanguage === "en" ? "en" : "ru";
+  const layoutResult = applyLayout(rawBody, {
+    lang: layoutLang,
+    renderMath: shouldRenderMath(rawBody),
+  });
+
   const meta: BookCatalogMeta = {
     id: bookIdFromSha(sha256),
     sha256,
@@ -648,11 +670,11 @@ export async function convertBookToMarkdown(
     chapterCount: chapters.length,
     status,
     warnings: allWarnings.length > 0 ? allWarnings : undefined,
+    layoutVersion: layoutResult.version,
   };
 
-  const body = buildBody(chapters, images);
   const refs = buildImageRefs(images);
-  const markdown = `${buildFrontmatter(meta)}\n\n# ${meta.title}\n\n${body}${refs}`;
+  const markdown = `${buildFrontmatter(meta)}\n\n# ${meta.title}\n\n${layoutResult.md}${refs}`;
 
   return { meta, chapters, images, markdown };
 }

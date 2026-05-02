@@ -39,12 +39,6 @@ import {
 } from "../electron/lib/library/evaluator-queue.ts";
 
 import {
-  applyCalibrePathPrefs,
-  resolveCalibreBinary,
-  _resetCalibreResolutionForTests,
-} from "../electron/lib/scanner/converters/calibre-cli.ts";
-
-import {
   applyIllustrationSemaphorePrefs,
   getIllustrationSemaphore,
 } from "../electron/lib/library/illustration-semaphore.ts";
@@ -76,7 +70,6 @@ describe("[Settings 8Б] PreferencesSchema contains all Smart Import Pipeline ke
     "illustrationParallelism",
     "illustrationParallelBooks",
     "converterCacheMaxBytes",
-    "calibrePathOverride",
     "preferDjvuOverPdf",
   ];
 
@@ -94,7 +87,6 @@ describe("[Settings 8Б] PreferencesSchema contains all Smart Import Pipeline ke
     assert.equal(defaults.illustrationParallelism, 4);
     assert.equal(defaults.illustrationParallelBooks, 2);
     assert.equal(defaults.converterCacheMaxBytes, 5 * 1024 * 1024 * 1024);
-    assert.equal(defaults.calibrePathOverride, "");
     assert.equal(defaults.preferDjvuOverPdf, false);
   });
 
@@ -203,54 +195,10 @@ describe("[Settings 8В] applyEvaluatorPrefs propagates evaluatorSlots to live w
   });
 });
 
-/* ── Calibre CLI: applyCalibrePathPrefs инвалидирует кеш при реальной смене (Иt 8В.CRITICAL.4) ── */
-
-describe("[Settings 8В] applyCalibrePathPrefs invalidates resolveCalibreBinary cache", () => {
-  test("смена override без apply была бы молчаливо проигнорирована (защита от регрессии)", async () => {
-    _resetCalibreResolutionForTests();
-    const fakeA = path.join(tmpDir, "ebook-convert-A");
-    const fakeB = path.join(tmpDir, "ebook-convert-B");
-    fs.writeFileSync(fakeA, "");
-    fs.writeFileSync(fakeB, "");
-
-    const store = getPreferencesStore();
-    await store.ensureDefaults();
-
-    /* Boot: устанавливаем A в store + apply (boot — запомнит) + resolve → cache = A */
-    await store.set({ calibrePathOverride: fakeA });
-    applyCalibrePathPrefs({ calibrePathOverride: fakeA });
-    const r1 = await resolveCalibreBinary();
-    assert.equal(r1?.binary, fakeA);
-
-    /* Change без apply: меняем store на B, resolve возвращает A (старый кеш — баг до Иt 8В) */
-    await store.set({ calibrePathOverride: fakeB });
-    const stillA = await resolveCalibreBinary();
-    assert.equal(stillA?.binary, fakeA, "без applyCalibrePathPrefs кеш молчаливо игнорирует store change");
-
-    /* Apply: значение реально изменилось vs lastSeenOverride → инвалидация */
-    applyCalibrePathPrefs({ calibrePathOverride: fakeB });
-    const r2 = await resolveCalibreBinary();
-    assert.equal(r2?.binary, fakeB, "после applyCalibrePathPrefs кеш сброшен → resolve видит B");
-  });
-
-  test("повторный apply с тем же значением — no-op (не сбрасывает кеш зря)", async () => {
-    _resetCalibreResolutionForTests();
-    const fake = path.join(tmpDir, "ebook-convert-same");
-    fs.writeFileSync(fake, "");
-
-    const store = getPreferencesStore();
-    await store.ensureDefaults();
-    await store.set({ calibrePathOverride: fake });
-    applyCalibrePathPrefs({ calibrePathOverride: fake });
-    const r1 = await resolveCalibreBinary();
-
-    /* Удаляем файл — если кеш реально сброшен, следующий resolve упадёт на fs.access. */
-    fs.unlinkSync(fake);
-    applyCalibrePathPrefs({ calibrePathOverride: fake }); /* same value → no-op */
-    const r2 = await resolveCalibreBinary();
-    assert.equal(r2?.binary, r1?.binary, "no-op apply не должен трогать кеш — resolve вернёт прежнее");
-  });
-});
+/* Phase A+B Iter 9.6 (rev. 2 colibri-roadmap.md): Calibre cascade удалён —
+   regression-тесты `applyCalibrePathPrefs` / `resolveCalibreBinary` больше
+   не актуальны. MOBI/AZW/AZW3/PDB/PRC/CHM теперь парсятся pure-JS через
+   palm-mobi.ts (PalmDoc LZ77) и chm.ts (7zip → composite-html). */
 
 /* ── IllustrationSemaphore: applyIllustrationSemaphorePrefs управляет capacity (Иt 8В.MEDIUM.10) ── */
 
@@ -354,14 +302,12 @@ describe("[Settings 8Б] PreferencesStore set/get roundtrip", () => {
       schedulerHeavyConcurrency: 3,
       visionOcrRpm: 120,
       preferDjvuOverPdf: true,
-      calibrePathOverride: "/custom/path/ebook-convert",
     });
 
     const all = await store.getAll();
     assert.equal(all.schedulerHeavyConcurrency, 3);
     assert.equal(all.visionOcrRpm, 120);
     assert.equal(all.preferDjvuOverPdf, true);
-    assert.equal(all.calibrePathOverride, "/custom/path/ebook-convert");
 
     /* Невалидные значения должны throw на schema-валидации. */
     await assert.rejects(() => store.set({ schedulerHeavyConcurrency: 0 } as Partial<Preferences>));

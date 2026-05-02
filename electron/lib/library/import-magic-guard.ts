@@ -134,8 +134,8 @@ function isCalibreLegacyContainer(head: Buffer, ext: string): boolean {
   }
   /* CHM имеет свою сигнатуру — проверяется отдельно через isChm. */
   if (ext === "chm") return false;
-  /* Без сильных улик — не reject (пусть Calibre сам попробует и упадёт с
-     понятной ошибкой). */
+  /* Без сильных улик — не reject (пусть palm-mobi parser сам попробует и
+     вернёт warning с понятной ошибкой). */
   return true;
 }
 

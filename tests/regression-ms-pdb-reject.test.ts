@@ -1,13 +1,14 @@
 /**
  * Regression test: Microsoft .pdb (Program Database, debug symbols от Visual
- * Studio) reject'ится magic guard'ом — НЕ передаётся в Calibre.
+ * Studio) reject'ится magic guard'ом — НЕ передаётся в palm-mobi parser.
  *
  * Контекст: разведка реальной библиотеки D:\Bibliarifull обнаружила что все
  * 99 файлов .pdb в библиотеке = MS Program Database, не Palm Database eBook.
- * Без этой защиты они отправлялись бы в ebook-convert.exe и тратили ресурсы
- * на ошибочный convert.
+ * Без этой защиты они отправлялись бы в parser и тратили ресурсы на ошибочный
+ * parse.
  *
- * Iter 6В: добавлен `isMicrosoftPdb()` check в `isCalibreLegacyContainer`.
+ * Iter 6В: добавлен `isMicrosoftPdb()` check в `isCalibreLegacyContainer`
+ * (Phase A+B Iter 9.6 переименование функции отложено — Mahakala blast radius).
  */
 
 import test from "node:test";

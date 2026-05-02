@@ -32,9 +32,11 @@
  * Маппинг user request:
  *   "Библиотека и поиск" (ingest), "Устойчивость и политики" (resilience),
  *   "Пайплайн импорта" (pipeline) → УБРАТЬ из UI как разделы (advanced-only).
- *   "Calibre" → перенести в "Основные" (general).
  *   Семантический чанкер → добавить промптовое поле для описания.
  *   Авто-режим (memory management): adaptiveSchedulingEnabled.
+ *
+ * Phase A+B Iter 9.6 (rev. 2 colibri-roadmap.md): Calibre удалён полностью —
+ * нет внешних зависимостей. MOBI/AZW3/CHM теперь native JS.
  */
 
 /** @type {ReadonlyArray<SettingsSection>} */
@@ -48,7 +50,6 @@ export const SECTIONS = Object.freeze([
     fields: [
       { key: "lmStudioUrl", type: "url", labelKey: "settings.lmStudioUrl", placeholder: "http://localhost:1234", probe: "lmstudio" },
       { key: "qdrantUrl", type: "url", labelKey: "settings.qdrantUrl", placeholder: "http://localhost:6333", probe: "qdrant" },
-      { key: "calibrePathOverride", type: "text", labelKey: "settings.calibrePathOverride", placeholder: "C:\\Program Files\\Calibre2\\ebook-convert.exe" },
     ],
   },
 

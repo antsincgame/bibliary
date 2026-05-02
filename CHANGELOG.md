@@ -4,7 +4,195 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — Iter 8В — Scheduler Coverage + Universal Cascade + Pipeline Widget Roles
+## [0.8.0] — 2026-05-03 — Reader Purge + Versator Premium Layout
+
+Императорский приказ: уничтожить тяжёлую нативную читалку, заменить её
+на премиум-рендер `book.md` с научной типографикой. Никаких внешних
+серверов — всё локально, MIT-clean.
+
+### Added — Versator (Premium Scientific Layout)
+
+- **Versator pipeline** (build-time, pure-JS, без LLM, без сети) — каждая
+  книга при импорте проходит через `applyLayout(...)`:
+  - [electron/lib/library/layout-pipeline.ts](electron/lib/library/layout-pipeline.ts) —
+    главный orchestrator + `LAYOUT_VERSION` + `shouldRenderMath` авто-детект.
+  - [electron/lib/library/layout-typograf.ts](electron/lib/library/layout-typograf.ts) —
+    обёртка над `typograf` (MIT): русские «ёлочки», em-dash, NBSP.
+  - [electron/lib/library/layout-callouts.ts](electron/lib/library/layout-callouts.ts) —
+    распознавание `Внимание:` / `Совет:` / `Note:` / `Warning:` / `Important:`
+    → стилизованные `<div class="lib-reader-callout-{note|tip|warning|important}">`.
+  - [electron/lib/library/layout-definitions.ts](electron/lib/library/layout-definitions.ts) —
+    «X — это Y» → `<dfn class="lib-reader-dfn">X</dfn>` с защитой от
+    коротких местоимений (Я/Это/It/This/etc).
+  - [electron/lib/library/layout-dropcaps.ts](electron/lib/library/layout-dropcaps.ts) —
+    drop-cap на первой букве **текстового** параграфа главы. Пропускает
+    blockquote (эпиграфы), images, lists, tables, HTML-вкрапления.
+  - [electron/lib/library/layout-sidenotes.ts](electron/lib/library/layout-sidenotes.ts) —
+    markdown footnotes `[^N]` → Tufte-style sidenote markup. Orphan defs
+    (без inline ref) сохраняются как обычный markdown — нет потери контента.
+  - [electron/lib/library/layout-katex.ts](electron/lib/library/layout-katex.ts) —
+    `$...$` и `$$...$$` через локальный **KaTeX** с try/catch fallback на
+    raw-текст при ParseError (битые формулы из старых OCR не рушат импорт).
+  - [electron/lib/library/layout-protect-code.ts](electron/lib/library/layout-protect-code.ts) —
+    placeholder protection: typograf и другие трансформации не трогают
+    содержимое \`\`\`fenced\`\`\` и `inline code` блоков.
+  - 35 unit-тестов в [tests/layout-pipeline.test.ts](tests/layout-pipeline.test.ts):
+    идемпотентность, защита кода, orphan footnotes, drop caps только на
+    текстовых параграфах, KaTeX graceful fallback, smart typography.
+
+- **Bibliary Scientific CSS-тема** в [renderer/styles.css](renderer/styles.css):
+  - Системный serif стэк: Charter / Iowan Old Style / Garamond / Cambria / Georgia.
+  - Drop caps 4.2em italic gold с text-shadow.
+  - Callouts: 4 типа с цветными иконками `i` / `✓` / `!` / `★` через `::before`.
+  - `<dfn>` с gold accent + dotted underline.
+  - Tufte sidenotes: float right на широких экранах; CSS-only toggle через
+    `:checked` на `@media (max-width: 1180px)`.
+  - Scientific blockquote, code blocks, lists, hr — единый visual language.
+
+- **KaTeX vendored 100% локально** (`renderer/vendor/katex/`):
+  - `katex.min.css` (23.8 KB) + 20 woff2 шрифтов (260 KB) = ~283 KB total.
+  - Подключён через `<link>` в [renderer/index.html](renderer/index.html) ДО
+    основного `styles.css` (для override-ов в `.lib-reader-body .katex`).
+  - CSP в meta-теге расширен: `font-src 'self'` для local woff2.
+  - Никаких CDN, никаких Google Fonts API.
+
+- **`layoutVersion: number`** field в `BookCatalogMeta` (optional, Mahakala-safe):
+  - 0 / undefined → legacy book.md без вёрстки (обратная совместимость).
+  - При bump `LAYOUT_VERSION` в layout-pipeline старые книги остаются
+    работоспособными до явной re-rendering через UI.
+
+### Removed — Reader Purge
+
+- **Нативная читалка `foliate-js` удалена полностью** (~3.7 MB vendor).
+  - `renderer/library/native-reader.js` — deleted (fullscreen iframe overlay).
+  - `renderer/vendor/foliate-js/` — целая папка deleted.
+  - `scripts/download-foliate-js.cjs` — deleted.
+  - `package.json:scripts.setup:foliate-js` — deleted.
+  - i18n keys `library.nativeReader.*` и `library.reader.action.readNative*` — deleted.
+  - Кнопка «Читать здесь» / «Read here» в reader-toolbar — deleted.
+  - CSS блок `.lib-native-reader-*` (~50 строк) — deleted.
+
+- **`bibliary-book://` custom protocol удалён** (использовался только нативной
+  читалкой):
+  - `electron/main.ts:registerBookProtocol()` — deleted.
+  - `bibliary-book:` из CSP `img-src` / `connect-src` — deleted.
+  - Из `protocol.registerSchemesAsPrivileged([...])` — deleted.
+
+- **`electron/lib/scanner/converters/ddjvu-pdf.ts` удалён** (он использовался
+  только для рендеринга DJVU в native reader через PDF). Парсер DJVU
+  `parsers/djvu.ts` через `djvutxt` для импорта работает без изменений.
+
+### Changed
+
+- [renderer/library/reader.js](renderer/library/reader.js) — кнопка «Открыть
+  во внешнем» переименована в «Открыть оригинал» (единственная теперь,
+  поскольку native reader удалён).
+- [renderer/library.js](renderer/library.js) — `switchTab()` больше не
+  вызывает `closeNativeReader()`.
+- [electron/lib/library/md-converter.ts](electron/lib/library/md-converter.ts) —
+  body книги после `buildBody()` пропускается через `applyLayout()` с
+  авто-детектом языка (`detectedLanguage === "en" ? "en" : "ru"`) и
+  авто-флагом `renderMath` (если в тексте есть `$...$`).
+- [electron/lib/library/types.ts](electron/lib/library/types.ts) —
+  `BookCatalogMeta.layoutVersion?: number` добавлено как optional поле.
+
+### Dependencies (added, MIT)
+
+- `typograf@^7.7.0` — typography engine для русско/англоязычной литературы.
+- `katex@^0.16.45` — math rendering, server-side `renderToString`.
+
+---
+
+## [0.8.0] — Phase A+B foundation (Calibre Purge + Torrent-Dump Hardening, Iter 9.1-9.6)
+
+Фаланга Iter 9.1–9.6: Bibliary становится **полностью JS-нативным** аналогом
+Calibre, без зависимости от внешнего Python-runtime. Поход против пяти слепых
+зон под старые торренты (DJVU, кодировки, RAR/fb2.zip, имена файлов, Calibre
+lock-in) — указано в code review от Google. Включено в релиз 0.8.0.
+
+### Added
+
+- **Iter 9.1 — Native Reader Foundation** (foliate-js MIT vendoring) —
+  *удалено в Reader Purge секции выше; оставлено в истории как промежуточная
+  итерация.*
+
+- **Iter 9.2 — Encoding-aware imports** (chardet + iconv-lite)
+  - [electron/lib/scanner/encoding-detector.ts](electron/lib/scanner/encoding-detector.ts)
+    (новый): авто-определение кодировки через 4 источника по приоритету —
+    BOM → XML declaration → HTML meta charset → chardet byte-pattern → UTF-8.
+    Поддержка windows-1251, KOI8-R, IBM866 (DOS-866) и ~250 других кодировок.
+  - Интеграция в `parsers/txt.ts`, `parsers/html.ts`, `parsers/fb2.ts` без
+    breaking changes (старая `decodeTextAuto` API сохранена через adapter).
+  - 16 unit-тестов в [tests/encoding-detector.test.ts](tests/encoding-detector.test.ts).
+
+- **Iter 9.3 — Filename heuristic для русских коллекций**
+  - [electron/lib/library/filename-parser.ts](electron/lib/library/filename-parser.ts) —
+    добавлены паттерны `Толстой Л.Н. - Война и мир - 1869`,
+    `Достоевский Ф.М. - Идиот`, `Пушкин А.С. Евгений Онегин (1833)`,
+    `[Бахтин М.М.] Творчество (1965)`, year-first underscore-separated и т.д.
+  - Поддержка двойных фамилий через дефис (`Мамин-Сибиряк Д.Н.`).
+  - 12 unit-тестов в [tests/filename-parser-russian.test.ts](tests/filename-parser-russian.test.ts).
+
+- **Iter 9.4 — RAR + fb2.zip multi-book**
+  - [electron/lib/library/archive-extractor.ts](electron/lib/library/archive-extractor.ts) —
+    `ARCHIVE_EXTS` расширен на `.rar`, `.tar`, `.gz`, `.tgz`, `.bz2`, `.tbz2`,
+    `.xz`, `.txz` (7zip уже умеет все эти форматы).
+  - **fb2.zip multi-book detection**: при обнаружении архива с ≥80% FB2 entries
+    лимит файлов поднимается с 5000 до 100000 — даёт прямой импорт месячных
+    дампов Флибусты `f.fb2-XXXXX-YYYYY.zip` без ручной распаковки.
+
+- **Iter 9.5 — Calibre Replacement через pure-JS parsers**
+  - [electron/lib/scanner/parsers/palm-mobi.ts](electron/lib/scanner/parsers/palm-mobi.ts)
+    (новый): pure-JS byte-level parser для MOBI/AZW/AZW3/PRC/PDB. Реализует
+    PalmDoc LZ77 decompression (40 строк), MOBI EXTH metadata extraction
+    (title/author/publisher/language), graceful warning для KF8/Huffman.
+    15 unit-тестов с round-trip LZ77 и synthetic PDB файлами.
+  - [electron/lib/scanner/parsers/chm.ts](electron/lib/scanner/parsers/chm.ts)
+    (новый): CHM через 7zip extract → composite-html-detector. Заменяет
+    Calibre cascade.
+  - [electron/lib/scanner/converters/ddjvu-pdf.ts](electron/lib/scanner/converters/ddjvu-pdf.ts)
+    (новый): DJVU → PDF через DjVuLibre `ddjvu` (vendored), используется
+    bibliary-book:// handler-ом для рендеринга DJVU в native reader через pdfjs.
+    Кэшируется через существующий `converters/cache.ts`.
+
+### Removed
+
+- **Calibre cascade полностью удалён** (главный приказ Императора rev. 2).
+  - `electron/lib/scanner/converters/calibre.ts` — deleted
+  - `electron/lib/scanner/converters/calibre-cli.ts` — deleted
+  - `electron/lib/scanner/parsers/calibre-formats.ts` — deleted
+  - `calibrePathOverride` поле в Preferences — удалено
+  - UI поле «Calibre: путь к ebook-convert» — удалено из Settings
+  - Локали `settings.calibrePathOverride.*` — удалены (ru, en)
+  - Тесты `converters-calibre.test.ts`, `parsers-mobi-azw-chm.test.ts`,
+    `parsers-cbz-tcr-lit-lrf-rb-snb.test.ts`, `regression-rb-not-book.test.ts` —
+    удалены (заменены на palm-mobi.test.ts с round-trip тестами).
+
+- **Мёртвые форматы удалены** из `SUPPORTED_BOOK_EXTS`:
+  - `.lit` (Microsoft Reader, deprecated 2012)
+  - `.lrf` (Sony BBeB, deprecated 2010)
+  - `.snb` (Shanda Bambook, мёртв)
+  - `.tcr` (Psion 90s, мёртв)
+
+  В реальных русских торрент-дампах их доля <0.01%; решение rev. 2 — упростить
+  кодовую базу и сосредоточиться на актуальных форматах.
+
+### Changed
+
+- `parsers/index.ts` — `mobi/azw/azw3/pdb/prc` теперь маршрутизируются в
+  `palm-mobi.ts`, `chm` в `chm.ts`. Никаких converter-cascade.
+- `converters/index.ts` — упрощён, остаются только `djvu` и `cbz` маршруты.
+- README — обновлён список поддерживаемых форматов и watchdog-описания.
+
+### Documentation
+
+- [docs/colibri-roadmap.md](docs/colibri-roadmap.md) rev. 2 — полная переработка
+  плана под 5 поправок Google + удаление Calibre. Phalanx Manifest, ledger,
+  ledger лицензий, итерации 9.1–9.9.
+
+---
+
+## [0.7.1] — Iter 8В — Scheduler Coverage + Universal Cascade + Pipeline Widget Roles
 
 Финал «крепости пайплайна»: каждая LLM-точка импорта теперь под `ImportTaskScheduler`
 (observability + дросселирование), Universal Cascade подключён в pdf/image parsers

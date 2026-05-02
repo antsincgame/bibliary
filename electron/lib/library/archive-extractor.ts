@@ -21,7 +21,23 @@ import { detectExt } from "../scanner/parsers/index.js";
 import { SUPPORTED_BOOK_EXTS } from "./types.js";
 import { shouldIncludeImportCandidate } from "./import-candidate-filter.js";
 import { verifyExtMatchesContent, verifyExtMatchesContentHead } from "./import-magic-guard.js";
-const ARCHIVE_EXTS = new Set([".zip", ".cbz", ".rar", ".cbr", ".7z"]);
+/* Phase A+B Iter 9.4 (rev. 2): расширение для торрент-дампов IT-архивов 2000-х.
+   tar/gz/bz2/xz — 7zip handle их одинаково через `7z x`. Двойные .tar.gz / .tar.bz2
+   распознаются через basename match ниже. */
+const ARCHIVE_EXTS = new Set([
+  ".zip", ".cbz", ".rar", ".cbr", ".7z",
+  ".tar", ".gz", ".tgz", ".bz2", ".tbz2", ".xz", ".txz",
+]);
+
+/**
+ * Phase A+B Iter 9.4: предельный лимит файлов для multi-book архивов.
+ * Когда архив явно состоит почти полностью из FB2 (как Флибуста-дампы
+ * `f.fb2-XXXXX-YYYYY.zip` со строгими ID-ranges), стандартный лимит 5000
+ * приводит к отказу импорта. Мы повышаем его до 100000 ТОЛЬКО для таких
+ * архивов после явной проверки доли FB2 в entries.
+ */
+const FB2_MULTI_BOOK_FILE_LIMIT = 100_000;
+const FB2_MULTI_BOOK_RATIO_THRESHOLD = 0.8;
 const req = createRequire(path.join(process.cwd(), "package.json"));
 
 /**
@@ -207,9 +223,31 @@ async function extractZipLike(absPath: string, tempDir: string, warnings: string
      (это дёшево, без распаковки), поэтому total entries известно мгновенно. */
   const allEntries = Object.values(zip.files);
   const fileEntries = allEntries.filter((e) => !e.dir);
-  if (fileEntries.length > limits.maxFiles) {
+
+  /* Phase A+B Iter 9.4 — fb2.zip multi-book detection.
+     Поднимаем лимит файлов до 100000 для архивов где доля FB2 >= 80%
+     (Флибуста/Либрусек ежемесячные дампы вроде `f.fb2-725372-725651.zip`).
+     Защита от zip-bomb остаётся через MAX_BYTES (5 GB) и MAX_RATIO (100:1). */
+  const isFb2MultiBookArchive = (() => {
+    if (fileEntries.length < 100) return false;
+    let fb2Count = 0;
+    for (const e of fileEntries) {
+      if (e.name.toLowerCase().endsWith(".fb2")) fb2Count++;
+    }
+    return fb2Count / fileEntries.length >= FB2_MULTI_BOOK_RATIO_THRESHOLD;
+  })();
+  const effectiveMaxFiles = isFb2MultiBookArchive
+    ? FB2_MULTI_BOOK_FILE_LIMIT
+    : limits.maxFiles;
+  if (isFb2MultiBookArchive && fileEntries.length > limits.maxFiles) {
     warnings.push(
-      `archive-extractor: ${sourceArchive} has ${fileEntries.length} files (>${limits.maxFiles} limit) — refused as potential zip-bomb`,
+      `archive-extractor: ${sourceArchive} detected as fb2-multi-book archive (${fileEntries.length} entries, ≥80% FB2); raising file limit to ${FB2_MULTI_BOOK_FILE_LIMIT}`,
+    );
+  }
+
+  if (fileEntries.length > effectiveMaxFiles) {
+    warnings.push(
+      `archive-extractor: ${sourceArchive} has ${fileEntries.length} files (>${effectiveMaxFiles} limit) — refused as potential zip-bomb`,
     );
     return [];
   }

@@ -18,9 +18,10 @@
  *     этот converter вызывается ТОЛЬКО когда мы обнаружили multi-page (т.е.
  *     потенциально из image.ts wrapper'а).
  *
- *   В Iter 6Б multi-tiff converter оставлен standalone и доступен через
- *   `convertToParseable("multi-tiff")` явный путь — wiring в image-парсер
- *   (auto-detect single vs multi) — отдельная задача (Iter 6В+).
+ *   В Iter 6Б multi-tiff converter оставлен standalone и вызывается напрямую
+ *   через `convertMultiTiff` (не маршрутизируется через `convertToParseable` —
+ *   тот работает только для DJVU). Wiring в image-парсер (auto-detect single
+ *   vs multi) — отдельная задача (Iter 6В+).
  *
  * Heavy lane scheduling — обработка 100-страничного TIFF архивного скана
  * = 200+ MB RAM peak. Через `getImportScheduler().enqueue("heavy", ...)`.

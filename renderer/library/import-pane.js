@@ -159,8 +159,12 @@ export function buildImportPane(deps) {
 
   logPanel.classList.add("lib-import-console-pane", "is-active");
   /** @type {HTMLElement} */ (logPanel).dataset.tab = "logs";
+  /** @type {HTMLElement} */ (logPanel).style.display = "";
   booksPanel.classList.add("lib-import-console-pane");
   /** @type {HTMLElement} */ (booksPanel).dataset.tab = "books";
+  /* Hard-hide через inline style при первом mount: гарантия что books не
+     будет видна одновременно с logs до первого пользовательского клика. */
+  /** @type {HTMLElement} */ (booksPanel).style.display = "none";
 
   const consoleHeader = el("div", { class: "lib-import-console-tabs" }, [tabLogs, tabBooks]);
   const consoleEl = el("div", { class: "lib-import-console" }, [
@@ -234,6 +238,14 @@ export function buildImportPane(deps) {
 
 /**
  * Переключение вкладок консоли импорта.
+ *
+ * Phase A+B Iter 9.7 hotfix (rev. 2 colibri-roadmap.md, 2026-05-02):
+ * добавлено явное `style.display` для bullet-proof защиты от случаев когда
+ * CSS-каскад не справляется (например, дочерние !important правила в
+ * .lib-import-log-panel grid'е могут перекрывать общее `display:none`).
+ * Inline style имеет максимальную специфичность и работает даже без
+ * перезагрузки CSS.
+ *
  * @param {HTMLElement} consoleEl
  * @param {"logs"|"books"} tab
  */
@@ -245,10 +257,13 @@ function switchConsoleTab(consoleEl, tab) {
     );
   }
   for (const pane of consoleEl.querySelectorAll(".lib-import-console-pane")) {
-    /** @type {HTMLElement} */ (pane).classList.toggle(
-      "is-active",
-      /** @type {HTMLElement} */ (pane).dataset.tab === tab,
-    );
+    const paneEl = /** @type {HTMLElement} */ (pane);
+    const isActive = paneEl.dataset.tab === tab;
+    paneEl.classList.toggle("is-active", isActive);
+    /* Inline style — последний рубеж защиты от CSS-конфликтов. Используем
+       cssText.setProperty для priority="" чтобы не оставлять !important
+       inline (даёт повышенную специфичность но без блокировки caller-override). */
+    paneEl.style.display = isActive ? "" : "none";
   }
 }
 

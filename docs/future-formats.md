@@ -90,11 +90,11 @@
 
 - **DRM-защита** (AZW, некоторые EPUB): Bibliary НЕ может и НЕ должен обходить DRM.
   Поддерживаем только DRM-free файлы.
-- **Calibre как зависимость**: вместо реализации парсеров вручную, можно использовать
-  `calibre-ebook.com` CLI (`ebook-convert`) как vendor binary. Плюс: 50+ форматов.
-  Минус: огромный binary (~100 MB), лицензия GPL, тяжело bundlить.
+- **Calibre удалён в Phase A+B Iter 9.6** (rev. 2 colibri-roadmap.md). Все
+  legacy форматы теперь парсятся pure-JS (palm-mobi.ts) или через 7zip CLI
+  (chm.ts → composite-html). Никаких внешних Python-runtime зависимостей.
 - **Pandoc**: лёгкая альтернатива для текстовых форматов (md/rst/adoc/tex → HTML).
-  Бинарь ~30 MB, MIT-лицензия.
+  Бинарь ~30 MB, MIT-лицензия. Не интегрирован, но рассматривается в Iter 12.
 
 ---
 

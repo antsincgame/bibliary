@@ -26,9 +26,77 @@ interface PatternDef {
   map: (m: RegExpMatchArray) => FilenameMeta;
 }
 
+/**
+ * Phase A+B Iter 9.3 (rev. 2 colibri-roadmap.md): regex для русских коллекций.
+ *
+ * Реальные паттерны имён в дампах Либрусека/Флибусты/IT-архивов:
+ *   "Толстой Л.Н. - Война и мир - 1869.pdf"        — Cyrillic surname + initials
+ *   "Достоевский Ф.М. - Идиот.fb2"                  — без года
+ *   "Пушкин А.С. Евгений Онегин (1833).fb2"          — с годом в скобках
+ *   "[Бахтин М.М.] Творчество Франсуа Рабле (1965)" — в квадратных скобках
+ *   "Толстой_Л.Н._Война_и_мир_1869.fb2"              — underscore-separator
+ *   "1869_Толстой_Л.Н._Война_и_мир.fb2"              — year-first
+ *
+ * Особенности русских инициалов: одна или две буквы с точкой, могут быть
+ * слитно (Л.Н.) или раздельно (Л. Н.). Регулярка `[А-ЯЁ]\.?(?:\s*[А-ЯЁ]\.?)?`
+ * покрывает оба варианта.
+ */
+const RU_INITIAL = "[А-ЯЁ]\\.?(?:[\\s_]*[А-ЯЁ]\\.?)?";
+const RU_SURNAME = "[А-ЯЁ][а-яё]+(?:[-‐‑‒][А-ЯЁ][а-яё]+)?";
+/* `[\s_]+` between surname and initials — поддержка как пробельного, так и
+   underscore-разделителя в одной regex (Толстой Л.Н. = Толстой_Л.Н.). */
+const RU_AUTHOR = `${RU_SURNAME}[\\s_]+${RU_INITIAL}`;
+
 const PATTERNS: PatternDef[] = [
   {
-    // "Author - Title - 2025"
+    // "Толстой Л.Н. - Война и мир - 1869"  (Russian surname+initials, dash-separated)
+    re: new RegExp(`^(${RU_AUTHOR})${DASH.source}(.+?)${DASH.source}(\\d{4})`, "u"),
+    map: (m) => ({ author: m[1].trim(), title: m[2].trim(), year: Number(m[3]) }),
+  },
+  {
+    // "Толстой Л.Н. - Война и мир"  (no year in dashes, may have year in parens)
+    re: new RegExp(`^(${RU_AUTHOR})${DASH.source}(.+)`, "u"),
+    map: (m) => {
+      let title = m[2].trim();
+      let year: number | undefined;
+      const yMatch = title.match(/\((\d{4})\)\s*$/);
+      if (yMatch) {
+        year = Number(yMatch[1]);
+        title = title.replace(/\s*\(\d{4}\)\s*$/, "").trim();
+      }
+      return { author: m[1].trim(), title, year };
+    },
+  },
+  {
+    // "Толстой Л.Н. Война и мир (1869)"  (no dash separator, surname-init then space then title)
+    re: new RegExp(`^(${RU_AUTHOR})\\s+(.+?)\\s*\\((\\d{4})\\)\\s*$`, "u"),
+    map: (m) => ({ author: m[1].trim(), title: m[2].trim(), year: Number(m[3]) }),
+  },
+  {
+    // "[Толстой Л.Н.] Война и мир (1869)"  — в квадратных скобках Russian
+    re: new RegExp(`^\\[(${RU_AUTHOR})\\]\\s*(.+?)\\s*\\((\\d{4})\\)`, "u"),
+    map: (m) => ({ author: m[1].trim(), title: m[2].trim(), year: Number(m[3]) }),
+  },
+  {
+    // Year-first: "1869 Толстой Л.Н. Война и мир" or "1869_Толстой_Л.Н._Война_и_мир"
+    re: new RegExp(`^(\\d{4})[\\s_-]+(${RU_AUTHOR})[\\s_-]+(.+)`, "u"),
+    map: (m) => ({
+      year: Number(m[1]),
+      author: m[2].replace(/_/g, " ").trim(),
+      title: m[3].replace(/_/g, " ").trim(),
+    }),
+  },
+  {
+    // Underscore-separator (common in dump filesystems): "Толстой_Л.Н._Война_и_мир_1869"
+    re: new RegExp(`^(${RU_AUTHOR.replace(/\\s/g, "_")})_(.+?)_(\\d{4})`, "u"),
+    map: (m) => ({
+      author: m[1].replace(/_/g, " ").trim(),
+      title: m[2].replace(/_/g, " ").trim(),
+      year: Number(m[3]),
+    }),
+  },
+  {
+    // "Author - Title - 2025"  (Latin alphabet - existing original pattern)
     re: new RegExp(`^(.+?)${DASH.source}(.+?)${DASH.source}(\\d{4})`, "u"),
     map: (m) => ({ author: m[1].trim(), title: m[2].trim(), year: Number(m[3]) }),
   },

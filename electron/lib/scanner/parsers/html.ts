@@ -1,33 +1,26 @@
 import { promises as fs } from "fs";
 import * as path from "path";
 import { cleanParagraph, type BookParser, type ParseResult, type BookSection } from "./types.js";
+import { decodeBuffer } from "../encoding-detector.js";
 
 /**
  * HTML/HTM parser — reads the file, extracts <title>, then splits body
  * content by heading tags (h1-h3) into sections with paragraphs.
- * No external dependency.
+ *
+ * Phase A+B Iter 9.2 (rev. 2): использует encoding-detector для
+ * полного покрытия кодировок (BOM > <meta charset> > chardet > UTF-8).
+ * Старые HTML-файлы из IT-архивов 90-х часто без charset declaration
+ * в windows-1251/KOI8-R/IBM866 — chardet их распознаёт.
  */
 async function parseHtml(filePath: string): Promise<ParseResult> {
   const buf = await fs.readFile(filePath);
-  let text = buf.toString("utf8");
-  const warnings: string[] = [];
-
-  const charsetMatch = text.match(/<meta[^>]+charset=["']?([^"';\s>]+)/i);
-  if (charsetMatch) {
-    const charsetRaw = charsetMatch[1].toLowerCase();
-    /* Node ships with built-in `TextDecoder` powered by the WHATWG Encoding
-       Standard. It supports windows-1251, koi8-r, iso-8859-*, etc. — all the
-       Cyrillic encodings real-world HTML books use. Falling back to UTF-8 if
-       the label is unknown keeps the parser tolerant. */
-    if (charsetRaw && charsetRaw !== "utf-8" && charsetRaw !== "utf8") {
-      try {
-        const decoder = new TextDecoder(charsetRaw, { fatal: false });
-        text = decoder.decode(buf);
-        warnings.push(`detected charset ${charsetRaw}, decoded via TextDecoder`);
-      } catch {
-        warnings.push(`unsupported charset ${charsetRaw}, kept utf-8 decoding`);
-      }
-    }
+  /* parseHtmlMeta=true: парсер сам читает <meta charset> / <meta http-equiv>
+     и применяет нужную кодировку. Если meta нет — chardet fallback. */
+  const decoded = decodeBuffer(buf, { parseHtmlMeta: true });
+  const text = decoded.text;
+  const warnings: string[] = [...decoded.warnings];
+  if (decoded.encoding !== "utf-8") {
+    warnings.push(`detected encoding ${decoded.encoding} via ${decoded.source}`);
   }
 
   const titleMatch = text.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
