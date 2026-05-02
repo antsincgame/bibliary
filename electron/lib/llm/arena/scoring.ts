@@ -208,3 +208,126 @@ export function bradleyTerryMLE(
   for (const [m, t] of theta) normalized.set(m, (t - minT) / range);
   return normalized;
 }
+
+/**
+ * Список vision-ролей которые маппятся в ОДИН `visionModelKey` pref.
+ * Источник истины — `roleToPrefKey()` выше; этот массив должен с ним
+ * согласовываться. Изменение здесь — обновить и `roleToPrefKey`.
+ *
+ * @internal Используется в `aggregateVisionRoles` и `olympics.ts`.
+ */
+const VISION_ROLES: ReadonlyArray<OlympicsRole> = [
+  "vision_meta",
+  "vision_ocr",
+  "vision_illustration",
+];
+
+/**
+ * Иt 8Д.1 — Агрегатор трёх vision-ролей в одну рекомендацию `visionModelKey`.
+ *
+ * ПРОБЛЕМА (Inquisitor разведка 2026-05-02):
+ *   Все три vision-роли (vision_meta, vision_ocr, vision_illustration) имеют
+ *   `prefKey === "visionModelKey"`. Цикл в `olympics.ts:651-677`
+ *   `for (agg of roleAggregates) { recommendations[agg.prefKey] = agg.optimum }`
+ *   перезаписывает значение трижды — финал = ПОСЛЕДНЯЯ обработанная роль
+ *   (порядок зависит от Map-iteration). Пользователь думает что выбрал
+ *   модель «по совокупности», но на деле — рандом.
+ *
+ * РЕШЕНИЕ (стратегия = `best_avg`, выбор пользователя 2026-05-02):
+ *   1. Среди всех моделей, которые ПРОШЛИ ВСЕ 3 vision-дисциплины
+ *      (`okCount === totalCount` в КАЖДОЙ vision-роли) — выбрать модель
+ *      с максимальным средним `avgScore` по этим трём ролям.
+ *   2. Тай-брейки: лучший `min(avgScore)` (стабильность) → лучший
+ *      `avgEfficiency` → детерминированный alphabetical sort.
+ *   3. Если ни одна модель не прошла все 3 — fallback к last-write-wins
+ *      (текущее поведение) с warning в reason для дебага.
+ *
+ * @param roleAggregates Все агрегаты ролей из buildRoleAggregates.
+ * @returns Объединённая рекомендация для visionModelKey, либо null если
+ *          vision-роли вообще не участвовали в Olympics.
+ */
+export function aggregateVisionRoles(
+  roleAggregates: ReadonlyArray<OlympicsRoleAggregate>,
+): { modelKey: string; reason: string; strategy: "best_avg" | "fallback_last_write" } | null {
+  const visionAggs = roleAggregates.filter((a) =>
+    (VISION_ROLES as ReadonlyArray<string>).includes(a.role),
+  );
+  if (visionAggs.length === 0) return null;
+
+  /* Соберём stats каждой модели по vision-ролям где она встречается. */
+  type VisionStat = {
+    rolesWithFullCoverage: Set<OlympicsRole>;
+    avgScores: number[];
+    avgEfficiencies: number[];
+    rolesParticipated: number;
+  };
+  const byModel = new Map<string, VisionStat>();
+
+  for (const agg of visionAggs) {
+    for (const stat of agg.perModel) {
+      const entry = byModel.get(stat.model) ?? {
+        rolesWithFullCoverage: new Set<OlympicsRole>(),
+        avgScores: [],
+        avgEfficiencies: [],
+        rolesParticipated: 0,
+      };
+      entry.rolesParticipated += 1;
+      if (stat.okCount === stat.totalCount && stat.totalCount > 0) {
+        entry.rolesWithFullCoverage.add(agg.role);
+        entry.avgScores.push(stat.avgScore);
+        entry.avgEfficiencies.push(stat.avgEfficiency);
+      }
+      byModel.set(stat.model, entry);
+    }
+  }
+
+  /* Кандидаты — модели прошедшие ВСЕ vision-роли участвовавшие в Olympics. */
+  const requiredRoleCount = visionAggs.length;
+  const candidates: Array<{
+    model: string;
+    avgOfAvg: number;
+    minAvg: number;
+    avgOfEff: number;
+  }> = [];
+  for (const [model, stat] of byModel) {
+    if (stat.rolesWithFullCoverage.size === requiredRoleCount) {
+      const avgOfAvg = stat.avgScores.reduce((a, b) => a + b, 0) / stat.avgScores.length;
+      const minAvg = Math.min(...stat.avgScores);
+      const avgOfEff = stat.avgEfficiencies.reduce((a, b) => a + b, 0) / stat.avgEfficiencies.length;
+      candidates.push({ model, avgOfAvg, minAvg, avgOfEff });
+    }
+  }
+
+  if (candidates.length === 0) {
+    /* Fallback: ни одна модель не прошла все vision-роли. Берём optimum
+       последней vision-роли (текущее поведение last-write-wins) — но это
+       честнее чем молчаливо: говорим в reason что данных мало. */
+    const lastVisionAgg = visionAggs[visionAggs.length - 1];
+    if (!lastVisionAgg.optimum) return null;
+    return {
+      modelKey: lastVisionAgg.optimum,
+      reason: `fallback: ни одна модель не прошла все ${requiredRoleCount} vision-роли · взят optimum роли "${lastVisionAgg.role}"`,
+      strategy: "fallback_last_write",
+    };
+  }
+
+  /* Сортировка best_avg → minAvg → eff → alphabetical (детерминизм). */
+  candidates.sort((a, b) => {
+    if (Math.abs(a.avgOfAvg - b.avgOfAvg) > 0.005) return b.avgOfAvg - a.avgOfAvg;
+    if (Math.abs(a.minAvg - b.minAvg) > 0.005) return b.minAvg - a.minAvg;
+    if (Math.abs(a.avgOfEff - b.avgOfEff) > 0.05) return b.avgOfEff - a.avgOfEff;
+    return a.model.localeCompare(b.model);
+  });
+
+  const winner = candidates[0];
+  return {
+    modelKey: winner.model,
+    reason:
+      `avg ${(winner.avgOfAvg * 100).toFixed(0)}/100 across ${requiredRoleCount} vision-roles ` +
+      `· min ${(winner.minAvg * 100).toFixed(0)} · eff ${winner.avgOfEff.toFixed(1)}` +
+      (candidates.length > 1
+        ? ` · won over ${candidates.length - 1} other full-coverage candidate${candidates.length > 2 ? "s" : ""}`
+        : ""),
+    strategy: "best_avg",
+  };
+}

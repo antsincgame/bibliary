@@ -44,6 +44,7 @@ import {
 import {
   bradleyTerryMLE,
   buildRoleAggregates,
+  aggregateVisionRoles,
 } from "./scoring.js";
 import {
   getRoleInferenceDefaults,
@@ -650,11 +651,49 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
      avgScore, чтобы порядок в списке совпадал с реальным турнирным рейтингом. */
   const roleAggregates = buildRoleAggregates(results, btScores);
 
+  /* Иt 8Д.1 (2026-05-02) — fix скрытого vision-overwriting бага.
+     Все 3 vision-роли (vision_meta, vision_ocr, vision_illustration)
+     имеют один prefKey="visionModelKey". Цикл ниже перезаписывал бы
+     значение трижды → финал = последняя обработанная роль (рандом по
+     порядку Map-iteration). Решение: один раз вызвать aggregateVisionRoles
+     (стратегия best_avg), пропустить vision-роли в основном цикле. */
+  const visionAggregate = aggregateVisionRoles(roleAggregates);
+  const VISION_ROLES_SET = new Set(["vision_meta", "vision_ocr", "vision_illustration"]);
+
   const recommendations: Record<string, string> = {};
   const recommendationsByScore: Record<string, string> = {};
   const roleReasons: OlympicsRoleReason[] = [];
 
+  if (visionAggregate) {
+    recommendations.visionModelKey = visionAggregate.modelKey;
+    recommendationsByScore.visionModelKey = visionAggregate.modelKey;
+  }
+
   for (const agg of roleAggregates) {
+    /* Vision-роли уже обработаны через aggregateVisionRoles — пропускаем
+       чтобы не перезаписать корректную агрегацию случайным last-write. */
+    if (VISION_ROLES_SET.has(agg.role)) {
+      /* Но всё равно эмитим reason для UI отчёта (показать пользователю
+         per-role breakdown даже при едином visionModelKey). */
+      const reason: OlympicsRoleReason = { prefKey: agg.prefKey };
+      if (agg.optimum) {
+        const stats = agg.perModel.find((p) => p.model === agg.optimum);
+        reason.optimumModel = agg.optimum;
+        reason.optimumScore = stats?.avgScore;
+        reason.optimumReason = agg.optimumReason ?? undefined;
+        reason.optimumDiscipline = agg.disciplines.join(" + ");
+      }
+      if (agg.champion) {
+        const stats = agg.perModel.find((p) => p.model === agg.champion);
+        reason.championModel = agg.champion;
+        reason.championScore = stats?.avgScore;
+        reason.championReason = agg.championReason ?? undefined;
+        reason.championDiscipline = agg.disciplines.join(" + ");
+      }
+      roleReasons.push(reason);
+      continue;
+    }
+
     if (agg.optimum)  recommendations[agg.prefKey]        = agg.optimum;
     if (agg.champion) recommendationsByScore[agg.prefKey] = agg.champion;
 
