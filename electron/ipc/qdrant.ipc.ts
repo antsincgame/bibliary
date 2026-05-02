@@ -218,7 +218,7 @@ export function registerQdrantIpc(): void {
         const prefs = await getPreferencesStore().getAll();
         /* score_threshold: clamp to [0, 1]. Without it поиск «размывается» при
            росте коллекции — даже плохие совпадения проходят. */
-        const rawThreshold = args.scoreThreshold ?? prefs.ragScoreThreshold;
+        const rawThreshold = args.scoreThreshold ?? prefs.searchScoreThreshold;
         const scoreThreshold = Math.max(0, Math.min(1, rawThreshold));
         const data = await fetchQdrantJson<{
           result: Array<{ id: string | number; score: number; payload: Record<string, unknown> }>;

@@ -7,10 +7,10 @@ import { buildNeonHero } from "./components/neon-helpers.js";
  * Справка — встроенная документация для разработчиков-вайбкодеров.
  * Стиль: компактный, без лишних анимаций, обтекаемый ToC + плотные секции.
  *
- * Структура (4 секции вместо 8 в v1):
+ * Структура (4 секции):
  *   1. Локальный старт — env, Qdrant, LM Studio, первая коллекция
  *   2. Книга → датасет — как работает pipeline ingest и Crystallizer
- *   3. RAG в чате — выбор коллекции, контекст, A/B сравнение
+ *   3. Семантический поиск — поиск по коллекциям Qdrant
  *   4. Кастомизация — промпты, ролевые модели, дообучение, контекст YaRN
  *
  * @param {HTMLElement} root
@@ -118,11 +118,11 @@ function buildIngest() {
 
 function buildRag() {
   return el("div", { class: "docs-card" }, [
-    el("p", { class: "docs-paragraph" }, t("docs.section.rag.body")),
+    el("p", { class: "docs-paragraph" }, t("docs.section.search.body")),
     el("ul", { class: "docs-list" }, [
-      el("li", {}, t("docs.section.rag.tips.1")),
-      el("li", {}, t("docs.section.rag.tips.2")),
-      el("li", {}, t("docs.section.rag.tips.3")),
+      el("li", {}, t("docs.section.search.tips.1")),
+      el("li", {}, t("docs.section.search.tips.2")),
+      el("li", {}, t("docs.section.search.tips.3")),
     ]),
   ]);
 }

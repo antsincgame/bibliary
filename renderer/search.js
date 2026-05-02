@@ -82,8 +82,8 @@ export async function mountSearch(root) {
 async function hydrateDefaults() {
   try {
     const prefs = /** @type {any} */ (await window.api.preferences.getAll());
-    if (typeof prefs?.ragScoreThreshold === "number") {
-      STATE.threshold = Math.max(0, Math.min(1, prefs.ragScoreThreshold));
+    if (typeof prefs?.searchScoreThreshold === "number") {
+      STATE.threshold = Math.max(0, Math.min(1, prefs.searchScoreThreshold));
     }
     if (typeof prefs?.qdrantSearchLimit === "number" && prefs.qdrantSearchLimit > 0) {
       STATE.limit = Math.min(200, Math.floor(prefs.qdrantSearchLimit));
