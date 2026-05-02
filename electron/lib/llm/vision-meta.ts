@@ -19,6 +19,12 @@ import { listLoaded } from "../../lmstudio-client.js";
 import { getLmStudioUrl } from "../endpoints/index.js";
 import { getModelPool } from "./model-pool.js";
 import { getImportScheduler } from "../library/import-task-scheduler.js";
+import {
+  buildVisionMetaResponseFormat,
+  pickResponseFormat,
+} from "./schemas/index.js";
+import { validateImageBuffer } from "./image-preflight.js";
+import * as telemetry from "../resilience/telemetry.js";
 
 /**
  * Маркеры vision-моделей в modelKey/architecture. Это эвристика стратегии,
@@ -248,12 +254,22 @@ export type LmStudioVisionFetcher = (args: {
 const defaultLmStudioVisionFetcher: LmStudioVisionFetcher = async ({
   baseUrl, modelKey, systemPrompt, userText, imageDataUrl, signal,
 }) => {
+  const { strategy, payload: responseFormat } = pickResponseFormat({
+    modelKey,
+    schemaBuilder: buildVisionMetaResponseFormat,
+  });
+  telemetry.logEvent({
+    type: "lmstudio.response_format_picked",
+    role: "vision_meta",
+    modelKey,
+    strategy,
+  });
   const payload = {
     model: modelKey,
     temperature: 0,
     max_tokens: 800,
     top_p: 0.9,
-    response_format: { type: "json_object" },
+    response_format: responseFormat,
     chat_template_kwargs: { enable_thinking: false },
     messages: [
       { role: "system", content: systemPrompt },
@@ -410,6 +426,24 @@ export async function extractMetadataFromCover(
 ): Promise<VisionMetaResult> {
   if (!imageBuffer || imageBuffer.length === 0) {
     return { ok: false, error: "empty image buffer" };
+  }
+
+  /* Preflight only on production path — DI-tests inject synthetic buffers
+     (fake PNG signatures) which would be rejected by sharp() validation. */
+  const isDiTest = !!(opts.fetcherImpl || opts.listLoadedImpl);
+  if (!isDiTest) {
+    const preflight = await validateImageBuffer(imageBuffer);
+    if (!preflight.ok) {
+      telemetry.logEvent({
+        type: "lmstudio.invalid_image_rejected",
+        reason: preflight.reason,
+        bytes: imageBuffer.length,
+      });
+      return { ok: false, error: `image preflight failed: ${preflight.reason}` };
+    }
+    if (!opts.mimeType) {
+      opts = { ...opts, mimeType: preflight.mime };
+    }
   }
 
   /* Иt 8Б: resolver-first. modelRoleResolver — single source of truth для

@@ -26,6 +26,12 @@ import { readPipelinePrefsOrNull } from "../preferences/store.js";
 import { getModelPool } from "../llm/model-pool.js";
 import { getImportScheduler } from "./import-task-scheduler.js";
 import { withBookMdLock } from "./book-md-mutex.js";
+import {
+  buildIllustrationTriageResponseFormat,
+  pickResponseFormat,
+} from "../llm/schemas/index.js";
+import { validateImageBuffer } from "../llm/image-preflight.js";
+import * as telemetry from "../resilience/telemetry.js";
 
 /** Minimum score (exclusive) for a semantic illustration to be kept in CAS. */
 const SEMANTIC_SCORE_THRESHOLD = 5;
@@ -106,15 +112,37 @@ async function analyzeImageWithVision(
   const candidates = [modelKey, ...fallbackModelKeys].filter(Boolean);
   const prompt = buildSemanticTriagePrompt(ctx);
 
+  const preflight = await validateImageBuffer(imageBuffer);
+  if (!preflight.ok) {
+    telemetry.logEvent({
+      type: "lmstudio.invalid_image_rejected",
+      reason: preflight.reason,
+      bytes: imageBuffer.length,
+      modelKey,
+    });
+    return null;
+  }
+  const validatedMime = preflight.mime;
+
   for (const candidate of candidates) {
     try {
       const { getLmStudioUrl: getUrl } = await import("../endpoints/index.js");
       const baseUrl = await getUrl();
+      const { strategy, payload: responseFormat } = pickResponseFormat({
+        modelKey: candidate,
+        schemaBuilder: buildIllustrationTriageResponseFormat,
+      });
+      telemetry.logEvent({
+        type: "lmstudio.response_format_picked",
+        role: "vision_illustration",
+        modelKey: candidate,
+        strategy,
+      });
       const body = {
         model: candidate,
         temperature: 0,
         max_tokens: 400,
-        response_format: { type: "json_object" },
+        response_format: responseFormat,
         messages: [
           {
             role: "user",
@@ -123,7 +151,7 @@ async function analyzeImageWithVision(
               {
                 type: "image_url",
                 image_url: {
-                  url: `data:${mimeType};base64,${imageBuffer.toString("base64")}`,
+                  url: `data:${validatedMime ?? mimeType};base64,${imageBuffer.toString("base64")}`,
                 },
               },
             ],

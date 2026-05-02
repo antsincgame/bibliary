@@ -16,6 +16,11 @@
 import { getLmStudioUrl } from "../endpoints/index.js";
 import { modelRoleResolver } from "../llm/model-role-resolver.js";
 import { getImportScheduler } from "./import-task-scheduler.js";
+import {
+  buildTextMetaResponseFormat,
+  pickResponseFormat,
+} from "../llm/schemas/index.js";
+import * as telemetry from "../resilience/telemetry.js";
 
 export interface TextMeta {
   title?: string;
@@ -91,6 +96,16 @@ export async function extractTextMetaFromBookText(
        расходует одну medium-модель (8..16 GB), поэтому конкурирует с
        evaluator. medium concurrency=3 даёт умеренный параллелизм без OOM. */
     return await getImportScheduler().enqueue("medium", async () => {
+      const { strategy, payload: responseFormat } = pickResponseFormat({
+        modelKey,
+        schemaBuilder: buildTextMetaResponseFormat,
+      });
+      telemetry.logEvent({
+        type: "lmstudio.response_format_picked",
+        role: "text-meta",
+        modelKey,
+        strategy,
+      });
       const resp = await fetch(`${baseUrl}/v1/chat/completions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -98,7 +113,7 @@ export async function extractTextMetaFromBookText(
           model: modelKey,
           temperature: 0,
           max_tokens: 400,
-          response_format: { type: "json_object" },
+          response_format: responseFormat,
           chat_template_kwargs: { enable_thinking: false },
           messages: [
             { role: "system", content: SYSTEM_PROMPT },

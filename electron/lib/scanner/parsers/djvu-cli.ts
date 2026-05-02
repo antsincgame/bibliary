@@ -2,11 +2,21 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import { tmpdir } from "os";
 import { randomUUID } from "crypto";
-import { execFile as _execFile } from "child_process";
-import { promisify } from "util";
 import { platformVendorDirsWithLegacy } from "../../platform.js";
+import {
+  spawnWithWatchdog,
+  isChildWatchdogTimeoutError,
+} from "../../resilience/child-watchdog.js";
+import * as telemetry from "../../resilience/telemetry.js";
 
-const execFile = promisify(_execFile);
+/** Per-stage watchdog budgets. DjVuLibre #297 infinite loop в RLE decoder
+ *  означает что любой stage может зависнуть. Бюджеты подобраны по нижней
+ *  границе времени реальных операций + запас. */
+const DJVU_TIMEOUT_DJVUTXT_FULL_MS = 60_000;
+const DJVU_TIMEOUT_DJVUTXT_PAGE_MS = 15_000;
+const DJVU_TIMEOUT_DJVUSED_MS = 10_000;
+const DJVU_TIMEOUT_DDJVU_PAGE_MS = 90_000;
+const DJVU_TIMEOUT_DDJVU_TO_PDF_MS = 180_000;
 
 export interface DjvuToolResolution {
   binary: string;
@@ -76,26 +86,66 @@ function ensureNotAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw new Error("djvu operation aborted");
 }
 
-async function runBinary(binary: string, args: string[], signal?: AbortSignal): Promise<{ stdout: Buffer; stderr: Buffer }> {
-  ensureNotAborted(signal);
-  const { stdout, stderr } = await execFile(binary, args, {
-    signal,
-    maxBuffer: 64 * 1024 * 1024,
-    windowsHide: true,
-    encoding: "buffer",
-  });
-  return { stdout, stderr };
+interface DjvuRunOpts {
+  signal?: AbortSignal;
+  timeoutMs: number;
+  watchdogName: string;
+  filePath: string;
+}
+
+async function runBinary(
+  binary: string,
+  args: string[],
+  opts: DjvuRunOpts,
+): Promise<{ stdout: Buffer; stderr: Buffer }> {
+  ensureNotAborted(opts.signal);
+  try {
+    const result = await spawnWithWatchdog(binary, args, {
+      name: opts.watchdogName,
+      timeoutMs: opts.timeoutMs,
+      signal: opts.signal,
+      maxStdoutBytes: 64 * 1024 * 1024,
+      maxStderrBytes: 4 * 1024 * 1024,
+    });
+    return { stdout: result.stdout, stderr: result.stderr };
+  } catch (err) {
+    if (isChildWatchdogTimeoutError(err)) {
+      telemetry.logEvent({
+        type: "child.timeout",
+        name: opts.watchdogName,
+        command: binary,
+        elapsedMs: err.elapsedMs,
+        killed: err.killed,
+        exitCode: null,
+        signalName: "watchdog",
+      });
+      throw new Error(
+        `djvu watchdog: ${opts.watchdogName} hung on "${path.basename(opts.filePath)}" after ${err.elapsedMs}ms (DjVuLibre #297 infinite loop suspected)`,
+      );
+    }
+    throw err;
+  }
 }
 
 export async function runDjvutxt(filePath: string, signal?: AbortSignal): Promise<string> {
   const tool = await resolveBinary("djvutxt");
-  const { stdout } = await runBinary(tool.binary, [filePath], signal);
+  const { stdout } = await runBinary(tool.binary, [filePath], {
+    signal,
+    timeoutMs: DJVU_TIMEOUT_DJVUTXT_FULL_MS,
+    watchdogName: "djvutxt-full",
+    filePath,
+  });
   return stdout.toString("utf8").trim();
 }
 
 export async function getDjvuPageCount(filePath: string, signal?: AbortSignal): Promise<number> {
   const tool = await resolveBinary("djvused");
-  const { stdout } = await runBinary(tool.binary, [filePath, "-e", "n"], signal);
+  const { stdout } = await runBinary(tool.binary, [filePath, "-e", "n"], {
+    signal,
+    timeoutMs: DJVU_TIMEOUT_DJVUSED_MS,
+    watchdogName: "djvused-pages",
+    filePath,
+  });
   const value = Number.parseInt(stdout.toString("utf8").trim(), 10);
   if (!Number.isFinite(value) || value <= 0) return 1;
   return value;
@@ -106,7 +156,16 @@ export async function runDdjvu(filePath: string, pageIndex: number, dpi: number,
   const out = path.join(tmpdir(), `bibliary-djvu-${randomUUID()}.tif`);
   const page = Math.max(1, pageIndex + 1);
   try {
-    await runBinary(tool.binary, ["-format=tiff", `-page=${page}`, `-scale=${Math.max(72, dpi)}`, filePath, out], signal);
+    await runBinary(
+      tool.binary,
+      ["-format=tiff", `-page=${page}`, `-scale=${Math.max(72, dpi)}`, filePath, out],
+      {
+        signal,
+        timeoutMs: DJVU_TIMEOUT_DDJVU_PAGE_MS,
+        watchdogName: "ddjvu-page-tiff",
+        filePath,
+      },
+    );
     return await fs.readFile(out);
   } finally {
     await fs.unlink(out).catch((err) => {
@@ -130,7 +189,12 @@ export async function runDdjvu(filePath: string, pageIndex: number, dpi: number,
  */
 export async function runDdjvuToPdf(srcPath: string, outPath: string, signal?: AbortSignal): Promise<void> {
   const tool = await resolveBinary("ddjvu");
-  await runBinary(tool.binary, ["-format=pdf", srcPath, outPath], signal);
+  await runBinary(tool.binary, ["-format=pdf", srcPath, outPath], {
+    signal,
+    timeoutMs: DJVU_TIMEOUT_DDJVU_TO_PDF_MS,
+    watchdogName: "ddjvu-to-pdf",
+    filePath: srcPath,
+  });
 }
 
 /**
@@ -149,7 +213,12 @@ export async function runDjvutxtPage(srcPath: string, pageIndex: number, signal?
   const tool = await resolveBinary("djvutxt");
   const page = Math.max(1, pageIndex + 1);
   try {
-    const { stdout } = await runBinary(tool.binary, [`--page=${page}`, srcPath], signal);
+    const { stdout } = await runBinary(tool.binary, [`--page=${page}`, srcPath], {
+      signal,
+      timeoutMs: DJVU_TIMEOUT_DJVUTXT_PAGE_MS,
+      watchdogName: "djvutxt-page",
+      filePath: srcPath,
+    });
     return stdout.toString("utf8").trim();
   } catch {
     return "";

@@ -122,6 +122,47 @@ export type TelemetryEvent =
       windowSize: number;
       ts: string;
     }
+  | {
+      /**
+       * Child process (ddjvu/calibre/tesseract/etc) убит watchdog'ом по
+       * timeoutMs. Используется для post-mortem анализа: какие книги стабильно
+       * валят DjVuLibre, какой DPI требует больше времени, etc.
+       */
+      type: "child.timeout";
+      name: string;
+      command: string;
+      elapsedMs: number;
+      killed: boolean;
+      exitCode: number | null;
+      signalName: string | null;
+      ts: string;
+    }
+  | {
+      /**
+       * Image preflight забраковал буфер до отправки в vision-LLM (магия
+       * не сошлась, sharp не смог декодировать, размеры вне диапазона).
+       * Защищает от LM Studio "Invalid image detected at index 0" RPC error.
+       */
+      type: "lmstudio.invalid_image_rejected";
+      reason: string;
+      bytes: number;
+      modelKey?: string;
+      ts: string;
+    }
+  | {
+      /**
+       * Hybrid response_format strategy: какую стратегию выбрали для запроса.
+       * "json_schema" — обычные модели (constrained decoding).
+       * "text" — thinking-модели (Qwen3.5+, DeepSeek-R1) где json_schema
+       * рискует упереть schema constraint в reasoning stream и вернуть
+       * пустой content (LM Studio bug-tracker #1773).
+       */
+      type: "lmstudio.response_format_picked";
+      role: string;
+      modelKey: string;
+      strategy: "json_schema" | "text";
+      ts: string;
+    }
 ;
 
 export type TelemetryEventInput<E extends TelemetryEvent = TelemetryEvent> = E extends TelemetryEvent

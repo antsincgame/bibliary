@@ -101,9 +101,18 @@ async function importArchiveSequential(absPath: string, opts: Omit<ImportFolderO
  * в evaluator-queue через `onBookImported` callback.
  */
 
-/** 8 минут на одну книгу. Pdfjs/EPUB могут зависать на битых файлах — Фаза 3
- *  поднимет таймаут в worker_thread, пока — abort через AbortController. */
-const PER_FILE_TIMEOUT_MS = 8 * 60 * 1000;
+/** 4 минуты на одну книгу (Иt 11 — AI Fortress Hardening).
+ *
+ *  До Иt 11 было 8 минут — оптимистично, чтобы DJVU/PDF успели разогреть
+ *  тяжёлый OCR. Реальные логи показали что DjVuLibre #297 infinite loop
+ *  держит весь watchdog до 480с впустую — пользователь ждёт, файлов в
+ *  батче больше, прогресс встаёт. Per-stage watchdog в djvu-cli ловит
+ *  hang за 90-180с, а 4-минутный per-file бюджет даёт запас на все
+ *  стадии (parser → pdf-images → metadata) без блокировки batch'а.
+ *
+ *  Pdfjs/EPUB могут зависать на битых файлах — Фаза 3 поднимет таймаут в
+ *  worker_thread, пока — abort через AbortController. */
+const PER_FILE_TIMEOUT_MS = 4 * 60 * 1000;
 
 /**
  * Размер parser pool. Приоритет (Иt 8В.CRITICAL.2):
