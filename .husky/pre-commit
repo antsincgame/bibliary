@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+# Иt 8Д.3 — pre-commit hook (knip + lint-staged).
+#
+# Стратегия: lint-staged запускает knip только на staged файлы (быстро),
+# полный typecheck/test не блокирует коммит (это слишком долго на каждый
+# commit; они запускаются в CI и runtime sanity).
+#
+# knip --no-exit-code в lint-staged: warning, не blocker (rules.* в
+# knip.config.ts уже на warn по умолчанию). Для строгого режима в будущем
+# можно убрать --no-exit-code.
+
+npx lint-staged
