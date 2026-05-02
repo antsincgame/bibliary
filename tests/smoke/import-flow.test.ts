@@ -65,7 +65,7 @@ test("[Д.4] full import flow: bootstrap → importBookFromFile → SQLite → m
   const { initPreferencesStore, getPreferencesStore } = await import(
     "../../electron/lib/preferences/store.ts"
   );
-  await initPreferencesStore(path.join(dataDir, "prefs.json"));
+  await initPreferencesStore(dataDir);
   const prefs = await getPreferencesStore().getAll();
   assert.ok(prefs, "prefs должны инициализироваться");
   assert.equal(typeof prefs.evaluatorSlots, "number", "evaluatorSlots default установлен");
@@ -172,7 +172,7 @@ test("[Iter 12 P3] two-editions: HARD+REPLACE end-to-end", async (t) => {
   });
 
   const { initPreferencesStore } = await import("../../electron/lib/preferences/store.ts");
-  await initPreferencesStore(path.join(dataDir, "prefs.json"));
+  await initPreferencesStore(dataDir);
 
   const fixtureDir = path.join(tmpRoot, "fixtures");
   await mkdir(fixtureDir, { recursive: true });
@@ -250,7 +250,7 @@ test("[Iter 12 P3] failed-import: corrupt file → outcome=failed без crash",
   });
 
   const { initPreferencesStore } = await import("../../electron/lib/preferences/store.ts");
-  await initPreferencesStore(path.join(dataDir, "prefs.json"));
+  await initPreferencesStore(dataDir);
 
   /* Создаём `.epub` с PK magic (ZIP), но повреждённым содержимым — parser
      должен завершиться ошибкой (or skipped), не упасть с unhandled. */

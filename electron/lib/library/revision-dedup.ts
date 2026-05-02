@@ -207,9 +207,7 @@ export function getFormatPriority(format: string): number {
 
 export function findLatestRevisionMatch(
   candidate: BookCatalogMeta,
-  sourcePath?: string
 ): RevisionDedupMatch | null {
-  void sourcePath;
   const workKey = buildWorkKey(candidate);
   if (!workKey) return null;
   const store = ensureCache();

@@ -53,8 +53,8 @@ export async function importFromFolder(deps) {
     t("library.import.confirm.startMessage", { folder: folderPath }),
     {
       title: t("library.import.confirm.startTitle"),
-      okLabel: t("library.import.btn.start"),
-      cancelLabel: t("library.import.btn.cancel"),
+      okText: t("library.import.btn.start"),
+      cancelText: t("library.import.btn.cancel"),
     },
   );
   if (!confirmed) return;
@@ -96,8 +96,8 @@ export async function importFromFiles(deps) {
       t("library.import.confirm.startFilesMessage", { count: String(paths.length) }),
       {
         title: t("library.import.confirm.startFilesTitle"),
-        okLabel: t("library.import.btn.start"),
-        cancelLabel: t("library.import.btn.cancel"),
+        okText: t("library.import.btn.start"),
+        cancelText: t("library.import.btn.cancel"),
       },
     );
     if (!confirmed) return;

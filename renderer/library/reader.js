@@ -164,7 +164,11 @@ function renderReader(root) {
       type: "button",
       title: t("library.reader.action.revealInFolder.tooltip"),
       onclick: async () => {
-        await window.api.library.revealInFolder(currentBook.bookId);
+        const r = await window.api.library.revealInFolder(currentBook.bookId);
+        if (!r.ok) {
+          const { showAlert } = await import("../components/ui-dialog.js");
+          await showAlert(t("library.reader.action.openOriginal.failed", { reason: r.reason || "" }));
+        }
       },
     }, t("library.reader.action.revealInFolder")),
     coverDataUrl ? el("button", {
@@ -239,7 +243,13 @@ function buildEmptyBodyBanner(bookId) {
     el("button", {
       class: "lib-btn lib-btn-primary",
       type: "button",
-      onclick: () => window.api.library.openOriginal(bookId),
+      onclick: async () => {
+        const r = await window.api.library.openOriginal(bookId);
+        if (!r.ok) {
+          const { showAlert } = await import("../components/ui-dialog.js");
+          await showAlert(t("library.reader.action.openOriginal.failed", { reason: r.reason || "" }));
+        }
+      },
     }, t("library.reader.empty.openOriginal")),
   ]);
 }

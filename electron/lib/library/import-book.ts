@@ -143,7 +143,7 @@ export async function importBookFromFile(
   /* Tier 2: Revision-level дедуп одной и той же книги с разными бинарниками.
      Iter 12 P1.2: HARD+REPLACE strategy — старая ревизия удаляется ПОСЛЕ
      успешного импорта новой (deferred to end of function). */
-  const latest = findLatestRevisionMatch(convResult.meta, absPath);
+  const latest = findLatestRevisionMatch(convResult.meta);
   /** id старой ревизии для replace ПОСЛЕ успешного upsertBook нового. */
   let pendingReplaceOldId: string | null = null;
   if (latest && latest.bookId !== convResult.meta.id) {

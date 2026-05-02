@@ -164,8 +164,16 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
   }
 
   /* Iter 12 P5: adaptive scheduling — AIMD attached к heavy/medium lanes,
-     memory probe (RAM 5s / VRAM 30s) gated by активный импорт. */
-  await beginAdaptive();
+     memory probe (RAM 5s / VRAM 30s) gated by активный импорт.
+     beginAdaptive инкрементирует STATE.active; если бросит после инкремента,
+     endAdaptive не вызвался бы → STATE утечка. Вызываем внутри try-блока. */
+  let adaptiveStarted = false;
+  try {
+    await beginAdaptive();
+    adaptiveStarted = true;
+  } catch {
+    /* probe/AIMD setup failure не должна блокировать импорт. */
+  }
 
   const result: ImportFolderResult = {
     total: 0,
@@ -406,8 +414,7 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
        идемпотентен, повторная очистка через finishOne уже завершённых
        slot'ов — no-op. */
     await archiveTracker.cleanupAll();
-    /* Detach AIMD + stop memory probe (если последний активный импорт). */
-    endAdaptive();
+    if (adaptiveStarted) endAdaptive();
   }
 
   result.total = counters.processed;
@@ -419,7 +426,7 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
  * обработки сообщает tracker'у, что одна книга из архива готова — это
  * триггерит cleanup tempDir когда счётчик дойдёт до 0.
  *
- * Per-file timeout (8 мин): если pdfjs/EPUB зависает на битом файле, abort
+ * Per-file timeout (4 мин): если pdfjs/EPUB зависает на битом файле, abort
  * через AbortController; книга помечается failed, партия из 10k не блокируется.
  */
 async function runImportTaskWithTimeout(
