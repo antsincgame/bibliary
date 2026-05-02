@@ -263,6 +263,19 @@ export interface OlympicsReport {
   /** Причины выбора для каждой роли — объяснение в UI. */
   roleReasons: OlympicsRoleReason[];
   /**
+   * Иt 8Д.2 (transparent recommendation): информация про vision-агрегацию.
+   * Все 3 vision-роли (vision_meta/vision_ocr/vision_illustration) маппятся
+   * в один visionModelKey. Это поле объясняет в UI почему именно эта модель
+   * стала рекомендацией — чтобы пользователь не путался видя 3 разные
+   * per-role optimum в карточках но один visionModelKey в Settings.
+   * null если vision-роли не участвовали в Olympics.
+   */
+  visionAggregateInfo?: {
+    modelKey: string;
+    reason: string;
+    strategy: "best_avg" | "fallback_last_write";
+  } | null;
+  /**
    * Предупреждения: мало моделей, нет чемпиона и т.д.
    * Показываются в UI под кнопкой и в результатах.
    */

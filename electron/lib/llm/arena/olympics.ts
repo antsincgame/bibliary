@@ -788,6 +788,8 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
     availableModelCount: allModelInfos.length,
     disciplineCount: results.length,
     totalDurationMs,
+    /* Иt 8Д.2: transparent breakdown vision-агрегации (см. 8Д.1 fix). */
+    visionAggregateInfo: visionAggregate,
   };
 
   /* ── EcoTune-style auto-tune (EMNLP 2025) ──

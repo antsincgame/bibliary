@@ -6987,6 +6987,26 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
 }
 .mp-olympics-role-subhint-pref { color: #93c5fd; }
 .mp-olympics-role-subhint-sub  { font-style: italic; }
+
+/* Иt 8Д.2: vision composite badge — показывается только на vision-карточках,
+   объясняет что фактический visionModelKey = агрегация трёх vision-ролей. */
+.mp-olympics-vision-composite {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 10px;
+  margin: 4px 0 8px 24px;
+  background: rgba(99, 102, 241, 0.08);
+  border-left: 2px solid #818cf8;
+  border-radius: 3px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono, monospace);
+  line-height: 1.4;
+}
+.mp-olympics-vision-composite-icon { flex: 0 0 auto; }
+.mp-olympics-vision-composite-text { flex: 1; opacity: 0.9; }
+
 .mp-olympics-role-top {
   display: flex; flex-direction: column; gap: 2px;
 }

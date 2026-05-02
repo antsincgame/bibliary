@@ -512,6 +512,7 @@ export default {
   "models.olympics.cancelled": "Olympics cancelled. Screen ready for a new run.",
   "models.olympics.distribute": "⭐ Distribute roles",
   "models.olympics.distribute_champion": "🏆 Distribute (champion)",
+  "models.olympics.vision_composite": "Applied model: {modelKey} · combined from 3 vision roles: {reason}",
   "models.olympics.distribute_done": "Best models assigned to their roles. See below.",
   "models.olympics.distribute_after_run": "Roles distributed automatically. You can change any model in the list below — changes save as the default profile.",
 

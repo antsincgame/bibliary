@@ -280,11 +280,18 @@ export function renderOlympicsReport(report) {
     root.appendChild(tuneBox);
   }
 
+  /* Иt 8Д.2: vision composite badge — на vision-карточках показываем
+     что фактически применённый visionModelKey пришёл из объединённой
+     агрегации трёх vision-ролей, а не per-role optimum (см. 8Д.1 fix). */
+  const visionInfo = report.visionAggregateInfo;
+  const VISION_ROLE_NAMES = new Set(["vision_meta", "vision_ocr", "vision_illustration"]);
+
   for (const agg of aggregates) {
     const top = (agg.perModel ?? []).slice(0, 3);
     const optimumStats = agg.optimum ? agg.perModel.find((p) => p.model === agg.optimum) : null;
     const championStats = agg.champion ? agg.perModel.find((p) => p.model === agg.champion) : null;
     const roleH = roleHuman(agg.role);
+    const isVisionRole = VISION_ROLE_NAMES.has(agg.role);
 
     const card = el("div", { class: "mp-olympics-role-card" }, [
       el("div", { class: "mp-olympics-role-header" }, [
@@ -297,6 +304,18 @@ export function renderOlympicsReport(report) {
         el("span", { class: "mp-olympics-role-subhint-pref" }, aggregateApplyHint(agg.prefKey)),
         roleH.subtitle ? el("span", { class: "mp-olympics-role-subhint-sub" }, ` · ${roleH.subtitle}`) : null,
       ].filter(Boolean)),
+
+      /* Иt 8Д.2: composite badge только на vision-карточках. */
+      (isVisionRole && visionInfo)
+        ? el("div", { class: "mp-olympics-vision-composite" }, [
+            el("span", { class: "mp-olympics-vision-composite-icon" }, "🔗"),
+            el("span", { class: "mp-olympics-vision-composite-text" },
+              t("models.olympics.vision_composite", {
+                modelKey: visionInfo.modelKey,
+                reason: visionInfo.reason,
+              })),
+          ])
+        : null,
 
       el("div", { class: "mp-olympics-role-top" },
         top.map((p, i) => {

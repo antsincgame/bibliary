@@ -512,6 +512,7 @@ export default {
   "models.olympics.cancelled": "Олимпиада отменена. Экран готов к новому запуску.",
   "models.olympics.distribute": "⭐ Распределить роли",
   "models.olympics.distribute_champion": "🏆 Распределить (по чемпиону)",
+  "models.olympics.vision_composite": "Применённая модель: {modelKey} · агрегация трёх vision-ролей: {reason}",
   "models.olympics.distribute_done": "Лучшие модели назначены на свои роли. Проверь ниже.",
   "models.olympics.distribute_after_run": "Роли распределены автоматически. Можешь поменять любую модель в списке ниже — изменения сохранятся как профиль по умолчанию.",
 
