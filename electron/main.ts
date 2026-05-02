@@ -24,6 +24,10 @@ import {
   startSchedulerSnapshotBroadcaster,
   stopSchedulerSnapshotBroadcaster,
 } from "./lib/resilience/scheduler-snapshot-broadcaster";
+import {
+  startModelPoolSnapshotBroadcaster,
+  stopModelPoolSnapshotBroadcaster,
+} from "./lib/resilience/model-pool-snapshot-broadcaster";
 import { SHUTDOWN_FLUSH_TIMEOUT_MS } from "./lib/resilience/constants";
 import { getWindowsParentExecutablePath, resolveAppDataDir } from "./lib/app-data-dir.js";
 import { closeCacheDb } from "./lib/library/cache-db.js";
@@ -207,6 +211,9 @@ if (!gotLock) {
        ImportTaskScheduler в renderer для UI телеметрии. Independent от watchdog,
        только read-only наблюдение через getImportScheduler().getSnapshot(). */
     startSchedulerSnapshotBroadcaster(() => mainWindow);
+    /* Иt 8В MAIN.4: model-pool snapshot — UI знает какие модели сейчас в VRAM
+       и какие роли они занимают. Параллельно scheduler snapshot. */
+    startModelPoolSnapshotBroadcaster(() => mainWindow);
     registerAllIpcHandlers(() => mainWindow);
     void bootstrapLibrarySubsystem(() => mainWindow);
     createWindow();
@@ -223,6 +230,7 @@ if (!gotLock) {
       ["triggerAppShutdown", triggerAppShutdown],
       ["stopWatchdog", stopWatchdog],
       ["stopSchedulerSnapshotBroadcaster", stopSchedulerSnapshotBroadcaster],
+      ["stopModelPoolSnapshotBroadcaster", stopModelPoolSnapshotBroadcaster],
       ["abortAllIngests", () => abortAllIngests("app-quit")],
       ["abortAllDatasetV2", () => abortAllDatasetV2("app-quit")],
       ["killAllSynthChildren", killAllSynthChildren],

@@ -4,6 +4,113 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Iter 8В — Scheduler Coverage + Universal Cascade + Pipeline Widget Roles
+
+Финал «крепости пайплайна»: каждая LLM-точка импорта теперь под `ImportTaskScheduler`
+(observability + дросселирование), Universal Cascade подключён в pdf/image parsers
+(Tier 0/1/2 с graceful Linux→vision-LLM fallback), `convertDjvu` использует
+`converters/cache.ts`, `pipeline-status-widget` показывает таблицу «роль → модель →
+busy/idle/VRAM/weight» через новый `model-pool-snapshot-broadcaster`. Параллельно
+закрыт весь pre-8В tech debt из аудитов Sherlok+Diamond-Buddha (5 CRITICAL + 5 MEDIUM).
+
+### Added
+
+- **MAIN.1 Scheduler Coverage** — 4 LLM-точки обёрнуты в scheduler lanes:
+  - [electron/lib/llm/vision-ocr.ts](electron/lib/llm/vision-ocr.ts) `recognizeWithVisionLlm` →
+    `getImportScheduler().enqueue("heavy", ...)` поверх heavy-lane-rate-limiter.
+  - [electron/lib/llm/vision-meta.ts](electron/lib/llm/vision-meta.ts) `extractMetadataFromCover` →
+    `enqueue("heavy", ...)` (для каждой кандидат-модели).
+  - [electron/lib/library/text-meta-extractor.ts](electron/lib/library/text-meta-extractor.ts)
+    crystallizer fetch к LM Studio → `enqueue("medium", ...)`.
+  - [electron/lib/scanner/converters/djvu.ts](electron/lib/scanner/converters/djvu.ts)
+    `runDdjvuToPdf` (CPU-конвертация) → `enqueue("medium", ...)`.
+
+- **MAIN.2 Universal Cascade в parsers** — Tier 0/1/2 каскад вместо ad-hoc OCR-циклов:
+  - [electron/lib/scanner/parsers/pdf-page-extractor.ts](electron/lib/scanner/parsers/pdf-page-extractor.ts)
+    (новый): TextExtractor для уже растеризованной страницы PDF (Tier 1 system-OCR + Tier 2 vision-LLM).
+  - [electron/lib/scanner/parsers/pdf.ts](electron/lib/scanner/parsers/pdf.ts) ad-hoc
+    `recognizeImageBuffer`-цикл (382-422) заменён на per-page `runExtractionCascade` с
+    агрегацией warnings (visionAppliedPages tag, top-3 unique page-warnings, suppressed tail).
+  - [electron/lib/scanner/parsers/image-file-extractor.ts](electron/lib/scanner/parsers/image-file-extractor.ts)
+    (новый): TextExtractor для одиночного файла-изображения (ленивое чтение Buffer только для Tier 2).
+  - [electron/lib/scanner/parsers/image.ts](electron/lib/scanner/parsers/image.ts) переведён
+    на cascade. Multi-page TIFF уже делегирует в pdf-parser → автоматически наследует cascade.
+  - **Linux-fallback:** на платформах без OS OCR cascade автоматически переходит к Tier 2
+    (vision-LLM), если модель сконфигурирована — раньше Linux scanned-PDF просто молчал.
+
+- **MAIN.3 convertDjvu cache** — [electron/lib/scanner/converters/djvu.ts](electron/lib/scanner/converters/djvu.ts)
+  использует `getCachedConvert/setCachedConvert` из `converters/cache.ts`. Re-import той же
+  DjVu-книги пропускает дорогую `ddjvu→pdf` конвертацию.
+
+- **MAIN.4 Pipeline Widget «роль → модель»** — UI видит ЧТО конкретно держит pipeline в VRAM:
+  - [electron/lib/resilience/model-pool-snapshot-broadcaster.ts](electron/lib/resilience/model-pool-snapshot-broadcaster.ts)
+    (новый): зеркало scheduler-broadcaster (3s polling, change detection, liveness ping
+    каждые 60s, идемпотентный start/stop).
+  - Channel `resilience:model-pool-snapshot`, payload
+    `{capacityMB, totalLoadedMB, loadedCount, models[{modelKey, role, weight, refCount, vramMB, source}]}`.
+  - [electron/preload.ts](electron/preload.ts) — `onModelPoolSnapshot` IPC метод.
+  - [renderer/models/pipeline-status-widget.js](renderer/models/pipeline-status-widget.js)
+    — секция `pipeline-models` с сортировкой busy-first → heavy/medium/light. Каждая
+    модель: «role · modelKey · weight · VRAM GB · busy×N/idle [· external]».
+
+- **18 новых тестов** (Иt 8В baseline 752 → **770 pass**, 1 skip, 0 fail):
+  - [tests/pdf-page-extractor.test.ts](tests/pdf-page-extractor.test.ts) (4 теста: контракт
+    Tier 1+2, vision warnings включают page N, OS-agnostic check на garbage buffer).
+  - [tests/model-pool-snapshot-broadcaster.test.ts](tests/model-pool-snapshot-broadcaster.test.ts)
+    (8 тестов: lifecycle, force broadcast, change detection, graceful degradation
+    null-window/destroyed-window, cache reset).
+  - [tests/converters-djvu.test.ts](tests/converters-djvu.test.ts) расширен
+    `[MAIN.3] convertDjvu ↔ converters/cache integration` describe (cache-hit и
+    cache-miss-failed-ddjvu кейсы).
+  - [tests/settings-roundtrip.test.ts](tests/settings-roundtrip.test.ts) расширен
+    `illustrationParallelBooks` тестами + anti-regression env grep по исходникам.
+
+### Changed
+
+- **`io` lane полностью удалена** (была мёртвая, нет production caller'ов): из
+  [electron/lib/library/import-task-scheduler.ts](electron/lib/library/import-task-scheduler.ts)
+  (`TaskLane` тип, `SchedulerSnapshot`, `getSnapshot`, `applyImportSchedulerPrefs`),
+  [electron/preload.ts](electron/preload.ts) (`onSchedulerSnapshot` payload типы),
+  [renderer/models/pipeline-status-widget.js](renderer/models/pipeline-status-widget.js)
+  (`SchedulerSnapshot` typedef + `EMPTY_SNAPSHOT`). Тесты
+  `scheduler-observability-integration.test.ts` и `scheduler-snapshot-broadcaster.test.ts`
+  обновлены.
+
+### Removed (Pre-8В Tech Debt cleanup)
+
+- **5 pipeline ENV переменных** удалены (приказ Царя «полный отказ от env»):
+  `BIBLIARY_EVAL_SLOTS`, `BIBLIARY_VISION_OCR_RPM`, `BIBLIARY_PARSER_POOL_SIZE`,
+  `BIBLIARY_ILLUSTRATION_PARALLEL_BOOKS`, `BIBLIARY_CONVERTER_CACHE_MAX_BYTES`.
+  Settings UI = единственный источник tunables. Anti-regression тест в
+  `settings-roundtrip.test.ts` греп-проверкой исходников.
+- **Дубль bootstrap в main.ts** — 3 ручных вызова `configureWatchdog`/
+  `configureFileLockDefaults`/`syncMarkerEnvFromPrefs` удалены, единственная
+  точка propagation — `applyRuntimeSideEffects(prefs)`.
+
+### Fixed
+
+- **Calibre cache invalidation** — добавлена `applyCalibrePathPrefs(prefs)` в
+  `calibre-cli.ts` с `lastSeenOverride` сравнением: boot не сбрасывает кеш зря,
+  runtime change реально инвалидирует. 2 интеграционных теста.
+- **`illustrationParallelBooks` теперь pref** (вместо ENV-only): новое поле
+  `PreferencesSchema` (1..16, default 2), `applyIllustrationSemaphorePrefs` подтягивает
+  значение в `sharedSemaphore.setCapacity()`, UI поле в `sections.js`, i18n ru+en.
+
+### Internal
+
+- **`readPipelinePrefsOrNull` helper** в [electron/lib/preferences/store.ts](electron/lib/preferences/store.ts):
+  тонкий канал доступа к prefs из импортных модулей (заменил dynamic import + try/catch
+  блоки в 5 файлах). Возвращает `Preferences | null` — caller использует fallback
+  если store не инициализирован (тесты).
+
+### Verification
+
+- `tsc --noEmit` clean (0 ошибок).
+- `eslint . --max-warnings=0` clean.
+- `npm test` 770/769 pass / 0 fail / 1 skip (Иt 8В baseline 752 → +18 новых, 0 регрессий).
+
+---
+
 ## [Unreleased] — Iter 7 — Scheduler Observability + Pipeline UI Widget Mount
 
 Замыкаем Контур 2 (Smart Pipeline Scheduler): scheduler.enqueue обёртки в

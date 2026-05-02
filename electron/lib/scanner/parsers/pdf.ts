@@ -1,12 +1,14 @@
 import { promises as fs } from "fs";
 import * as path from "path";
 import { cleanParagraph, looksLikeHeading, type BookParser, type ParseOptions, type ParseResult, type BookSection } from "./types.js";
-import { isOcrSupported, rasterisePdfPages, recognizeImageBuffer } from "../ocr/index.js";
+import { isOcrSupported, rasterisePdfPages } from "../ocr/index.js";
 import { parsePdfInWorker, isWorkerPdfEnabled } from "./pdf-worker-host.js";
 import { getPdfjsStandardFontDataUrl } from "../pdfjs-node.js";
 import { isLowValueBookTitle, pickBestBookTitle } from "../../library/title-heuristics.js";
 import { tryParsePdfWithInspector } from "./pdf-inspector-parser.js";
 import { tryParsePdfWithEdgeParse } from "./edgeparse-parser.js";
+import { runExtractionCascade } from "../extractors/cascade-runner.js";
+import { createPdfPageExtractor } from "./pdf-page-extractor.js";
 
 /**
  * Жёсткие потолки памяти для PDF parser — защита от OOM на огромных книгах.
@@ -379,23 +381,36 @@ export async function parsePdfMain(filePath: string, opts: ParseOptions = {}): P
     warnings.push(edgeparseWarning);
   }
 
-  let ocrAppliedPages = 0;
+  /* Имиджевая страница (или весь scanned PDF): запускаем Universal Cascade
+     per-page. Tier 0 (text-layer) уже обработан выше через pdfjs textContent;
+     поэтому extractor реализует только Tier 1 (system-ocr) и Tier 2 (vision-llm).
+     Cascade Runner сам выбирает дешёвый Tier и делает fallback при quality < 0.5.
+     Vision-OCR обёрнут в scheduler heavy lane (см. Иt 8В MAIN.1.1) — даже
+     при scanned PDF на 500 страниц heavy-очередь не разнесёт VRAM. */
   if (allParagraphs.length === 0) {
-    if (opts.ocrEnabled && isOcrSupported()) {
+    const visionConfigured = Boolean(opts.visionModelKey);
+    if (opts.ocrEnabled && (isOcrSupported() || visionConfigured)) {
+      let ocrAppliedPages = 0;
+      let visionAppliedPages = 0;
+      let failedPages = 0;
+      const pageWarnings: string[] = [];
       try {
         for await (const page of rasterisePdfPages(filePath, {
           signal: opts.signal,
           dpi: opts.ocrPdfDpi,
         })) {
-          const result = await recognizeImageBuffer(
-            page.pngBuffer,
-            page.pageIndex,
-            opts.ocrLanguages ?? [],
-            opts.ocrAccuracy ?? "accurate",
-            opts.signal,
-          );
-          const txt = result.text.trim();
-          if (!txt) continue;
+          const extractor = createPdfPageExtractor(page.pngBuffer, page.pageIndex);
+          const cascade = await runExtractionCascade(extractor, filePath, {
+            languages: opts.ocrLanguages,
+            signal: opts.signal,
+            visionModelKey: opts.visionModelKey,
+          });
+          const txt = cascade.attempt?.text.trim() ?? "";
+          if (!txt) {
+            failedPages++;
+            for (const w of cascade.attempt?.warnings ?? []) pageWarnings.push(w);
+            continue;
+          }
           const paragraphs = txt
             .split(/\n{2,}/)
             .map((p) => cleanParagraph(p))
@@ -405,18 +420,30 @@ export async function parsePdfMain(filePath: string, opts: ParseOptions = {}): P
             totalChars += para.length;
           }
           ocrAppliedPages++;
-        }
-        if (ocrAppliedPages > 0) {
-          warnings.push(`OCR applied to ${ocrAppliedPages} page(s) -- text reconstructed from images`);
-        } else {
-          warnings.push("OCR ran but produced no text (poor image quality?)");
+          if (cascade.attempt?.engine === "vision-llm") visionAppliedPages++;
         }
       } catch (err) {
         warnings.push(`OCR failed: ${(err as Error).message.slice(0, 200)}`);
       }
+
+      if (ocrAppliedPages > 0) {
+        const visionTag = visionAppliedPages > 0 ? `, ${visionAppliedPages} via vision-LLM` : "";
+        warnings.push(
+          `OCR applied to ${ocrAppliedPages} page(s)${visionTag} -- text reconstructed from images`,
+        );
+      } else if (failedPages > 0) {
+        warnings.push("OCR ran but produced no text (poor image quality?)");
+      }
+      /* Не флудим warnings всеми per-page failures, держим первые 3 для
+         observability — этого хватает для диагностики проблемного scan. */
+      const uniquePageWarnings = Array.from(new Set(pageWarnings)).slice(0, 3);
+      for (const w of uniquePageWarnings) warnings.push(w);
+      if (pageWarnings.length > uniquePageWarnings.length) {
+        warnings.push(`(+ ${pageWarnings.length - uniquePageWarnings.length} more cascade warnings suppressed)`);
+      }
     } else {
       const reason = opts.ocrEnabled
-        ? "OCR not supported on this OS (requires Windows or macOS)"
+        ? "OCR not supported on this OS (requires Windows or macOS) and no vision-LLM model configured"
         : "OCR not enabled (turn it on in Settings to recognise scanned PDFs)";
       warnings.push(`no text extracted (likely a scanned/image PDF — ${reason})`);
     }

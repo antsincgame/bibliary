@@ -101,3 +101,14 @@ export interface CascadeResult {
  * лучшее из имеющегося с warnings.
  */
 export const DEFAULT_ACCEPTABLE_QUALITY = 0.5;
+
+/**
+ * Максимальная длина строки ошибки в `ExtractionAttempt.warnings[]`. Применяется
+ * при ловле throw из system-OCR / vision-LLM в Tier-методах extractor'ов.
+ *
+ * Зачем константа: длинные stack-trace'ы засоряют `book.md` frontmatter
+ * (warnings персистируются туда). 200 chars — компромисс: достаточно для
+ * диагностики, но не раздувает frontmatter при scan-PDF на 500 страниц,
+ * где могут быть сотни failed-page warnings.
+ */
+export const MAX_OCR_WARNING_LEN = 200;

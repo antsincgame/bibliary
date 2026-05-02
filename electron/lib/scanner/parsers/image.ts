@@ -7,23 +7,21 @@
 
 import * as path from "path";
 import { promises as fs } from "fs";
-import { isOcrSupported, recognizeImageFile } from "../ocr/index.js";
+import { isOcrSupported } from "../ocr/index.js";
 import { cleanParagraph, type BookParser, type ParseOptions, type ParseResult } from "./types.js";
-
-const SUPPORTED_IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "bmp", "tif", "tiff", "webp"]);
-
-export function isSupportedImage(filePath: string): boolean {
-  const ext = path.extname(filePath).toLowerCase().slice(1);
-  return SUPPORTED_IMAGE_EXTS.has(ext);
-}
+import { runExtractionCascade } from "../extractors/cascade-runner.js";
+import { createImageFileExtractor } from "./image-file-extractor.js";
 
 async function parseImage(filePath: string, opts: ParseOptions = {}): Promise<ParseResult> {
   const baseName = path.basename(filePath, path.extname(filePath));
-  if (!isOcrSupported()) {
+
+  /* Без OS OCR и без vision-LLM модели — нечем парсить изображение. */
+  const visionConfigured = Boolean(opts.visionModelKey);
+  if (!isOcrSupported() && !visionConfigured) {
     return {
       metadata: {
         title: baseName,
-        warnings: ["Image OCR is unavailable on this OS (need Windows or macOS)."],
+        warnings: ["Image OCR is unavailable: OS OCR not supported and no vision-LLM model configured."],
       },
       sections: [],
       rawCharCount: 0,
@@ -48,24 +46,26 @@ async function parseImage(filePath: string, opts: ParseOptions = {}): Promise<Pa
     };
   }
 
-  let result;
-  try {
-    result = await recognizeImageFile(filePath, opts.ocrLanguages ?? [], opts.ocrAccuracy ?? "accurate");
-  } catch (err) {
+  /* Universal Cascade: Tier 1 (system-ocr) → Tier 2 (vision-llm) при quality<0.5.
+     Tier 0 (text-layer) у изображения отсутствует. */
+  const extractor = createImageFileExtractor(filePath);
+  const cascade = await runExtractionCascade(extractor, filePath, {
+    languages: opts.ocrLanguages,
+    signal: opts.signal,
+    visionModelKey: opts.visionModelKey,
+  });
+
+  const text = cascade.attempt?.text.trim() ?? "";
+  if (!text) {
+    /* Берём первые 2 уникальных warning из попыток для observability. */
+    const cascadeWarnings = Array.from(
+      new Set(cascade.attempts.flatMap((a) => a.warnings)),
+    ).slice(0, 2);
     return {
       metadata: {
         title: baseName,
-        warnings: [`OCR failed: ${(err as Error).message.slice(0, 200)}`],
+        warnings: ["OCR returned no text", ...cascadeWarnings],
       },
-      sections: [],
-      rawCharCount: 0,
-    };
-  }
-
-  const text = result.text.trim();
-  if (!text) {
-    return {
-      metadata: { title: baseName, warnings: ["OCR returned no text"] },
       sections: [],
       rawCharCount: 0,
     };
@@ -76,10 +76,18 @@ async function parseImage(filePath: string, opts: ParseOptions = {}): Promise<Pa
     .map((p) => cleanParagraph(p))
     .filter((p) => p.length > 0);
 
+  /* Annotate какой engine выдал текст — полезно для трассировки в book.md. */
+  const engineWarning = cascade.attempt?.engine === "vision-llm"
+    ? ["text recovered via vision-LLM (system OCR unavailable or low quality)"]
+    : [];
+
   return {
     metadata: {
       title: baseName,
-      warnings: paragraphs.length === 0 ? ["OCR produced only whitespace"] : [],
+      warnings: [
+        ...(paragraphs.length === 0 ? ["OCR produced only whitespace"] : []),
+        ...engineWarning,
+      ],
     },
     sections: [
       {

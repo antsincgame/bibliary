@@ -262,6 +262,41 @@ contextBridge.exposeInMainWorld("api", {
      * Показывает текущее состояние lanes: light/medium/heavy с running/queued.
      * payload: SchedulerSnapshot из import-task-scheduler.ts.
      */
+    /**
+     * Иt 8В MAIN.4: ModelPool snapshot — какие модели в VRAM, какие роли занимают.
+     * channel: "resilience:model-pool-snapshot"
+     * payload: ModelPoolSnapshotPayload (см. model-pool-snapshot-broadcaster.ts).
+     */
+    onModelPoolSnapshot: (callback: (snapshot: {
+      capacityMB: number;
+      totalLoadedMB: number;
+      loadedCount: number;
+      models: ReadonlyArray<{
+        modelKey: string;
+        role?: string;
+        weight: "light" | "medium" | "heavy";
+        refCount: number;
+        vramMB: number;
+        source: "pool" | "external";
+      }>;
+    }) => void): (() => void) => {
+      const listener = (_e: unknown, payload: {
+        capacityMB: number;
+        totalLoadedMB: number;
+        loadedCount: number;
+        models: ReadonlyArray<{
+          modelKey: string;
+          role?: string;
+          weight: "light" | "medium" | "heavy";
+          refCount: number;
+          vramMB: number;
+          source: "pool" | "external";
+        }>;
+      }): void => callback(payload);
+      ipcRenderer.on("resilience:model-pool-snapshot", listener);
+      return () => ipcRenderer.removeListener("resilience:model-pool-snapshot", listener);
+    },
+
     onSchedulerSnapshot: (callback: (snapshot: {
       light: { running: number; queued: number };
       medium: { running: number; queued: number };
