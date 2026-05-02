@@ -156,11 +156,11 @@ export async function revertCrystallizationForSelected(root, deps) {
   let cleaned = 0;
   for (const row of eligible) {
     try {
-      /* sourcePath: для legacy путей берём mdPath (тот же что в payload bookSourcePath
-         согласно extraction-runner). Книги импортированные после Иt 8Г.3 имеют bookId
-         в payload, но scanner.deleteFromCollection пока работает по bookSourcePath —
-         это совместимо. */
-      await window.api.scanner.deleteFromCollection(row.mdPath, collection);
+      /* Унифицированный контракт удаления (Mahakala 2026-05-02): передаём
+         row.id как bookId — handler строит OR-фильтр по `bookId` + `bookSourcePath`,
+         покрывая обе схемы payload (legacy книги до Иt 8Г.3 без bookId и
+         новые с bookId в payload). */
+      await window.api.scanner.deleteFromCollection(row.mdPath, collection, row.id);
       cleaned += 1;
     } catch (e) {
       console.warn("[batch.revert]", row.id, e);

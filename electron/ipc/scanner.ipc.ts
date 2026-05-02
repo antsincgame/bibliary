@@ -411,39 +411,54 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
   );
 
   /**
-   * Удалить все точки книги из Qdrant-коллекции (по filter `bookSourcePath`),
-   * и убрать книгу из scanner-state, чтобы при следующем ingest она прошла заново.
+   * Удалить все точки книги из Qdrant-коллекции и очистить scanner-state.
+   *
+   * Унифицированный контракт удаления (Mahakala 2026-05-02):
+   *   - Если передан `bookId` (новые книги после Иt 8Г.3 имеют его в payload) —
+   *     фильтр строится как OR (`should`) по обоим ключам: `bookId` и
+   *     `bookSourcePath`. Это покрывает миграционные случаи когда часть
+   *     точек одной книги уже имеет `bookId`, а часть — только `bookSourcePath`.
+   *   - Если `bookId` не передан — fallback на старый контракт по
+   *     `bookSourcePath` (legacy книги до коммита 8a9f171).
+   *
+   * Это устраняет асимметрию с `library:delete-book` (который использует
+   * только `bookId`) при сохранении совместимости с обоими payload-схемами.
    */
   ipcMain.handle(
     "scanner:delete-from-collection",
     async (
       _e,
-      args: { bookSourcePath: string; collection: string }
+      args: { bookSourcePath: string; collection: string; bookId?: string }
     ): Promise<{ deleted: boolean; pointsDeleted: number }> => {
       if (!args) throw new Error("args required");
       const bookSourcePath = parseOrThrow(AbsoluteFilePathSchema, args.bookSourcePath, "bookSourcePath");
       const collection = parseOrThrow(CollectionNameSchema, args.collection, "collection");
-      args = { bookSourcePath, collection };
+      const bookId = typeof args.bookId === "string" && args.bookId.length > 0 ? args.bookId : undefined;
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (QDRANT_API_KEY) headers["api-key"] = QDRANT_API_KEY;
       const qdrantUrl = await getQdrantUrl();
+      const filter = bookId
+        ? {
+            should: [
+              { key: "bookId", match: { value: bookId } },
+              { key: "bookSourcePath", match: { value: bookSourcePath } },
+            ],
+          }
+        : {
+            must: [{ key: "bookSourcePath", match: { value: bookSourcePath } }],
+          };
       const resp = await fetch(
-        `${qdrantUrl}/collections/${encodeURIComponent(args.collection)}/points/delete?wait=true`,
+        `${qdrantUrl}/collections/${encodeURIComponent(collection)}/points/delete?wait=true`,
         {
           method: "POST",
           headers,
-          body: JSON.stringify({
-            filter: {
-              must: [{ key: "bookSourcePath", match: { value: args.bookSourcePath } }],
-            },
-          }),
+          body: JSON.stringify({ filter }),
         }
       );
       const text = await resp.text().catch(() => "");
       if (!resp.ok) {
         throw new Error(`qdrant delete ${resp.status}: ${text.slice(0, 240)}`);
       }
-      let pointsDeleted = 0;
       try {
         const parsed = JSON.parse(text) as { result?: { operation_id?: number; status?: string } };
         const status = parsed?.result?.status ?? "unknown";
@@ -454,12 +469,13 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
         /* qdrant возвращает ok без числа удалённых; принимаем как success */
       }
 
+      let pointsDeleted = 0;
       const store = stateStore();
       const cur = await store.read();
-      if (cur.books[args.bookSourcePath] && cur.books[args.bookSourcePath].collection === args.collection) {
-        const removed = cur.books[args.bookSourcePath];
+      if (cur.books[bookSourcePath] && cur.books[bookSourcePath].collection === collection) {
+        const removed = cur.books[bookSourcePath];
         pointsDeleted = removed.processedChunkIds.length;
-        delete cur.books[args.bookSourcePath];
+        delete cur.books[bookSourcePath];
         await store.write(cur);
       }
       return { deleted: true, pointsDeleted };

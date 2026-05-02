@@ -448,9 +448,10 @@ contextBridge.exposeInMainWorld("api", {
     > => ipcRenderer.invoke("scanner:list-history"),
     deleteFromCollection: (
       bookSourcePath: string,
-      collection: string
+      collection: string,
+      bookId?: string
     ): Promise<{ deleted: boolean; pointsDeleted: number }> =>
-      ipcRenderer.invoke("scanner:delete-from-collection", { bookSourcePath, collection }),
+      ipcRenderer.invoke("scanner:delete-from-collection", { bookSourcePath, collection, bookId }),
     onProgress: (cb: (payload: { ingestId: string; phase: string; bookSourcePath: string; bookTitle: string; totalChunks: number; processedChunks: number; embeddedChunks: number; upsertedChunks: number; message?: string; errorMessage?: string }) => void): (() => void) => {
       const l = (_e: unknown, p: { ingestId: string; phase: string; bookSourcePath: string; bookTitle: string; totalChunks: number; processedChunks: number; embeddedChunks: number; upsertedChunks: number; message?: string; errorMessage?: string }) => cb(p);
       ipcRenderer.on("scanner:ingest-progress", l);

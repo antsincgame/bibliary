@@ -55,17 +55,13 @@ function bundledCandidates(file: string): string[] {
 async function loadPrompt(promptsDir: string | null, file: string): Promise<string> {
   const key = `${promptsDir ?? "<bundled>"}:${file}`;
   const cached = PROMPT_CACHE.get(key);
-  if (cached) {
-    console.log(`[delta] prompt "${file}" from cache (${cached.length} chars)`);
-    return cached;
-  }
+  if (cached) return cached;
 
   if (promptsDir) {
     try {
       const full = path.join(promptsDir, file);
       const text = await fs.readFile(full, "utf8");
       if (text.trim().length > 50) {
-        console.log(`[delta] prompt "${file}" loaded from custom dir: ${full} (${text.length} chars)`);
         PROMPT_CACHE.set(key, text);
         return text;
       }
@@ -75,7 +71,6 @@ async function loadPrompt(promptsDir: string | null, file: string): Promise<stri
     try {
       const text = await fs.readFile(c, "utf8");
       if (text.trim().length > 50) {
-        console.log(`[delta] prompt "${file}" loaded from: ${c} (${text.length} chars)`);
         PROMPT_CACHE.set(key, text);
         return text;
       }

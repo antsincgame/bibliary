@@ -4849,6 +4849,13 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
     rgba(0, 240, 255, 0.06);
   transform: translateY(-1px);
 }
+.lib-import-dropzone-busy,
+.lib-import-dropzone[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.55;
+  pointer-events: none;
+  border-color: rgba(0, 240, 255, 0.15);
+}
 .lib-import-dropzone-icon {
   font-family: var(--font-display);
   font-size: 56px;

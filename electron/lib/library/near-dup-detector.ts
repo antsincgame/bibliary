@@ -129,6 +129,3 @@ export function unregisterFromNearDup(meta: NearDupMetaInput): void {
 export function resetNearDupCache(): void {
   cache = null;
 }
-
-/** @deprecated используйте `resetNearDupCache`. Оставлено для совместимости. */
-export const _resetNearDupCache = resetNearDupCache;

@@ -141,13 +141,37 @@ export function buildImportPane(deps) {
 
   /* Иt 8Е.4: показывать cancel-кнопку только когда импорт активен.
      Polling каждые 500ms — IMPORT_STATE мутируется в import-pane-actions без
-     событий. Нет добавления новых deps; стандартный pattern для UI sync. */
-  const updateCancelVisibility = () => {
+     событий. Нет добавления новых deps; стандартный pattern для UI sync.
+     Mahakala 2026-05-02: одновременно блокируем pick-кнопки и dropzone
+     пока импорт активен — UX-симметрия с другими async-операциями (catalog
+     batch, dataset synth). */
+  const updateImportUiState = () => {
+    const busy = IMPORT_STATE.busy;
     cancelImportBtn.style.display =
-      IMPORT_STATE.busy && IMPORT_STATE.importId ? "" : "none";
+      busy && IMPORT_STATE.importId ? "" : "none";
+    /** @param {HTMLElement} btn */
+    const setDisabled = (btn) => {
+      if (busy) {
+        btn.setAttribute("disabled", "true");
+        btn.classList.add("lib-btn-busy");
+      } else {
+        btn.removeAttribute("disabled");
+        btn.classList.remove("lib-btn-busy");
+      }
+    };
+    setDisabled(/** @type {HTMLElement} */ (pickFolderBtn));
+    setDisabled(/** @type {HTMLElement} */ (pickFilesBtn));
+    setDisabled(/** @type {HTMLElement} */ (rebuildCacheBtn));
+    if (busy) {
+      dropzone.setAttribute("aria-disabled", "true");
+      dropzone.classList.add("lib-import-dropzone-busy");
+    } else {
+      dropzone.removeAttribute("aria-disabled");
+      dropzone.classList.remove("lib-import-dropzone-busy");
+    }
   };
-  updateCancelVisibility();
-  const cancelPoller = setInterval(updateCancelVisibility, 500);
+  updateImportUiState();
+  const cancelPoller = setInterval(updateImportUiState, 500);
   /* Cleanup при размонтировании body — слушаем DOMNodeRemoved (mostly
      deprecated, но Electron поддерживает). Альтернатива — MutationObserver,
      но для одного панель-rebuild interval acceptable. */

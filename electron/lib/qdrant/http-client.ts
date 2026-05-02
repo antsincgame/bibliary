@@ -36,13 +36,6 @@ export const QDRANT_USER_AGENT = "Bibliary/2.2 (https://github.com/bibliary/bibl
 /** Размер страницы scroll-запросов (точек за один HTTP). */
 export const SCROLL_PAGE_SIZE = 256;
 
-/**
- * Hard cap на количество точек, которые можно отдать в renderer одной пачкой.
- * Защита от OOM при коллекциях на десятки тысяч точек.
- * При > QDRANT_POINTS_HARD_CAP UI должен предложить пагинацию/поиск.
- */
-export const QDRANT_POINTS_HARD_CAP = 5000;
-
 export interface QdrantFetchOptions extends RequestInit {
   /** Override the global QDRANT_TIMEOUT_MS for this call. */
   timeoutMs?: number;
