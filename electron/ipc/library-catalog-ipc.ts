@@ -103,7 +103,13 @@ export function registerLibraryCatalogIpc(): void {
 
   ipcMain.handle(
     "library:delete-book",
-    async (_e, args: { bookId: string; deleteFiles?: boolean }): Promise<{ ok: boolean; reason?: string }> => {
+    async (_e, args: {
+      bookId: string;
+      deleteFiles?: boolean;
+      /** Иt 8Е.1 (hybrid cascade): активная коллекция в renderer (если выбрана).
+       *  Sync-удаление точек этой книги ДО возврата (быстро, ~50ms). */
+      activeCollection?: string;
+    }): Promise<{ ok: boolean; reason?: string; qdrantCleaned?: number; qdrantBackgroundScheduled?: boolean }> => {
       if (!args || typeof args.bookId !== "string") return { ok: false, reason: "bookId required" };
       const meta = getBookById(args.bookId);
       if (!meta) return { ok: false, reason: "not-found" };
@@ -130,7 +136,54 @@ export function registerLibraryCatalogIpc(): void {
              остались другие книги, rmdir просто бросит ENOTEMPTY и мы игнорируем. */
           await fs.rmdir(sidecars.bookDir).catch(() => undefined);
         }
-        return { ok: true };
+
+        /* Иt 8Е.1: cascade Qdrant cleanup (hybrid стратегия).
+           Этап 1 (sync, быстро): удалить точки книги из активной коллекции
+           если она передана из renderer. Это покрывает 90% случаев —
+           пользователь обычно работает с одной коллекцией.
+           Этап 2 (async fire-and-forget): сканировать все коллекции и
+           удалить orphan points в фоне. UI не ждёт.
+           Оба этапа используют bookId фильтр (Иt 8Г.3 payload + индекс).
+           bookSourcePath fallback не нужен — bookId стабильнее (выживает
+           перемещение файла). */
+        let qdrantCleaned = 0;
+        let qdrantBackgroundScheduled = false;
+        try {
+          const { deletePointsByFilter } = await import("../lib/qdrant/http-client.js");
+          if (args.activeCollection) {
+            const r = await deletePointsByFilter(args.activeCollection, [
+              { field: "bookId", value: args.bookId },
+            ]);
+            qdrantCleaned = r.status === "ok" ? 1 : 0;
+          }
+          /* Background full scan для orphan-vector cleanup. */
+          void (async () => {
+            try {
+              const { fetchQdrantJson, QDRANT_URL } = await import("../lib/qdrant/http-client.js");
+              const all = await fetchQdrantJson<{ result?: { collections?: Array<{ name: string }> } }>(
+                `${QDRANT_URL}/collections`,
+              );
+              const names = (all.result?.collections ?? []).map((c) => c.name);
+              for (const collection of names) {
+                if (collection === args.activeCollection) continue;
+                try {
+                  await deletePointsByFilter(collection, [{ field: "bookId", value: args.bookId }]);
+                } catch (innerErr) {
+                  console.warn(`[library:delete-book] background cleanup failed for "${collection}":`, innerErr);
+                }
+              }
+            } catch (bgErr) {
+              console.warn("[library:delete-book] background full-scan failed:", bgErr);
+            }
+          })();
+          qdrantBackgroundScheduled = true;
+        } catch (qdrantErr) {
+          /* Qdrant unreachable — не блокируем delete-book (книга и так удалена
+             из SQLite). Просто warning. */
+          console.warn("[library:delete-book] Qdrant cascade cleanup failed (non-fatal):", qdrantErr);
+        }
+
+        return { ok: true, qdrantCleaned, qdrantBackgroundScheduled };
       } catch (e) {
         return { ok: false, reason: e instanceof Error ? e.message : String(e) };
       }

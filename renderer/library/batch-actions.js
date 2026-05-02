@@ -108,6 +108,75 @@ export async function cancelBatchExtraction() {
 }
 
 /**
+ * Иt 8Е.3 (симметрия удаления): откатить crystallize для выделенных книг —
+ * удаляет точки этих книг из активной Qdrant коллекции.
+ * Условие применения: книги имеют status === "indexed" (уже crystallized) и
+ * выбрана активная коллекция в STATE.targetCollection.
+ *
+ * Использует `scanner.deleteFromCollection(bookSourcePath, collection)` —
+ * висящий API, проверенный в Иt 8Г разведке. После удаления книга может быть
+ * заново crystallized без orphan vectors.
+ *
+ * @param {HTMLElement} root
+ * @param {object} deps
+ * @param {(root: HTMLElement) => Promise<void>} deps.renderCatalog
+ */
+export async function revertCrystallizationForSelected(root, deps) {
+  if (CATALOG.selected.size === 0) {
+    await showAlert(t("library.catalog.guard.noSelection"));
+    return;
+  }
+  if (!STATE.targetCollection) {
+    await showAlert(t("library.catalog.guard.noCollection"));
+    return;
+  }
+  const selected = CATALOG.rows.filter((r) => CATALOG.selected.has(r.id));
+  const eligible = selected.filter((r) =>
+    r.status === "indexed" || (typeof r.conceptsAccepted === "number" && r.conceptsAccepted > 0),
+  );
+  if (eligible.length === 0) {
+    await showAlert(t("library.catalog.revert.notEligible"));
+    return;
+  }
+  const collection = STATE.targetCollection;
+  const ok = await showConfirm(
+    t("library.catalog.revert.confirm", {
+      n: String(eligible.length),
+      collection,
+    }),
+    {
+      title: t("library.catalog.revert.confirmTitle"),
+      okText: t("library.catalog.revert.btn"),
+      okVariant: "danger",
+    },
+  );
+  if (!ok) return;
+
+  const errors = /** @type {string[]} */ ([]);
+  let cleaned = 0;
+  for (const row of eligible) {
+    try {
+      /* sourcePath: для legacy путей берём mdPath (тот же что в payload bookSourcePath
+         согласно extraction-runner). Книги импортированные после Иt 8Г.3 имеют bookId
+         в payload, но scanner.deleteFromCollection пока работает по bookSourcePath —
+         это совместимо. */
+      await window.api.scanner.deleteFromCollection(row.mdPath, collection);
+      cleaned += 1;
+    } catch (e) {
+      console.warn("[batch.revert]", row.id, e);
+      errors.push(`${(row.title || row.id).slice(0, 40)}…: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  await showAlert(t("library.catalog.revert.done", {
+    cleaned: String(cleaned),
+    failed: String(errors.length),
+    detail: errors.slice(0, 3).join("\n"),
+  }));
+  void deps.renderCatalog(root);
+}
+
+/**
  * Dispatcher for `dataset-v2:event` payloads.
  * @param {HTMLElement} root
  * @param {any} ev

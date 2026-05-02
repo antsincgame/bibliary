@@ -229,6 +229,17 @@ export default {
   /* Иt 8Г.4: library.bundle.* + library.import.btn.bundle{,Hint} removed —
      UI function importFolderAsBundle deleted as dead code (Inquisitor
      review 2026-05-02). Backend folder-bundle kept under @deprecated. */
+  /* Иt 8Е (delete symmetry, 2026-05-02): new keys for UI delete actions. */
+  "library.catalog.revert.btn": "↩ Revert extraction",
+  "library.catalog.revert.tooltip": "Delete chunks of selected books from the active Qdrant collection. Books in the catalog stay.",
+  "library.catalog.revert.confirmTitle": "Revert crystallize?",
+  "library.catalog.revert.confirm": "Delete chunks of {n} book(s) from collection \"{collection}\"? Books stay in the catalog, but you'll need to crystallize again.",
+  "library.catalog.revert.notEligible": "No eligible books — select books with status \"indexed\" (already crystallized).",
+  "library.catalog.revert.done": "Revert done: cleaned {cleaned}, failed {failed}.\n{detail}",
+  "library.import.cancel.confirm": "Cancel current import? Books that already imported will stay.",
+  "library.catalog.btn.rebuild.confirm": "Rebuild SQLite cache from filesystem? Books will be rescanned. May take several minutes on large libraries.",
+  "library.catalog.btn.rebuild.tooltip": "Recreate book catalog from files on disk. Useful if DB got corrupted or files were added manually.",
+  "library.catalog.btn.rebuild.done": "Done: indexed {ingested}, removed {pruned}, errors {errors}.",
   "library.import.btn.pickFiles": "Pick files",
   "library.import.btn.scanFolder": "Scan folder (dedup report)",
   "library.import.scan.starting": "Starting scan...",

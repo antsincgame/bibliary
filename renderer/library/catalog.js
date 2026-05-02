@@ -5,7 +5,7 @@
 import { el, clear } from "../dom.js";
 import { t, getLocale } from "../i18n.js";
 import { showAlert, showConfirm } from "../components/ui-dialog.js";
-import { CATALOG } from "./state.js";
+import { CATALOG, STATE } from "./state.js";
 import { filterCatalog as filterCatalogPure, qualityClass, statusClass } from "./catalog-filter.js";
 import { fmtWords, fmtQuality } from "./format.js";
 import { guardAndCrystallize, cancelBatchExtraction } from "./batch-actions.js";
@@ -350,9 +350,13 @@ export function buildCatalogBottomBar(root, deps) {
       }))) return;
       const deleteErrors = /** @type {string[]} */ ([]);
       let deleteOk = 0;
+      /* Иt 8Е.1 (cascade Qdrant cleanup): передаём активную коллекцию из STATE.
+         Backend синхронно удалит точки этой книги из неё (быстро) + запустит
+         background full-scan по остальным коллекциям (orphan vectors). */
+      const activeCollection = STATE.targetCollection || undefined;
       for (const bookId of Array.from(CATALOG.selected)) {
         try {
-          await window.api.library.deleteBook(bookId, true);
+          await window.api.library.deleteBook(bookId, true, activeCollection);
           deleteOk += 1;
         } catch (e) {
           console.warn("[library.delete]", bookId, e);
@@ -486,12 +490,23 @@ export function buildCatalogBottomBar(root, deps) {
     onclick: () => void cancelBatchExtraction(),
   }, t("library.catalog.btn.cancelBatch"));
 
+  /* Иt 8Е.3: «Откатить извлечение» — удалить точки книг из активной коллекции
+     (для книг которые уже crystallized). Backend: scanner.deleteFromCollection. */
+  const revertBtn = el("button", {
+    type: "button", class: "lib-btn lib-btn-ghost",
+    title: t("library.catalog.revert.tooltip"),
+    onclick: (ev) => void withButtonBusy(ev, async () => {
+      const { revertCrystallizationForSelected } = await import("./batch-actions.js");
+      await revertCrystallizationForSelected(root, deps);
+    }),
+  }, t("library.catalog.revert.btn"));
+
   const batchSummary = el("span", { class: "lib-catalog-batch-summary" }, "");
 
   return el("div", { class: "lib-catalog-bottombar" }, [
     metaRow,
     el("div", { class: "lib-catalog-bottom-actions" }, [
-      selectAllBtn, clearBtn, reevaluateBtn, reparseBtn, deleteBtn, chunksBtn, cancelBatchBtn,
+      selectAllBtn, clearBtn, reevaluateBtn, reparseBtn, deleteBtn, chunksBtn, revertBtn, cancelBatchBtn,
     ]),
     batchSummary,
   ]);

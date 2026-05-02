@@ -100,6 +100,22 @@ function buildLibraryTopBar(root) {
         return { ok: false, error: e instanceof Error ? e.message : String(e) };
       }
     },
+    /* Иt 8Е.2 (симметрия удаления, 2026-05-02): добавлена кнопка «−» в picker.
+       Backend qdrant:delete-collection уже работает с момента Crystal wizard.
+       Теперь Library top bar тоже умеет удалять коллекции — чтобы пользователь
+       не нырял в Crystal вкладку для destructive операции. */
+    onDelete: async (name) => {
+      try {
+        await window.api.qdrant.remove(name);
+        if (STATE.targetCollection === name) {
+          STATE.targetCollection = "";
+          STATE.collection = "";
+        }
+      } catch (e) {
+        console.error("[library.collection.delete]", name, e);
+        throw e;
+      }
+    },
   });
 
   /* Quick-jump: создать датасет из выбранной коллекции прямо отсюда. Кладём

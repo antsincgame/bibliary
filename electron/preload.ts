@@ -703,18 +703,30 @@ contextBridge.exposeInMainWorld("api", {
       smokeLibrary
         ? Promise.resolve({ markdown: "---\ntitle: Cybernetic Predictive Devices\n---\n# Cybernetic Predictive Devices\nSmoke reader body.", mdPath: "smoke.md" })
         : ipcRenderer.invoke("library:read-book-md", bookId),
-    deleteBook: (bookId: string, deleteFiles?: boolean): Promise<{ ok: boolean; reason?: string }> =>
+    deleteBook: (
+      bookId: string,
+      deleteFiles?: boolean,
+      /* Иt 8Е.1 (cascade Qdrant cleanup): активная коллекция в renderer
+         для sync-удаления точек этой книги до возврата. Если undefined —
+         только background full-scan. */
+      activeCollection?: string,
+    ): Promise<{ ok: boolean; reason?: string; qdrantCleaned?: number; qdrantBackgroundScheduled?: boolean }> =>
       smokeLibrary
         ? Promise.resolve({ ok: true }).then((res) => {
           smokeLibrary.rows = smokeLibrary.rows.filter((row) => row.id !== bookId);
           return res;
         })
-        : ipcRenderer.invoke("library:delete-book", { bookId, deleteFiles }),
-    /* Iter 8А (library-fortress, 2026-05-01) — удалены мёртвые preload-мосты
-       без renderer-callers: rebuildCache, evaluatorPause, evaluatorCancelCurrent,
-       setEvaluatorModel, evaluatorPrioritize, evaluatorSetSlots, evaluatorGetSlots.
-       Соответствующие IPC handlers в library-catalog-ipc.ts / library-evaluator-ipc.ts
-       пока сохранены — могут понадобиться в будущих UI добавлениях. */
+        : ipcRenderer.invoke("library:delete-book", { bookId, deleteFiles, activeCollection }),
+    /* Иt 8Е.5 (rebuild cache UI restored, 2026-05-02) — preload-мост
+       library.rebuildCache возвращён, smoke assert hasRebuildCache тоже
+       вернулся. Прежние мосты (evaluatorPause, evaluatorCancelCurrent,
+       setEvaluatorModel, evaluatorPrioritize, evaluatorSetSlots,
+       evaluatorGetSlots) пока остаются неподключёнными — добавим если
+       UI-итерации потребуют. */
+    rebuildCache: (): Promise<{ scanned: number; ingested: number; skipped: number; pruned: number; errors: string[] }> =>
+      smokeLibrary
+        ? Promise.resolve({ scanned: 0, ingested: 0, skipped: 0, pruned: 0, errors: [] })
+        : ipcRenderer.invoke("library:rebuild-cache"),
     evaluatorStatus: (): Promise<LibraryEvaluatorStatus> =>
       smokeLibrary ? Promise.resolve({ running: false, paused: false, currentBookId: null, currentTitle: null, queueLength: 0, totalEvaluated: 0, totalFailed: 0 }) : ipcRenderer.invoke("library:evaluator-status"),
     evaluatorResume: (): Promise<boolean> => smokeLibrary ? Promise.resolve(true) : ipcRenderer.invoke("library:evaluator-resume"),

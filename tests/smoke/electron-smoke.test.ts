@@ -119,11 +119,14 @@ test("electron smoke: app launches, preload bridge works, IPC handlers respond",
       hasCatalog: typeof lib.catalog === "function",
       hasDeleteBook: typeof lib.deleteBook === "function",
       hasEvaluatorStatus: typeof lib.evaluatorStatus === "function",
+      hasRebuildCache: typeof lib.rebuildCache === "function",
     };
   });
   assert.equal(libraryShape.hasCatalog, true, "window.api.library.catalog must be a function");
   assert.equal(libraryShape.hasDeleteBook, true, "window.api.library.deleteBook must be a function");
   assert.equal(libraryShape.hasEvaluatorStatus, true, "window.api.library.evaluatorStatus must be a function");
+  /* Иt 8Е.5 (rebuild cache UI restored): preload bridge возвращён. */
+  assert.equal(libraryShape.hasRebuildCache, true, "window.api.library.rebuildCache must be a function");
 
   /* Smoke #4: Models route — минимальная страница (статус LM Studio, списки моделей, роли). */
   await window.locator('[data-route="models"]').first().click();

@@ -229,6 +229,17 @@ export default {
   /* Иt 8Г.4: library.bundle.* + library.import.btn.bundle{,Hint} удалены —
      UI-функция importFolderAsBundle снесена как мёртвая (Inquisitor review
      2026-05-02). Backend folder-bundle оставлен под @deprecated. */
+  /* Иt 8Е (симметрия удаления, 2026-05-02): новые ключи для UI delete actions. */
+  "library.catalog.revert.btn": "↩ Откатить извлечение",
+  "library.catalog.revert.tooltip": "Удалить чанки выделенных книг из активной коллекции Qdrant. Книги в каталоге останутся.",
+  "library.catalog.revert.confirmTitle": "Откатить crystallize?",
+  "library.catalog.revert.confirm": "Удалить чанки {n} книг из коллекции «{collection}»? Сами книги в каталоге останутся, но повторно crystallize нужно будет запустить заново.",
+  "library.catalog.revert.notEligible": "Нет подходящих книг — выделите книги со статусом «indexed» (уже crystallized).",
+  "library.catalog.revert.done": "Откат завершён: очищено {cleaned}, ошибок {failed}.\n{detail}",
+  "library.import.cancel.confirm": "Прервать текущий импорт? Уже импортированные книги останутся в библиотеке.",
+  "library.catalog.btn.rebuild.confirm": "Пересобрать SQLite-кэш из файловой системы? Книги будут заново просканированы. Может занять несколько минут на больших библиотеках.",
+  "library.catalog.btn.rebuild.tooltip": "Пересоздать каталог книг из файлов на диске. Полезно если БД повредилась или файлы добавили вручную.",
+  "library.catalog.btn.rebuild.done": "Готово: проиндексировано {ingested}, удалено {pruned}, ошибок {errors}.",
   "library.import.btn.pickFiles": "Выбрать файлы",
   "library.import.btn.scanFolder": "Сканировать папку (отчёт дублей)",
   "library.import.scan.starting": "Запуск сканирования...",
