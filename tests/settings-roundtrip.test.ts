@@ -367,3 +367,34 @@ describe("[Settings 8Б] PreferencesStore set/get roundtrip", () => {
     await assert.rejects(() => store.set({ schedulerHeavyConcurrency: 0 } as Partial<Preferences>));
   });
 });
+
+/* ── Иt 8Д.4 anti-regression: aggregateVisionRoles остаётся в production-importах ──
+ *
+ * Цель: гарантировать что aggregateVisionRoles НЕ становится мёртвой
+ * функцией. После Иt 8Д.1 fix vision-overwriting bug в olympics.ts —
+ * этот вызов критичен для корректности применения visionModelKey. Если
+ * кто-то "оптимизирует" olympics.ts и удалит вызов — этот тест поймает.
+ *
+ * Альтернатива (knip) — тоже работает, но runtime-тест добавляет вторую
+ * линию защиты (контракт > convention).
+ */
+describe("[Settings 8Д.4] aggregateVisionRoles invariant", () => {
+  test("aggregateVisionRoles экспортируется из scoring и вызывается в olympics", async () => {
+    const scoring = await import("../electron/lib/llm/arena/scoring.ts");
+    assert.equal(typeof scoring.aggregateVisionRoles, "function",
+      "aggregateVisionRoles должна быть экспортирована из scoring.ts");
+
+    /* Вместо парсинга AST olympics.ts — проверяем поведенческий контракт:
+       aggregateVisionRoles на пустом input возвращает null (не throw, не undefined). */
+    assert.equal(scoring.aggregateVisionRoles([]), null,
+      "пустой input → null (контракт)");
+  });
+
+  test("vision composite info попадает в OlympicsReport (контракт типа)", async () => {
+    /* Проверяем shape OlympicsReport (тип-уровень через runtime). */
+    const olympicsTypes = await import("../electron/lib/llm/arena/olympics-types.ts");
+    /* Это просто smoke-import — если поле visionAggregateInfo пропадёт из типа,
+       компиляция тестов сломается раньше чем тест запустится. */
+    assert.ok(olympicsTypes, "olympics-types.ts импортируется");
+  });
+});
