@@ -1,0 +1,28 @@
+---
+description: Portable build всегда собирается в корень проекта
+alwaysApply: true
+---
+
+# Portable Build → Корень Проекта
+
+При любой сборке Bibliary portable:
+
+## Команда
+
+```bash
+npm run electron:build-portable
+```
+
+Артефакт (`Bibliary X.X.X.exe`) автоматически копируется в **корень проекта** (`d:\projects\bibliary\`).
+
+## Запрещено
+
+- Запускать `electron-builder` напрямую без скрипта (обойдёт копирование в root)
+- Менять `destDir` в `scripts/copy-portable-dist.js` обратно на `release/dist-portable`
+- Указывать `BIBLIARY_BUILD_OUT` в подпапку
+
+## Версия перед билдом
+
+Перед сборкой убедись что `version` в `package.json` актуальна:
+- Минорная версия (`0.X.0`) — при новых фичах / завершённых итерациях
+- Патч (`0.6.X`) — hotfix

@@ -21,9 +21,8 @@ const buildOutDir = process.env.BIBLIARY_BUILD_OUT
   : path.join(root, "release");
 
 const src = path.join(buildOutDir, portableName);
-/* Конечный artifact всегда копируем в release/dist-portable (вне зависимости от build out),
- * чтобы git-ignore не сбивался и distribution был в одном месте. */
-const destDir = path.join(root, "release", "dist-portable");
+/* Конечный artifact кладём прямо в корень проекта для удобного доступа. */
+const destDir = root;
 const dest = path.join(destDir, portableName);
 /** Если основной exe занят (Explorer / антивирус), кладём копию под другим именем. */
 const destAlt = path.join(destDir, `${productName.replace(/\s+/g, "-")}-${version}-portable.exe`);

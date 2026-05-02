@@ -6,6 +6,10 @@ release/
 .cache/
 *.blockmap
 
+# Portable build artifacts (output to project root)
+Bibliary*.exe
+Bibliary*.blockmap
+
 # IDE / AI local config — ignore everything inside .claude/ EXCEPT rules/
 .claude/*
 !.claude/rules/
