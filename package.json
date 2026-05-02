@@ -30,8 +30,6 @@
     "test:dataset-v2-live": "tsx scripts/test-dataset-v2-live.ts",
     "test:e2e:mvp": "tsx scripts/test-dataset-v2-live.ts",
     "test:e2e:quality": "tsx scripts/test-dataset-v2-live.ts",
-    "test:e2e:quality-legacy": "tsx scripts/e2e-quality.ts",
-    "test:e2e:library": "tsx scripts/e2e-batch-library.ts",
     "test:e2e:bibliarifull": "tsx scripts/e2e-bibliarifull-library-import.ts",
     "test:e2e:bibliarifull-bundle": "tsx scripts/e2e-bibliarifull-bundle-import.ts",
     "test:e2e:full-corpus": "tsx scripts/e2e-full-corpus-library-import.ts",

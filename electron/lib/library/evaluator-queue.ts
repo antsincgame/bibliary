@@ -625,7 +625,7 @@ async function evaluateOneInSlot(bookId: string, slot: SlotState): Promise<void>
     });
   } catch (err) {
     /* Сверяем abort через единый helper (проверяет ABORT_SENTINEL или
-       /aborted/i) -- консистентно с lm-request-policy и judge.ts.
+       /aborted/i) -- консистентно с lm-request-policy.
        Раньше string.includes("abort") мог ложно срабатывать на любое
        сообщение со словом "abort" внутри (например, "system abort log"). */
     const msg = err instanceof Error ? err.message : String(err);
