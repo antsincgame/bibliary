@@ -44,6 +44,7 @@ import {
 import { isAbortError } from "../resilience/lm-request-policy.js";
 import { getImportScheduler } from "./import-task-scheduler.js";
 import { readPipelinePrefsOrNull } from "../preferences/store.js";
+import { withBookMdLock } from "./book-md-mutex.js";
 import type { BookCatalogMeta } from "./types.js";
 import type { EvaluationResult } from "./types.js";
 
@@ -648,14 +649,20 @@ async function evaluateOneInSlot(bookId: string, slot: SlotState): Promise<void>
 }
 
 /** Локальная обёртка над persistFrontmatter из evaluator-persist:
- *  привязывает caller'а к текущему `deps.writeFile` (DI hook для тестов). */
+ *  привязывает caller'а к текущему `deps.writeFile` (DI hook для тестов).
+ *
+ *  Иt 8Г.1: обёрнуто в withBookMdLock(meta.id) для защиты от lost-update
+ *  при гонке с illustration-worker.fs.writeFile (тот же mdPath, разные
+ *  scheduler lanes). Mutex per-bookId не блокирует другие книги. */
 async function persistFrontmatter(
   meta: BookCatalogMeta,
   mdPath: string,
   md: string,
   reasoning?: string | null,
 ): Promise<void> {
-  return persistFrontmatterImpl(meta, mdPath, md, reasoning, deps.writeFile);
+  return withBookMdLock(meta.id, () =>
+    persistFrontmatterImpl(meta, mdPath, md, reasoning, deps.writeFile),
+  );
 }
 
 /** Тестовый helper: сбрасывает все счётчики и состояние. Только для unit-tests. */

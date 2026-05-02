@@ -31,6 +31,7 @@ import {
   getEvaluatorStatus,
 } from "../lib/library/evaluator-queue.js";
 import { resolveCatalogSidecarPaths } from "../lib/library/storage-contract.js";
+import { withBookMdLock } from "../lib/library/book-md-mutex.js";
 import type { BookCatalogMeta, BookStatus } from "../lib/library/types.js";
 
 export function registerLibraryEvaluatorIpc(): void {
@@ -154,7 +155,11 @@ export function registerLibraryEvaluatorIpc(): void {
         return { ok: false, reason: warn };
       }
 
-      await fsMod.writeFile(meta.mdPath, result.markdown, "utf-8");
+      /* Иt 8Г.1: reparse полностью переписывает md → не должно гонкой
+         перетереть параллельный evaluator/illustration update той же книги. */
+      await withBookMdLock(meta.id, () =>
+        fsMod.writeFile(meta.mdPath, result.markdown, "utf-8"),
+      );
 
       /* Сохраняем evaluator-поля из старых метаданных — не теряем оценку. */
       const updatedMeta: BookCatalogMeta = {

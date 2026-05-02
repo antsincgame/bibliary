@@ -25,6 +25,7 @@ import { modelRoleResolver } from "../llm/model-role-resolver.js";
 import { readPipelinePrefsOrNull } from "../preferences/store.js";
 import { getModelPool } from "../llm/model-pool.js";
 import { getImportScheduler } from "./import-task-scheduler.js";
+import { withBookMdLock } from "./book-md-mutex.js";
 
 /** Minimum score (exclusive) for a semantic illustration to be kept in CAS. */
 const SEMANTIC_SCORE_THRESHOLD = 5;
@@ -214,7 +215,7 @@ export async function processIllustrations(
   blobsRoot: string,
   signal?: AbortSignal,
   onProgress?: (msg: string) => void,
-  exactPaths?: { mdPath?: string; illustrationsPath?: string; bookTitle?: string },
+  exactPaths?: { mdPath?: string; illustrationsPath?: string; bookTitle?: string; bookId?: string },
 ): Promise<{ processed: number; skipped: number; errors: number }> {
   const illustrationsPath = exactPaths?.illustrationsPath ?? path.join(bookDir, "illustrations.json");
   const mdPath = exactPaths?.mdPath ?? await findBookMdFile(bookDir);
@@ -441,7 +442,18 @@ export async function processIllustrations(
   // Step C: write enriched .md
   if (mdModified && bookMd && mdPath) {
     try {
-      await fs.writeFile(mdPath, bookMd, "utf-8");
+      /* Иt 8Г.1: per-bookId mutex защищает от lost-update гонки с
+         evaluator-queue (тот же mdPath, но разные scheduler lanes →
+         lane separation НЕ сериализует запись). bookId опциональный
+         для backward-compat: если caller не передал — fallback к
+         прямой записи (test fixtures, legacy entry points). */
+      if (exactPaths?.bookId) {
+        await withBookMdLock(exactPaths.bookId, () =>
+          fs.writeFile(mdPath, bookMd!, "utf-8"),
+        );
+      } else {
+        await fs.writeFile(mdPath, bookMd, "utf-8");
+      }
     } catch {
       errors++;
     }

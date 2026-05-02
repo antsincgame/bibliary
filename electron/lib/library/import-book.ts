@@ -306,6 +306,7 @@ export async function importBookFromFile(
         mdPath,
         illustrationsPath: stored.illustrationsPath,
         bookTitle: finalMeta.title,
+        bookId: finalMeta.id,
       }),
     ).catch(async (err) => {
       const msg = err instanceof Error ? err.message : String(err);
