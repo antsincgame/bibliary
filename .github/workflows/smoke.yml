@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   smoke:
-    name: Quick: lint + dirty-world tests
+    name: "Quick: lint + dirty-world tests"
     runs-on: ubuntu-latest
     timeout-minutes: 5
 

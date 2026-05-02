@@ -33,8 +33,12 @@ export interface MagicVerifyResult {
   reason?: string;
 }
 
-const HEAD_BYTES = 32;
+const HEAD_BYTES = 64; /* 64 байта достаточно для всех структурных проверок (PDF/DJVU/EPUB) */
 const MIN_HEAD_FOR_BINARY = 8;
+/** Сколько байт читать с конца PDF для поиска %%EOF. */
+const PDF_TAIL_BYTES = 1024;
+/** Сколько байт читать для проверки структуры EPUB (local file header + mimetype). */
+const EPUB_STRUCT_BYTES = 256;
 
 /** Известные «плохие» сигнатуры — точно не книга, отбрасываем сразу. */
 function isKnownBinaryGarbage(head: Buffer): string | null {
@@ -83,6 +87,20 @@ function isZipBased(head: Buffer): boolean {
 function isDjvu(head: Buffer): boolean {
   /* "AT&T" + "FORM" — для всех DJVU/DJV файлов первые 4 байта одинаковы */
   return head.length >= 4 && head[0] === 0x41 && head[1] === 0x54 && head[2] === 0x26 && head[3] === 0x54;
+}
+
+/**
+ * Полная DJVU IFF проверка: после "AT&T" должен идти "FORM" + 4-байтный size +
+ * "DJVU" (single-page) или "DJVM" (multi-page) или "DJVI"/"THUM" (fragment).
+ * Это отсекает truncated DJVU где есть только AT&T magic, но дальше garbage.
+ */
+function isValidDjvuIff(head: Buffer): boolean {
+  if (head.length < 16) return false;
+  /* AT&T уже проверен в isDjvu — здесь смотрим offset 4-7 = "FORM" */
+  if (head[4] !== 0x46 || head[5] !== 0x4f || head[6] !== 0x52 || head[7] !== 0x4d) return false;
+  /* offset 12-15 = тип формы: DJVU / DJVM / DJVI / THUM */
+  const formType = head.subarray(12, 16).toString("ascii");
+  return formType === "DJVU" || formType === "DJVM" || formType === "DJVI" || formType === "THUM";
 }
 
 function isOleCompound(head: Buffer): boolean {
@@ -215,6 +233,79 @@ function isHtmlLike(head: Buffer): boolean {
 }
 
 /**
+ * PDF: поиск маркера %%EOF в хвостовом буфере. PDF spec: %%EOF может быть
+ * в последних 1024 байтах (allowed slack для line-endings).
+ * Truncated torrent PDF не содержит %%EOF.
+ */
+export function pdfTailHasEof(tail: Buffer): boolean {
+  /* %%EOF = 25 25 45 4F 46 */
+  for (let i = tail.length - 5; i >= 0; i--) {
+    if (
+      tail[i] === 0x25 && tail[i + 1] === 0x25 &&
+      tail[i + 2] === 0x45 && tail[i + 3] === 0x4f && tail[i + 4] === 0x46
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * EPUB structural check: ZIP local file header (30 bytes) первой записи должна
+ * быть `mimetype`, compression method = 0 (stored), payload = "application/epub+zip".
+ *
+ * Layout ZIP local file header (offset 0):
+ *   0..3   signature 50 4B 03 04
+ *   4..5   version
+ *   6..7   general purpose bit flag
+ *   8..9   compression method (0 = stored, 8 = deflate)
+ *   ...
+ *   26..27 file name length (n)
+ *   28..29 extra field length (m)
+ *   30..30+n filename
+ *   30+n..30+n+m extra field
+ *   30+n+m.. payload
+ */
+export function epubStructHasMimetype(buf: Buffer): { ok: boolean; reason?: string } {
+  if (buf.length < 30) return { ok: false, reason: "magic: epub structural — header too short" };
+  /* PK\x03\x04 — local file header */
+  if (buf[0] !== 0x50 || buf[1] !== 0x4b || buf[2] !== 0x03 || buf[3] !== 0x04) {
+    return { ok: false, reason: "magic: epub structural — not a ZIP local file header" };
+  }
+  const compression = buf.readUInt16LE(8);
+  const nameLen = buf.readUInt16LE(26);
+  const extraLen = buf.readUInt16LE(28);
+  if (nameLen !== 8) {
+    /* "mimetype" = ровно 8 байт. Любая другая длина — первая запись не mimetype.
+       Это явный сигнал что EPUB неправильно собран (mimetype должен быть первым). */
+    return { ok: false, reason: `magic: epub structural — first entry is not 'mimetype' (name len=${nameLen})` };
+  }
+  const nameStart = 30;
+  if (buf.length < nameStart + nameLen) {
+    return { ok: false, reason: "magic: epub structural — buffer too short for filename" };
+  }
+  const name = buf.subarray(nameStart, nameStart + nameLen).toString("ascii");
+  if (name !== "mimetype") {
+    return { ok: false, reason: `magic: epub structural — first entry name is '${name}', expected 'mimetype'` };
+  }
+  if (compression !== 0) {
+    return { ok: false, reason: "magic: epub structural — 'mimetype' must be stored (compression=0)" };
+  }
+  const payloadStart = nameStart + nameLen + extraLen;
+  const expected = "application/epub+zip";
+  if (buf.length < payloadStart + expected.length) {
+    /* Не хватило байт — но это не ошибка структуры (просто читали мало);
+       вернём ok чтобы внешний слой повторил с большим буфером. */
+    return { ok: true };
+  }
+  const payload = buf.subarray(payloadStart, payloadStart + expected.length).toString("ascii");
+  if (payload !== expected) {
+    return { ok: false, reason: `magic: epub structural — mimetype payload is '${payload}', expected '${expected}'` };
+  }
+  return { ok: true };
+}
+
+/**
  * Подтвердить, что содержимое файла соответствует заявленному расширению.
  * Принимает уже-открытый Buffer первых байт — для удобства тестирования
  * и для случая, когда head уже прочитан другим этапом.
@@ -240,8 +331,9 @@ export function verifyExtMatchesContentHead(ext: string, head: Buffer): MagicVer
 
     case "djvu":
     case "djv":
-      if (head.length < MIN_HEAD_FOR_BINARY) return { ok: false, reason: "magic: too short for djvu" };
+      if (head.length < 16) return { ok: false, reason: "magic: too short for djvu (need ≥16 bytes for IFF)" };
       if (!isDjvu(head)) return { ok: false, reason: "magic: not a DJVU (missing AT&T)" };
+      if (!isValidDjvuIff(head)) return { ok: false, reason: "magic: DJVU has AT&T but missing FORM:DJVU/DJVM/DJVI/THUM (corrupted IFF)" };
       return { ok: true };
 
     case "doc":
@@ -345,8 +437,16 @@ export function verifyExtMatchesContentHead(ext: string, head: Buffer): MagicVer
 }
 
 /**
- * Прочитать первые байты файла и подтвердить соответствие расширению.
- * Возвращает `{ ok: false, reason }` при любой ошибке I/O.
+ * Прочитать байты файла (head + опционально tail/struct) и подтвердить
+ * соответствие расширению + структурную целостность.
+ *
+ * Стратегия:
+ *   1. Прочитать head (HEAD_BYTES) — общая magic-проверка через verifyExtMatchesContentHead.
+ *   2. Для PDF: дополнительно прочитать tail — искать %%EOF.
+ *   3. Для EPUB: дополнительно прочитать EPUB_STRUCT_BYTES — проверить
+ *      mimetype в первой ZIP-записи.
+ *
+ * Возвращает `{ ok: false, reason }` при любой ошибке I/O или структурной проверки.
  */
 export async function verifyExtMatchesContent(filePath: string, ext: string): Promise<MagicVerifyResult> {
   let fh;
@@ -358,7 +458,34 @@ export async function verifyExtMatchesContent(filePath: string, ext: string): Pr
   try {
     const head = Buffer.alloc(HEAD_BYTES);
     const { bytesRead } = await fh.read(head, 0, HEAD_BYTES, 0);
-    return verifyExtMatchesContentHead(ext, head.subarray(0, bytesRead));
+    const headSlice = head.subarray(0, bytesRead);
+    const headVerdict = verifyExtMatchesContentHead(ext, headSlice);
+    if (!headVerdict.ok) return headVerdict;
+
+    const e = ext.toLowerCase();
+
+    if (e === "pdf") {
+      const stat = await fh.stat();
+      const tailSize = Math.min(PDF_TAIL_BYTES, Number(stat.size));
+      if (tailSize <= 0) return { ok: false, reason: "magic: pdf is empty" };
+      const tail = Buffer.alloc(tailSize);
+      const offset = Math.max(0, Number(stat.size) - tailSize);
+      const { bytesRead: tBytes } = await fh.read(tail, 0, tailSize, offset);
+      if (!pdfTailHasEof(tail.subarray(0, tBytes))) {
+        return { ok: false, reason: "magic: pdf is truncated (no %%EOF in last 1024 bytes)" };
+      }
+    } else if (e === "epub") {
+      const stat = await fh.stat();
+      const structSize = Math.min(EPUB_STRUCT_BYTES, Number(stat.size));
+      if (structSize >= 30) {
+        const structBuf = Buffer.alloc(structSize);
+        const { bytesRead: sBytes } = await fh.read(structBuf, 0, structSize, 0);
+        const structVerdict = epubStructHasMimetype(structBuf.subarray(0, sBytes));
+        if (!structVerdict.ok) return { ok: false, reason: structVerdict.reason };
+      }
+    }
+
+    return { ok: true };
   } catch (err) {
     return { ok: false, reason: `magic: read failed (${(err as Error).message})` };
   } finally {

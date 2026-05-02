@@ -16,10 +16,11 @@ test("walkSupportedFiles + verifyMagic: drops PE renamed as .pdf and reports rea
   const root = await mkdtemp(path.join(os.tmpdir(), "bibliary-walker-magic-"));
   t.after(() => rm(root, { recursive: true, force: true }));
 
-  /* Real PDF (passes magic) */
+  /* Real PDF (passes magic + structural %%EOF check) */
   const realPdf = Buffer.concat([
     Buffer.from("%PDF-1.7\n", "binary"),
-    Buffer.alloc(20_000, 0x20),
+    Buffer.alloc(20_000 - "%PDF-1.7\n".length - "%%EOF\n".length, 0x20),
+    Buffer.from("%%EOF\n", "binary"),
   ]);
   await writeFile(path.join(root, "real.pdf"), realPdf);
 

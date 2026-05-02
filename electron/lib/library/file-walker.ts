@@ -46,6 +46,15 @@ export interface WalkOptions {
    * Lets the caller emit a user-visible warning without throwing.
    */
   onMagicReject?: (filePath: string, reason: string) => void;
+  /**
+   * If true, skip files that have a partial-download sibling (.!ut, .crdownload,
+   * .part, .partial, .aria2). Default `false`. Production `importFolderToLibrary`
+   * enables it explicitly. The SAME file is skipped (skip-only mode) — other
+   * formats of the same book in the same folder still pass through dedup.
+   */
+  rejectPartialSiblings?: boolean;
+  /** Callback when a file is rejected by partial-sibling guard. */
+  onPartialReject?: (filePath: string, marker: string) => void;
 }
 
 /**
@@ -56,6 +65,39 @@ const MIN_HTML_CLUSTER_SIZE = 10;
 
 const DEFAULT_MAX_DEPTH = 16;
 const DEFAULT_MIN_FILE_BYTES = 10_240; // 10 KB — no real book is smaller
+
+/**
+ * Suffixes that torrent / browser / download-manager clients append to
+ * incomplete files. If `book.pdf.!ut` exists, then `book.pdf` is incomplete
+ * (uTorrent renames it back only after 100% download).
+ */
+const PARTIAL_SIBLING_SUFFIXES: readonly string[] = [
+  ".!ut",         // uTorrent
+  ".crdownload",  // Chrome / Edge
+  ".part",        // Firefox / wget / generic
+  ".partial",     // generic
+  ".aria2",       // aria2c
+  ".download",    // Safari
+  ".bc!",         // BitComet
+  ".td",          // Transmission daemon
+];
+
+/**
+ * Returns the suffix of an existing partial-sibling, or null if none.
+ * Per-suffix cost: one fs.stat. We stop at the first match.
+ */
+async function findPartialSibling(filePath: string): Promise<string | null> {
+  for (const suffix of PARTIAL_SIBLING_SUFFIXES) {
+    const probe = filePath + suffix;
+    try {
+      const st = await fs.stat(probe);
+      if (st.isFile()) return suffix;
+    } catch {
+      /* ENOENT = no sibling, expected */
+    }
+  }
+  return null;
+}
 
 const DIR_BLACKLIST: ReadonlySet<string> = new Set([
   ".git", ".svn", ".hg",
@@ -188,6 +230,20 @@ export async function* walkSupportedFiles(
         }
       } catch {
         continue;
+      }
+
+      if (opts.rejectPartialSiblings === true && isBook) {
+        const marker = await findPartialSibling(full);
+        if (marker !== null) {
+          if (opts.onPartialReject) {
+            try {
+              opts.onPartialReject(full, marker);
+            } catch {
+              /* swallow logger errors — they must never break the walker */
+            }
+          }
+          continue;
+        }
       }
 
       if (opts.verifyMagic === true && isBook && ext) {

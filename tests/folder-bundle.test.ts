@@ -69,6 +69,22 @@ test("discoverBundle: classifies images, code, sites, archives, metadata", async
   assert.equal(hasHidden, false);
 });
 
+test("discoverBundle: prefers higher format priority over file size (Иt 10)", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "bibliary-bundle-priority-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  /* PDF — 50 KB, EPUB — 5 KB. По старому поведению (largest size) победил бы PDF.
+     По format priority epub=100 > pdf=80 → EPUB должен выиграть. */
+  await writeFile(path.join(root, "Book.pdf"), Buffer.alloc(50_000, 1));
+  await writeFile(path.join(root, "Book.epub"), Buffer.alloc(5_000, 1));
+  const bundle = await discoverBundle(root);
+  assert.ok(bundle.book, "main book detected");
+  assert.equal(path.basename(bundle.book!.absPath), "Book.epub");
+  /* PDF — это extra edition, попадает в sidecars как book */
+  const extraBooks = bundle.sidecars.filter((s) => s.kind === "book");
+  assert.equal(extraBooks.length, 1);
+  assert.equal(path.basename(extraBooks[0]!.absPath), "Book.pdf");
+});
+
 test("discoverBundle: returns book=null for examples-only folder", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "bibliary-bundle-empty-"));
   t.after(() => rm(root, { recursive: true, force: true }));

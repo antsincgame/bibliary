@@ -51,9 +51,47 @@ test("verifyExtMatchesContentHead: rejects PDF labelled as .epub", () => {
   assert.match(v.reason ?? "", /not a ZIP-based epub/);
 });
 
-test("verifyExtMatchesContentHead: accepts DJVU AT&T magic", () => {
-  const v = verifyExtMatchesContentHead("djvu", head(0x41, 0x54, 0x26, 0x54, 0x46, 0x4f, 0x52, 0x4d));
+test("verifyExtMatchesContentHead: accepts valid DJVU IFF (AT&T+FORM+size+DJVU)", () => {
+  /* AT&T (4) + FORM (4) + size (4) + DJVU (4) = 16 bytes minimum for IFF check */
+  const v = verifyExtMatchesContentHead("djvu", head(
+    0x41, 0x54, 0x26, 0x54,             // AT&T
+    0x46, 0x4f, 0x52, 0x4d,             // FORM
+    0x00, 0x00, 0x10, 0x00,             // size (4096)
+    0x44, 0x4a, 0x56, 0x55,             // DJVU (single-page)
+  ));
   assert.equal(v.ok, true);
+});
+
+test("verifyExtMatchesContentHead: accepts DJVM (multi-page DJVU)", () => {
+  const v = verifyExtMatchesContentHead("djvu", head(
+    0x41, 0x54, 0x26, 0x54,
+    0x46, 0x4f, 0x52, 0x4d,
+    0x00, 0x00, 0x10, 0x00,
+    0x44, 0x4a, 0x56, 0x4d,             // DJVM
+  ));
+  assert.equal(v.ok, true);
+});
+
+test("verifyExtMatchesContentHead: rejects truncated DJVU (AT&T but no FORM)", () => {
+  const v = verifyExtMatchesContentHead("djvu", head(
+    0x41, 0x54, 0x26, 0x54,             // AT&T OK
+    0xff, 0xff, 0xff, 0xff,             // garbage instead of FORM
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+  ));
+  assert.equal(v.ok, false);
+  assert.match(v.reason ?? "", /missing FORM:DJVU/);
+});
+
+test("verifyExtMatchesContentHead: rejects DJVU with unknown form type", () => {
+  const v = verifyExtMatchesContentHead("djvu", head(
+    0x41, 0x54, 0x26, 0x54,
+    0x46, 0x4f, 0x52, 0x4d,             // FORM OK
+    0x00, 0x00, 0x10, 0x00,
+    0x58, 0x58, 0x58, 0x58,             // XXXX — invalid form type
+  ));
+  assert.equal(v.ok, false);
+  assert.match(v.reason ?? "", /missing FORM:DJVU/);
 });
 
 test("verifyExtMatchesContentHead: accepts OLE compound for .doc", () => {
@@ -128,7 +166,8 @@ test("verifyExtMatchesContent: real PDF on disk passes", async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "bibliary-magic-pdf-"));
   try {
     const f = path.join(dir, "fake.pdf");
-    await writeFile(f, Buffer.from("%PDF-1.7\n%fake content for tests", "binary"));
+    /* Real PDF: %PDF magic at start AND %%EOF marker in last 1024 bytes (Иt 10 structural check). */
+    await writeFile(f, Buffer.from("%PDF-1.7\n%fake content for tests\n%%EOF\n", "binary"));
     const v = await verifyExtMatchesContent(f, "pdf");
     assert.equal(v.ok, true);
   } finally {

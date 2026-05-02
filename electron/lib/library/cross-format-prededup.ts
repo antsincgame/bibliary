@@ -14,50 +14,7 @@
  */
 
 import * as path from "path";
-
-/**
- * Format priority: higher number = preferred when deduplicating.
- *
- * Must mirror `SUPPORTED_BOOK_EXTS` from `./types.ts` — formats not in the
- * supported set are never reached by the walker and entering them here only
- * confuses the dedup ledger (e.g. a `.mobi` next to a `.pdf` should not
- * influence the `.pdf` decision because `.mobi` cannot be imported anyway).
- */
-const FORMAT_PRIORITY: Record<string, number> = {
-  epub: 100,
-  pdf:  80,
-  djvu: 70,
-  djv:  69,
-  fb2:  60,
-  docx: 50,
-  doc:  40,
-  /* Calibre-cascade форматы (Iter 6А): mobi/azw/azw3 = Kindle native, чуть
-     ниже DOC потому что конвертация в EPUB обычно теряет некоторые edge-case
-     форматирования. PDB/PRC/CHM ниже — старые форматы, ещё больше шансов на
-     потери при конвертации. */
-  azw3: 36,
-  mobi: 35,
-  azw:  35,
-  rtf:  30,
-  odt:  25,
-  /* Iter 6Б — нишевые legacy форматы и комиксы. Все ниже ODT т.к.
-     конвертация через Calibre теряет часть форматирования. SNB ниже LIT/LRF
-     по распространённости (Samsung Note Book — самый малоизвестный).
-     CBZ > CBR (CBR = устаревший RAR-вариант). TCR — самый старый, через Calibre.
-     Iter 6В: .rb удалён (Ruby исходники доминируют в реальных библиотеках). */
-  lit:  24,
-  lrf:  23,
-  snb:  21,
-  pdb:  20,
-  prc:  20,
-  chm:  15,
-  cbz:  12,
-  cbr:  11,
-  tcr:  10,
-  txt:  10,
-  html: 5,
-  htm:  5,
-};
+import { getPriority } from "./format-priority.js";
 
 interface SeenEntry {
   ext: string;
@@ -89,12 +46,10 @@ export class CrossFormatPreDedup {
   private readonly seen = new Map<string, SeenEntry>();
   /** Files that were registered but later superseded — caller may log them. */
   readonly superseded: Array<{ skipped: string; keptBy: string }> = [];
-  private readonly priorityOverrides: Record<string, number>;
+  private readonly preferDjvuOverPdf: boolean;
 
   constructor(opts: PreDedupOptions = {}) {
-    this.priorityOverrides = opts.preferDjvuOverPdf
-      ? { djvu: 90, djv: 89 } /* выше pdf=80 */
-      : {};
+    this.preferDjvuOverPdf = opts.preferDjvuOverPdf === true;
   }
 
   /**
@@ -108,7 +63,7 @@ export class CrossFormatPreDedup {
     const ext = path.extname(filePath).slice(1).toLowerCase();
     const base = path.basename(filePath, path.extname(filePath)).toLowerCase();
     const key = `${dir.toLowerCase()}|${base}`;
-    const priority = this.priorityOverrides[ext] ?? FORMAT_PRIORITY[ext] ?? -1;
+    const priority = getPriority(ext, { preferDjvuOverPdf: this.preferDjvuOverPdf });
 
     const existing = this.seen.get(key);
 

@@ -24,6 +24,7 @@ import {
   isLikelyText,
   classifyTextContent,
 } from "./magic-bytes.js";
+import { getPriority } from "../../library/format-priority.js";
 
 /** Категории файлов внутри папки. */
 export type FileKind =
@@ -222,11 +223,20 @@ export async function discoverBundle(rootDir: string, maxFiles = 5000): Promise<
 
   await walk(rootDir);
 
-  /* Выбираем «основную книгу»: самый большой файл с book-ext. Heuristic
-     достаточно работает: в сборках чаще всего основной — крупнейший .pdf/.epub. */
+  /* Выбираем «основную книгу»: 1) по format priority (унифицировано с
+     cross-format-prededup.ts через `format-priority.ts`), 2) при равном
+     приоритете — по размеру (крупнейший = вероятно полный том vs sample).
+     Это исправляет старый bug когда `book.pdf` (50 MB) выигрывал у `book.epub`
+     (5 MB) только из-за размера, хотя EPUB лучше для RAG. */
   const books = all.filter((f) => f.kind === "book");
   const mainBook = books.length > 0
-    ? books.reduce((acc, x) => (x.size > acc.size ? x : acc), books[0]!)
+    ? books.reduce((acc, x) => {
+        const accPriority = getPriority(acc.ext);
+        const xPriority = getPriority(x.ext);
+        if (xPriority > accPriority) return x;
+        if (xPriority < accPriority) return acc;
+        return x.size > acc.size ? x : acc;
+      }, books[0]!)
     : null;
 
   const sidecars: ClassifiedFile[] = [];
