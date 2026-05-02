@@ -224,6 +224,18 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
 
   /**
    * Folder-bundle: импорт ВСЕЙ папки как одного «комплекта».
+   *
+   * @deprecated Иt 8Г.4 (2026-05-02): UI-вызов удалён вместе с мёртвым
+   * `importFolderAsBundle` в renderer/library/import-pane-actions.js.
+   * Handler оставлен потому что:
+   *   - модули `electron/lib/scanner/folder-bundle/*` (discoverBundle,
+   *     buildBundleMarkdown, magic-bytes) тестируются напрямую через
+   *     tests/folder-bundle*.test.ts — это полезный classifier-код;
+   *   - возможно вернётся через CLI-обёртку или новую UX-итерацию;
+   *   - удаление IPC + preload bridge увеличит blast radius без выгоды.
+   * Если в течение N итераций не появятся callers — можно удалить
+   * handler+preload в отдельной маленькой servitor-итерации.
+   *
    * Шаги:
    *   1. discoverBundle → классификация всех файлов
    *   2. описать sidecars через LLM (vision для картинок, text-summary для кода/сайтов)

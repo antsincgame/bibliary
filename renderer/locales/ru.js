@@ -226,19 +226,9 @@ export default {
   "library.import.dropzone.title": "Перетащите папку или файлы сюда",
   "library.import.dropzone.hint": "Или используйте кнопки ниже. Поддерживается PDF, EPUB, FB2, DOCX, DOC, RTF, ODT, HTML, TXT, DJVU и архивы ZIP, RAR, 7Z, CBZ, CBR.",
   "library.import.btn.pickFolder": "Выбрать папку",
-  "library.import.btn.bundle": "📦 Импортировать папку как комплект",
-  "library.import.btn.bundleHint": "Книга + иллюстрации + код + скачанные сайты — всё в один документ. ИИ опишет каждый файл-спутник, и весь набор попадёт в RAG как единое целое.",
-  "library.bundle.unavailable": "Импорт комплекта недоступен (перезапусти приложение).",
-  "library.bundle.collectionPrompt": "Коллекция (имя; будет создана если нет):",
-  "library.bundle.starting": "Запуск импорта комплекта…",
-  "library.bundle.phase.discover": "Поиск файлов в папке…",
-  "library.bundle.phase.describeStart": "Найдено {total} файлов-спутников. Описание через ИИ…",
-  "library.bundle.phase.describing": "Описание: {file}",
-  "library.bundle.phase.parseBook": "Парсинг основной книги: {file}",
-  "library.bundle.phase.ingest": "Загрузка в RAG…",
-  "library.bundle.done": "Готово: {sidecars} спутников, описано {described}, предупреждений {warnings}",
-  "library.bundle.successToast": "Папка импортирована как комплект",
-  "library.bundle.failed": "Ошибка импорта: {reason}",
+  /* Иt 8Г.4: library.bundle.* + library.import.btn.bundle{,Hint} удалены —
+     UI-функция importFolderAsBundle снесена как мёртвая (Inquisitor review
+     2026-05-02). Backend folder-bundle оставлен под @deprecated. */
   "library.import.btn.pickFiles": "Выбрать файлы",
   "library.import.btn.scanFolder": "Сканировать папку (отчёт дублей)",
   "library.import.scan.starting": "Запуск сканирования...",

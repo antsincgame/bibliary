@@ -226,19 +226,9 @@ export default {
   "library.import.dropzone.title": "Drop a folder or files here",
   "library.import.dropzone.hint": "Or use the buttons below. Supported: PDF, EPUB, FB2, DOCX, DOC, RTF, ODT, HTML, TXT, DJVU and archives ZIP, RAR, 7Z, CBZ, CBR.",
   "library.import.btn.pickFolder": "Pick folder",
-  "library.import.btn.bundle": "📦 Import folder as bundle",
-  "library.import.btn.bundleHint": "Book + illustrations + code + saved sites — into one document. AI describes each sidecar, the whole set lands in RAG as a single unit.",
-  "library.bundle.unavailable": "Bundle import unavailable (restart the app).",
-  "library.bundle.collectionPrompt": "Collection (name; will be created if missing):",
-  "library.bundle.starting": "Starting bundle import…",
-  "library.bundle.phase.discover": "Discovering files in folder…",
-  "library.bundle.phase.describeStart": "Found {total} sidecars. AI is describing them…",
-  "library.bundle.phase.describing": "Describing: {file}",
-  "library.bundle.phase.parseBook": "Parsing main book: {file}",
-  "library.bundle.phase.ingest": "Loading into RAG…",
-  "library.bundle.done": "Done: {sidecars} sidecars, described {described}, warnings {warnings}",
-  "library.bundle.successToast": "Folder imported as bundle",
-  "library.bundle.failed": "Import failed: {reason}",
+  /* Иt 8Г.4: library.bundle.* + library.import.btn.bundle{,Hint} removed —
+     UI function importFolderAsBundle deleted as dead code (Inquisitor
+     review 2026-05-02). Backend folder-bundle kept under @deprecated. */
   "library.import.btn.pickFiles": "Pick files",
   "library.import.btn.scanFolder": "Scan folder (dedup report)",
   "library.import.scan.starting": "Starting scan...",
