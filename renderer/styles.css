@@ -5374,15 +5374,21 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   flex-direction: column;
   position: absolute;
   inset: 0;
+  /* Diamond Buddha 2026-05-03: убран duplicate `background` (был дважды).
+     Layered gradient объединён в один declaration. */
   background:
-    linear-gradient(135deg, rgba(0, 240, 255, 0.025), transparent 38%),
+    linear-gradient(180deg, rgba(0, 240, 255, 0.025), transparent 160px),
+    linear-gradient(135deg, rgba(0, 240, 255, 0.015), transparent 38%),
+    rgba(0, 0, 0, 0.32),
     var(--bg, #0a0a14);
   min-height: 0;
   overflow: hidden;
   z-index: 5;
-  background:
-    linear-gradient(180deg, rgba(0, 240, 255, 0.025), transparent 160px),
-    rgba(0, 0, 0, 0.32);
+  /* Визуальное отделение от tabs/topbar: тонкая cyan-полоса сверху +
+     внутренний padding-top, чтобы reader header не прилипал к tabs.
+     Решает «книга перекрывает верхнее меню» (UI-баг от 2026-05-03). */
+  border-top: 1px solid rgba(0, 240, 255, 0.18);
+  box-shadow: 0 -4px 12px -8px rgba(0, 240, 255, 0.25);
 }
 .lib-reader-loading,
 .lib-reader-error {
@@ -5559,88 +5565,14 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   border-radius: 2px;
   background: rgba(0, 240, 255, 0.04);
 }
+/* Базовые layout-свойства body вынесены сюда (flex/overflow), а вся
+   типографика — в premium-блоке "LIB READER — BIBLIARY SCIENTIFIC THEME"
+   ниже (см. ~7770). Иначе два правила .lib-reader-body конфликтовали по
+   font/padding/color (Diamond Buddha 2026-05-03). */
 .lib-reader-body {
   flex: 1;
   overflow-y: auto;
-  padding: 28px 36px 52px;
-  font-family: var(--font-body);
-  font-size: 15px;
-  line-height: 1.75;
-  color: var(--text);
 }
-.lib-reader-body h1 {
-  font-family: var(--font-display);
-  font-size: 24px;
-  color: var(--gold);
-  margin: 32px 0 16px;
-  border-bottom: 1px solid rgba(255, 215, 0, 0.15);
-  padding-bottom: 8px;
-}
-.lib-reader-body h2 {
-  font-family: var(--font-display);
-  font-size: 19px;
-  color: var(--cyan);
-  margin: 28px 0 12px;
-}
-.lib-reader-body h3 {
-  font-family: var(--font-display);
-  font-size: 16px;
-  color: var(--text);
-  margin: 20px 0 8px;
-}
-.lib-reader-body p { margin: 0 0 12px; }
-.lib-reader-body ul,
-.lib-reader-body ol { margin: 0 0 12px; padding-left: 24px; }
-.lib-reader-body li { margin-bottom: 4px; }
-.lib-reader-body blockquote {
-  border-left: 3px solid var(--cyan);
-  padding: 8px 16px;
-  margin: 12px 0;
-  background: rgba(0, 240, 255, 0.03);
-  color: var(--text-dim);
-  font-style: italic;
-}
-.lib-reader-body code {
-  font-family: var(--font-mono);
-  font-size: 13px;
-  padding: 2px 6px;
-  background: rgba(0, 0, 0, 0.3);
-  border-radius: 2px;
-  color: var(--gold);
-}
-.lib-reader-body pre {
-  background: rgba(0, 0, 0, 0.4);
-  padding: 16px;
-  overflow-x: auto;
-  border-radius: 4px;
-  margin: 12px 0;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-}
-.lib-reader-body pre code {
-  background: none;
-  padding: 0;
-}
-.lib-reader-body table {
-  border-collapse: collapse;
-  width: 100%;
-  margin: 12px 0;
-  font-size: 13px;
-}
-.lib-reader-body th,
-.lib-reader-body td {
-  padding: 6px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  text-align: left;
-}
-.lib-reader-body th {
-  background: rgba(0, 0, 0, 0.3);
-  color: var(--gold);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-.lib-reader-body img { max-width: 100%; height: auto; border-radius: 4px; }
 
 /* ── Arena ─────────────────────────────────────────────────────────── */
 .arena-page {
@@ -8076,5 +8008,53 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   );
   margin: 2.4em auto;
   width: 60%;
+}
+
+/* === Tables (компактная научная стилизация) === */
+.lib-reader-body table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1.4em 0;
+  font-family: var(--lib-reader-font-serif);
+  font-size: 0.92em;
+  line-height: 1.5;
+}
+.lib-reader-body th,
+.lib-reader-body td {
+  padding: 0.5em 0.8em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  text-align: left;
+  vertical-align: top;
+}
+.lib-reader-body th {
+  font-family: var(--lib-reader-font-serif);
+  font-weight: 600;
+  color: var(--lib-reader-accent);
+  border-bottom: 1px solid var(--lib-reader-rule);
+  font-feature-settings: "smcp" 1, "kern" 1;
+}
+.lib-reader-body table tr:last-child td {
+  border-bottom: 1px solid var(--lib-reader-rule);
+}
+
+/* === Images (figures inline) === */
+.lib-reader-body img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1.4em auto;
+  border-radius: 3px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+/* === Inline emphasis (em/strong) — научная типографика === */
+.lib-reader-body em {
+  font-style: italic;
+  color: var(--lib-reader-text);
+}
+.lib-reader-body strong {
+  font-weight: 600;
+  color: var(--lib-reader-accent);
+  letter-spacing: 0.005em;
 }
 

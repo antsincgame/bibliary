@@ -31,7 +31,46 @@ import { resolveLibraryRoot } from "../lib/library/paths.js";
 import { resolveCatalogSidecarPaths } from "../lib/library/storage-contract.js";
 import { unregisterFromNearDup, resetNearDupCache } from "../lib/library/near-dup-detector.js";
 import { resetRevisionDedupCache } from "../lib/library/revision-dedup.js";
+import { applyLayout, shouldRenderMath, LAYOUT_VERSION } from "../lib/library/layout-pipeline.js";
+import { parseFrontmatter } from "../lib/library/md-converter.js";
 import type { BookCatalogMeta } from "../lib/library/types.js";
+
+/**
+ * Lazy Versator-upgrade для legacy book.md (импортированных до v0.8.0).
+ *
+ * При чтении книги проверяем `layoutVersion` во frontmatter:
+ *   - если совпадает с текущей `LAYOUT_VERSION` — отдаём как есть;
+ *   - иначе — применяем `applyLayout` к телу markdown (НЕ трогая frontmatter
+ *     и image refs в конце), отдаём в reader. Файл на диске НЕ перезаписываем
+ *     (прозрачный read-only апгрейд: дешевле и обратимо в случае регрессии).
+ *
+ * Image refs (`[img-...]: data:image/...`) защищены тем, что они оформлены
+ * как стандартные markdown link references — typograf/callouts/dropcaps их
+ * не модифицируют (проверено тестами layout-pipeline.test.ts).
+ *
+ * Iter 13.1 (2026-05-03): родилось от пользовательской диагностики «книга
+ * показывается просто копией без вёрстки» — Versator применялся только в
+ * момент импорта, существующие 470+ книг оставались без научной вёрстки.
+ */
+function ensureVersatorUpgrade(markdown: string, language?: string): string {
+  if (!markdown) return markdown;
+  const fm = parseFrontmatter(markdown);
+  const lv = (fm?.layoutVersion as number | undefined) ?? 0;
+  if (lv >= LAYOUT_VERSION) return markdown;
+
+  const fmMatch = markdown.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
+  if (!fmMatch) return markdown;
+
+  const fmText = fmMatch[0];
+  const body = markdown.slice(fmText.length);
+
+  const lang: "ru" | "en" = language === "en" ? "en" : "ru";
+  const result = applyLayout(body, {
+    lang,
+    renderMath: shouldRenderMath(body),
+  });
+  return fmText + result.md;
+}
 
 export function registerLibraryCatalogIpc(): void {
   ipcMain.handle(
@@ -92,7 +131,8 @@ export function registerLibraryCatalogIpc(): void {
       const meta = getBookById(bookId);
       if (!meta) return null;
       try {
-        const markdown = await fs.readFile(meta.mdPath, "utf-8");
+        const raw = await fs.readFile(meta.mdPath, "utf-8");
+        const markdown = ensureVersatorUpgrade(raw, meta.language);
         return { markdown, mdPath: meta.mdPath };
       } catch (e) {
         console.warn(`[library:read-book-md] ${bookId}:`, e instanceof Error ? e.message : e);

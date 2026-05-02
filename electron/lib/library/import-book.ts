@@ -64,7 +64,10 @@ export async function importBookFromFile(
   }
 
   /* Дедуп по SHA-256 содержимого ДО парсинга — главная экономия CPU при
-     повторном импорте папки. */
+     повторном импорте папки. Warning НЕ добавляем: события `file.duplicate`
+     в логе уже несут duplicateReason+existingBookTitle, дополнительный
+     `file.warning` создаёт две одинаковые строки на каждую дублирующуюся
+     книгу (см. UI-баг #4 от 2026-05-03). */
   const known = getKnownSha256s();
   const dupId = known.get(sha256);
   if (dupId) {
@@ -76,7 +79,7 @@ export async function importBookFromFile(
       duplicateReason: "duplicate_sha",
       existingBookId: dupId,
       existingBookTitle: existing?.title,
-      warnings: [...warnings, `import: duplicate of ${dupId} (SHA-256 match, parse skipped)`],
+      warnings,
       sourceArchive: opts.sourceArchive,
     };
   }

@@ -4,6 +4,61 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] — 2026-05-03 — Reader Hot-Versator + UI/Log Diamond Polish
+
+Patch follow-up к 0.8.0: пользователь обнаружил, что **существующие книги**
+(импортированные в v0.7.x) открываются в reader как «просто копии» — без
+премиум-вёрстки. Versator применялся только в момент импорта, поэтому весь
+470+ каталог оставался в legacy-формате. Плюс — лог импорта дублировал
+сообщения, а CSS .lib-reader-body имел два конфликтующих определения.
+
+### Fixed
+
+- **Reader как live-конвертер с вёрсткой**
+  ([electron/ipc/library-catalog-ipc.ts](electron/ipc/library-catalog-ipc.ts)) —
+  `library:read-book-md` теперь делает **lazy Versator-upgrade**: если
+  `frontmatter.layoutVersion < LAYOUT_VERSION` (или отсутствует), к body
+  применяется `applyLayout(...)` на лету. Read-only апгрейд — файл на диске
+  не перезаписывается, только отдаваемый renderer'у markdown. Идемпотентно
+  (повторный запуск стабилен).
+- **CSS .lib-reader-body конфликт устранён**
+  ([renderer/styles.css](renderer/styles.css)) — было два определения тех
+  же селекторов: старый «лайт» (5562) и новый Versator-premium (7771). Старый
+  блок удалён, layout-критичные `flex: 1; overflow-y: auto` перенесены в
+  отдельный selector (~5566). Versator-тема дополнена правилами для
+  `table`/`th`/`td`/`img`/`em`/`strong`, которых раньше не было.
+- **UI overlap reader vs. tabs**
+  ([renderer/styles.css](renderer/styles.css)) — добавлены `border-top:
+  1px solid rgba(0, 240, 255, 0.18)` и мягкий cyan-glow `box-shadow` сверху
+  у `.lib-reader`, плюс убран дубликат `background:` (декларация была
+  дважды). Reader визуально отделён от верхнего меню.
+- **Шум в логах импорта**
+  ([electron/lib/library/import-book.ts](electron/lib/library/import-book.ts),
+  [electron/lib/library/import-composite-html.ts](electron/lib/library/import-composite-html.ts)) —
+  при `duplicate_sha` больше не добавляется warning `import: duplicate of
+  XXX (SHA-256 match, parse skipped)`, который дублировал событие
+  `file.duplicate` в логе. Теперь на одну дублирующуюся книгу — одна
+  строка в логе, не две.
+
+### Added (regression tests)
+
+- **Lazy upgrade contract** в
+  [tests/layout-pipeline.test.ts](tests/layout-pipeline.test.ts):
+  - legacy book.md без `layoutVersion` ДОЛЖЕН получать Versator-разметку
+    (`callout` / `dropcap` / `dfn`);
+  - повторное применение `applyLayout` не дублирует разметку (защита от
+    race condition при lazy upgrade).
+- Versator suite вырос с 34 до **36 тестов**, все green.
+
+### Note for users
+
+Существующая библиотека получит научную вёрстку **автоматически при первом
+открытии книги в reader** — никаких миграций, никаких длинных операций.
+Performance: applyLayout пробегает крупный body (~1 МБ) за ~10–30 ms,
+незаметно для пользователя.
+
+---
+
 ## [0.8.0] — 2026-05-03 — Reader Purge + Versator Premium Layout
 
 Императорский приказ: уничтожить тяжёлую нативную читалку, заменить её

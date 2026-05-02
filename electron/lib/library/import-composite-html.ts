@@ -59,7 +59,7 @@ export async function importCompositeHtmlBook(
       duplicateReason: "duplicate_sha",
       existingBookId: dupId,
       existingBookTitle: existing?.title,
-      warnings: [...warnings, `composite-html: already imported as ${dupId}`],
+      warnings,
     };
   }
 
