@@ -32,6 +32,7 @@
  */
 
 import type { ModelWeight } from "../llm/model-size-classifier.js";
+import type { AimdController } from "../llm/aimd-controller.js";
 
 /**
  * Иt 8В.MAIN.1.5: io lane удалена как мёртвая — за всю историю Pipeline
@@ -50,6 +51,8 @@ export interface ImportSchedulerOptions {
   mediumConcurrency?: number;
   /** Лимит для heavy. Default: 1 (строгий). */
   heavyConcurrency?: number;
+  /** Источник времени (для тестов). По умолчанию Date.now. */
+  now?: () => number;
 }
 
 export interface SchedulerSnapshot {
@@ -76,6 +79,10 @@ const DEFAULT_HEAVY_CONCURRENCY = 1;
 
 export class ImportTaskScheduler {
   private readonly lanes: Record<TaskLane, Lane>;
+  /** Опциональный AIMD-контроллер на lane — подстраивает limit на основе success/latency. */
+  private readonly aimd: Partial<Record<TaskLane, AimdController>> = {};
+  /** Источник времени (для тестов). */
+  private readonly now: () => number;
 
   constructor(opts: ImportSchedulerOptions = {}) {
     this.lanes = {
@@ -83,6 +90,25 @@ export class ImportTaskScheduler {
       medium: { limit: opts.mediumConcurrency ?? DEFAULT_MEDIUM_CONCURRENCY, running: 0, queue: [] },
       heavy: { limit: opts.heavyConcurrency ?? DEFAULT_HEAVY_CONCURRENCY, running: 0, queue: [] },
     };
+    this.now = opts.now ?? ((): number => Date.now());
+  }
+
+  /**
+   * Подключить AIMD-контроллер к lane.
+   *
+   * Каждый завершённый task в этом lane передаётся в `controller.record()`.
+   * Контроллер сам решает когда менять limit и через `onLimitChange` callback
+   * (который мы здесь подменяем) применяет его к scheduler.
+   *
+   * Контракт: caller сам выставляет controller.opts.onLimitChange — мы
+   * добавляем wrapper для setLimit поверх существующего callback (если есть).
+   */
+  attachAimd(lane: TaskLane, controller: AimdController): void {
+    this.aimd[lane] = controller;
+  }
+
+  detachAimd(lane: TaskLane): void {
+    delete this.aimd[lane];
   }
 
   /**
@@ -149,13 +175,31 @@ export class ImportTaskScheduler {
   }
 
   private async runTask(lane: TaskLane, task: QueuedTask<unknown>): Promise<void> {
+    const startedAt = this.now();
+    let success = false;
     try {
       const result = await task.fn();
+      success = true;
       task.resolve(result);
     } catch (err) {
       task.reject(err);
     } finally {
       this.lanes[lane].running -= 1;
+      const latencyMs = this.now() - startedAt;
+      const aimd = this.aimd[lane];
+      if (aimd) {
+        try {
+          aimd.record(success, latencyMs);
+          /* AIMD сам через onLimitChange callback вызывает scheduler.setLimit
+             (если caller настроил). Также синхронизуем напрямую: */
+          const desired = aimd.getCurrentLimit();
+          if (desired !== this.lanes[lane].limit) {
+            this.setLimit(lane, desired);
+          }
+        } catch (e) {
+          console.warn(`[scheduler] AIMD record failed for lane=${lane}`, e);
+        }
+      }
       this.drain(lane);
     }
   }

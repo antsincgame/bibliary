@@ -37,6 +37,7 @@ import { buildDeltaKnowledgeResponseFormat } from "./json-schemas.js";
 import { ALLOWED_DOMAINS } from "../../crystallizer-constants.js";
 import { getModelPool } from "../llm/model-pool.js";
 import { activeJobs, DEFAULT_COLLECTION } from "../../ipc/dataset-v2-ipc-state.js";
+import { getChunksBulkhead } from "../resilience/bulkhead.js";
 
 export interface StartExtractionArgs {
   bookSourcePath: string;
@@ -154,6 +155,18 @@ export async function runExtraction(
   const targetCollection = args.targetCollection ?? DEFAULT_COLLECTION;
   assertValidCollectionName(targetCollection);
 
+  /* Bulkhead: maxConcurrent=1, maxQueue=3, acquireTimeout=5min.
+     Защита от: zombie-job заблокировал GPU; user spam-clicked Import.
+     Если очередь полна — caller получит BulkheadFullError и UI покажет
+     нормальное сообщение «очередь полная, дождитесь предыдущей». */
+  return getChunksBulkhead().run(async () => runExtractionInner(args, emit, targetCollection));
+}
+
+async function runExtractionInner(
+  args: StartExtractionArgs,
+  emit: (event: Record<string, unknown>) => void,
+  targetCollection: string,
+): Promise<StartExtractionResult> {
   const jobId = randomUUID();
   const ctrl = new AbortController();
   activeJobs.set(jobId, ctrl);

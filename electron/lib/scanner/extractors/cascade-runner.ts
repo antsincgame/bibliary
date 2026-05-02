@@ -27,6 +27,7 @@ import type {
 } from "./types.js";
 import { DEFAULT_ACCEPTABLE_QUALITY } from "./types.js";
 import { getCachedOcr, setCachedOcr, type OcrEngine } from "./ocr-cache.js";
+import { getOcrDriftMonitor } from "../ocr-drift-monitor.js";
 
 export interface RunCascadeOptions extends ExtractOptions {
   acceptableQuality?: number;
@@ -90,6 +91,16 @@ export async function runExtractionCascade(
 
     if (!attempt) continue;
     attempts.push(attempt);
+
+    /* Drift-monitor: telemetry-only сигнал для пост-морт анализа.
+       Не блокирует пайплайн. Записываем только осмысленный quality (>0). */
+    if (attempt.quality > 0) {
+      try {
+        getOcrDriftMonitor().record(attempt.engine, attempt.quality);
+      } catch {
+        /* Drift monitor не должен ломать OCR — глотаем любые ошибки. */
+      }
+    }
 
     /* Сохраняем в кеш только осмысленный результат (quality > 0). Тот факт что
        Tier «не справился» с quality=0 в кеше нам не нужен — повторный re-import

@@ -58,6 +58,70 @@ export type TelemetryEvent =
       error?: string;
       ts: string;
     }
+  | {
+      /**
+       * Circuit Breaker для LM Studio HTTP API перешёл в OPEN: errorRate в
+       * sliding window превысил threshold. Все следующие запросы будут
+       * мгновенно валиться CircuitOpenError до halfOpenAt.
+       */
+      type: "lmstudio.circuit_open";
+      name: string;
+      backoffMs: number;
+      consecutiveOpens: number;
+      windowFailures: number;
+      windowSuccesses: number;
+      ts: string;
+    }
+  | {
+      /**
+       * Circuit Breaker перешёл OPEN→HALF_OPEN — пропускаем пробный запрос.
+       * Если он успешен — вернёмся в CLOSED, если нет — снова в OPEN с
+       * увеличенным backoff.
+       */
+      type: "lmstudio.circuit_half_open";
+      name: string;
+      backoffMs: number;
+      ts: string;
+    }
+  | {
+      /** Circuit Breaker вернулся в CLOSED после серии успешных пробных запросов. */
+      type: "lmstudio.circuit_closed";
+      name: string;
+      ts: string;
+    }
+  | {
+      /**
+       * OCR Quality Drift detected — мониторинг обнаружил что recent quality
+       * значимо ниже baseline window. Telemetry-only сигнал для пост-морт
+       * анализа (никаких автокорректировок).
+       */
+      type: "ocr.quality_drift";
+      engine: "text-layer" | "system-ocr" | "vision-llm";
+      baselineMean: number;
+      recentMean: number;
+      driftRatio: number;
+      recentSamples: number;
+      windowSize: number;
+      ts: string;
+    }
+  | {
+      /**
+       * AIMD controller изменил concurrency limit для именованного контроллера
+       * (lane scheduler, пул соединений и т.п.). Reason указывает на причину:
+       *   - increase            — success rate высокий, latency в норме
+       *   - decrease_failure    — была ошибка в недавнем окне
+       *   - decrease_latency    — P95 latency превысил threshold
+       */
+      type: "aimd.adjusted";
+      name: string;
+      oldLimit: number;
+      newLimit: number;
+      reason: "increase" | "decrease_failure" | "decrease_latency";
+      successRate: number;
+      p95LatencyMs: number;
+      windowSize: number;
+      ts: string;
+    }
 ;
 
 export type TelemetryEventInput<E extends TelemetryEvent = TelemetryEvent> = E extends TelemetryEvent

@@ -18,6 +18,23 @@ export {
   type RequestPolicyContext,
   type PolicyContext,
 } from "./lm-request-policy";
+export {
+  CircuitBreaker,
+  CircuitOpenError,
+  getLmStudioCircuitBreaker,
+  _resetLmStudioCircuitBreakerForTests,
+  type CircuitBreakerOptions,
+  type CircuitBreakerStats,
+  type CircuitState,
+} from "./circuit-breaker.js";
+export {
+  Bulkhead,
+  BulkheadFullError,
+  getChunksBulkhead,
+  _resetChunksBulkheadForTests,
+  type BulkheadOptions,
+  type BulkheadStats,
+} from "./bulkhead.js";
 export * as telemetry from "./telemetry";
 export type { TelemetryEvent } from "./telemetry";
 export {

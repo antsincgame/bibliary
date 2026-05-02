@@ -63,6 +63,7 @@ import * as telemetry from "../resilience/telemetry.js";
 import { classifyByVramMB, evictionPriority, type ModelWeight } from "./model-size-classifier.js";
 import { getRoleLoadConfig } from "./role-load-config.js";
 import type { ModelRole } from "./model-role-resolver.js";
+import { KeyedAsyncMutex } from "./async-mutex.js";
 
 /** Известные ModelRole — синхронизировано с model-role-resolver.ts. */
 const KNOWN_MODEL_ROLES: ReadonlySet<ModelRole> = new Set<ModelRole>([
@@ -251,6 +252,10 @@ export class ModelPool {
   /** Inflight load дёт только сигнал "загрузка завершена" — refCount каждый
       caller инкрементит сам через fast path после await. */
   private readonly inflight = new Map<string, Promise<void>>();
+  /** Per-modelKey lock: атомарность {check entry → refCount++} vs {check refCount → unload + delete}.
+      Без него возможен race: makeRoom выбрал жертву X (refCount=0), пока ждёт unloadFn(X)
+      другой thread fast-path сделал refCount++; entry удаляется с pinned-handle на руках. */
+  private readonly keyedMutex = new KeyedAsyncMutex(256);
   private capacityMB: number;
   private capacityResolved: boolean;
   private capacityPromise: Promise<number> | null = null;
@@ -286,28 +291,31 @@ export class ModelPool {
     if (!modelKey || typeof modelKey !== "string") {
       throw new Error("ModelPool.acquire: modelKey must be a non-empty string");
     }
-    /* Fast path для уже учтённой и pinned модели. */
-    const existing = this.entries.get(modelKey);
-    if (existing) {
+    /* Fast path под per-modelKey lock: check + refCount++ атомарны относительно eviction. */
+    const fast = await this.keyedMutex.runExclusive(modelKey, async () => {
+      const existing = this.entries.get(modelKey);
+      if (!existing) return null;
       existing.refCount += 1;
       existing.lastUsed = this.now();
       if (opts.role) existing.role = opts.role;
       return this.makeHandle(existing);
-    }
+    });
+    if (fast) return fast;
 
     /* Inflight dedup — два concurrent acquire одного key не должны грузить
-       дважды. Ждём текущей загрузки, потом каждый caller сам инкрементит
-       refCount через fast path. */
+       дважды. Ждём текущей загрузки, потом снова fast-path под lock. */
     const inflight = this.inflight.get(modelKey);
     if (inflight) {
       await inflight.catch(() => undefined);
-      const after = this.entries.get(modelKey);
-      if (after) {
-        after.refCount += 1;
-        after.lastUsed = this.now();
-        if (opts.role) after.role = opts.role;
-        return this.makeHandle(after);
-      }
+      const after = await this.keyedMutex.runExclusive(modelKey, async () => {
+        const cur = this.entries.get(modelKey);
+        if (!cur) return null;
+        cur.refCount += 1;
+        cur.lastUsed = this.now();
+        if (opts.role) cur.role = opts.role;
+        return this.makeHandle(cur);
+      });
+      if (after) return after;
       /* Inflight завершилась с ошибкой и entry нет — fallback на собственный путь. */
     }
 
@@ -331,14 +339,17 @@ export class ModelPool {
       await this.ensureCapacityResolved();
       await this.syncFromLmStudio();
 
-      /* Повторно — после sync. */
-      const existing = this.entries.get(modelKey);
-      if (existing) {
-        existing.refCount += 1;
-        existing.lastUsed = this.now();
-        if (opts.role) existing.role = opts.role;
-        return this.makeHandle(existing);
-      }
+      /* Повторно — после sync. Под lock(modelKey) чтобы быть атомарным
+         относительно конкурирующих fast-path acquire / eviction. */
+      const afterSync = await this.keyedMutex.runExclusive(modelKey, async () => {
+        const cur = this.entries.get(modelKey);
+        if (!cur) return null;
+        cur.refCount += 1;
+        cur.lastUsed = this.now();
+        if (opts.role) cur.role = opts.role;
+        return this.makeHandle(cur);
+      });
+      if (afterSync) return afterSync;
 
       let downloaded: DownloadedModelInfo[] = [];
       try {
@@ -369,8 +380,11 @@ export class ModelPool {
         source: "pool",
       };
       /* Используем фактический modelKey из LM Studio (info.modelKey), а не
-         запрошенный — LM Studio мог нормализовать. */
-      this.entries.set(entry.modelKey, entry);
+         запрошенный — LM Studio мог нормализовать. Запись делаем под lock,
+         чтобы конкурентный acquire(info.modelKey) не увидел частично созданную entry. */
+      await this.keyedMutex.runExclusive(entry.modelKey, async () => {
+        this.entries.set(entry.modelKey, entry);
+      });
       return this.makeHandle(entry);
     });
   }
@@ -409,20 +423,7 @@ export class ModelPool {
    * Возвращает количество выгруженных.
    */
   async evictAll(): Promise<number> {
-    return this.runOnChain(async () => {
-      const victims = [...this.entries.values()].filter((e) => e.refCount === 0);
-      let unloaded = 0;
-      for (const v of victims) {
-        try {
-          await this.unloadFn(v.identifier);
-          unloaded += 1;
-        } catch (e) {
-          console.warn(`[model-pool] evictAll: unload(${v.modelKey}) failed`, e);
-        }
-        this.entries.delete(v.modelKey);
-      }
-      return unloaded;
-    });
+    return this.runOnChain(async () => this.evictAllInternal());
   }
 
   /**
@@ -546,6 +547,31 @@ export class ModelPool {
         }
 
         console.warn(`[model-pool] OOM persisted for heavy model "${modelKey}" after evictAll; unloading all heavy models`);
+
+        /* #A2 fail-fast: если ВСЕ оставшиеся heavy pinned (refCount > 0) — нет смысла
+           ни выгружать (мы не трогаем pinned), ни retry'ить. Лучше отдать caller'у
+           понятную ошибку чем сломать pinned-модели активных импортов. Обнаружить
+           этот случай до unloadAllHeavyInternal: пустой список remaining heavy — НЕ
+           ошибка (значит evictAll уже всё унёс, retry оправдан). */
+        const remainingHeavy = [...this.entries.values()].filter(
+          (e) => e.vramMB > HEAVY_THRESHOLD_MB && e.modelKey !== modelKey,
+        );
+        const allHeavyPinned =
+          remainingHeavy.length > 0 && remainingHeavy.every((e) => e.refCount > 0);
+        if (allHeavyPinned) {
+          const reason = "all heavy models pinned by active jobs (refCount > 0); cannot evict without breaking them";
+          telemetry.logEvent({
+            type: "lmstudio.oom_failed",
+            modelKey,
+            vramMB,
+            attempts,
+            lastError: reason,
+          });
+          throw new Error(
+            `OOM: cannot load "${modelKey}" (${vramMB} MB). ${reason}. Wait for current operations to complete and retry.`,
+          );
+        }
+
         try {
           await this.unloadAllHeavyInternal(modelKey);
         } catch (unloadErr) {
@@ -580,18 +606,26 @@ export class ModelPool {
 
   /**
    * Внутренний evictAll — НЕ берёт runOnChain (мы уже внутри цепочки).
+   * Каждая жертва выгружается под per-modelKey lock с re-check refCount,
+   * чтобы concurrent fast-path acquire не получил handle на удаляемую entry.
    */
   private async evictAllInternal(): Promise<number> {
-    const victims = [...this.entries.values()].filter((e) => e.refCount === 0);
+    const candidates = [...this.entries.values()].filter((e) => e.refCount === 0);
     let unloaded = 0;
-    for (const v of victims) {
-      try {
-        await this.unloadFn(v.identifier);
-        unloaded += 1;
-      } catch (e) {
-        console.warn(`[model-pool] evictAllInternal: unload(${v.modelKey}) failed`, e);
-      }
-      this.entries.delete(v.modelKey);
+    for (const v of candidates) {
+      await this.keyedMutex.runExclusive(v.modelKey, async () => {
+        const cur = this.entries.get(v.modelKey);
+        /* Re-check: refCount мог увеличиться пока ждали lock (другой thread
+           держит handle и не отдал). Не трогаем pinned. */
+        if (!cur || cur.refCount > 0) return;
+        try {
+          await this.unloadFn(cur.identifier);
+          unloaded += 1;
+        } catch (e) {
+          console.warn(`[model-pool] evictAllInternal: unload(${cur.modelKey}) failed`, e);
+        }
+        this.entries.delete(cur.modelKey);
+      });
     }
     return unloaded;
   }
@@ -599,20 +633,29 @@ export class ModelPool {
   /**
    * Выгружает все heavy (>16 GB) модели, кроме `exceptKey`. Используется как
    * последняя попытка восстановления при OOM на heavy. Не берёт runOnChain.
+   *
+   * #A2 invariant: НИКОГДА не трогает pinned модели (refCount > 0). Раньше
+   * этот путь нарушал контракт withModel — caller получал handle, потом OOM
+   * recovery выгружал ту же модель под ним. Теперь pinned защищены: если
+   * все heavy pinned, метод вернёт 0 и caller получит чистую OOM-ошибку.
    */
   private async unloadAllHeavyInternal(exceptKey: string): Promise<number> {
-    const victims = [...this.entries.values()].filter(
-      (e) => e.vramMB > HEAVY_THRESHOLD_MB && e.modelKey !== exceptKey,
+    const candidates = [...this.entries.values()].filter(
+      (e) => e.vramMB > HEAVY_THRESHOLD_MB && e.modelKey !== exceptKey && e.refCount === 0,
     );
     let unloaded = 0;
-    for (const v of victims) {
-      try {
-        await this.unloadFn(v.identifier);
-        unloaded += 1;
-      } catch (e) {
-        console.warn(`[model-pool] unloadAllHeavyInternal: unload(${v.modelKey}) failed`, e);
-      }
-      this.entries.delete(v.modelKey);
+    for (const v of candidates) {
+      await this.keyedMutex.runExclusive(v.modelKey, async () => {
+        const cur = this.entries.get(v.modelKey);
+        if (!cur || cur.refCount > 0) return;
+        try {
+          await this.unloadFn(cur.identifier);
+          unloaded += 1;
+        } catch (e) {
+          console.warn(`[model-pool] unloadAllHeavyInternal: unload(${cur.modelKey}) failed`, e);
+        }
+        this.entries.delete(cur.modelKey);
+      });
     }
     return unloaded;
   }
@@ -620,16 +663,25 @@ export class ModelPool {
   /**
    * Освободить место под `needMB`. Эвиктит LRU среди refCount=0.
    * Если все pinned — пробуем загрузить и надеемся на LM Studio (он сам OOM'нет).
+   *
+   * #A1 invariant: между выбором жертвы и `unloadFn` НЕ должно быть окна, в
+   * котором кто-то увеличит refCount. Берём per-modelKey lock на жертву и
+   * под ним повторно проверяем refCount — если стал > 0, пропускаем и берём
+   * следующего кандидата.
+   *
+   * `safetyAttempts` — защита от бесконечного цикла, когда жертвы постоянно
+   * становятся pinned под lock (живой fast-path трафик). После N неудач
+   * выходим — caller попробует loadFn и если LM Studio OOM, пройдёт через
+   * loadWithOomRecovery.
    */
   private async makeRoom(needMB: number): Promise<void> {
-    while (this.totalLoadedMB() + needMB > this.capacityMB) {
+    let safetyAttempts = 32;
+    while (this.totalLoadedMB() + needMB > this.capacityMB && safetyAttempts > 0) {
+      safetyAttempts -= 1;
       /* Композитная сортировка кандидатов на выселение:
          1. Сначала по weight (heavy первая жертва — освобождает больше места,
             обычно дороже держать неиспользуемой). evictionPriority: heavy=3>medium=2>light=1.
-         2. При равном весе — LRU (старшая по lastUsed первой).
-         Это сохраняет существующее LRU поведение для одного weight и добавляет
-         heavy-first для смешанных нагрузок (типичный сценарий: импорт держит
-         heavy vision-LLM в памяти после того как nightlight evaluator закончил). */
+         2. При равном весе — LRU (старшая по lastUsed первой). */
       const evictable = [...this.entries.values()]
         .filter((e) => e.refCount === 0)
         .sort((a, b) => {
@@ -639,16 +691,27 @@ export class ModelPool {
         });
       const victim = evictable[0];
       if (!victim) {
-        /* Нет evictable — все pinned. Пробуем продолжить. */
+        /* Нет evictable — все pinned. Пробуем продолжить (loadFn → LM Studio OOM → recovery). */
         return;
       }
-      try {
-        await this.unloadFn(victim.identifier);
-      } catch (e) {
-        console.warn(`[model-pool] makeRoom: unload(${victim.modelKey}) failed`, e);
-        /* Если unload упал — всё равно убираем из учёта чтобы не зациклиться. */
+      let evicted = false;
+      await this.keyedMutex.runExclusive(victim.modelKey, async () => {
+        const cur = this.entries.get(victim.modelKey);
+        /* Re-check под lock: refCount мог увеличиться. Если pinned — пропускаем. */
+        if (!cur || cur.refCount > 0) return;
+        try {
+          await this.unloadFn(cur.identifier);
+        } catch (e) {
+          console.warn(`[model-pool] makeRoom: unload(${cur.modelKey}) failed`, e);
+          /* Если unload упал — всё равно убираем из учёта чтобы не зациклиться. */
+        }
+        this.entries.delete(cur.modelKey);
+        evicted = true;
+      });
+      if (!evicted) {
+        /* Жертва успела стать pinned — попробуем следующего кандидата на след. итерации. */
+        continue;
       }
-      this.entries.delete(victim.modelKey);
     }
   }
 
