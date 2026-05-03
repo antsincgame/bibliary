@@ -20,6 +20,31 @@ let readerContainer = null;
 /** @type {HTMLElement | null} */
 let catalogBody = null;
 
+/** @type {((ev: MouseEvent) => void) | null} */
+let navInterceptor = null;
+
+/** @type {HTMLElement | null} */
+let activeReaderRoot = null;
+
+/**
+ * Reference to the "AI Layout" button in the reader toolbar.
+ * Kept at module level so queue-events can update it from outside openBook().
+ * @type {HTMLButtonElement | null}
+ */
+let layoutAssistantBtn = null;
+
+/**
+ * Unsubscribe function for `onLayoutAssistantEvent`. Cleaned up in closeReader().
+ * @type {(() => void) | null}
+ */
+let unsubscribeLayoutEvents = null;
+
+/**
+ * True when the layout-assistant queue is actively processing the current book.
+ * Used by the dual-purpose AI Layout button to switch between Run/Cancel modes.
+ */
+let layoutIsProcessing = false;
+
 /**
  * Strip YAML frontmatter (--- ... ---) from markdown text.
  * @param {string} md
@@ -56,6 +81,155 @@ function inlineImageRefs(md) {
   });
   out = out.replace(/^\[img-[\w-]+\]:\s*\S+\s*\r?\n?/gm, "");
   out = out.replace(/^<!--\s*Image references[^>]*-->\s*\r?\n?/gm, "");
+  return out;
+}
+
+/**
+ * Wrap a contiguous stack of "Page N" image paragraphs into a collapsible
+ * `<details>` block so the reader doesn't open with a wall of full-width
+ * PDF/DJVU page screenshots. The cover image stays visible above the fold;
+ * the page gallery becomes one collapsed strip the user can expand on
+ * demand.
+ *
+ * Idempotent: if the markdown already contains an explicit
+ * `<details class="lib-reader-page-gallery">` block (new md-converter
+ * output), this function leaves the HTML untouched. Otherwise (legacy
+ * book.md files where each `![Page N][img-XXX]` was emitted as a bare
+ * paragraph) we group up to N consecutive `<p><img alt="…Page…">` blocks
+ * and replace them in place.
+ *
+ * @param {string} html
+ * @returns {string}
+ */
+function wrapLegacyPageGallery(html) {
+  if (typeof html !== "string" || html.length === 0) return html;
+
+  /* P3 (2026-05-03, user feedback): пользователь явно сказал что превью
+     страниц мешает чтению ("зачем превью страниц, текст плохо
+     отформатирован"). Полностью убираем гирлянду из reader-а — реальные
+     страницы доступны через "Открыть оригинал". Срабатывает и для уже
+     обёрнутых <details class="lib-reader-page-gallery">, и для
+     legacy-стека голых <p><img alt="Page N">. */
+
+  let out = html.replace(/<details\b[^>]*class="[^"]*lib-reader-page-gallery[^"]*"[^>]*>[\s\S]*?<\/details>/g, "");
+
+  const galleryRe = /(?:<p>\s*<img\b[^>]*\balt="[^"]*Page[^"]*"[^>]*>\s*<\/p>\s*){2,}/g;
+  out = out.replace(galleryRe, "");
+
+  return out;
+}
+
+/**
+ * Detect a contiguous block of "ToC-like" lines (each looking like
+ * `Some Title … 17` or `Глава 1. Foo .... 32`) inside the rendered HTML and
+ * replace it with a structured `<nav class="lib-reader-toc">` element with
+ * proper dot leaders, a clickable title and a fixed-width page number.
+ *
+ * Only kicks in when the text was originally laid out as a sequence of
+ * paragraphs with dot-leader patterns — this is what most scanned PDF/DJVU
+ * tables of contents look like. Markdown tables go through a separate
+ * `<td>` linkify pass.
+ *
+ * @param {string} html
+ * @param {{ id: string; text: string; level: number }[]} headings
+ * @returns {string}
+ */
+/** Эвристики для распознавания и структуризации dot-leader ToC блоков. */
+const TOC_HEURISTIC_CONFIG = Object.freeze({
+  /** Минимальная длина нормализованного ключа заголовка для индексации. */
+  minHeadingKeyLength: 4,
+  /** Максимальная длина строки, которая ещё может быть ToC-entry. */
+  maxLineLength: 220,
+  /** Минимум подряд идущих ToC-строк, чтобы считать блок настоящим оглавлением. */
+  minConsecutiveTocLines: 4,
+  /** Максимум разрядов в номере страницы (защита от ложных совпадений). */
+  maxPageDigits: 4,
+});
+
+function structureLeaderToc(html, headings) {
+  if (typeof html !== "string" || html.length === 0) return html;
+
+  const norm = (s) => String(s || "").toLowerCase()
+    .replace(/[\s.,:;!?()«»"'\\/|`-]+/g, " ").trim();
+  const headingByKey = new Map();
+  for (const h of headings) {
+    const key = norm(h.text);
+    if (key.length >= TOC_HEURISTIC_CONFIG.minHeadingKeyLength && !headingByKey.has(key)) {
+      headingByKey.set(key, h.id);
+    }
+  }
+
+  /* Patterns:
+     Pattern A — dot-leader: "Введение........... 5"  /  "Глава 1 ..... 23"
+     Pattern B — gap-page:    "Глава 1. Начало работы 23"  (page = trailing number, title >= 4 chars) */
+  const PATTERN_LEADER = new RegExp(
+    `^([^\\d][^.\\n]{2,${TOC_HEURISTIC_CONFIG.maxLineLength}}?)\\s*(?:\\.{2,}|·{2,}|…+)\\s*(\\d{1,${TOC_HEURISTIC_CONFIG.maxPageDigits}})\\s*$`
+  );
+  const PATTERN_GAP = new RegExp(
+    `^((?:Глава|Раздел|Часть|Chapter|Section|Part|Appendix|Приложение)\\s+[\\dIVXLCM]+(?:[\\.:]?\\s+[^\\d\\n]{1,${TOC_HEURISTIC_CONFIG.maxLineLength}})?)\\s+(\\d{1,${TOC_HEURISTIC_CONFIG.maxPageDigits}})\\s*$`,
+    "i"
+  );
+
+  const parseLine = (rawText) => {
+    const text = String(rawText || "").replace(/\s+/g, " ").trim();
+    if (!text || text.length > TOC_HEURISTIC_CONFIG.maxLineLength) return null;
+    let m = text.match(PATTERN_LEADER);
+    if (m) return { title: m[1].trim(), page: m[2] };
+    m = text.match(PATTERN_GAP);
+    if (m) return { title: m[1].trim(), page: m[2] };
+    return null;
+  };
+
+  /* Split HTML into top-level <p> and other-block segments, then group runs
+     of consecutive ToC-like <p>'s. */
+  const PARA_RE = /<p\b[^>]*>([\s\S]*?)<\/p>/g;
+  const matches = [];
+  let m;
+  while ((m = PARA_RE.exec(html)) !== null) {
+    const innerText = m[1].replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").trim();
+    matches.push({ start: m.index, end: m.index + m[0].length, full: m[0], text: innerText, parsed: parseLine(innerText) });
+  }
+  if (matches.length === 0) return html;
+
+  /* Group consecutive parsed paragraphs (separated only by whitespace). */
+  const escape = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#039;" }[c]));
+
+  const replacements = [];
+  let i = 0;
+  while (i < matches.length) {
+    if (!matches[i].parsed) { i++; continue; }
+    let j = i;
+    while (j + 1 < matches.length && matches[j + 1].parsed) {
+      const gap = html.slice(matches[j].end, matches[j + 1].start);
+      if (gap.replace(/\s+/g, "") !== "") break;
+      j++;
+    }
+    if (j - i + 1 >= TOC_HEURISTIC_CONFIG.minConsecutiveTocLines) {
+      const entries = matches.slice(i, j + 1).map((mm) => {
+        const titleHtml = escape(mm.parsed.title);
+        const id = headingByKey.get(norm(mm.parsed.title));
+        const titleNode = id
+          ? `<a class="lib-reader-toc-link" href="#${id}">${titleHtml}</a>`
+          : `<span class="lib-reader-toc-title">${titleHtml}</span>`;
+        return `<li class="lib-reader-toc-entry">${titleNode}<span class="lib-reader-toc-leader" aria-hidden="true"></span><span class="lib-reader-toc-page">${escape(mm.parsed.page)}</span></li>`;
+      }).join("");
+      replacements.push({
+        start: matches[i].start,
+        end: matches[j].end,
+        html: `<nav class="lib-reader-toc" aria-label="Содержание"><ol class="lib-reader-toc-list">${entries}</ol></nav>`,
+      });
+    }
+    i = j + 1;
+  }
+  if (replacements.length === 0) return html;
+
+  let out = "";
+  let cursor = 0;
+  for (const r of replacements) {
+    out += html.slice(cursor, r.start) + r.html;
+    cursor = r.end;
+  }
+  out += html.slice(cursor);
   return out;
 }
 
@@ -133,22 +307,24 @@ function linkifyTocEntries(html, headings) {
   /** @type {{ id: string; key: string; level: number }[]} */
   const index = headings
     .map((h) => ({ id: h.id, key: norm(h.text), level: h.level }))
-    .filter((h) => h.key.length >= 4)
+    .filter((h) => h.key.length >= TOC_HEURISTIC_CONFIG.minHeadingKeyLength)
     .sort((a, b) => b.key.length - a.key.length);
   if (index.length === 0) return html;
-  return html.replace(/<(p|li)([^>]*)>([\s\S]*?)<\/\1>/g, (full, tag, attrs, inner) => {
+  return html.replace(/<(p|li|td|th)([^>]*)>([\s\S]*?)<\/\1>/g, (full, tag, attrs, inner) => {
     if (/<a\b/i.test(inner) || /<h[1-6]\b/i.test(inner)) return full;
+    /* P3 фикс (2026-05-03): пропускаем «параграфы»-картинки, summary блоков,
+       пустые-короткие — иначе родится мусорная ссылка типа «Превью страниц»
+       которая ведёт в никуда (user feedback скрина 4). */
+    if (/<img\b/i.test(inner)) return full;
+    if (/<summary\b/i.test(inner)) return full;
     const plain = inner.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&");
     const plainNorm = norm(plain);
-    if (plainNorm.length < 4) return full;
-    /* Find the longest heading key that the plain text starts with. Avoids
-       linkifying body text like "Глава 1 учит читать", which doesn't begin
-       with a known heading prefix exactly. */
+    if (plainNorm.length < TOC_HEURISTIC_CONFIG.minHeadingKeyLength) return full;
+    /* Слишком длинные параграфы — почти наверняка обычный текст книги,
+       а не ToC-строка; ставить ссылку на весь абзац визуально вредно. */
+    if (plain.length > TOC_HEURISTIC_CONFIG.maxLineLength) return full;
     const match = index.find((h) => plainNorm.startsWith(h.key));
     if (!match) return full;
-    /* Linkify by replacing the original inner with an anchor wrapper around
-       the whole inner — simpler than slicing tokens precisely, still gives
-       the user a clickable ToC entry that scrolls to the heading. */
     return `<${tag}${attrs}><a class="lib-reader-toc-link" href="#${match.id}">${inner}</a></${tag}>`;
   });
 }
@@ -177,11 +353,24 @@ export async function openBook(bookId, root) {
   }
 
   root.classList.add("lib-reader-open");
+  /* P2 (2026-05-03): глобальный маркер «reader открыт» — CSS прячет
+     .lib-topbar (заголовок «Библиотека книг» мешает чтению, юзер сказал). */
+  document.body.classList.add("lib-reader-active");
+  activeReaderRoot = root;
   catalogBody = root.querySelector(".lib-catalog-body");
   if (catalogBody) catalogBody.style.display = "none";
 
   const existing = root.querySelector(".lib-reader");
   if (!existing) root.appendChild(readerContainer);
+
+  /* P6 фикс навигации (2026-05-03): пользователь жаловался, что когда книга
+     открыта, клик по табам «Импорт / Каталог / Поиск / Коллекции» или по
+     иконке в sidebar не «срабатывает». Реальная причина — switchTab
+     закрывает reader, но юзер видит, как pane исчезает, и думает что клик
+     не сработал; иногда reader перекрывает табы скроллом. Решение:
+     перехватываем любой клик по навигации в capture-фазе, СНАЧАЛА явно
+     закрываем reader, потом даём клику дойти до родного обработчика. */
+  installNavInterceptor(root);
 
   clear(readerContainer);
   readerContainer.appendChild(
@@ -215,11 +404,20 @@ export async function openBook(bookId, root) {
        `![Page 2][img-001]` text. Inlining keeps every image visible. */
     bodyMd = inlineImageRefs(bodyMd);
     let html = renderMarkdown(bodyMd);
+    /* Collapse the page-gallery block (legacy book.md before md-converter
+       wrapping was added) so the reader opens to text, not 12 full-width
+       page screenshots. */
+    html = wrapLegacyPageGallery(html);
     /* Add anchor ids to all headings, then linkify ToC paragraphs/list items
        that match a heading prefix. Result: clickable table of contents that
-       jumps to the corresponding chapter heading (P2 fix). */
+       jumps to the corresponding chapter heading (P2 fix).
+       P4 (2026-05-03): дополнительно конвертируем сплошные блоки строк
+       вида "Title……… 17" в структурный <nav class="lib-reader-toc"> с
+       dot leaders, чтобы оглавление выглядело как настоящее оглавление
+       книги, а не дамп. */
     const withAnchors = addHeadingAnchors(html);
-    html = linkifyTocEntries(withAnchors.html, withAnchors.headings);
+    html = structureLeaderToc(withAnchors.html, withAnchors.headings);
+    html = linkifyTocEntries(html, withAnchors.headings);
 
     currentBook = { bookId, meta, html, coverDataUrl };
     renderReader(root);
@@ -244,10 +442,49 @@ export function closeReader(root) {
   if (reader) reader.remove();
   readerContainer = null;
   root.classList.remove("lib-reader-open");
+  document.body.classList.remove("lib-reader-active");
+  activeReaderRoot = null;
+  uninstallNavInterceptor();
+  /* Unsubscribe layout-assistant events (renderer badge cleanup). */
+  if (unsubscribeLayoutEvents) {
+    unsubscribeLayoutEvents();
+    unsubscribeLayoutEvents = null;
+  }
+  layoutAssistantBtn = null;
+  layoutIsProcessing = false;
   if (catalogBody) {
     catalogBody.style.display = "";
     catalogBody = null;
   }
+}
+
+/**
+ * Install a single document-level click interceptor (capture phase) that
+ * auto-closes the reader whenever the user activates any global navigation
+ * element — sidebar route icons or top-level library tabs. Without this the
+ * reader visually overlays the catalog pane and the user perceives clicks
+ * as broken: tab switches the pane but the just-closed reader is still in
+ * the DOM tree of the previously-active pane.
+ *
+ * @param {HTMLElement} root
+ */
+function installNavInterceptor(root) {
+  if (navInterceptor) return;
+  navInterceptor = (ev) => {
+    if (!activeReaderRoot) return;
+    const target = /** @type {HTMLElement|null} */ (ev.target);
+    if (!target) return;
+    const trigger = target.closest(".sidebar-icon, .lib-tab");
+    if (!trigger) return;
+    closeReader(activeReaderRoot);
+  };
+  document.addEventListener("click", navInterceptor, true);
+}
+
+function uninstallNavInterceptor() {
+  if (!navInterceptor) return;
+  document.removeEventListener("click", navInterceptor, true);
+  navInterceptor = null;
 }
 
 /** @param {HTMLElement} root */
@@ -310,6 +547,98 @@ function renderReader(root) {
       title: t("library.reader.action.saveCover.tooltip"),
       onclick: () => downloadCover(coverDataUrl, shownTitle),
     }, t("library.reader.action.saveCover")) : null,
+    /* Layout Assistant (LLM): прогон через локальную модель для разметки
+       заголовков, удаления OCR-junk. Полностью opt-in.
+       Кнопка — двурежимная: обычный режим запускает обработку,
+       режим Cancel (когда queue активен на этой книге) отменяет её.
+       Переключением управляет `layoutIsProcessing` + `onLayoutAssistantEvent`. */
+    (() => {
+      /** @type {HTMLButtonElement} */
+      const btn = /** @type {HTMLButtonElement} */ (el("button", {
+        class: "lib-btn lib-btn-ghost lib-reader-action lib-reader-action-layout",
+        type: "button",
+        title: t("library.reader.action.layoutAssistant.tooltip"),
+        onclick: async (ev) => {
+          const b = ev.currentTarget instanceof HTMLButtonElement ? ev.currentTarget : null;
+          /* Cancel mode: queue is actively processing this book. */
+          if (layoutIsProcessing) {
+            if (typeof window.api.library.layoutAssistantCancelCurrent === "function") {
+              await window.api.library.layoutAssistantCancelCurrent();
+            }
+            return;
+          }
+          /* Run mode: manually trigger layout-assistant on this book. */
+          const { showAlert } = await import("../components/ui-dialog.js");
+          if (b) {
+            b.disabled = true;
+            b.dataset.originalLabel = b.textContent || "";
+            b.textContent = t("library.reader.action.layoutAssistant.running");
+          }
+          try {
+            const r = await window.api.library.layoutAssistantRunBook(currentBook.bookId);
+            if (!r || r.ok === false) {
+              await showAlert(t("library.reader.action.layoutAssistant.failed", { reason: r?.reason || "" }));
+              return;
+            }
+            if (r.applied) {
+              await showAlert(t("library.reader.action.layoutAssistant.applied", {
+                chunksOk: String(r.chunksOk ?? 0),
+                chunksFailed: String(r.chunksFailed ?? 0),
+                model: r.model || "?",
+              }));
+              /* Reload book content to show updates. */
+              const { renderCatalog } = await import("./catalog.js");
+              await renderCatalog(root);
+            } else {
+              await showAlert(t("library.reader.action.layoutAssistant.noop", { reason: r.reason || "" }));
+            }
+          } catch (e) {
+            await showAlert(t("library.reader.action.layoutAssistant.failed", {
+              reason: e instanceof Error ? e.message : String(e),
+            }));
+          } finally {
+            if (b) {
+              b.disabled = false;
+              b.textContent = b.dataset.originalLabel || t("library.reader.action.layoutAssistant");
+            }
+          }
+        },
+      }, t("library.reader.action.layoutAssistant")));
+      /* Save ref so queue events can update button state without re-render. */
+      layoutAssistantBtn = btn;
+      return btn;
+    })(),
+    /* P6 (2026-05-03, user feedback "Кнопки Сжечь — нету"): destructive
+       action рядом с обычными — visually distinct (danger styling), guarded
+       by confirm dialog. IPC уже есть: window.api.library.deleteBook. */
+    el("button", {
+      class: "lib-btn lib-btn-ghost lib-reader-action lib-reader-action-burn",
+      type: "button",
+      title: t("library.reader.action.burn.tooltip"),
+      onclick: async () => {
+        const { showConfirm, showAlert } = await import("../components/ui-dialog.js");
+        const ok = await showConfirm(
+          t("library.reader.action.burn.confirm", { title: shownTitle || t("library.reader.action.burn.thisBook") }),
+          { okText: t("library.reader.action.burn.ok"), title: t("library.reader.action.burn.title") },
+        );
+        if (!ok) return;
+        try {
+          const { STATE } = await import("./state.js");
+          const activeCollection = STATE.targetCollection || STATE.collection || undefined;
+          const r = await window.api.library.deleteBook(currentBook.bookId, true, activeCollection);
+          if (!r || r.ok === false) {
+            await showAlert(t("library.reader.action.burn.failed", { reason: r?.reason || "" }));
+            return;
+          }
+          closeReader(root);
+          /* Refresh catalog so the deleted row disappears from the list. */
+          const { renderCatalog } = await import("./catalog.js");
+          await renderCatalog(root);
+        } catch (e) {
+          await showAlert(t("library.reader.action.burn.failed", { reason: e instanceof Error ? e.message : String(e) }));
+        }
+      },
+    }, t("library.reader.action.burn")),
   ].filter(Boolean));
 
   const header = el("div", { class: "lib-reader-header" }, [
@@ -336,17 +665,67 @@ function renderReader(root) {
     ].filter(Boolean)),
   ]);
 
+  /* Theme switcher: dark / light / sepia (Perplexity research 2026-05-03).
+     Light bg + dark text improves comprehension in well-lit rooms (Buchner &
+     Baumgartner 2007, Piepenbrock et al. 2013). Dark mode reduces dry eye
+     symptoms for night reading. Sepia (warm tint) reduces blue-light fatigue.
+     The toggle applies a data-attribute to .lib-reader-body, CSS handles
+     the palette swap via custom properties. Preference is stored in
+     sessionStorage so it persists across book switches within one session. */
+  const themeSwitcher = buildReaderThemeSwitcher();
+
   /* Iter 12 P2.1: «meaningful body» check (Phalanx Risk Mitigation #5).
      Не просто length<200, а wordCount + sentenceCount. */
   const meaningful = isMeaningfulMarkdown(html);
   const body = el("div", { class: "lib-reader-body", html });
+  const savedTheme = getReaderTheme();
+  if (savedTheme && savedTheme !== "dark") body.dataset.theme = savedTheme;
 
-  readerContainer.append(header, body);
+  readerContainer.append(header, themeSwitcher, body);
   /* Показываем баннер при любом "не осмысленном" контенте — независимо от
      наличия обложки. Книги с failed-import часто не имеют ни обложки, ни
      нормального текста (только стаб "Import failed."). */
   if (!meaningful) {
     readerContainer.appendChild(buildEmptyBodyBanner(currentBook.bookId, meta));
+  }
+
+  /* Reader badge: подписываемся на queue-события layout-assistant для обновления
+     кнопки «AI Layout» в toolbar. Unsubscribe происходит в closeReader(). */
+  if (
+    typeof window.api.library.onLayoutAssistantEvent === "function" &&
+    currentBook
+  ) {
+    const trackedBookId = currentBook.bookId;
+    /* Очищаем предыдущую подписку если была (defensive). */
+    if (unsubscribeLayoutEvents) {
+      unsubscribeLayoutEvents();
+      unsubscribeLayoutEvents = null;
+    }
+    unsubscribeLayoutEvents = window.api.library.onLayoutAssistantEvent((evt) => {
+      /* Реагируем только на события текущей книги. */
+      if (evt.bookId !== trackedBookId) return;
+      if (!layoutAssistantBtn) return;
+      if (evt.type === "layout.started") {
+        /* Switch to Cancel mode: keep button enabled so user can abort. */
+        layoutIsProcessing = true;
+        layoutAssistantBtn.disabled = false;
+        layoutAssistantBtn.dataset.originalLabel = layoutAssistantBtn.dataset.originalLabel
+          || t("library.reader.action.layoutAssistant");
+        layoutAssistantBtn.textContent = t("library.reader.action.layoutAssistant.cancel");
+        layoutAssistantBtn.title = t("library.reader.action.layoutAssistant.cancelTooltip");
+      } else if (
+        evt.type === "layout.done" ||
+        evt.type === "layout.skipped" ||
+        evt.type === "layout.failed"
+      ) {
+        /* Restore Run mode. */
+        layoutIsProcessing = false;
+        layoutAssistantBtn.disabled = false;
+        layoutAssistantBtn.textContent = layoutAssistantBtn.dataset.originalLabel
+          || t("library.reader.action.layoutAssistant");
+        layoutAssistantBtn.title = t("library.reader.action.layoutAssistant.tooltip");
+      }
+    });
   }
 }
 
@@ -401,6 +780,51 @@ function buildEmptyBodyBanner(bookId, meta) {
       },
     }, t("library.reader.empty.openOriginal")),
   ]);
+}
+
+/* ── Reader theme switcher ──────────────────────────────────────────── */
+
+const READER_THEMES = /** @type {const} */ (["dark", "light", "sepia"]);
+const READER_THEME_LABELS = { dark: "Dark", light: "Light", sepia: "Sepia" };
+const READER_THEME_KEY = "bibliary_reader_theme";
+
+/** @returns {string} */
+function getReaderTheme() {
+  try { return sessionStorage.getItem(READER_THEME_KEY) || "dark"; } catch { return "dark"; }
+}
+
+/** @param {string} theme */
+function setReaderTheme(theme) {
+  try { sessionStorage.setItem(READER_THEME_KEY, theme); } catch { /* private mode */ }
+}
+
+function buildReaderThemeSwitcher() {
+  const current = getReaderTheme();
+  const buttons = READER_THEMES.map((theme) => {
+    const btn = el("button", {
+      class: `lib-btn lib-btn-ghost lib-reader-theme-btn${theme === current ? " lib-reader-theme-btn-active" : ""}`,
+      type: "button",
+      "data-theme": theme,
+      title: READER_THEME_LABELS[theme],
+      onclick: () => {
+        const body = readerContainer?.querySelector(".lib-reader-body");
+        if (body) {
+          if (theme === "dark") {
+            delete /** @type {HTMLElement} */ (body).dataset.theme;
+          } else {
+            /** @type {HTMLElement} */ (body).dataset.theme = theme;
+          }
+        }
+        setReaderTheme(theme);
+        container.querySelectorAll(".lib-reader-theme-btn").forEach((b) => {
+          b.classList.toggle("lib-reader-theme-btn-active", /** @type {HTMLElement} */ (b).dataset.theme === theme);
+        });
+      },
+    }, READER_THEME_LABELS[theme]);
+    return btn;
+  });
+  const container = el("div", { class: "lib-reader-theme-switcher" }, buttons);
+  return container;
 }
 
 /** @param {string} src @param {string} alt */

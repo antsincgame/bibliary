@@ -8,6 +8,7 @@ import { mountSearch } from "./search.js";
 import { applyI18n, getLocale, setLocale, listLocales, onLocaleChange, t } from "./i18n.js";
 import { mountResilienceBar } from "./components/resilience-bar.js";
 import { openWelcomeWizard } from "./components/welcome-wizard.js";
+import { mountVersionBadge } from "./components/version-badge.js";
 
 const ROUTES = ["models", "library", "crystal", "datasets", "search", "docs", "settings"];
 const REMOUNT_ON_LOCALE = new Set([
@@ -97,6 +98,9 @@ document.querySelectorAll(".sidebar-icon").forEach((btn) => {
 applyI18n(document);
 setupLanguageToggle();
 mountResilienceBar();
+mountVersionBadge().catch((err) => {
+  console.warn("[router] version badge mount failed:", err);
+});
 
 (async () => {
   let onboardingDone = false;

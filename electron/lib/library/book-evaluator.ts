@@ -39,6 +39,33 @@ export {
 } from "./book-evaluator-model-picker.js";
 import { pickEvaluatorModel } from "./book-evaluator-model-picker.js";
 
+/** Sampling/токен-бюджеты для evaluator inference. Вынесены из inline-литералов
+ *  в Block A1 (zero behavioral change). */
+const EVALUATOR_INFERENCE = {
+  defaultTemperature: 0.3,
+  /** top_p при structured output (response_format) — больше разнообразия. */
+  structuredTopP: 0.9,
+  /** top_p при compatibility mode (без response_format). */
+  compatibilityTopP: 0.8,
+  structuredTopK: 40,
+  compatibilityTopK: 20,
+  minP: 0,
+  presencePenalty: 0,
+  /** Минимум max_tokens при structured output. */
+  structuredMinMaxTokens: 6000,
+  /** max_tokens при compatibility mode (без response_format). */
+  compatibilityMaxTokens: 8192,
+  /** Repair pass: минимум max_tokens при structured output. */
+  repairStructuredMinMaxTokens: 3000,
+  /** Repair pass: верхняя граница max_tokens при structured output. */
+  repairStructuredMaxTokens: 8192,
+  /** Repair pass: max_tokens в compatibility mode. */
+  repairCompatibilityMaxTokens: 4096,
+  repairTemperature: 0.1,
+  /** Сколько символов из предыдущего ответа отдаём в repair-prompt. */
+  repairContextChars: 4000,
+} as const;
+
 /** "Chief Epistemologist" -- системный промпт. На английском (CoT-friendly). */
 const EVALUATOR_SYSTEM_PROMPT = `You are the Chief Epistemologist, Bibliographic Detective, and Data Curator for an elite AI knowledge dataset. Your task: analyze the Structural Surrogate of a book (delivered inside <document> tags in the user message) and extract MAXIMUM bibliographic metadata + predict Conceptual Value.
 
@@ -154,12 +181,16 @@ async function callEvaluationModel(
         { role: "user", content: wrapSurrogate(surrogate) },
       ],
       sampling: {
-        temperature: opts.temperature ?? 0.3,
-        top_p: useStructuredOutput ? 0.9 : 0.8,
-        top_k: useStructuredOutput ? 40 : 20,
-        min_p: 0,
-        presence_penalty: 0,
-        max_tokens: opts.maxTokens ?? (useStructuredOutput ? Math.max(6000, profile.maxTokens) : 8192),
+        temperature: opts.temperature ?? EVALUATOR_INFERENCE.defaultTemperature,
+        top_p: useStructuredOutput ? EVALUATOR_INFERENCE.structuredTopP : EVALUATOR_INFERENCE.compatibilityTopP,
+        top_k: useStructuredOutput ? EVALUATOR_INFERENCE.structuredTopK : EVALUATOR_INFERENCE.compatibilityTopK,
+        min_p: EVALUATOR_INFERENCE.minP,
+        presence_penalty: EVALUATOR_INFERENCE.presencePenalty,
+        max_tokens: opts.maxTokens ?? (
+          useStructuredOutput
+            ? Math.max(EVALUATOR_INFERENCE.structuredMinMaxTokens, profile.maxTokens)
+            : EVALUATOR_INFERENCE.compatibilityMaxTokens
+        ),
       },
       responseFormat: useStructuredOutput ? buildEvaluatorResponseFormat() : undefined,
       stop: useStructuredOutput ? profile.stop : undefined,
@@ -296,16 +327,21 @@ async function repairEvaluationJson(
               "Your previous answer was not valid JSON for the required schema. " +
               "DO NOT re-evaluate the book — just fix the JSON of your previous answer. " +
               "Output ONLY one strict JSON object with concrete values (no schema placeholders like string/number/boolean, no markdown, no prose).\n\n" +
-              `Previous invalid answer to fix:\n${badRaw.slice(0, 4000)}`,
+              `Previous invalid answer to fix:\n${badRaw.slice(0, EVALUATOR_INFERENCE.repairContextChars)}`,
           },
         ],
         sampling: {
-          temperature: 0.1,
-          top_p: 0.8,
-          top_k: 20,
-          min_p: 0,
-          presence_penalty: 0,
-          max_tokens: useStructuredOutput ? Math.max(3000, Math.min(profile.maxTokens, 8192)) : 4096,
+          temperature: EVALUATOR_INFERENCE.repairTemperature,
+          top_p: EVALUATOR_INFERENCE.compatibilityTopP,
+          top_k: EVALUATOR_INFERENCE.compatibilityTopK,
+          min_p: EVALUATOR_INFERENCE.minP,
+          presence_penalty: EVALUATOR_INFERENCE.presencePenalty,
+          max_tokens: useStructuredOutput
+            ? Math.max(
+                EVALUATOR_INFERENCE.repairStructuredMinMaxTokens,
+                Math.min(profile.maxTokens, EVALUATOR_INFERENCE.repairStructuredMaxTokens),
+              )
+            : EVALUATOR_INFERENCE.repairCompatibilityMaxTokens,
         },
         responseFormat: useStructuredOutput ? buildEvaluatorResponseFormat() : undefined,
         stop: useStructuredOutput ? profile.stop : undefined,

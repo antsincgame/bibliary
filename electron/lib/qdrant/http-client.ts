@@ -5,6 +5,8 @@
  * Не имеет глобального состояния. Конфигурация — через ENV или per-call параметры.
  */
 
+import { DEFAULT_QDRANT_URL } from "../endpoints/index.js";
+
 /**
  * Live-binding URL export. Set initially from env (and updated by
  * `setQdrantUrl()` once preferences resolve at boot, and again on every
@@ -16,7 +18,7 @@
  * promise that survived a settings change), use the async `getQdrantUrl()`
  * from `../endpoints/index.js` directly.
  */
-export let QDRANT_URL: string = process.env.QDRANT_URL || "http://localhost:6333";
+export let QDRANT_URL: string = process.env.QDRANT_URL || DEFAULT_QDRANT_URL;
 
 /**
  * Update the QDRANT_URL live binding. Called by the preferences IPC

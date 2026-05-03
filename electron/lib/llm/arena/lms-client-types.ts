@@ -5,7 +5,11 @@
  * Импорт через barrel `lms-client.ts` или напрямую — оба пути валидны.
  */
 
-export const DEFAULT_LMS_URL = "http://localhost:1234";
+import { DEFAULT_LM_STUDIO_URL } from "../../endpoints/index.js";
+
+/** Re-export для обратной совместимости (Block A3 dedup): single source of truth
+ *  для дефолтного LM Studio URL — `electron/lib/endpoints/index.ts`. */
+export const DEFAULT_LMS_URL = DEFAULT_LM_STUDIO_URL;
 export type LmsTransport = "rest" | "sdk";
 
 /* ─── Logger ──────────────────────────────────────────────────────────── */

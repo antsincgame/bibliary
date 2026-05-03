@@ -13,7 +13,8 @@ export type ModelRole =
   | "evaluator"
   | "ukrainian_specialist"
   | "lang_detector"
-  | "translator";
+  | "translator"
+  | "layout_assistant";
 
 export type Capability = "vision";
 
@@ -34,4 +35,5 @@ export const ROLE_REQUIRED_CAPS_INTERNAL: Record<ModelRole, Capability[]> = {
   ukrainian_specialist: [],
   lang_detector: [],
   translator: [],
+  layout_assistant: [],
 };

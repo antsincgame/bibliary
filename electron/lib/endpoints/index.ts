@@ -20,8 +20,11 @@ import { getPreferencesStore } from "../preferences/store.js";
 const ENV_LM_STUDIO_URL = process.env.LM_STUDIO_URL || "";
 const ENV_QDRANT_URL = process.env.QDRANT_URL || "";
 
-const DEFAULT_LM_STUDIO_URL = "http://localhost:1234";
-const DEFAULT_QDRANT_URL = "http://localhost:6333";
+/** Дефолты экспортируются, чтобы все дубликаты ("http://localhost:1234",
+ *  "http://localhost:6333") в кодовой базе использовали этот единый
+ *  source-of-truth (Block A3, dedup). */
+export const DEFAULT_LM_STUDIO_URL = "http://localhost:1234";
+export const DEFAULT_QDRANT_URL = "http://localhost:6333";
 
 interface UrlCache {
   lmStudio: string;

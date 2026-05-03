@@ -38,6 +38,19 @@ export interface TextMetaResult {
   warnings: string[];
 }
 
+const TEXT_META_CONFIG = {
+  /** Сколько первых символов книги отдаём модели (compact prompt). */
+  sampleChars: 3000,
+  /** Hard timeout для inference, мс. */
+  defaultTimeoutMs: 15_000,
+  /** Минимальная длина sample, ниже — отказ. */
+  minSampleChars: 80,
+  inference: {
+    temperature: 0,
+    maxTokens: 400,
+  },
+} as const;
+
 const SYSTEM_PROMPT = `You are a librarian extracting bibliographic metadata from the first pages of a book.
 
 Return a strict JSON object with these fields (omit fields you can't find):
@@ -58,7 +71,7 @@ export async function extractTextMetaFromBookText(
   opts: { signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<TextMetaResult> {
   const warnings: string[] = [];
-  if (!bookTextSample || bookTextSample.length < 80) {
+  if (!bookTextSample || bookTextSample.length < TEXT_META_CONFIG.minSampleChars) {
     return { ok: false, error: "text sample too short", warnings };
   }
 
@@ -75,11 +88,11 @@ export async function extractTextMetaFromBookText(
     return { ok: false, error: `role resolver failed: ${msg}`, warnings };
   }
 
-  const sample = bookTextSample.slice(0, 3000);
+  const sample = bookTextSample.slice(0, TEXT_META_CONFIG.sampleChars);
   const userText = `First pages of a book:\n\n${sample}\n\n---\nExtract bibliographic metadata as JSON.`;
 
   const baseUrl = await getLmStudioUrl();
-  const timeoutMs = opts.timeoutMs ?? 15_000;
+  const timeoutMs = opts.timeoutMs ?? TEXT_META_CONFIG.defaultTimeoutMs;
 
   const ctrl = new AbortController();
   const externalSignal = opts.signal;
@@ -111,8 +124,8 @@ export async function extractTextMetaFromBookText(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: modelKey,
-          temperature: 0,
-          max_tokens: 400,
+          temperature: TEXT_META_CONFIG.inference.temperature,
+          max_tokens: TEXT_META_CONFIG.inference.maxTokens,
           response_format: responseFormat,
           chat_template_kwargs: { enable_thinking: false },
           messages: [

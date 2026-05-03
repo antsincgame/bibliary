@@ -26,6 +26,7 @@ import type { BrowserWindow } from "electron";
 import { registerLibraryImportIpc } from "./library-import-ipc.js";
 import { registerLibraryCatalogIpc } from "./library-catalog-ipc.js";
 import { registerLibraryEvaluatorIpc } from "./library-evaluator-ipc.js";
+import { registerLibraryLayoutAssistantIpc } from "./library-layout-assistant.ipc.js";
 
 export {
   abortAllLibrary,
@@ -38,4 +39,5 @@ export function registerLibraryIpc(getMainWindow: () => BrowserWindow | null): v
   registerLibraryImportIpc(getMainWindow);
   registerLibraryCatalogIpc();
   registerLibraryEvaluatorIpc();
+  registerLibraryLayoutAssistantIpc();
 }

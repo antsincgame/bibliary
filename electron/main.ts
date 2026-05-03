@@ -167,10 +167,6 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
-    /* Allow tests / portable installs to point at a custom data directory.
-       Default остаётся `data/` рядом с приложением -- это не меняет
-       поведение для обычного пользователя, но даёт smoke-тесту полную
-       изоляцию (свой preferences.json, своя SQLite). */
     const dataDir = resolveAppDataDir({
       env: process.env,
       isPackaged: app.isPackaged,
@@ -186,37 +182,30 @@ if (!gotLock) {
     const prefsStore = initPreferencesStore(dataDir);
     await prefsStore.ensureDefaults();
     const prefs = await prefsStore.getAll();
-    /* Иt 8В CRITICAL.1 — единственная точка propagation prefs → singletons.
-       applyRuntimeSideEffects покрывает: watchdog, file-lock, marker-env,
-       endpoints (LM/Qdrant), role resolver, scheduler lanes, evaluator slots,
-       heavy-lane rate limiter. Идемпотентен — IPC preferences:set вызывает
-       его повторно для runtime-обновлений. Никаких ручных вызовов выше. */
     const { applyRuntimeSideEffects } = await import("./ipc/preferences.ipc.js");
     applyRuntimeSideEffects(prefs);
-    /* Resolve endpoints from preferences once and propagate the result
-       into the live QDRANT_URL binding. Without this, modules that
-       import { QDRANT_URL } at module-init read the env-only value. */
     const { setQdrantUrl } = await import("./lib/qdrant/http-client.js");
     const { getEndpoints } = await import("./lib/endpoints/index.js");
     const endpoints = await getEndpoints();
     setQdrantUrl(endpoints.qdrantUrl);
 
-    /* Crystallizer (extraction) is first-class in coordinator: when
-       LM Studio goes offline the watchdog pauses it (aborts in-flight LLM calls). */
     registerExtractionPipeline();
     applyCsp();
     registerAssetProtocol();
     startWatchdog(() => mainWindow);
-    /* Scheduler snapshot broadcaster (Итерация 5): periodic emit состояния
-       ImportTaskScheduler в renderer для UI телеметрии. Independent от watchdog,
-       только read-only наблюдение через getImportScheduler().getSnapshot(). */
     startSchedulerSnapshotBroadcaster(() => mainWindow);
-    /* Иt 8В MAIN.4: model-pool snapshot — UI знает какие модели сейчас в VRAM
-       и какие роли они занимают. Параллельно scheduler snapshot. */
     startModelPoolSnapshotBroadcaster(() => mainWindow);
     registerAllIpcHandlers(() => mainWindow);
     void bootstrapLibrarySubsystem(() => mainWindow);
     createWindow();
+  }).catch((err) => {
+    console.error("[main] fatal startup error — createWindow was never called:", err);
+    const { dialog } = require("electron") as typeof import("electron");
+    dialog.showErrorBox(
+      "Bibliary — startup failed",
+      `Initialization error:\n\n${err instanceof Error ? err.message : String(err)}\n\nThe application will now quit.`,
+    );
+    app.exit(1);
   });
 
   app.on("window-all-closed", () => {

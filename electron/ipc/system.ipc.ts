@@ -1,8 +1,54 @@
-import { ipcMain, shell } from "electron";
+import { ipcMain, shell, app } from "electron";
+import { execSync } from "node:child_process";
+import { statSync } from "node:fs";
+import * as path from "node:path";
 import { detectHardware } from "../lib/hardware/profiler.js";
 import { getEndpoints } from "../lib/endpoints/index.js";
 import { getServerStatus } from "../lmstudio-client.js";
 import { QDRANT_URL, QDRANT_API_KEY } from "../lib/qdrant/http-client.js";
+
+interface AppBuildInfo {
+  version: string;
+  commit: string | null;
+  builtAt: string | null;
+  electron: string;
+  isPackaged: boolean;
+}
+
+let cachedBuildInfo: AppBuildInfo | null = null;
+
+function readCommitSha(): string | null {
+  try {
+    return execSync("git rev-parse --short HEAD", {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 1500,
+    }).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function readBuiltAt(): string | null {
+  try {
+    const mainPath = path.join(__dirname, "main.js");
+    return statSync(mainPath).mtime.toISOString();
+  } catch {
+    return null;
+  }
+}
+
+function getBuildInfo(): AppBuildInfo {
+  if (cachedBuildInfo) return cachedBuildInfo;
+  cachedBuildInfo = {
+    version: app.getVersion(),
+    commit: readCommitSha(),
+    builtAt: readBuiltAt(),
+    electron: process.versions.electron ?? "",
+    isPackaged: app.isPackaged,
+  };
+  return cachedBuildInfo;
+}
 
 /**
  * Whitelist схем для system:open-external. Защита от prompt-injection /
@@ -39,6 +85,8 @@ export function registerSystemIpc(): void {
   ipcMain.handle("system:hardware-info", async (_e, opts?: { force?: boolean }) => {
     return detectHardware({ force: opts?.force === true });
   });
+
+  ipcMain.handle("system:app-version", (): AppBuildInfo => getBuildInfo());
 
   /**
    * Параллельный health-check обоих внешних сервисов для onboarding wizard.

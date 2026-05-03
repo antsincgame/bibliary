@@ -30,6 +30,8 @@ import {
   resumeEvaluator,
   getEvaluatorStatus,
 } from "../lib/library/evaluator-queue.js";
+import { enqueueLayoutBook } from "../lib/library/layout-assistant-queue.js";
+import { readPipelinePrefsOrNull } from "../lib/preferences/store.js";
 import {
   getImportLogger,
   type ImportLogEntry,
@@ -113,6 +115,11 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
       let importedCount = 0;
       let autoPaused = false;
       const AUTO_PAUSE_THRESHOLD = 100;
+      /* B9: cache layoutAssistantEnabled один раз на импорт. Прочитать prefs
+         в onBookImported callback'е дорого (async + IPC мост). null значит
+         «store не инициализирован» — фича OFF в этом случае. */
+      const layoutPrefs = await readPipelinePrefsOrNull().catch(() => null);
+      const layoutAssistantEnabledCached = layoutPrefs?.layoutAssistantEnabled === true;
       try {
         const opts: ImportFolderOptions = {
           scanArchives: args.scanArchives === true,
@@ -146,6 +153,13 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
           onBookImported: (meta) => {
             importedCount += 1;
             enqueueBook(meta.id);
+            /* Layout Assistant: opt-in пост-обработка book.md (B9). Очередь
+               запустится только если prefs.layoutAssistantEnabled === true.
+               Чтение prefs кэшировано в layoutAssistantEnabledCached на старте
+               импорта чтобы не дёргать store на каждую книгу. */
+            if (layoutAssistantEnabledCached) {
+              enqueueLayoutBook(meta.id);
+            }
             void logger.write({
               importId, level: "info", category: "evaluator.queued",
               message: `Queued for evaluation: ${meta.titleEn || meta.title || meta.id}`,
@@ -245,6 +259,9 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
       };
       let endStatus: "ok" | "failed" | "cancelled" = "ok";
       let adaptiveStarted = false;
+      /* B9: тот же кэш что и для folder-import. */
+      const layoutPrefs = await readPipelinePrefsOrNull().catch(() => null);
+      const layoutAssistantEnabledCached = layoutPrefs?.layoutAssistantEnabled === true;
       try {
         try { await beginAdaptive(); adaptiveStarted = true; } catch { /* не блокируем импорт */ }
         const aggregate = { total: 0, added: 0, duplicate: 0, skipped: 0, failed: 0, warnings: [] as string[] };
@@ -275,6 +292,9 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
                  сразу, а не в конце большого batch. */
               if (r.outcome === "added" && r.bookId) {
                 enqueueBook(r.bookId);
+                if (layoutAssistantEnabledCached) {
+                  enqueueLayoutBook(r.bookId);
+                }
                 void logger.write({
                   importId, level: "info", category: "evaluator.queued",
                   message: `Queued for evaluation: ${r.meta?.titleEn || r.meta?.title || r.bookId}`,

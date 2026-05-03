@@ -134,6 +134,18 @@ export const ROLE_LOAD_CONFIG: Record<ModelRole, LMSLoadConfig> = {
     keepModelInMemory: true,
     tryMmap: true,
   },
+
+  /* LAYOUT_ASSISTANT: аннотирует .md книги (заголовки, junk, ToC) через JSON.
+   * Чанк ~7K символов = ~3K токенов input, output ~1K токенов JSON.
+   * Целевая модель — Qwen2.5-1.5B-Instruct Q4_K_M (CPU 16GB RAM).
+   * Не keepInMemory: запускается асинхронно после импорта, не критично. */
+  layout_assistant: {
+    contextLength: 8_192,
+    gpu: { ratio: "max" },
+    flashAttention: true,        /* >8K — обязательно */
+    keepModelInMemory: false,    /* запуск редкий, opt-in */
+    tryMmap: true,
+  },
 };
 
 /**
@@ -191,6 +203,10 @@ export const ROLE_INFERENCE_DEFAULTS: Record<ModelRole, InferenceDefaults> = {
 
   /* Vision_illustration: prose 1-3 предложения с контекстом. */
   vision_illustration:  { temperature: 0.3, topP: 0.9, maxTokens: 384 },
+
+  /* Layout_assistant: structured JSON, нужен максимальный детерминизм
+   * для малых моделей (1.5B). max_tokens 1024 = ~30 заголовков + ToC. */
+  layout_assistant:     { temperature: 0.1, topP: 0.9, maxTokens: 1024 },
 };
 
 export function getRoleInferenceDefaults(role: ModelRole): InferenceDefaults {

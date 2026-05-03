@@ -30,6 +30,7 @@ function roleToPrefKey(role: OlympicsRole): string | null {
     case "lang_detector":        return "langDetectorModel";
     case "ukrainian_specialist": return "ukrainianSpecialistModel";
     case "vision":               return "visionModelKey";
+    case "layout_assistant":     return "layoutAssistantModel";
     default:                      return null;
   }
 }

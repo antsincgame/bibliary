@@ -46,12 +46,23 @@ const INLINE_OPTS: KatexOptions = {
 };
 
 function safeRender(expr: string, opts: KatexOptions, raw: string): string {
+  /* KaTeX внутри пишет console.warn для каждого «No character metrics for X»
+     (например, для русских кавычек и других не-LaTeX символов, которые OCR
+     случайно засосал между знаками $...$). На импорте 1000 книг это даёт
+     десятки тысяч строк мусора, заглушающих реальные warning'и в e2e-логах.
+     Подавляем console.warn только на время вызова katex.renderToString —
+     это безопасно, потому что мы уже работаем в режиме `strict: "ignore"`
+     и любые fatal-ошибки приходят через throw + catch ниже. */
+  const originalWarn = console.warn;
   try {
+    console.warn = () => { /* swallow KaTeX font-metric noise */ };
     return katex.renderToString(expr.trim(), opts);
   } catch {
     /* ParseError, undefined macro, etc. — возвращаем сырой markdown
        чтобы импорт не падал на одной битой формуле. */
     return raw;
+  } finally {
+    console.warn = originalWarn;
   }
 }
 

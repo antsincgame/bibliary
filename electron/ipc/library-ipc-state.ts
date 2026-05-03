@@ -26,6 +26,10 @@ import {
   subscribeEvaluator,
   activeSlotCount as evaluatorActiveSlotCount,
 } from "../lib/library/evaluator-queue.js";
+import {
+  subscribeLayoutAssistant,
+  bootstrapLayoutAssistantQueue,
+} from "../lib/library/layout-assistant-queue.js";
 import { globalLlmLock } from "../lib/llm/global-llm-lock.js";
 import {
   getImportLogger,
@@ -193,6 +197,19 @@ export async function bootstrapLibrarySubsystem(getMainWindow: () => BrowserWind
         }
       }
     });
+    /* Layout Assistant queue использует ту же event-bridge модель.
+       Канал "library:layout-assistant-event" — слушает renderer/library/reader
+       и settings UI для статус-бейджа. */
+    subscribeLayoutAssistant((evt) => {
+      const win = getMainWindow();
+      if (win && !win.isDestroyed()) {
+        try {
+          win.webContents.send("library:layout-assistant-event", evt);
+        } catch (err) {
+          console.error("[library-ipc-state] layout-assistant-event send failed:", err);
+        }
+      }
+    });
   }
   ensureImportLogBridge(getMainWindow);
   registerLibraryLlmLockProbes();
@@ -200,6 +217,9 @@ export async function bootstrapLibrarySubsystem(getMainWindow: () => BrowserWind
      запустит ensureEvaluatorBootstrap автоматически. Здесь kick-off чтобы
      bootstrap начался сразу при старте. Не await'им — не блокируем startup. */
   void ensureEvaluatorBootstrap();
+  /* Layout assistant bootstrap: добавляет imported книги в очередь, если
+     prefs.layoutAssistantEnabled. No-op если фича выключена. */
+  void bootstrapLayoutAssistantQueue();
 }
 
 /**

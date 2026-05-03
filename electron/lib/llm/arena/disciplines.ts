@@ -720,4 +720,87 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
       return Math.max(0, Math.min(1, s));
     },
   },
+
+  /* ─── Layout Assistant: разметка markdown книги ────────────────────────
+   * Production: модель получает chunk OCR'd markdown и должна вернуть JSON
+   * аннотации (headings, junk_lines). Тест с golden answer:
+   *   - 2 настоящих заголовка ("Chapter 1: Hello", "Chapter 2: World")
+   *   - 1 junk line (одиночная "42" — page number)
+   * Bug 11 fix: toc_block удалён из контракта (не применялся в production).
+   * Scorer проверяет: валидный JSON, точность найденных headings/junk,
+   * отсутствие галлюцинаций (extra junk вне source). */
+  {
+    id: "layout_assistant-chapter-detection",
+    role: "layout_assistant",
+    thinkingFriendly: false, /* быстрая аннотация — не нужен CoT, время критично для batch обработки */
+    description: "Разметить markdown: найти заголовки, удалить page-numbers как junk.",
+    whyImportant:
+      "Layout Assistant — последняя линия защиты от плохо-парсенных книг. " +
+      "Если модель не находит очевидные `Chapter N:` или путает контент с junk, " +
+      "она сделает книгу хуже. Тест проверяет: 1) валидный JSON; " +
+      "2) точное обнаружение явных глав; 3) распознавание solo-цифр как junk; " +
+      "4) отсутствие false-positive (не помечает обычный текст как junk).",
+    system:
+      "You are a careful book typesetter. Annotate markdown chunks. " +
+      "Return ONLY valid JSON: " +
+      '{"headings":[{"line":number,"level":number,"text":string}],' +
+      '"junk_lines":[number]}. ' +
+      "Headings: lines starting with 'Chapter', 'Глава', 'Section'. " +
+      "Junk: solo numbers (page numbers). " +
+      "Use 1-indexed line numbers.",
+    user:
+      "Annotate this markdown chunk:\n\n" +
+      "Chapter 1: Hello\n" +
+      "\n" +
+      "This is body text of chapter one.\n" +
+      "\n" +
+      "42\n" +
+      "\n" +
+      "Chapter 2: World\n" +
+      "\n" +
+      "And here is body of chapter two.",
+    maxTokens: 512,
+    score: (a) => {
+      const parsed = tryParseJson(a) as {
+        headings?: Array<{ line?: number; level?: number; text?: string }>;
+        junk_lines?: number[];
+      } | null;
+      if (!parsed || typeof parsed !== "object") return 0;
+
+      let s = 0.1; /* JSON валиден — base */
+
+      /* Headings: ожидаем 2 (Chapter 1, Chapter 2). */
+      const headings = Array.isArray(parsed.headings) ? parsed.headings : [];
+      const ch1Found = headings.some(
+        (h) => typeof h.text === "string" && /chapter\s*1/i.test(h.text),
+      );
+      const ch2Found = headings.some(
+        (h) => typeof h.text === "string" && /chapter\s*2/i.test(h.text),
+      );
+      if (ch1Found) s += 0.20;
+      if (ch2Found) s += 0.20;
+
+      /* Junk: ожидаем строку 5 (где "42"). */
+      const junk = Array.isArray(parsed.junk_lines) ? parsed.junk_lines : [];
+      if (junk.includes(5)) s += 0.25;
+
+      /* False-positive penalty: junk на content lines. */
+      const contentLines = [1, 3, 7, 9]; /* lines с реальным контентом */
+      const fpJunk = junk.filter((l) => contentLines.includes(l));
+      s -= fpJunk.length * 0.15;
+
+      /* Heading line numbers близки к правильным (1 и 7). */
+      if (headings.some((h) => h.line === 1 && h.level && h.level >= 1 && h.level <= 3)) s += 0.10;
+      if (headings.some((h) => h.line === 7 && h.level && h.level >= 1 && h.level <= 3)) s += 0.10;
+
+      /* Hallucinated headings (больше 3 — модель добавила лишнее). */
+      if (headings.length > 3) s -= 0.15;
+
+      /* === Штрафы за нарушение формата === */
+      if (a.includes("```")) s -= 0.10;
+      if (!/^\s*\{/.test(a)) s -= 0.10; /* preamble before JSON */
+
+      return Math.max(0, Math.min(1, s));
+    },
+  },
 ];

@@ -22,13 +22,14 @@
 
 /** Lifecycle статуса книги в библиотеке. */
 export type BookStatus =
-  | "imported"      // распарсено и сохранено, ждёт эвалюатора
-  | "evaluating"    // эвалюатор работает прямо сейчас
-  | "evaluated"     // получены qualityScore + domain + tags
-  | "crystallizing" // кристаллизация в процессе
-  | "indexed"       // концепты приняты в Qdrant
-  | "failed"        // парсер или эвалюатор упали
-  | "unsupported";  // парсер не смог собрать ни одной главы
+  | "imported"        // распарсено и сохранено, ждёт эвалюатора
+  | "layout-cleaning" // (опционально) layout-assistant queue обрабатывает md
+  | "evaluating"      // эвалюатор работает прямо сейчас
+  | "evaluated"       // получены qualityScore + domain + tags
+  | "crystallizing"   // кристаллизация в процессе
+  | "indexed"         // концепты приняты в Qdrant
+  | "failed"          // парсер или эвалюатор упали
+  | "unsupported";    // парсер не смог собрать ни одной главы
 
 /** Поддерживаемые форматы книг.
  *

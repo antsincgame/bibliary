@@ -26,6 +26,7 @@ const KNOWN_ROLES = [
   "ukrainian_specialist",
   "lang_detector",
   "translator",
+  "layout_assistant",
 ] as const;
 
 test("role-load-config: каждая известная роль имеет load config", () => {

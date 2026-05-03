@@ -63,6 +63,7 @@ function analyzeRoleAggregate(agg: OlympicsRoleAggregate, report: OlympicsReport
     crystallizer:         { temp: 0.3, topP: 0.95, maxTokens: 1024 },
     evaluator:            { temp: 0.2, topP: 0.9,  maxTokens: 256 },
     translator:           { temp: 0.15, topP: 0.9,  maxTokens: 384 },
+    layout_assistant:     { temp: 0.1, topP: 0.9,  maxTokens: 1024 },
     ukrainian_specialist: { temp: 0.2, topP: 0.9,  maxTokens: 320 },
     lang_detector:        { temp: 0.1, topP: 0.8,  maxTokens: 16 },
     vision_meta:          { temp: 0.15, topP: 0.9,  maxTokens: 128 },

@@ -69,6 +69,7 @@ import { KeyedAsyncMutex } from "./async-mutex.js";
 const KNOWN_MODEL_ROLES: ReadonlySet<ModelRole> = new Set<ModelRole>([
   "crystallizer", "vision_meta", "vision_ocr", "vision_illustration",
   "evaluator", "ukrainian_specialist", "lang_detector", "translator",
+  "layout_assistant",
 ]);
 
 /**

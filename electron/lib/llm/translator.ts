@@ -38,6 +38,18 @@ export const PARAGRAPH_MARKER = "\n[[¶P¶]]\n";
 
 const DEFAULT_CHUNK_WORDS = 400;
 
+const TRANSLATOR_INFERENCE = {
+  temperature: 0.1,
+  topP: 0.9,
+  topK: 20,
+  minP: 0,
+  presencePenalty: 0,
+  /** Нижняя граница maxTokens; для больших chunk'ов берётся `joined.length * 2`. */
+  minMaxTokens: 1024,
+  /** Множитель: `Math.ceil(joined.length * outputTokensMultiplier)`. */
+  outputTokensMultiplier: 2,
+} as const;
+
 const SYSTEM_PROMPTS: Record<TargetLang, string> = {
   ru:
     "You are a professional translator. Translate the user's text into Russian. " +
@@ -193,12 +205,15 @@ export async function translateParagraphs(
               { role: "user", content: `${sourceHint}${joined}` },
             ],
             sampling: {
-              temperature: 0.1,
-              top_p: 0.9,
-              top_k: 20,
-              min_p: 0,
-              presence_penalty: 0,
-              max_tokens: Math.max(1024, Math.ceil(joined.length * 2)),
+              temperature: TRANSLATOR_INFERENCE.temperature,
+              top_p: TRANSLATOR_INFERENCE.topP,
+              top_k: TRANSLATOR_INFERENCE.topK,
+              min_p: TRANSLATOR_INFERENCE.minP,
+              presence_penalty: TRANSLATOR_INFERENCE.presencePenalty,
+              max_tokens: Math.max(
+                TRANSLATOR_INFERENCE.minMaxTokens,
+                Math.ceil(joined.length * TRANSLATOR_INFERENCE.outputTokensMultiplier),
+              ),
             },
           },
           { externalSignal: opts.signal },

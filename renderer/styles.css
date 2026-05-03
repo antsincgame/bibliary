@@ -4156,6 +4156,84 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   .settings-input { font-size: 11px; padding: 5px 8px; }
 }
 
+/* ===== Settings: Layout Assistant live queue panel ===== */
+.settings-la-queue-panel {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color, rgba(255,255,255,0.1));
+  background: rgba(0, 200, 255, 0.04);
+}
+
+.settings-la-queue-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-cyan, #00c8ff);
+  margin-bottom: 10px;
+  opacity: 0.8;
+}
+
+.settings-la-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-la-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-la-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-dim, #888);
+  transition: background 0.3s;
+}
+
+.settings-la-dot.settings-la-phase-running {
+  background: #00c8ff;
+  box-shadow: 0 0 6px rgba(0, 200, 255, 0.6);
+  animation: la-pulse 1.5s ease-in-out infinite;
+}
+
+.settings-la-dot.settings-la-phase-paused {
+  background: #ffa500;
+  box-shadow: 0 0 4px rgba(255, 165, 0, 0.5);
+}
+
+@keyframes la-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.settings-la-phase-label {
+  font-size: 12px;
+  color: var(--text-main, #e0e0e0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 340px;
+}
+
+.settings-la-queued {
+  font-size: 11px;
+  color: var(--text-dim, #888);
+  padding-left: 16px;
+}
+
+.settings-la-stats {
+  font-size: 10px;
+  color: var(--text-dim, #888);
+  padding-left: 16px;
+  letter-spacing: 0.02em;
+}
+
 /* ===== Models: yarn backup-availability badge ===== */
 .ctx-backup-badge {
   display: inline-flex;
@@ -5220,11 +5298,26 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
 }
 .lib-import-log-row-head {
   display: grid;
-  grid-template-columns: 14px 60px 100px 1fr auto minmax(0, 280px);
+  /* Iter 13.3 fix (P2 наложение логов, 2026-05-03):
+     min-content для duration вместо `auto` гарантирует что пустой spacer
+     не схлопывает колонку до 0 (что давало сдвиг остальных слотов).
+     Каждая строка лога обязана иметь ровно 6 children (см. import-pane-log.js
+     — отсутствующие заменены spacer'ами). */
+  grid-template-columns: 14px 60px 100px minmax(0, 1fr) min-content minmax(0, 280px);
   gap: 6px;
   align-items: center;
   white-space: nowrap;
   overflow: hidden;
+}
+/* Iter 13.3 (P2 fix): пустой grid-слот занимает место в треке, но не
+   рисует контент и не отнимает фокус у скрин-ридеров. */
+.lib-import-log-slot-empty {
+  display: inline-block;
+  min-width: 0;
+  width: 0;
+  height: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 .lib-import-log-row-expandable .lib-import-log-row-head { cursor: pointer; }
 .lib-import-log-row-expandable:hover { background: rgba(255, 255, 255, 0.025); }
@@ -7706,20 +7799,21 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   --lib-reader-callout-important-color: #ff5577;
 }
 
-/* === Базовая премиум-типографика body === */
+/* === Базовая премиум-типографика body ===
+   P3 (2026-05-03, user feedback "сделай его не на всю ширину"): возвращаем
+   ограниченную колонку текста. По Bringhurst / Tufte оптимальная длина
+   строки 55–75 символов — `max-width: 70ch` примерно соответствует 700px
+   при 18px serif font, что даёт ~65 chars per line с учётом fluid kerning.
+   margin: 0 auto центрирует колонку. Скроллбар reader теперь visually
+   правее текста, но это компромисс ради читабельности. */
 .lib-reader-body {
   font-family: var(--lib-reader-font-serif);
   font-size: 18px;
   line-height: 1.7;
   letter-spacing: 0.005em;
   color: var(--lib-reader-text);
-  /* P4 (2026-05-03): убран max-width: 38em и margin: 0 auto.
-     Раньше body был узкой колонкой по центру pane — vertical scrollbar
-     оказывался посреди экрана, а длинный текст всё равно вызывал
-     horizontal scroll в pane. Теперь body занимает всю ширину reader,
-     scrollbar — на правом крае приложения, контент прижат к левому. */
-  max-width: none;
-  margin: 0;
+  max-width: 70ch;
+  margin: 0 auto;
   padding: 12px 28px 64px;
   overflow-x: hidden;
   word-wrap: break-word;
@@ -7796,6 +7890,188 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
 .lib-reader-body h3 {
   font-size: 1.15em;
   font-style: italic;
+}
+
+/* === Structured Table of Contents (P4, 2026-05-03) ===
+   Структурный <nav class="lib-reader-toc"> с dot-leaders генерируется в
+   reader.js -> structureLeaderToc(). Замещает блоки сплошных ToC-параграфов
+   вида "Введение........... 5". Flexbox-leader: title + leader (filler with
+   dotted bottom border) + page number aligned right. */
+.lib-reader-body .lib-reader-toc {
+  margin: 1.6em 0 2em;
+  padding: 1.4em 1.6em 1.2em;
+  background: var(--lib-reader-paper, rgba(0, 240, 255, 0.025));
+  border-left: 3px solid var(--lib-reader-accent, var(--gold));
+  border-radius: 0 4px 4px 0;
+}
+.lib-reader-body .lib-reader-toc::before {
+  content: "Содержание";
+  display: block;
+  font-family: var(--lib-reader-font-serif);
+  font-variant: small-caps;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  font-size: 0.95em;
+  color: var(--lib-reader-accent, var(--gold));
+  margin-bottom: 1em;
+  padding-bottom: 0.4em;
+  border-bottom: 1px solid var(--lib-reader-rule, rgba(255, 215, 0, 0.18));
+}
+.lib-reader-body .lib-reader-toc-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  counter-reset: lib-reader-toc-counter;
+}
+.lib-reader-body .lib-reader-toc-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6em;
+  margin: 0.35em 0;
+  font-size: 0.97em;
+  line-height: 1.4;
+}
+.lib-reader-body .lib-reader-toc-entry .lib-reader-toc-link,
+.lib-reader-body .lib-reader-toc-entry .lib-reader-toc-title {
+  flex: 0 1 auto;
+  border-bottom: none;
+  text-decoration: none;
+  color: var(--lib-reader-text);
+}
+.lib-reader-body .lib-reader-toc-entry .lib-reader-toc-link:hover {
+  color: var(--gold);
+}
+.lib-reader-body .lib-reader-toc-leader {
+  flex: 1 1 auto;
+  border-bottom: 1px dotted var(--lib-reader-rule, rgba(255, 215, 0, 0.30));
+  height: 0.6em;
+  transform: translateY(-0.18em);
+  min-width: 1.5em;
+}
+.lib-reader-body .lib-reader-toc-page {
+  flex: 0 0 auto;
+  min-width: 2.5em;
+  text-align: right;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.85em;
+  color: var(--lib-reader-text-muted, var(--text-dim));
+  font-variant-numeric: tabular-nums;
+}
+
+/* === Скрываем topbar в режиме reader (P2, user feedback "блок библиотека
+   книг кажется вообще лишним") === */
+body.lib-reader-active .lib-topbar {
+  display: none;
+}
+body.lib-reader-active #library-root .lib-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg, #0a0a14);
+}
+
+/* === Кнопка «Сжечь книгу» в reader-toolbar (P6) === */
+.lib-reader-action-burn {
+  border-color: rgba(255, 85, 119, 0.40) !important;
+  color: var(--neon-ruby, #ff5577) !important;
+}
+.lib-reader-action-burn:hover {
+  background: rgba(255, 85, 119, 0.12) !important;
+  border-color: var(--neon-ruby, #ff5577) !important;
+  color: var(--neon-ruby, #ff5577) !important;
+}
+
+/* === Кнопка «AI-вёрстка» в reader-toolbar (Layout Assistant, B3+D1) === */
+.lib-reader-action-layout {
+  border-color: rgba(91, 192, 235, 0.40) !important;
+  color: var(--neon-cyan, #5bc0eb) !important;
+}
+.lib-reader-action-layout:hover:not([disabled]) {
+  background: rgba(91, 192, 235, 0.12) !important;
+  border-color: var(--neon-cyan, #5bc0eb) !important;
+  color: var(--neon-cyan, #5bc0eb) !important;
+}
+.lib-reader-action-layout[disabled] {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+/* === Reader theme switcher (dark / light / sepia) === */
+.lib-reader-theme-switcher {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 6px 28px 4px;
+  max-width: 70ch;
+  margin: 0 auto;
+}
+.lib-reader-theme-btn {
+  font-size: 11px;
+  padding: 3px 10px;
+  font-family: var(--font-mono, monospace);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-dim, rgba(255, 255, 255, 0.5));
+  cursor: pointer;
+  transition: all var(--motion-fast, 150ms) ease;
+}
+.lib-reader-theme-btn:hover {
+  border-color: var(--cyan, #00f0ff);
+  color: var(--cyan, #00f0ff);
+}
+.lib-reader-theme-btn-active {
+  border-color: var(--gold, #ffd700);
+  color: var(--gold, #ffd700);
+  background: rgba(255, 215, 0, 0.08);
+}
+
+/* === Light theme for reader body ===
+   Research: Buchner & Baumgartner (2007), Piepenbrock et al. (2013) —
+   positive polarity (dark text on light bg) improves reading
+   comprehension and visual acuity in well-lit environments. */
+.lib-reader-body[data-theme="light"] {
+  --lib-reader-text: #1a1a2e;
+  --lib-reader-text-muted: rgba(26, 26, 46, 0.6);
+  --lib-reader-accent: #8b4513;
+  --lib-reader-page: #ffffff;
+  --lib-reader-paper: rgba(0, 0, 0, 0.03);
+  --lib-reader-rule: rgba(139, 69, 19, 0.22);
+  --lib-reader-callout-note-color: #2563eb;
+  --lib-reader-callout-tip-color: #16a34a;
+  --lib-reader-callout-warning-color: #d97706;
+  --lib-reader-callout-important-color: #dc2626;
+  background: #ffffff;
+  color: #1a1a2e;
+}
+.lib-reader-body[data-theme="light"] .lib-reader-toc-link:hover {
+  color: #8b4513;
+}
+.lib-reader-body[data-theme="light"] .lib-reader-dropcap {
+  color: #8b4513;
+}
+
+/* === Sepia theme for reader body ===
+   Warm-tinted background reduces blue-light emission and perceived
+   glare. Kindle / iBooks default sepia uses ~#f4ecd8. */
+.lib-reader-body[data-theme="sepia"] {
+  --lib-reader-text: #3d2b1f;
+  --lib-reader-text-muted: rgba(61, 43, 31, 0.6);
+  --lib-reader-accent: #7c4a1a;
+  --lib-reader-page: #f4ecd8;
+  --lib-reader-paper: rgba(124, 74, 26, 0.06);
+  --lib-reader-rule: rgba(124, 74, 26, 0.22);
+  --lib-reader-callout-note-color: #4a6fa5;
+  --lib-reader-callout-tip-color: #4a8c5c;
+  --lib-reader-callout-warning-color: #c97d0a;
+  --lib-reader-callout-important-color: #b54040;
+  background: #f4ecd8;
+  color: #3d2b1f;
+}
+.lib-reader-body[data-theme="sepia"] .lib-reader-dropcap {
+  color: #7c4a1a;
 }
 
 /* === Drop caps (буквица) === */
@@ -8104,5 +8380,89 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   font-weight: 600;
   color: var(--lib-reader-accent);
   letter-spacing: 0.005em;
+}
+
+/* === Page gallery (collapsible PDF/DJVU page screenshots) ===
+   Книги-сканы раньше открывались огромной "стеной" из 12 страниц-картинок
+   перед текстом. Теперь галерея свёрнута в <details>, текст начинается
+   сразу. Превью можно развернуть кликом на summary. */
+.lib-reader-page-gallery {
+  margin: 1.5em 0;
+  padding: 8px 12px;
+  border: 1px solid var(--lib-reader-rule, rgba(255, 215, 0, 0.18));
+  border-radius: 4px;
+  background: var(--lib-reader-paper, rgba(255, 250, 240, 0.04));
+}
+.lib-reader-page-gallery > summary {
+  cursor: pointer;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--lib-reader-accent, #ffd700);
+  padding: 4px 0;
+  list-style: none;
+  user-select: none;
+  outline: none;
+}
+.lib-reader-page-gallery > summary::-webkit-details-marker { display: none; }
+.lib-reader-page-gallery > summary::before {
+  content: "▶ ";
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s ease;
+  color: var(--lib-reader-accent, #ffd700);
+}
+.lib-reader-page-gallery[open] > summary::before {
+  transform: rotate(90deg);
+}
+.lib-reader-page-gallery[open] > summary {
+  margin-bottom: 12px;
+  border-bottom: 1px dashed var(--lib-reader-rule, rgba(255, 215, 0, 0.18));
+  padding-bottom: 8px;
+}
+/* Compact thumbnails inside the gallery: каждая страница не на всю ширину,
+   а в сетке. Это убивает "стену картинок" даже при развёрнутом блоке. */
+.lib-reader-page-gallery > p {
+  display: inline-block;
+  margin: 4px;
+  vertical-align: top;
+}
+.lib-reader-page-gallery img {
+  max-width: 220px !important;
+  max-height: 300px !important;
+  object-fit: contain;
+  border: 1px solid rgba(255, 215, 0, 0.12);
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* === Always-visible app version badge ===
+   Bottom-right corner, monospace, low contrast so it doesn't distract;
+   on hover full build info appears in the title tooltip. Helps the user
+   confirm which binary they actually launched (caught us once when an
+   old release/win-unpacked/Bibliary.exe lingered on disk). */
+.app-version-badge {
+  position: fixed;
+  right: 8px;
+  bottom: 6px;
+  z-index: 99999;
+  pointer-events: auto;
+  font-family: var(--font-mono, "Share Tech Mono", monospace);
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  padding: 4px 8px;
+  color: rgba(255, 215, 0, 0.62);
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 215, 0, 0.18);
+  border-radius: 2px;
+  user-select: text;
+  white-space: nowrap;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.app-version-badge:hover {
+  color: rgba(255, 215, 0, 0.95);
+  border-color: rgba(255, 215, 0, 0.45);
+  background: rgba(0, 0, 0, 0.78);
 }
 

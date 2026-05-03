@@ -167,6 +167,19 @@ export const PreferencesSchema = z.object({
   /** Авто-переводить книги на украинском (и схожих языках) при ingest. */
   translateNonRussianBooks: z.boolean().default(true),
 
+  // -- Layout Assistant (LLM пост-обработка book.md) --
+  /**
+   * Включить LLM-верстальщика. Когда `true` — после импорта book.md
+   * прогоняется через layout-assistant queue (см. layout-assistant-queue.ts):
+   * модель размечает заголовки, dot-leader ToC, удаляет OCR-junk.
+   * Default `false` — opt-in, полагается на ручной запуск из reader.
+   */
+  layoutAssistantEnabled: z.boolean().default(false),
+  /** LM Studio модель для layout_assistant роли. Пусто = первая загруженная. */
+  layoutAssistantModel: z.string().default(""),
+  /** CSV fallback chain для layout_assistant. */
+  layoutAssistantModelFallbacks: z.string().default(""),
+
   // -- Model role resolver --
   /**
    * TTL кэша resolved role → modelKey в memory. 0 = no cache (всегда заново).

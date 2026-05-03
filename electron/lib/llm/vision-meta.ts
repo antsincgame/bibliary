@@ -251,6 +251,12 @@ export type LmStudioVisionFetcher = (args: {
   signal: AbortSignal;
 }) => Promise<{ content: string }>;
 
+const VISION_META_INFERENCE = {
+  temperature: 0,
+  maxTokens: 800,
+  topP: 0.9,
+} as const;
+
 const defaultLmStudioVisionFetcher: LmStudioVisionFetcher = async ({
   baseUrl, modelKey, systemPrompt, userText, imageDataUrl, signal,
 }) => {
@@ -266,9 +272,9 @@ const defaultLmStudioVisionFetcher: LmStudioVisionFetcher = async ({
   });
   const payload = {
     model: modelKey,
-    temperature: 0,
-    max_tokens: 800,
-    top_p: 0.9,
+    temperature: VISION_META_INFERENCE.temperature,
+    max_tokens: VISION_META_INFERENCE.maxTokens,
+    top_p: VISION_META_INFERENCE.topP,
     response_format: responseFormat,
     chat_template_kwargs: { enable_thinking: false },
     messages: [

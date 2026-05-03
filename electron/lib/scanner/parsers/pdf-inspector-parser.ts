@@ -18,6 +18,7 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import {
   cleanParagraph,
+  looksLikeHeading,
   type BookSection,
   type ParseOptions,
   type ParseResult,
@@ -240,6 +241,46 @@ export async function tryParsePdfWithInspector(
 }
 
 /**
+ * Heuristic chapter splitter for flat paragraph lists without ATX headings.
+ *
+ * Walks through paragraphs and when one of them looks like a heading
+ * (via `looksLikeHeading` or numbered heading pattern), starts a new section.
+ * Returns the split only if it produces >= 2 sections, otherwise returns
+ * the input unchanged (caller keeps the original "Введение" monolith).
+ */
+function splitByHeuristicHeadings(paragraphs: string[]): BookSection[] {
+  const sections: BookSection[] = [];
+  let current: BookSection | null = null;
+  let virtualIdx = 0;
+
+  const isHeadingCandidate = (text: string): boolean => {
+    const firstLine = text.split("\n")[0]?.trim() ?? "";
+    if (!firstLine || firstLine.length > 150) return false;
+    if (firstLine.includes("|") || firstLine.startsWith("```")) return false;
+    return looksLikeHeading(firstLine);
+  };
+
+  for (const para of paragraphs) {
+    if (isHeadingCandidate(para)) {
+      const title = para.split("\n")[0]!.trim();
+      current = { level: 1, title, paragraphs: [] };
+      sections.push(current);
+      const rest = para.split("\n").slice(1).join("\n").trim();
+      if (rest) current.paragraphs.push(rest);
+    } else {
+      if (!current) {
+        virtualIdx++;
+        current = { level: 1, title: virtualIdx === 1 ? "Введение" : `Часть ${virtualIdx}`, paragraphs: [] };
+        sections.push(current);
+      }
+      current.paragraphs.push(para);
+    }
+  }
+
+  return sections.filter((s) => s.paragraphs.length > 0 || s.title.length > 0);
+}
+
+/**
  * Простой парсер markdown → BookSection[].
  *
  * Правила:
@@ -314,7 +355,20 @@ export function parseMarkdownToSections(md: string): BookSection[] {
 
   flushParagraph();
 
-  /* Финальная фильтрация — секции без параграфов и без понятного title
-     не несут пользы для chunker'а. */
+  /* If the parser found no explicit ATX headings, the entire text ends up in
+     a single "Введение" section. In that case, run a heuristic pass over the
+     paragraphs to detect chapter-like lines (numbered headings, explicit
+     "Глава N" keywords, ALL CAPS titles) and split the monolith into real
+     sections. This covers scanned PDF/DJVU books where the OCR engine
+     produces plain text without markdown heading markers. */
+  const hasExplicitHeadings = sections.some((s) => s.title !== "Введение" && !/^Часть\s\d+$/u.test(s.title));
+  if (!hasExplicitHeadings && sections.length <= 1) {
+    const allParagraphs = sections.flatMap((s) => s.paragraphs);
+    if (allParagraphs.length > 3) {
+      const split = splitByHeuristicHeadings(allParagraphs);
+      if (split.length > 1) return split;
+    }
+  }
+
   return sections.filter((s) => s.paragraphs.length > 0 || s.title.length > 0);
 }

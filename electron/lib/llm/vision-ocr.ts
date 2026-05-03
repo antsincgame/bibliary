@@ -26,6 +26,11 @@ import { getHeavyLaneRateLimiter } from "./heavy-lane-rate-limiter.js";
 import { getModelPool } from "./model-pool.js";
 import { getImportScheduler } from "../library/import-task-scheduler.js";
 
+const VISION_OCR_INFERENCE = {
+  temperature: 0,
+  maxTokens: 8192,
+} as const;
+
 export interface VisionOcrResult {
   text: string;
   confidence: number;
@@ -106,8 +111,8 @@ export async function recognizeWithVisionLlm(
           const baseUrl = await getLmStudioUrl();
           const body = {
             model: modelKey,
-            temperature: 0,
-            max_tokens: 8192,
+            temperature: VISION_OCR_INFERENCE.temperature,
+            max_tokens: VISION_OCR_INFERENCE.maxTokens,
             messages: [
               {
                 role: "user",

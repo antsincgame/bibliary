@@ -33,7 +33,8 @@ export type OlympicsRole =
   | "vision"
   | "vision_meta"
   | "vision_ocr"
-  | "vision_illustration";
+  | "vision_illustration"
+  | "layout_assistant";
 
 export interface OlympicsOptions {
   /** Адрес LM Studio. По умолчанию http://localhost:1234. */

@@ -169,24 +169,38 @@ function appendLogRow(entry) {
   const fileLabel = entry.file ? trimFile(entry.file) : "";
   const hasDetails = hasMeaningfulDetails(entry);
 
+  /* Iter 13.3 fix (P2 наложение строк лога, 2026-05-03):
+     раньше при отсутствии expand-toggle / duration / file соответствующие
+     слоты выбрасывались `.filter(Boolean)`, и оставшиеся children сдвигались
+     на 1–2 колонки влево в `grid-template-columns: 14px 60px 100px 1fr auto 280px`.
+     Текст времени попадал в 14px-колонку, message — в 60px и т.д.; визуально
+     это выглядело как «строки логов накладываются друг на друга».
+     Решение: всегда отдаём 6 children, отсутствующие — пустыми spacer'ами,
+     чтобы grid-treck'и оставались стабильными. */
   const expandToggle = hasDetails
     ? el("span", {
       class: "lib-import-log-expand",
       title: t("library.import.log.expand"),
       "aria-label": t("library.import.log.expand"),
     }, "▸")
-    : null;
+    : el("span", { class: "lib-import-log-expand lib-import-log-slot-empty", "aria-hidden": "true" });
+
+  const durationSlot = typeof entry.durationMs === "number"
+    ? el("span", { class: "lib-import-log-duration", title: `${entry.durationMs} ms` }, formatDuration(entry.durationMs))
+    : el("span", { class: "lib-import-log-duration lib-import-log-slot-empty", "aria-hidden": "true" });
+
+  const fileSlot = fileLabel
+    ? el("span", { class: "lib-import-log-file", title: entry.file }, fileLabel)
+    : el("span", { class: "lib-import-log-file lib-import-log-slot-empty", "aria-hidden": "true" });
 
   const headerRow = el("div", { class: "lib-import-log-row-head" }, [
     expandToggle,
     el("span", { class: "lib-import-log-time" }, time),
     el("span", { class: "lib-import-log-cat" }, entry.category),
     el("span", { class: "lib-import-log-msg", title: entry.message }, entry.message),
-    typeof entry.durationMs === "number"
-      ? el("span", { class: "lib-import-log-duration", title: `${entry.durationMs} ms` }, formatDuration(entry.durationMs))
-      : null,
-    fileLabel ? el("span", { class: "lib-import-log-file", title: entry.file }, fileLabel) : null,
-  ].filter(Boolean));
+    durationSlot,
+    fileSlot,
+  ]);
 
   const row = el("div", {
     class: `lib-import-log-row lib-import-log-${entry.level}${hasDetails ? " lib-import-log-row-expandable" : ""}`,

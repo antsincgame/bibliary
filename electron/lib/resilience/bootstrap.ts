@@ -1,4 +1,4 @@
-import { promises as fs } from "fs";
+import { promises as fs, existsSync, lstatSync, rmSync } from "fs";
 import * as path from "path";
 import { configureTelemetry } from "./telemetry";
 import { TELEMETRY_MAX_BYTES } from "./constants";
@@ -12,6 +12,25 @@ export interface ResilienceInitOptions {
 
 let initialized = false;
 
+/**
+ * Remove orphaned junction / symlink whose target no longer exists.
+ * On Windows a dead junction makes `mkdir(path, {recursive:true})` throw
+ * ENOENT even though the directory entry is present in the filesystem.
+ */
+function removeDeadJunction(dir: string): void {
+  try {
+    if (!existsSync(dir)) {
+      const stat = lstatSync(dir);
+      if (stat.isSymbolicLink() || stat.isDirectory()) {
+        rmSync(dir, { force: true });
+        console.warn(`[bootstrap] removed dead junction/symlink: ${dir}`);
+      }
+    }
+  } catch {
+    /* entry truly absent — nothing to do */
+  }
+}
+
 export async function initResilienceLayer(opts: ResilienceInitOptions = {}): Promise<void> {
   if (initialized) return;
   const dataDir = path.resolve(opts.dataDir ?? "data");
@@ -19,6 +38,9 @@ export async function initResilienceLayer(opts: ResilienceInitOptions = {}): Pro
   const checkpointsDir = path.join(dataDir, "checkpoints");
   const promptsDir = path.join(dataDir, "prompts");
   const telemetryPath = path.join(dataDir, "telemetry.jsonl");
+
+  removeDeadJunction(checkpointsDir);
+  removeDeadJunction(promptsDir);
 
   await fs.mkdir(checkpointsDir, { recursive: true });
   await fs.mkdir(promptsDir, { recursive: true });

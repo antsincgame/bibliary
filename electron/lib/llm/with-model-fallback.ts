@@ -77,6 +77,7 @@ const PREF_KEYS: Record<ModelRole, { primary: string; fallback: string | null }>
   ukrainian_specialist: { primary: "ukrainianSpecialistModel", fallback: "ukrainianSpecialistModelFallbacks" },
   lang_detector:        { primary: "langDetectorModel",        fallback: "langDetectorModelFallbacks" },
   translator:           { primary: "translatorModel",          fallback: "translatorModelFallbacks" },
+  layout_assistant:     { primary: "layoutAssistantModel",     fallback: "layoutAssistantModelFallbacks" },
 };
 
 /**

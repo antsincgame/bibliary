@@ -37,6 +37,25 @@ import {
   type SupportedBookFormat,
 } from "./types.js";
 
+/** Magic numbers, вынесенные из inline-литералов (Block A2). Все значения
+ *  подобраны эмпирически по русско/английским PDF/DjVu, не от балды. */
+const META_FALLBACK_CONFIG = {
+  /** Сколько первых секций берём для AI text-meta sample. */
+  textMetaSampleSections: 3,
+  /** Максимум символов sample для text-meta extractor. */
+  textMetaSampleChars: 3000,
+  /** Минимальная длина title чтобы НЕ считать его weak. */
+  titleMinChars: 3,
+  /** Минимальный confidence vision-meta, чтобы использовать результат. */
+  visionMetaMinConfidence: 0.5,
+  /** Сколько глав берём для language detection. */
+  langDetectChapters: 3,
+  /** Максимум символов для language detection sample. */
+  langDetectSampleChars: 4096,
+  /** ISBN online lookup hard timeout, мс. */
+  isbnLookupTimeoutMs: 8_000,
+} as const;
+
 function countWords(text: string): number {
   return text.split(/\s+/).filter(Boolean).length;
 }
@@ -330,24 +349,21 @@ export function upsertEvaluatorReasoning(markdown: string, reasoning: string | n
 }
 
 /**
- * Body Markdown'а: главы как `## Title`, параграфы разделены пустой
- * строкой. Все найденные картинки вставляются в начало body как reference-
- * style изображения, чтобы reader видел и обложку, и внутритекстовые
- * иллюстрации, а parseBookMarkdownChapters их не принимал за текст главы.
+ * Body Markdown'а: cover как reference-style image, далее главы как
+ * `## Title`. Page-gallery (PDF/DJVU page renders) НЕ вкладывается в body —
+ * они только засоряли начало книги (см. user feedback от 2026-05-03 и
+ * комментарий в `buildBody`).
  */
-function escapeMarkdownAlt(text: string): string {
-  return text.replace(/[[\]]+/g, "").replace(/\s+/g, " ").trim();
-}
-
 function buildBody(chapters: ConvertedChapter[], images: ImageRef[]): string {
   const parts: string[] = [];
   const cover = images.find((img) => img.id === "img-cover") ?? null;
-  const gallery = images.filter((img) => img.id !== "img-cover");
   if (cover) parts.push("![Cover][img-cover]\n");
-  for (let i = 0; i < gallery.length; i++) {
-    const alt = escapeMarkdownAlt(gallery[i].caption || `Illustration ${i + 1}`) || `Illustration ${i + 1}`;
-    parts.push(`![${alt}][${gallery[i].id}]\n`);
-  }
+  /* P3 (2026-05-03, user feedback "зачем превью страниц, текст плохо
+     отформатирован"): page-gallery (PDF/DJVU page renders) полностью
+     убирается из тела book.md. Они только мешали чтению — при этом
+     "Открыть оригинал" из reader-toolbar всегда показывает реальный файл.
+     Reference-links на gallery-картинки оставляем (могут пригодиться
+     внешним инструментам), но в видимый body их не вкладываем. */
   for (const ch of chapters) {
     const title = ch.title.trim() || `Chapter ${ch.index + 1}`;
     parts.push(`## ${title}\n`);
@@ -485,10 +501,9 @@ export async function convertBookToMarkdown(
       onlineLookupTried = true;
       /* Hard timeout per lookup: enrichment should never block import for long.
          8 секунд достаточно при наличии интернета; при offline возвращает null
-         мгновенно (fetch fails fast), не висит. */
-      const ISBN_LOOKUP_TIMEOUT_MS = 8_000;
+         мгновенно (fetch fails fast), не висит. См. META_FALLBACK_CONFIG. */
       const withTimeout = <T>(p: Promise<T | null>): Promise<T | null> => {
-        const timer = new Promise<null>((res) => setTimeout(() => res(null), ISBN_LOOKUP_TIMEOUT_MS));
+        const timer = new Promise<null>((res) => setTimeout(() => res(null), META_FALLBACK_CONFIG.isbnLookupTimeoutMs));
         return Promise.race([p, timer]).catch(() => null);
       };
       /* Try Open Library first (free, no key needed, good for ru/uk books).
@@ -524,7 +539,7 @@ export async function convertBookToMarkdown(
   let aiTextMeta: TextMeta | null = null;
   const parsedTitleForFallback = parsed.metadata.title?.trim();
   const parsedTitleIsWeak = !parsedTitleForFallback
-    || parsedTitleForFallback.length < 3
+    || parsedTitleForFallback.length < META_FALLBACK_CONFIG.titleMinChars
     || parsedTitleForFallback === path.parse(originalFile).name;
   const isbnDataIsWeak = !isbnMeta || (!isbnMeta.title && !isbnMeta.authors?.length);
   const needsAiFallback = parsedTitleIsWeak
@@ -534,10 +549,10 @@ export async function convertBookToMarkdown(
   if (needsAiFallback) {
     /* Собираем выборку из первых 2-3 секций (содержит обложку/copyright/intro). */
     const textSample = parsed.sections
-      .slice(0, 3)
+      .slice(0, META_FALLBACK_CONFIG.textMetaSampleSections)
       .map((s) => `${s.title}\n${s.paragraphs.join("\n")}`)
       .join("\n\n")
-      .slice(0, 3000);
+      .slice(0, META_FALLBACK_CONFIG.textMetaSampleChars);
     const aiResult = await extractTextMetaFromBookText(textSample, { signal: opts.signal });
     if (aiResult.ok && aiResult.meta) {
       aiTextMeta = aiResult.meta;
@@ -586,7 +601,7 @@ export async function convertBookToMarkdown(
   const parsedTitle = parsed.metadata.title?.trim();
   const filenameTitle = path.parse(originalFile).name;
 
-  const useVision = visionMeta !== null && visionMeta.confidence >= 0.5;
+  const useVision = visionMeta !== null && visionMeta.confidence >= META_FALLBACK_CONFIG.visionMetaMinConfidence;
   const useIsbn = isbnMeta !== null;
   const useAiText = aiTextMeta !== null;
 
@@ -633,10 +648,10 @@ export async function convertBookToMarkdown(
       detectedLanguage = parserLanguage;
     } else if (chapters.length > 0) {
       const textSample = chapters
-        .slice(0, 3)
+        .slice(0, META_FALLBACK_CONFIG.langDetectChapters)
         .map((ch) => ch.paragraphs.join(" "))
         .join(" ")
-        .slice(0, 4096);
+        .slice(0, META_FALLBACK_CONFIG.langDetectSampleChars);
       const langResult = detectLanguageByRegex(textSample);
       if (langResult.lang !== "unknown") detectedLanguage = langResult.lang;
     }

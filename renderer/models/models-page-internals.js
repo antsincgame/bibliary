@@ -33,6 +33,7 @@ export const PIPELINE_ROLES = [
   "vision_meta",
   "vision_ocr",
   "vision_illustration",
+  "layout_assistant",
 ];
 
 /**

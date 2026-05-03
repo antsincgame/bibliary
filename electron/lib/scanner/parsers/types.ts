@@ -118,11 +118,60 @@ export function cleanParagraph(raw: string): string {
     .trim();
 }
 
+/** Эвристические пороги для `looksLikeHeading`. Подобраны эмпирически по
+ *  выборке OCR'd книг (русские/английские scientific PDF). */
+export const HEADING_HEURISTIC_CONFIG = {
+  /** Pattern 0 hard cutoff: строка длиннее этого никогда не считается заголовком. */
+  maxLineChars: 120,
+  /** Pattern 2 (numbered): максимум символов для numbered heading. */
+  numberedMaxChars: 100,
+  /** Pattern 2: с какой позиции искать sentence-ending punct (защита от ложных срабатываний). */
+  numberedSentenceCheckOffset: 20,
+  /** Pattern 3 (ALL CAPS): максимум символов. */
+  allCapsMaxChars: 80,
+  /** Pattern 4 (Title Case): максимум символов. */
+  titleCaseMaxChars: 100,
+  /** Pattern 4: минимум слов в Title Case заголовке. */
+  titleCaseMinWords: 2,
+  /** Pattern 4: максимум слов в Title Case заголовке. */
+  titleCaseMaxWords: 10,
+  /** Pattern 4: какая доля слов должна начинаться с заглавной (0..1). */
+  titleCaseCapitalizedRatio: 0.6,
+} as const;
+
 /** Является ли строка похожей на header / TOC entry (короткая, capitalized). */
 export function looksLikeHeading(line: string): boolean {
   const trimmed = line.trim();
-  if (!trimmed || trimmed.length > 120) return false;
-  if (/^(глава|раздел|часть|chapter|section|part)\b/i.test(trimmed)) return true;
-  if (/^[А-ЯЁA-Z0-9\s.,:;«»\-—()]+$/.test(trimmed) && trimmed.length < 80) return true;
+  if (!trimmed || trimmed.length > HEADING_HEURISTIC_CONFIG.maxLineChars) return false;
+
+  /* Pattern 1: explicit chapter keywords (RU + EN + DE + FR). */
+  if (/^(глава|раздел|часть|введение|заключение|приложение|предисловие|послесловие|содержание|оглавление|chapter|section|part|introduction|conclusion|appendix|preface|foreword|bibliography|references|teil|chapitre|annexe)\b/i.test(trimmed)) return true;
+
+  /* Pattern 2: numbered heading — "1.2 Arrays", "1.2.3. Foo", "§ 3 Bar". */
+  if (
+    /^(?:§\s*)?\d+(?:\.\d+)*\.?\s+\S/u.test(trimmed)
+    && trimmed.length < HEADING_HEURISTIC_CONFIG.numberedMaxChars
+    && !/[.!?]\s+\S/.test(trimmed.slice(HEADING_HEURISTIC_CONFIG.numberedSentenceCheckOffset))
+  ) return true;
+
+  /* Pattern 3: ALL CAPS line (RU or EN, with digits and punctuation). */
+  if (
+    /^[А-ЯЁA-Z0-9\s.,:;«»\-—()]+$/.test(trimmed)
+    && trimmed.length < HEADING_HEURISTIC_CONFIG.allCapsMaxChars
+  ) return true;
+
+  /* Pattern 4: Title Case line that looks like a heading (3-8 words, no
+     sentence-ending punctuation at the end except colon). */
+  if (trimmed.length < HEADING_HEURISTIC_CONFIG.titleCaseMaxChars && !/[.!?]\s*$/.test(trimmed)) {
+    const words = trimmed.split(/\s+/);
+    if (
+      words.length >= HEADING_HEURISTIC_CONFIG.titleCaseMinWords
+      && words.length <= HEADING_HEURISTIC_CONFIG.titleCaseMaxWords
+    ) {
+      const capitalized = words.filter((w) => /^[\p{Lu}0-9«"(]/u.test(w)).length;
+      if (capitalized >= words.length * HEADING_HEURISTIC_CONFIG.titleCaseCapitalizedRatio) return true;
+    }
+  }
+
   return false;
 }

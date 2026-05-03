@@ -4,6 +4,121 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.10.0] — 2026-05-03 — Layout Assistant (AI-верстальщик, LM Studio)
+
+Полноценная интеграция локального LLM-верстальщика в пайплайн импорта и reader.
+Работает полностью локально через LM Studio (Qwen 2.5-1.5B Instruct рекомендуется).
+
+### Added
+
+- **Layout Assistant** — новая роль `layout_assistant` в pipeline. Аннотирует
+  book.md после OCR: находит заголовки без `##`-маркеров, удаляет OCR-мусор
+  (одиночные номера страниц, колонтитулы), корректирует уровни `#`/`##`/`###`.
+  Annotation-only подход — модель НЕ переписывает текст, только аннотирует
+  проблемы, постпроцессор применяет детерминированные патчи (bottom-up).
+
+- **Кнопка «AI Layout» в reader toolbar** — ручной запуск Layout Assistant
+  для текущей книги. Переключается в режим «Отмена» когда очередь активна.
+  Визуальный feedback через event subscription (`onLayoutAssistantEvent`).
+
+- **Async queue** (`layout-assistant-queue.ts`) — opt-in фоновая очередь.
+  Включается через `Settings → OCR & Vision → Layout Assistant`. Single-slot,
+  событийная модель (layout.started / .done / .skipped / .failed).
+
+- **Bug 4 fix — lock refactoring**: LLM inference (~10 мин на CPU) теперь
+  выполняется ВНЕ `withBookMdLock`. Блокировка берётся только на write-фазу
+  (< 1 сек). Concurrent modification detection: если evaluator обновил book.md
+  пока шёл inference — layout assistant детектирует hash-mismatch и пропускает
+  запись (книга остаётся нетронутой), пользователь получает предупреждение.
+
+- **Concurrency tests** — 2 новых теста на concurrent modification detection:
+  файл изменяется во время LLM inference → `applied: false`, evaluator content
+  сохраняется.
+
+- **Models page**: роль `layout_assistant` добавлена в `PIPELINE_ROLES`,
+  `ALL_ROLES` (`📐 Верстальщик`), `ROLE_HUMAN_LABEL`. Доступна в Olympics.
+
+- **Olympics discipline** `layout_assistant-chapter-detection`: golden fixture
+  + precision/recall scorer (good ≈ 0.95, bad = 0).
+
+- **Settings** — 3 поля в секции OCR & Vision:
+  - `Layout Assistant (AI)` — toggle (default: off)
+  - `Layout Assistant: модель LM Studio` — modelKey
+  - `Layout Assistant: fallback модели` — CSV
+
+- **Settings → OCR & Vision — live-карточка очереди Layout Assistant**
+  (`renderer/settings.js`): начальное состояние из `library.layoutAssistantStatus().queue`,
+  подписка на `library.onLayoutAssistantEvent`, обновление DOM без полного re-render;
+  `preload.ts` — в тип ответа `layoutAssistantStatus` добавлено поле `queue`
+  (соответствует IPC).
+
+- **i18n** — ru/en ключи для AI Layout, Cancel, Applied, Noop, Failed.
+
+- **Bug fixes** (обнаружены аудитом, исправлены):
+  - Bug 5: `.bak` не перезаписывается если старше book.md (mtime-check)
+  - Bug 9: heading.text валидируется против `lines[idx]` (защита от галлюцинаций)
+  - Bug 11: `toc_block` удалён из схемы — dot-leader ToC структурирует `reader.js`
+  - Bug 12: параграфы > maxChars разрезаются по строкам (`splitHugeParagraph`)
+  - Bug 16: `.max(300)` на headings, `.max(500)` на junk_lines (защита от DoS)
+  - Bug 23: `bootstrapLayoutAssistantQueue` обёрнут в outer try/catch
+  - Bug 26: `force=true` стриппит marker перед chunking чтобы не тратить LLM впустую
+
+### Changed
+
+- **Block A — устранение хардкода**: inline-литералы inference params в
+  `vision-meta.ts`, `vision-ocr.ts`, `text-meta-extractor.ts`, `translator.ts`,
+  `book-evaluator.ts` вынесены в module-local `*_INFERENCE` const-объекты.
+  Zero behavioral change — только именование.
+
+- **Magic numbers → named constants**: `HEADING_HEURISTIC_CONFIG` (types.ts),
+  `TOC_HEURISTIC_CONFIG` (reader.js), `META_FALLBACK_CONFIG` (md-converter.ts).
+
+- **localhost dedup**: `DEFAULT_LM_STUDIO_URL` / `DEFAULT_QDRANT_URL` экспортируются
+  из `endpoints/index.ts` — единый source of truth.
+
+### Technical
+
+- `layout-assistant.ts` — `chunkMarkdown` (paragraph-boundary + overlap 500 chars),
+  `mergeAnnotations` (line offset shift + overlap dedup), `applyLayoutAnnotations`
+  (bottom-up mutations — критично для предотвращения line drift).
+- `layout-assistant-schema.ts` — Zod + `jsonrepair` (3.14.0) + regex partial
+  extraction fallback для 1.5B моделей с fragile JSON output.
+- Prompt scaffold начинается с пустого JSON-шаблона — убирает preamble text
+  (снижает JSON failure rate на 50-70% у малых моделей).
+- Целевой пакет тестов layout-assistant + olympics/roles (66 тестов в одном
+  прогоне `node --import tsx --test` по выбранным файлам) + обновления
+  olympics-scorers, role-load-config, model-role-resolver.
+
+## [0.9.1] — 2026-05-03 — Hotfix: наложение строк в логе импорта
+
+Hotfix к 0.9.0 после пользовательского отчёта *"тексты логов накладываются друг
+на друга"*. Sherlok-расследование показало корневую причину: grid-сетка строки
+лога имеет 6 фиксированных колонок, но JS-рендер выкидывал отсутствующие
+`expandToggle` / `durationMs` / `file` через `.filter(Boolean)`. После этого
+оставшиеся children сдвигались на 1–2 колонки влево, и текст времени попадал в
+14px-колонку, message — в 60px и т.д. — визуально это и есть «строки логов
+наезжают друг на друга».
+
+### Fixed
+
+- **`renderer/library/import-pane-log.js`** — отсутствующие slot'ы
+  (`expandToggle`, `durationSlot`, `fileSlot`) теперь рендерятся как пустые
+  spacer'ы с классом `lib-import-log-slot-empty`, чтобы grid-track'и оставались
+  стабильными. Каждая строка лога гарантированно отдаёт ровно 6 children.
+- **`renderer/styles.css`** — `grid-template-columns` использует
+  `min-content` вместо `auto` для duration-колонки + новый класс
+  `.lib-import-log-slot-empty` (visibility: hidden + width: 0), чтобы пустой
+  slot занимал место в треке, но не рисовал контент.
+
+### Notes
+
+В этом релизе **никаких изменений в pipeline / IPC / preload** — только
+renderer CSS+JS. Если после установки 0.9.1 что-то «выглядит как раньше»,
+скорее всего запущен СТАРЫЙ exe из закреплённого ярлыка или из release/.
+Используйте файл `Bibliary 0.9.1.exe` в корне проекта.
+
 ## [0.9.0] — 2026-05-03 — Reader, удаление книг, «Сжечь библиотеку»
 
 ### Added

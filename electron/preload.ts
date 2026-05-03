@@ -66,7 +66,7 @@ interface LibraryBookMeta {
   tags?: string[];
   tagsRu?: string[];
   wordCount: number;
-  status: "imported" | "evaluating" | "evaluated" | "crystallizing" | "indexed" | "failed" | "unsupported";
+  status: "imported" | "layout-cleaning" | "evaluating" | "evaluated" | "crystallizing" | "indexed" | "failed" | "unsupported";
   year?: number;
   qualityScore?: number;
   isFictionOrWater?: boolean;
@@ -89,7 +89,7 @@ interface LibraryCatalogQuery {
   minQuality?: number;
   maxQuality?: number;
   hideFictionOrWater?: boolean;
-  statuses?: Array<"imported" | "evaluating" | "evaluated" | "crystallizing" | "indexed" | "failed" | "unsupported">;
+  statuses?: Array<"imported" | "layout-cleaning" | "evaluating" | "evaluated" | "crystallizing" | "indexed" | "failed" | "unsupported">;
   domain?: string;
   displayLocale?: "ru" | "en";
   orderBy?: "quality" | "title" | "words" | "evaluated";
@@ -321,6 +321,13 @@ contextBridge.exposeInMainWorld("api", {
     }> => ipcRenderer.invoke("system:probe-services"),
     openExternal: (url: string): Promise<{ ok: boolean; reason?: string }> =>
       ipcRenderer.invoke("system:open-external", url),
+    appVersion: (): Promise<{
+      version: string;
+      commit: string | null;
+      builtAt: string | null;
+      electron: string;
+      isPackaged: boolean;
+    }> => ipcRenderer.invoke("system:app-version"),
   },
 
   preferences: {
@@ -776,6 +783,88 @@ contextBridge.exposeInMainWorld("api", {
       smokeLibrary ? Promise.resolve({ queued: smokeLibrary.rows.length }) : ipcRenderer.invoke("library:reevaluate-all"),
     reparseBook: (bookId: string): Promise<{ ok: boolean; chapters?: number; reason?: string }> =>
       smokeLibrary ? Promise.resolve({ ok: true, chapters: 1 }) : ipcRenderer.invoke("library:reparse-book", bookId),
+    layoutAssistantStatus: (): Promise<{
+      enabled: boolean;
+      modelKey: string;
+      modelFallbacks: string;
+      queue: {
+        running: boolean;
+        paused: boolean;
+        currentBookId: string | null;
+        queueLength: number;
+        totalProcessed: number;
+        totalSkipped: number;
+        totalFailed: number;
+      };
+    }> =>
+      smokeLibrary
+        ? Promise.resolve({
+            enabled: false,
+            modelKey: "",
+            modelFallbacks: "",
+            queue: {
+              running: false,
+              paused: false,
+              currentBookId: null,
+              queueLength: 0,
+              totalProcessed: 0,
+              totalSkipped: 0,
+              totalFailed: 0,
+            },
+          })
+        : ipcRenderer.invoke("library:layout-assistant-status"),
+    layoutAssistantRunBook: (
+      bookId: string,
+      opts?: { force?: boolean },
+    ): Promise<{
+      ok: boolean;
+      applied: boolean;
+      reason?: string;
+      warnings?: string[];
+      chunksOk?: number;
+      chunksFailed?: number;
+      model?: string;
+    }> =>
+      smokeLibrary
+        ? Promise.resolve({ ok: true, applied: false, reason: "smoke mode" })
+        : ipcRenderer.invoke("library:layout-assistant-run-book", { bookId, force: opts?.force === true }),
+    layoutAssistantEnqueue: (bookId: string): Promise<{ ok: boolean; reason?: string }> =>
+      smokeLibrary
+        ? Promise.resolve({ ok: true })
+        : ipcRenderer.invoke("library:layout-assistant-enqueue", { bookId }),
+    layoutAssistantPause: (): Promise<boolean> =>
+      smokeLibrary ? Promise.resolve(true) : ipcRenderer.invoke("library:layout-assistant-pause"),
+    layoutAssistantResume: (): Promise<boolean> =>
+      smokeLibrary ? Promise.resolve(true) : ipcRenderer.invoke("library:layout-assistant-resume"),
+    layoutAssistantCancelCurrent: (): Promise<boolean> =>
+      smokeLibrary ? Promise.resolve(true) : ipcRenderer.invoke("library:layout-assistant-cancel-current"),
+    /** Subscribe to layout-assistant queue events (badge/progress in reader and settings). */
+    onLayoutAssistantEvent: (cb: (payload: {
+      type: string;
+      bookId?: string;
+      title?: string;
+      applied?: boolean;
+      chunksOk?: number;
+      chunksFailed?: number;
+      warnings?: string[];
+      error?: string;
+      remaining?: number;
+    }) => void): (() => void) => {
+      if (smokeLibrary) return () => undefined;
+      const l = (_e: unknown, p: {
+        type: string;
+        bookId?: string;
+        title?: string;
+        applied?: boolean;
+        chunksOk?: number;
+        chunksFailed?: number;
+        warnings?: string[];
+        error?: string;
+        remaining?: number;
+      }) => cb(p);
+      ipcRenderer.on("library:layout-assistant-event", l);
+      return () => ipcRenderer.removeListener("library:layout-assistant-event", l);
+    },
     onImportProgress: (cb: (payload: {
       importId: string;
       phase: "discovered" | "file-start" | "processed" | "scan-complete";

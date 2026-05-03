@@ -40,7 +40,8 @@ export type ModelRole =
   | "evaluator"
   | "ukrainian_specialist"
   | "lang_detector"
-  | "translator";
+  | "translator"
+  | "layout_assistant";
 
 export type Capability = "vision";
 
@@ -70,6 +71,7 @@ const ROLE_REQUIRED_CAPS: Record<ModelRole, Capability[]> = {
   ukrainian_specialist: [],
   lang_detector: [],
   translator: [],
+  layout_assistant: [],
 };
 
 /**
@@ -85,6 +87,7 @@ const ROLE_PREFERRED_CAPS: Record<ModelRole, Capability[]> = {
   ukrainian_specialist: [],
   lang_detector: [],
   translator: [],
+  layout_assistant: [],
 };
 
 /**
@@ -100,6 +103,7 @@ const ROLE_PREF_KEY: Record<ModelRole, string> = {
   ukrainian_specialist: "ukrainianSpecialistModel",
   lang_detector: "langDetectorModel",
   translator: "translatorModel",
+  layout_assistant: "layoutAssistantModel",
 };
 
 /** CSV ключ для fallback chain. null = нет fallback chain. */
@@ -112,6 +116,7 @@ const ROLE_FALLBACKS_PREF_KEY: Record<ModelRole, string | null> = {
   ukrainian_specialist: "ukrainianSpecialistModelFallbacks",
   lang_detector: "langDetectorModelFallbacks",
   translator: "translatorModelFallbacks",
+  layout_assistant: "layoutAssistantModelFallbacks",
 };
 
 interface CacheEntry {
@@ -283,6 +288,7 @@ export function listAllRoles(): RoleMeta[] {
     "ukrainian_specialist",
     "lang_detector",
     "translator",
+    "layout_assistant",
   ];
   return roles.map((r) => ({
     role: r,

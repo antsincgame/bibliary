@@ -604,12 +604,46 @@ export function buildCatalogBottomBar(root, deps) {
     }),
   }, t("library.catalog.revert.btn"));
 
+  const burnAllBtn = el("button", {
+    type: "button", class: "lib-btn lib-btn-danger",
+    title: t("library.catalog.tooltip.burnAll"),
+    onclick: (ev) => void withButtonBusy(ev, async () => {
+      if (!(await showConfirm(t("library.catalog.confirm.burnAll1"), {
+        title: t("library.catalog.btn.burnAll"),
+        okText: t("library.catalog.btn.burnAll"),
+        okVariant: "danger",
+      }))) return;
+      if (!(await showConfirm(t("library.catalog.confirm.burnAll2"), {
+        title: t("library.catalog.btn.burnAll"),
+        okText: t("library.catalog.btn.burnAll"),
+        okVariant: "danger",
+      }))) return;
+      try {
+        const r = await window.api.library.burnAll();
+        if (!r?.ok) {
+          await showAlert(t("library.catalog.burnAll.failed", { reason: r?.reason || "unknown" }));
+          return;
+        }
+        CATALOG.selected.clear();
+        CATALOG.rows = [];
+        await deps.renderCatalog(root);
+        await showAlert(t("library.catalog.burnAll.done", {
+          files: String(r.removedFiles ?? 0),
+          dirs: String(r.removedDirs ?? 0),
+          qdrant: String(r.qdrantCleaned ?? 0),
+        }));
+      } catch (e) {
+        await showAlert(t("library.catalog.burnAll.failed", { reason: e instanceof Error ? e.message : String(e) }));
+      }
+    }),
+  }, t("library.catalog.btn.burnAll"));
+
   const batchSummary = el("span", { class: "lib-catalog-batch-summary" }, "");
 
   return el("div", { class: "lib-catalog-bottombar" }, [
     metaRow,
     el("div", { class: "lib-catalog-bottom-actions" }, [
-      selectAllBtn, clearBtn, reevaluateBtn, reparseBtn, deleteBtn, chunksBtn, revertBtn, cancelBatchBtn,
+      selectAllBtn, clearBtn, reevaluateBtn, reparseBtn, deleteBtn, burnAllBtn, chunksBtn, revertBtn, cancelBatchBtn,
     ]),
     batchSummary,
   ]);

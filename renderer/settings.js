@@ -9,6 +9,23 @@ import { SECTIONS } from "./settings/sections.js";
 /** @returns {any} */
 function api() { return /** @type {any} */ (window).api; }
 
+/** @typedef {{ phase: 'idle'|'running'|'paused'; title: string; remaining: number; processed: number; failed: number; skipped: number; }} QueueStateSnapshot */
+
+/** @type {QueueStateSnapshot} */
+const QUEUE_STATE = {
+  phase: "idle",
+  title: "",
+  remaining: 0,
+  processed: 0,
+  failed: 0,
+  skipped: 0,
+};
+
+/** @type {(() => void) | null} */
+let _unsubscribeQueueEvents = null;
+
+const LA_QUEUE_PANEL_ID = "la-queue-panel";
+
 const STATE = {
   /** @type {Record<string, unknown>} */
   prefs: {},
@@ -52,6 +69,130 @@ function getMatchesBySection(visibleSections) {
   return visibleSections
     .map((section) => ({ section, fields: filteredFields(section) }))
     .filter((entry) => entry.fields.length > 0);
+}
+
+/**
+ * Renders the inner content of the live queue status card from QUEUE_STATE.
+ * @returns {HTMLElement}
+ */
+function buildQueueStatusContent() {
+  const { phase, title, remaining, processed, failed, skipped } = QUEUE_STATE;
+
+  let phaseLabel = "";
+  let phaseCls = "settings-la-phase-idle";
+  if (phase === "running") {
+    phaseLabel = t("settings.layoutQueue.running", { title: title || "…" });
+    phaseCls = "settings-la-phase-running";
+  } else if (phase === "paused") {
+    phaseLabel = t("settings.layoutQueue.paused");
+    phaseCls = "settings-la-phase-paused";
+  } else {
+    phaseLabel = t("settings.layoutQueue.idle");
+  }
+
+  const dot = el("span", { class: `settings-la-dot ${phaseCls}` }, "");
+  const phaseEl = el("span", { class: "settings-la-phase-label" }, phaseLabel);
+  const row1 = el("div", { class: "settings-la-row" }, [dot, phaseEl]);
+
+  const children = [row1];
+
+  if (remaining > 0) {
+    children.push(
+      el("div", { class: "settings-la-queued" },
+        t("settings.layoutQueue.queued", { n: String(remaining) })),
+    );
+  }
+
+  if (processed > 0 || failed > 0 || skipped > 0) {
+    children.push(
+      el("div", { class: "settings-la-stats" },
+        t("settings.layoutQueue.stats", {
+          n: String(processed),
+          f: String(failed),
+          s: String(skipped),
+        })),
+    );
+  }
+
+  return el("div", { class: "settings-la-content" }, children);
+}
+
+/**
+ * Builds the full queue status panel element (with stable id for in-place updates).
+ * @returns {HTMLElement}
+ */
+function buildLayoutQueuePanel() {
+  const inner = buildQueueStatusContent();
+  const panel = el("div", { class: "settings-la-queue-panel", id: LA_QUEUE_PANEL_ID }, [
+    el("div", { class: "settings-la-queue-title" }, t("settings.layoutQueue.title")),
+    inner,
+  ]);
+  return panel;
+}
+
+/**
+ * Updates the queue badge DOM in-place (no full re-render of the settings page).
+ * Called on every layout-assistant event while settings is open.
+ * @param {HTMLElement} root
+ */
+function updateQueueBadge(root) {
+  const panel = root.querySelector(`#${LA_QUEUE_PANEL_ID}`);
+  if (!panel) return;
+  const existing = panel.querySelector(".settings-la-content");
+  const next = buildQueueStatusContent();
+  if (existing) {
+    panel.replaceChild(next, existing);
+  } else {
+    panel.appendChild(next);
+  }
+}
+
+/**
+ * Applies an incoming layout-assistant event payload to QUEUE_STATE.
+ *
+ * Canonical event sources:
+ * - layout.queued: payload.remaining = queue length AFTER push (authoritative)
+ * - layout.idle:   queue is empty, set remaining = 0
+ * - layout.done/skipped/failed: bumps counters; phase is recomputed
+ *   AFTER decrementing remaining so UI doesn't show stale "running" state.
+ *
+ * @param {{ type: string; title?: string; remaining?: number; }} payload
+ */
+function applyQueueEvent(payload) {
+  const type = payload.type;
+  if (type === "layout.started") {
+    QUEUE_STATE.phase = "running";
+    QUEUE_STATE.title = payload.title || "";
+    return;
+  }
+  if (type === "layout.queued") {
+    QUEUE_STATE.remaining = typeof payload.remaining === "number"
+      ? payload.remaining
+      : QUEUE_STATE.remaining + 1;
+    return;
+  }
+  if (type === "layout.idle") {
+    QUEUE_STATE.phase = "idle";
+    QUEUE_STATE.title = "";
+    QUEUE_STATE.remaining = 0;
+    return;
+  }
+  if (type === "layout.paused") {
+    QUEUE_STATE.phase = "paused";
+    return;
+  }
+  if (type === "layout.resumed") {
+    QUEUE_STATE.phase = QUEUE_STATE.title ? "running" : "idle";
+    return;
+  }
+  if (type === "layout.done" || type === "layout.skipped" || type === "layout.failed") {
+    if (type === "layout.done") QUEUE_STATE.processed += 1;
+    else if (type === "layout.skipped") QUEUE_STATE.skipped += 1;
+    else QUEUE_STATE.failed += 1;
+    QUEUE_STATE.title = "";
+    if (QUEUE_STATE.remaining > 0) QUEUE_STATE.remaining -= 1;
+    QUEUE_STATE.phase = QUEUE_STATE.remaining > 0 ? "running" : "idle";
+  }
 }
 
 function buildResetBtn(key, dflt, applyToInput, isDefault, root) {
@@ -404,6 +545,9 @@ function renderPanelContent(root, visibleSections) {
     el("p", { class: "settings-panel-subtitle" }, optionalT(current.descriptionKey)),
   ]));
   panel.appendChild(buildFieldsStack(root, current, current.fields));
+  if (current.id === "ocr") {
+    panel.appendChild(buildLayoutQueuePanel());
+  }
   return panel;
 }
 
@@ -570,6 +714,13 @@ export async function mountSettings(root) {
   if (!root) return;
   if (root.dataset.mounted === "1") return;
   root.dataset.mounted = "1";
+
+  /* Cleanup any previous event subscription (locale re-mount). */
+  if (_unsubscribeQueueEvents) {
+    _unsubscribeQueueEvents();
+    _unsubscribeQueueEvents = null;
+  }
+
   clear(root);
   root.appendChild(el("div", { class: "settings-loading" }, t("settings.loading")));
   try {
@@ -587,4 +738,34 @@ export async function mountSettings(root) {
     return;
   }
   render(root);
+
+  /* Seed initial queue state from a one-shot status poll (queue sub-object).
+     API path: window.api.library.layoutAssistantStatus (preload exposes it
+     under the `library` namespace; see electron/preload.ts ~line 786). */
+  try {
+    const lib = api().library;
+    if (lib && typeof lib.layoutAssistantStatus === "function") {
+      const statusResp = await lib.layoutAssistantStatus();
+      const q = /** @type {any} */ (statusResp)?.queue;
+      if (q) {
+        QUEUE_STATE.phase = q.running ? "running" : (q.paused ? "paused" : "idle");
+        QUEUE_STATE.remaining = q.queueLength ?? 0;
+        QUEUE_STATE.processed = q.totalProcessed ?? 0;
+        QUEUE_STATE.failed = q.totalFailed ?? 0;
+        QUEUE_STATE.skipped = q.totalSkipped ?? 0;
+        updateQueueBadge(root);
+      }
+    }
+  } catch { /* non-critical: badge shows idle by default */ }
+
+  /* Subscribe to live events; update badge in-place. */
+  try {
+    const lib = api().library;
+    if (lib && typeof lib.onLayoutAssistantEvent === "function") {
+      _unsubscribeQueueEvents = lib.onLayoutAssistantEvent((/** @type {any} */ payload) => {
+        applyQueueEvent(payload);
+        updateQueueBadge(root);
+      });
+    }
+  } catch { /* non-critical */ }
 }

@@ -28,6 +28,7 @@ export const ALL_ROLES = [
   { role: "vision_meta",          label: "📖 Vision: обложки" },
   { role: "vision_ocr",           label: "🖨️ Vision: OCR страниц" },
   { role: "vision_illustration",  label: "🖼️ Vision: иллюстрации" },
+  { role: "layout_assistant",     label: "📐 Верстальщик" },
 ];
 
 /**
@@ -43,6 +44,7 @@ export const ROLE_HUMAN_LABEL = {
   vision_meta:          { icon: "📖", title: "Хранитель обложек",   subtitle: "метаданные книги" },
   vision_ocr:           { icon: "🖨️", title: "Распознаватель текста", subtitle: "OCR сканированных страниц" },
   vision_illustration:  { icon: "🖼️", title: "Иллюстратор",         subtitle: "описание картинок" },
+  layout_assistant:     { icon: "📐", title: "Верстальщик-ассистент", subtitle: "разметка глав и очистка OCR" },
 };
 
 /**

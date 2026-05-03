@@ -132,6 +132,7 @@ export function registerArenaIpc(): void {
       "extractorModel", "evaluatorModel", "translatorModel",
       "visionModelKey",
       "langDetectorModel", "ukrainianSpecialistModel",
+      "layoutAssistantModel",
     ]);
     const filtered: Partial<Preferences> = {};
     for (const [k, v] of Object.entries(recs)) {

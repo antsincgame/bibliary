@@ -69,6 +69,9 @@ export const SECTIONS = Object.freeze([
       { key: "preferDjvuOverPdf", type: "bool", labelKey: "settings.preferDjvuOverPdf" },
       { key: "metadataOnlineLookup", type: "bool", labelKey: "settings.metadataOnlineLookup" },
       { key: "visionMetaEnabled", type: "bool", labelKey: "settings.visionMetaEnabled" },
+      { key: "layoutAssistantEnabled", type: "bool", labelKey: "settings.layoutAssistantEnabled" },
+      { key: "layoutAssistantModel", type: "text", labelKey: "settings.layoutAssistantModel", placeholder: "qwen2.5-1.5b-instruct" },
+      { key: "layoutAssistantModelFallbacks", type: "text", labelKey: "settings.layoutAssistantModelFallbacks", placeholder: "model1,model2" },
     ],
   },
 

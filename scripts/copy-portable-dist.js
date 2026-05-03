@@ -39,7 +39,13 @@ function sleepSync(ms) {
   }
 }
 
-/** Копирует exe через буфер + атомарный rename (обходит часть EBUSY на copyFile). */
+/**
+ * Копирует exe через буфер + атомарный rename.
+ * На Windows `rename` не перезаписывает существующий путь: если цель занята
+ * (процесс / Defender), `unlinkSync` обязан успеть — иначе rename бессмысленен
+ * и только тратит ретраи. Сразу пробрасываем ошибку → внешний код уйдёт в
+ * альтернативное имя (`Bibliary-X.Y.Z-portable.exe`).
+ */
 function copyExeAtomic(src, destPath) {
   const buf = fs.readFileSync(src);
   const tmp = `${destPath}.tmp-${process.pid}`;
@@ -48,8 +54,13 @@ function copyExeAtomic(src, destPath) {
     if (fs.existsSync(destPath)) {
       try {
         fs.unlinkSync(destPath);
-      } catch {
-        /* занят — rename упадёт, вызывающий код попробует другой путь */
+      } catch (unlinkErr) {
+        try {
+          fs.unlinkSync(tmp);
+        } catch {
+          /* ignore */
+        }
+        throw unlinkErr;
       }
     }
     fs.renameSync(tmp, destPath);
@@ -71,7 +82,12 @@ function tryCopyTo(destPath, attempts = 12, delayMs = 500) {
       return destPath;
     } catch (e) {
       lastErr = e;
-      const code = /** @type {NodeJS.ErrnoException} */ (e)?.code;
+      const err = /** @type {NodeJS.ErrnoException} */ (e);
+      const code = err?.code;
+      /* Занятая цель: повтор через 500 мс не поможет, пока процесс не отпустит exe. */
+      if (err?.syscall === "unlink" && (code === "EBUSY" || code === "EPERM" || code === "EACCES")) {
+        throw e;
+      }
       if (code === "EBUSY" || code === "EPERM" || code === "EACCES") {
         sleepSync(delayMs);
         continue;
