@@ -29,6 +29,10 @@ import {
 import {
   subscribeLayoutAssistant,
   bootstrapLayoutAssistantQueue,
+  pauseLayoutAssistant,
+  cancelCurrentLayoutAssistant,
+  clearLayoutAssistantQueue,
+  getLayoutAssistantStatus,
 } from "../lib/library/layout-assistant-queue.js";
 import { globalLlmLock } from "../lib/llm/global-llm-lock.js";
 import {
@@ -112,6 +116,9 @@ export function abortAllLibrary(reason: string): void {
   pauseEvaluator();
   clearQueue();
   cancelCurrentEvaluation(reason);
+  pauseLayoutAssistant();
+  clearLayoutAssistantQueue();
+  cancelCurrentLayoutAssistant(reason);
 }
 
 /** Сколько импортов сейчас в работе. Используется в `before-quit` чтобы не закрывать app посреди работы. */
@@ -243,6 +250,12 @@ function registerLibraryLlmLockProbes(): void {
     return n === 0
       ? { busy: false }
       : { busy: true, reason: `${n} evaluator slot(s) running` };
+  });
+  globalLlmLock.registerProbe("layout-assistant-queue", () => {
+    const s = getLayoutAssistantStatus();
+    return s.running && !s.paused
+      ? { busy: true, reason: "layout assistant slot running" }
+      : { busy: false };
   });
 }
 
