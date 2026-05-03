@@ -477,7 +477,7 @@ function render(root) {
   shell.appendChild(renderPanelContent(root, visibleSections));
   root.appendChild(shell);
 
-  const actions = el("div", { class: "settings-actions" }, [
+  const actionItems = [
     el("span", { id: "settings-unsaved-count", class: "settings-unsaved-count" }, ""),
     el("button", {
       class: "neon-btn neon-btn-primary",
@@ -500,9 +500,70 @@ function render(root) {
         openWelcomeWizard({ force: true });
       },
     }, t("settings.replayOnboarding")),
-  ]);
+  ];
+  if (STATE.showAdvanced) {
+    actionItems.push(buildBurnLibraryBtn());
+  }
+  const actions = el("div", { class: "settings-actions" }, actionItems);
   root.appendChild(actions);
   updateSaveUi(root);
+}
+
+/**
+ * Iter 13.2 (P6, dev-mode): кнопка "Сжечь библиотеку".
+ *
+ * Видима только при включённом advanced-toggle (см. settings.showAdvanced).
+ * Удаляет ВСЁ под data/library/ + bibliary-cache.db + Qdrant коллекции
+ * bibliary-*. Идёт через двойной confirm (deletion is destructive).
+ *
+ * Зачем: пользователь жалуется что после удаления книг через UI файлы
+ * остались на диске (delete-book best-effort убирает только sidecars +
+ * empty bookDir, но не .blobs/.import). Burn даёт чистый старт для
+ * regression-тестирования импорта.
+ */
+function buildBurnLibraryBtn() {
+  const btn = el("button", {
+    class: "neon-btn neon-btn-danger",
+    type: "button",
+    title: t("settings.burnLibrary.tooltip"),
+  }, t("settings.burnLibrary"));
+  btn.addEventListener("click", async () => {
+    if (!(await showConfirm(t("settings.burnLibrary.confirm1"), {
+      title: t("settings.burnLibrary"),
+      okText: t("settings.burnLibrary.proceed"),
+      okVariant: "danger",
+    }))) return;
+    if (!(await showConfirm(t("settings.burnLibrary.confirm2"), {
+      title: t("settings.burnLibrary"),
+      okText: t("settings.burnLibrary.proceed"),
+      okVariant: "danger",
+    }))) return;
+    btn.disabled = true;
+    const originalLabel = btn.textContent;
+    btn.textContent = t("settings.burnLibrary.running");
+    try {
+      const r = await api().library.burnAll();
+      if (!r?.ok) {
+        await showAlert(t("settings.burnLibrary.failed") + ": " + (r?.reason || "unknown"));
+        return;
+      }
+      const summary = t("settings.burnLibrary.done", {
+        files: String(r.removedFiles ?? 0),
+        dirs: String(r.removedDirs ?? 0),
+        qdrant: String(r.qdrantCleaned ?? 0),
+      });
+      const errs = Array.isArray(r.qdrantErrors) && r.qdrantErrors.length > 0
+        ? "\n\nQdrant warnings:\n" + r.qdrantErrors.slice(0, 5).join("\n")
+        : "";
+      await showAlert(summary + errs);
+    } catch (e) {
+      await showAlert(t("settings.burnLibrary.failed") + ": " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalLabel || t("settings.burnLibrary");
+    }
+  });
+  return btn;
 }
 
 export async function mountSettings(root) {

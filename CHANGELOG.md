@@ -4,6 +4,26 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] — 2026-05-03 — Reader, удаление книг, «Сжечь библиотеку»
+
+### Added
+
+- **IPC `library:burn-all` + preload `library.burnAll()`** — полный сброс
+  `data/library/`, `bibliary-cache.db` (+ WAL/SHM), коллекций Qdrant с префиксом
+  `bibliary-*`; кнопка в **Настройки → Показать продвинутые → Сжечь библиотеку**
+  (двойное подтверждение).
+
+### Fixed
+
+- **Ридер:** flex-layout без визуального наезда на topbar/tabs; тело на всю ширину
+  панели; без горизонтального скролла корня (переполнение в `pre`/`table`/картинках).
+- **Оглавление:** якоря у заголовков + кликабельные строки оглавления в тексте.
+- **Картинки `![alt][img-NNN]`:** предобработка reference-definitions до `marked`,
+  чтобы не ломались при несбалансированных code fence в теле книги.
+- **`library:delete-book`:** удаляются **оба** набора имён sidecar’ов (legacy и
+  modern), чтобы не оставались «лишние» `original`/`.meta.json`; подъём вверх и
+  удаление пустых каталогов до корня библиотеки.
+
 ## [0.8.2] — 2026-05-03 — Import Log Sherlok Cleanup
 
 Patch follow-up к 0.8.1. Пользователь прислал реальные логи импорта и сказал

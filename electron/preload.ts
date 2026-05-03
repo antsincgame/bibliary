@@ -742,6 +742,31 @@ contextBridge.exposeInMainWorld("api", {
       smokeLibrary
         ? Promise.resolve({ scanned: 0, ingested: 0, skipped: 0, pruned: 0, errors: [] })
         : ipcRenderer.invoke("library:rebuild-cache"),
+    /* Iter 13.2 (P6, dev-mode): "Сжечь библиотеку" — снести все файлы под
+       data/library/, bibliary-cache.db (+ wal/shm), Qdrant коллекции
+       bibliary-*. Кэш-DB откроется заново лениво. */
+    burnAll: (): Promise<{
+      ok: boolean;
+      reason?: string;
+      libraryRoot: string;
+      removedFiles: number;
+      removedDirs: number;
+      qdrantCleaned: number;
+      qdrantErrors: string[];
+    }> =>
+      smokeLibrary
+        ? Promise.resolve({
+          ok: true,
+          libraryRoot: "(smoke)",
+          removedFiles: 0,
+          removedDirs: 0,
+          qdrantCleaned: 0,
+          qdrantErrors: [],
+        }).then((r) => {
+          smokeLibrary.rows = [];
+          return r;
+        })
+        : ipcRenderer.invoke("library:burn-all"),
     evaluatorStatus: (): Promise<LibraryEvaluatorStatus> =>
       smokeLibrary ? Promise.resolve({ running: false, paused: false, currentBookId: null, currentTitle: null, queueLength: 0, totalEvaluated: 0, totalFailed: 0 }) : ipcRenderer.invoke("library:evaluator-status"),
     evaluatorResume: (): Promise<boolean> => smokeLibrary ? Promise.resolve(true) : ipcRenderer.invoke("library:evaluator-resume"),

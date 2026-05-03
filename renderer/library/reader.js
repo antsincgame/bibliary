@@ -31,6 +31,129 @@ function stripFrontmatter(md) {
 }
 
 /**
+ * Inline-substitute reference-style image links so they survive even when the
+ * body has unbalanced code fences (which cause marked to drop trailing
+ * `[img-NNN]: bibliary-asset://…` definitions). After substitution every
+ * `![alt][img-NNN]` becomes `![alt](bibliary-asset://…)` which marked parses
+ * even inside fenced or paragraph blocks. Definitions are stripped at the end
+ * to keep the rendered HTML clean.
+ *
+ * @param {string} md
+ * @returns {string}
+ */
+function inlineImageRefs(md) {
+  const defs = new Map();
+  const defRe = /^\[(img-[\w-]+)\]:\s*(\S+)\s*$/gm;
+  for (;;) {
+    const m = defRe.exec(md);
+    if (m === null) break;
+    defs.set(m[1], m[2]);
+  }
+  if (defs.size === 0) return md;
+  let out = md.replace(/!\[([^\]]*)\]\[(img-[\w-]+)\]/g, (full, alt, id) => {
+    const url = defs.get(id);
+    return url ? `![${alt}](${url})` : full;
+  });
+  out = out.replace(/^\[img-[\w-]+\]:\s*\S+\s*\r?\n?/gm, "");
+  out = out.replace(/^<!--\s*Image references[^>]*-->\s*\r?\n?/gm, "");
+  return out;
+}
+
+/**
+ * Slugify a heading text for use as anchor id. Keeps unicode letters and
+ * digits (Russian chapter titles like "Глава 1" → "глава-1"), lowercases
+ * everything, collapses whitespace and punctuation to single hyphens.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+function slugifyHeading(text) {
+  const cleaned = String(text || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&[a-z]+;/gi, " ")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\s.,:;!?()«»"'\\/|`]+/gu, "-")
+    .replace(/[^\p{L}\p{N}-]+/gu, "")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return cleaned || "section";
+}
+
+/**
+ * Inject anchor ids into all heading tags so that ToC lines like
+ * "Глава 1. Пишем и тестируем приложение на Python… 32" can later be linked
+ * via `<a href="#глава-1-...">Глава 1</a>`. Idempotent: an existing id is
+ * preserved as-is. Generates uniqueness suffixes on collision.
+ *
+ * @param {string} html
+ * @returns {{ html: string; headings: { id: string; text: string; level: number }[] }}
+ */
+function addHeadingAnchors(html) {
+  /** @type {{ id: string; text: string; level: number }[]} */
+  const headings = [];
+  const used = new Set();
+  const out = html.replace(/<h([1-6])(\s[^>]*)?>([\s\S]*?)<\/h\1>/g, (full, level, attrs, inner) => {
+    const existingIdMatch = (attrs || "").match(/\bid\s*=\s*"([^"]+)"/);
+    let id = existingIdMatch ? existingIdMatch[1] : slugifyHeading(inner);
+    if (!existingIdMatch) {
+      let candidate = id;
+      let i = 2;
+      while (used.has(candidate)) candidate = `${id}-${i++}`;
+      id = candidate;
+    }
+    used.add(id);
+    const plainText = String(inner).replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+    headings.push({ id, text: plainText, level: Number(level) });
+    if (existingIdMatch) return full;
+    const newAttrs = (attrs || "") + ` id="${id}"`;
+    return `<h${level}${newAttrs}>${inner}</h${level}>`;
+  });
+  return { html: out, headings };
+}
+
+/**
+ * Linkify table-of-contents entries inside the rendered HTML. Finds paragraphs
+ * (or list items) whose text starts with a chapter-like prefix that matches one
+ * of the document headings, and wraps the matching prefix in a smooth-scroll
+ * anchor. Conservative: only rewrites text nodes that aren't already inside an
+ * anchor or heading tag, and only links the prefix portion (page numbers,
+ * leaders and tail text remain plain).
+ *
+ * @param {string} html
+ * @param {{ id: string; text: string; level: number }[]} headings
+ * @returns {string}
+ */
+function linkifyTocEntries(html, headings) {
+  if (headings.length === 0) return html;
+  /* Index headings by normalized prefix tokens so a ToC line that prefixes
+     the heading text (typical scanned ToCs include trailing dot leaders and
+     page numbers) can still find its target. */
+  const norm = (s) => String(s || "").toLowerCase().replace(/[\s.,:;!?()«»"'\\/|`-]+/g, " ").trim();
+  /** @type {{ id: string; key: string; level: number }[]} */
+  const index = headings
+    .map((h) => ({ id: h.id, key: norm(h.text), level: h.level }))
+    .filter((h) => h.key.length >= 4)
+    .sort((a, b) => b.key.length - a.key.length);
+  if (index.length === 0) return html;
+  return html.replace(/<(p|li)([^>]*)>([\s\S]*?)<\/\1>/g, (full, tag, attrs, inner) => {
+    if (/<a\b/i.test(inner) || /<h[1-6]\b/i.test(inner)) return full;
+    const plain = inner.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&");
+    const plainNorm = norm(plain);
+    if (plainNorm.length < 4) return full;
+    /* Find the longest heading key that the plain text starts with. Avoids
+       linkifying body text like "Глава 1 учит читать", which doesn't begin
+       with a known heading prefix exactly. */
+    const match = index.find((h) => plainNorm.startsWith(h.key));
+    if (!match) return full;
+    /* Linkify by replacing the original inner with an anchor wrapper around
+       the whole inner — simpler than slicing tokens precisely, still gives
+       the user a clickable ToC entry that scrolls to the heading. */
+    return `<${tag}${attrs}><a class="lib-reader-toc-link" href="#${match.id}">${inner}</a></${tag}>`;
+  });
+}
+
+/**
  * Extract the embedded cover reference from book.md.
  * Supports both legacy Base64 data URIs and new CAS asset URLs.
  * @param {string} md
@@ -86,7 +209,17 @@ export async function openBook(bookId, root) {
       bodyMd = bodyMd.replace(/^!\[[^\]]*\]\[img-cover\]\s*\r?\n?/gm, "");
       bodyMd = bodyMd.replace(/^\[img-cover\]:\s*\S+\s*\r?\n?/gm, "");
     }
-    const html = renderMarkdown(bodyMd);
+    /* Inline image refs BEFORE marked.parse: large books frequently contain
+       unbalanced ```code fences``` from PDF/Marker output, which causes marked
+       to drop trailing reference definitions and leave images as plain
+       `![Page 2][img-001]` text. Inlining keeps every image visible. */
+    bodyMd = inlineImageRefs(bodyMd);
+    let html = renderMarkdown(bodyMd);
+    /* Add anchor ids to all headings, then linkify ToC paragraphs/list items
+       that match a heading prefix. Result: clickable table of contents that
+       jumps to the corresponding chapter heading (P2 fix). */
+    const withAnchors = addHeadingAnchors(html);
+    html = linkifyTocEntries(withAnchors.html, withAnchors.headings);
 
     currentBook = { bookId, meta, html, coverDataUrl };
     renderReader(root);
