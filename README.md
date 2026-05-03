@@ -325,8 +325,19 @@ npm run typecheck               # TypeScript проверка
 npm run lint                    # ESLint
 npm test                        # unit + integration тесты
 npm run electron:dev            # dev-режим с hot reload
+npm run verify:deps-for-packaging  # проверки перед сборкой (см. ниже)
 npm run electron:build-portable # portable .exe в корень проекта
 ```
+
+### Сборка и зависимости (важно для portable)
+
+Перед `electron:build` и `electron:build-portable` автоматически выполняется **`npm run verify:deps-for-packaging`** (`scripts/verify-deps-for-packaging.cjs`):
+
+1. **Синхрон корня `package-lock.json` с `package.json`** — совпадение имён пакетов в `dependencies`, `devDependencies` и `optionalDependencies`. Если пакет есть в lock, но забыли добавить в `package.json`, portable-сборка может стартовать без него в `app.asar` и упасть с `Cannot find module` (так было с `jsonrepair`).
+2. **`npm ls --depth=0`** — целостность дерева `node_modules` на верхнем уровне.
+3. **`knip --production` (только `unlisted` и `unresolved`)** — импорты из production-кода (в т.ч. `electron/`) без записи в `package.json` не пройдут.
+
+Проверку можно запускать отдельно, без полной сборки: `npm run verify:deps-for-packaging`.
 
 ### Ключевые модули
 
@@ -384,6 +395,10 @@ tests/
 ## Changelog
 
 Полный список: [CHANGELOG.md](CHANGELOG.md)
+
+**v0.10.1** — portable и зависимости
+- В `dependencies` добавлен **`jsonrepair`** (раньше модуль мог отсутствовать в `app.asar` при сборке, если пакет не был в `package.json` — падение main process при старте).
+- Перед **`electron:build`** и **`electron:build-portable`** выполняется **`verify:deps-for-packaging`**: сверка корня lock с `package.json`, `npm ls --depth=0`, knip production (`unlisted`, `unresolved`). Подробности — раздел «Сборка и зависимости» выше.
 
 **v0.8.0** (2026-05-03) — Reader Purge + Versator Premium Layout
 - **Удалено**: тяжёлая нативная читалка foliate-js (~3.7 MB vendor) + custom protocol `bibliary-book://` + DJVU→PDF UI-конвертер. Книги читаются через премиум-рендер `book.md` в существующем reader.
