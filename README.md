@@ -2,7 +2,7 @@
 
 > Превращает коллекцию книг в датасет для дообучения LLM — через структурированный Markdown, смысловые чанки и Qdrant-коллекции.
 
-**Версия:** 0.8.1 · **Платформа:** Windows (portable .exe) · **Модели:** LM Studio (локально)
+**Версия:** 0.8.2 · **Платформа:** Windows (portable .exe) · **Модели:** LM Studio (локально)
 
 ---
 
@@ -235,10 +235,10 @@ bibliary/
 
 ### Вариант 1: Portable .exe (Windows)
 
-1. Скачайте `Bibliary 0.8.1.exe` из [Releases](https://github.com/antsincgame/bibliary/releases)
+1. Скачайте `Bibliary 0.8.2.exe` из [Releases](https://github.com/antsincgame/bibliary/releases)
 2. Запустите Qdrant: `docker run -p 6333:6333 qdrant/qdrant`
 3. Запустите LM Studio, загрузите модель (рекомендуется 7–14B reasoning)
-4. Запустите `Bibliary 0.8.1.exe` — данные хранятся рядом с exe
+4. Запустите `Bibliary 0.8.2.exe` — данные хранятся рядом с exe
 
 ### Вариант 2: Из исходников
 

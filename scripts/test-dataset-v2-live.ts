@@ -7,7 +7,7 @@ import { embedPassage } from "../electron/lib/embedder/shared.js";
 import { chatWithPolicy } from "../electron/lmstudio-client.js";
 import { getModelProfile } from "../electron/lib/dataset-v2/model-profile.js";
 import { buildDeltaKnowledgeResponseFormat } from "../electron/lib/dataset-v2/json-schemas.js";
-import { ALLOWED_DOMAINS } from "../electron/crystallizer-constants.js";
+import { ALLOWED_DOMAINS } from "../electron/lib/dataset-v2/crystallizer-constants.js";
 import { fetchQdrantJson } from "../electron/lib/qdrant/http-client.js";
 import { EMBEDDING_DIM } from "../electron/lib/scanner/embedding.js";
 import { collectProbeBooksFromRoots, getSourceRootsFromArgv } from "./e2e-source-roots.js";

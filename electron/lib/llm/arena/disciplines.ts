@@ -18,7 +18,7 @@ import {
   LANG_DETECT_SYSTEM_PROMPT,
   TRANSLATE_TO_RU_SYSTEM_PROMPT,
 } from "./role-prompts.js";
-import type { OlympicsRole } from "./olympics.js";
+import type { OlympicsRole } from "./olympics-types.js";
 
 /* ─── ДИСЦИПЛИНЫ ─────────────────────────────────────────────────────── */
 

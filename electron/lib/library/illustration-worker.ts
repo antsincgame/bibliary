@@ -350,7 +350,9 @@ export async function processIllustrations(
   let mdSerial: Promise<void> = Promise.resolve();
   const serializeMd = (op: () => void): Promise<void> => {
     const next = mdSerial.then(() => { op(); });
-    mdSerial = next.catch(() => {}); /* не залипаем на ошибке */
+    mdSerial = next.catch((err) => {
+      console.error("[illustration-worker] mdSerial patch error:", err);
+    });
     return next;
   };
 

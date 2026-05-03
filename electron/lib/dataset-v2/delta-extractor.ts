@@ -12,7 +12,7 @@ import { createHash } from "crypto";
 import { promises as fs } from "fs";
 import * as path from "path";
 import { DeltaKnowledgeSchema, type ChapterMemory, type DeltaKnowledge, type SemanticChunk } from "./types.js";
-import { ALLOWED_DOMAINS } from "../../crystallizer-constants.js";
+import { ALLOWED_DOMAINS } from "./crystallizer-constants.js";
 import { isAbortError } from "../resilience/lm-request-policy.js";
 import { extractJsonFromReasoning, extractJsonObjectFromReasoning } from "./reasoning-decoder.js";
 import { withModelFallback } from "../llm/with-model-fallback.js";

@@ -186,7 +186,11 @@ export async function bootstrapLibrarySubsystem(getMainWindow: () => BrowserWind
     subscribeEvaluator((evt) => {
       const win = getMainWindow();
       if (win && !win.isDestroyed()) {
-        win.webContents.send("library:evaluator-event", evt);
+        try {
+          win.webContents.send("library:evaluator-event", evt);
+        } catch (err) {
+          console.error("[library-ipc-state] evaluator-event send failed:", err);
+        }
       }
     });
   }
@@ -330,15 +334,13 @@ async function mirrorProgressToLogger(importId: string, evt: ProgressEvent): Pro
       progress: `${evt.processed}/${evt.discovered}`,
     },
   });
-  if (evt.fileWarnings && evt.fileWarnings.length > 0) {
-    for (const w of evt.fileWarnings) {
-      await logger.write({
-        importId,
-        level: "warn",
-        category: "file.warning",
-        message: w,
-        file: evt.currentFile,
-      });
-    }
-  }
+  /* Iter 13.2 (2026-05-03): warnings уже включены в details.warnings выше.
+     Раньше для КАЖДОГО warning дополнительно эмитился отдельный
+     `file.warning` event — это создавало 5–7-кратное дублирование лога
+     (на книгу с 5 warnings: 1 file.added + 5 file.warning = 6 строк).
+     UI разворачивает details через ▸ expand-toggle — warnings видны.
+     Counter "warn" больше не показывает routine diagnostic messages
+     (типа `pdf-inspector: Mixed`), что семантически правильно: эти
+     сообщения — диагностика, не настоящие warnings.
+     User отчёт логов от 2026-05-03 показал шум 5-7× expected. */
 }

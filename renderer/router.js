@@ -1,6 +1,6 @@
 import { mountModels, unmountModels } from "./models/models-page.js";
 import { mountDocs } from "./docs.js";
-import { mountLibrary, isLibraryBusy } from "./library.js";
+import { mountLibrary, isLibraryBusy, unmountLibrary, checkPendingLibraryNav } from "./library.js";
 import { mountCrystal, isCrystalBusy } from "./dataset-v2.js";
 import { mountDatasets } from "./datasets.js";
 import { mountSettings } from "./settings.js";
@@ -34,6 +34,7 @@ function mountRoute(name) {
 
 function unmountRoute(name) {
   if (name === "models") unmountModels();
+  else if (name === "library") unmountLibrary();
 }
 
 function showRoute(name) {
@@ -44,6 +45,12 @@ function showRoute(name) {
     btn.classList.toggle("active", btn.dataset.route === name);
   });
   if (!mounted.has(name)) mountRoute(name);
+  /* Handle cross-route navigation payload (e.g. Search → "Open in Library").
+     When library is already mounted, mountLibrary won't run, so we must check
+     sessionStorage here instead. */
+  if (name === "library" && mounted.has(name)) {
+    checkPendingLibraryNav(document.getElementById("library-root"));
+  }
 }
 
 function canRemount(name) {

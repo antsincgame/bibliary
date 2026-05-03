@@ -34,7 +34,7 @@ import {
 } from "./coordinator-pipeline.js";
 import { getModelProfile } from "./model-profile.js";
 import { buildDeltaKnowledgeResponseFormat } from "./json-schemas.js";
-import { ALLOWED_DOMAINS } from "../../crystallizer-constants.js";
+import { ALLOWED_DOMAINS } from "./crystallizer-constants.js";
 import { getModelPool } from "../llm/model-pool.js";
 import { activeJobs, DEFAULT_COLLECTION } from "../../ipc/dataset-v2-ipc-state.js";
 import { getChunksBulkhead } from "../resilience/bulkhead.js";

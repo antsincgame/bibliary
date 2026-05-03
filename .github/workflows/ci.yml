@@ -55,6 +55,18 @@ jobs:
       - name: Compile Electron TypeScript
         run: npx tsc -p tsconfig.electron.json
 
+      # Electron smoke (Playwright): проверяет что preload bridge,
+      # IPC handlers (preferences:get-all + library:* shape) и UI flows
+      # реально работают в собранном приложении.
+      # Требует именно Windows runner — тесты запускают .exe через Playwright.
+      # Не блокирует merge (continue-on-error: true) пока не стабилизируется.
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      - name: Electron smoke (real app + preload + IPC)
+        continue-on-error: true
+        run: npm run test:smoke
+
       # Артефакты: сохраняем компиляцию + любые отчёты из release/
       - name: Upload compile artifact
         if: always()

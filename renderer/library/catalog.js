@@ -29,6 +29,19 @@ const COVER_URL_CACHE = new Map();
 const COVER_PENDING = new Set();
 let COVER_OBSERVER = null;
 
+/**
+ * Disconnect and reset the IntersectionObserver used for cover thumbnails.
+ * Call before unmounting the Library route to prevent the observer from
+ * holding references to detached DOM elements across locale switches.
+ */
+export function cleanupCoverObserver() {
+  if (COVER_OBSERVER) {
+    COVER_OBSERVER.disconnect();
+    COVER_OBSERVER = null;
+  }
+  COVER_PENDING.clear();
+}
+
 function loadCoverForCell(cell, bookId) {
   if (!cell || !bookId) return;
   if (COVER_PENDING.has(bookId)) return;

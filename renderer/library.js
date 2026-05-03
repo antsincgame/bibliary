@@ -19,13 +19,13 @@ import { buildCollectionPicker } from "./components/collection-picker.js";
 
 import { STATE, CATALOG } from "./library/state.js";
 import { loadPrefs } from "./library/browse.js";
-import { buildCatalogPane, renderCatalog, renderCatalogTable, highlightCatalogBookRow } from "./library/catalog.js";
+import { buildCatalogPane, renderCatalog, renderCatalogTable, highlightCatalogBookRow, cleanupCoverObserver } from "./library/catalog.js";
 import { buildImportPane, renderImport, pushImportPaneLog } from "./library/import-pane.js";
 import { mountCollectionViews } from "./library/collection-views.js";
 import { refreshEvaluatorState } from "./library/evaluator.js";
 import { applyBatchEvent } from "./library/batch-actions.js";
 import { renderSearch, subscribeDownloadProgress } from "./library/search.js";
-import { closeReader, isReaderOpen } from "./library/reader.js";
+import { closeReader, isReaderOpen, openBook } from "./library/reader.js";
 
 function switchTab(tab, root) {
   if (tab !== "catalog" && isReaderOpen()) {
@@ -234,8 +234,55 @@ export async function mountLibrary(root) {
 
   void renderCatalog(root);
   renderImport(root);
+  checkPendingLibraryNav(root);
 }
 
 export function isLibraryBusy() {
   return STATE.activeIngests.size > 0 || STATE.queue.length > 0;
+}
+
+/**
+ * Cleanup all active subscriptions and the cover IntersectionObserver.
+ * Called by router.js before unmounting (locale switch / remount).
+ */
+export function unmountLibrary() {
+  if (typeof CATALOG.unsubEvaluator === "function") {
+    CATALOG.unsubEvaluator();
+    CATALOG.unsubEvaluator = null;
+  }
+  if (typeof CATALOG.unsubBatch === "function") {
+    CATALOG.unsubBatch();
+    CATALOG.unsubBatch = null;
+  }
+  if (typeof CATALOG._unsubDownload === "function") {
+    CATALOG._unsubDownload();
+    CATALOG._unsubDownload = null;
+  }
+  cleanupCoverObserver();
+}
+
+/**
+ * Handle cross-route navigation payload from Search page.
+ * If sessionStorage contains "bibliary_open_book_id", switch to catalog,
+ * render, and open the reader for that book.
+ *
+ * Called both at mount-time and when the library route is re-shown while
+ * already mounted (router.js showRoute hook).
+ *
+ * @param {HTMLElement|null} root
+ */
+export function checkPendingLibraryNav(root) {
+  if (!root) return;
+  let bookId = null;
+  try {
+    bookId = sessionStorage.getItem("bibliary_open_book_id");
+    if (bookId) sessionStorage.removeItem("bibliary_open_book_id");
+  } catch { /* private/restricted mode */ }
+  if (!bookId) return;
+  if (STATE.tab !== "catalog") switchTab("catalog", root);
+  void renderCatalog(root).then(() => {
+    const pane = /** @type {HTMLElement|null} */ (root.querySelector(".lib-pane-catalog"));
+    if (pane) openBook(bookId, pane);
+    else highlightCatalogBookRow(root, bookId);
+  });
 }

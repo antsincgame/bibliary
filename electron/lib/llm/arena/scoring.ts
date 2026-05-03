@@ -17,7 +17,7 @@ import type {
   OlympicsMatchResult,
   OlympicsDisciplineResult,
   OlympicsRoleAggregate,
-} from "./olympics.js";
+} from "./olympics-types.js";
 
 function roleToPrefKey(role: OlympicsRole): string | null {
   switch (role) {

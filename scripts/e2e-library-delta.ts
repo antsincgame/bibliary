@@ -123,7 +123,7 @@ async function main(): Promise<void> {
   const { chatWithPolicy } = await import("../electron/lmstudio-client.js");
   const { getModelProfile } = await import("../electron/lib/dataset-v2/model-profile.js");
   const { buildDeltaKnowledgeResponseFormat } = await import("../electron/lib/dataset-v2/json-schemas.js");
-  const { ALLOWED_DOMAINS } = await import("../electron/crystallizer-constants.js");
+  const { ALLOWED_DOMAINS } = await import("../electron/lib/dataset-v2/crystallizer-constants.js");
 
   const profile = await getModelProfile(model);
   const allowedDomains = Array.from(ALLOWED_DOMAINS).sort();

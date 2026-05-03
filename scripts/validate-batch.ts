@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { ALLOWED_DOMAINS } from "../electron/crystallizer-constants.js";
+import { ALLOWED_DOMAINS } from "../electron/lib/dataset-v2/crystallizer-constants.js";
 
 const SOURCE_PATH = "data/finetune/source-chunks.json";
 

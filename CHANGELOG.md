@@ -4,6 +4,61 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] — 2026-05-03 — Import Log Sherlok Cleanup
+
+Patch follow-up к 0.8.1. Пользователь прислал реальные логи импорта и сказал
+«пайплайн всё равно не работает». Расследование показало: pipeline на самом
+деле **РАБОТАЕТ** (10 книг добавлено за 79 секунд, Versator применяется через
+`md-converter.ts:658`, lazy-upgrade — через `library-catalog-ipc.ts`),
+но **лог импорта раздувался в 5–7 раз** из-за дублирования и шумных
+success-as-warning сообщений. Это создавало иллюзию массовых ошибок.
+
+### Fixed
+
+- **Удалено 5×-7× дублирование warnings в логе**
+  ([electron/ipc/library-ipc-state.ts](electron/ipc/library-ipc-state.ts)) —
+  для каждой книги с N warnings лог писал `1 file.added + N file.warning`
+  событий, при том что N warnings уже включены в `file.added.details.warnings`.
+  Например, у "Янца Т. — Алиса и Боб..." с 5 warnings было **6 строк** в
+  логе вместо одной. Теперь warnings показываются ТОЛЬКО в details event'а
+  `file.added`, разворачиваются через `▸` expand-toggle. UI counter "warn"
+  больше не считает routine pdf-inspector диагностику как warnings —
+  семантически правильнее.
+- **Cascade-collapse для corrupt DJVU**
+  ([electron/lib/library/image-extractors.ts](electron/lib/library/image-extractors.ts)) —
+  при corrupt DJVU все 11 страниц подряд падают с одной ошибкой `Cannot
+  decode page X / corrupt_BG44`. Раньше — 11 одинаковых строк лога.
+  Теперь — высокоуровневый diagnostic + 1 sample (`всего 11/11 страниц
+  не удалось декодировать (вероятно corrupt DJVU — попробуйте перекачать
+  файл)`). Аналогичный pattern уже использовался в `pdf.ts:437-443`,
+  применён к `image-extractors.ts:498-525`.
+- **`isbn-meta: Open Library / Google Books` больше не warning**
+  ([electron/lib/library/md-converter.ts](electron/lib/library/md-converter.ts)) —
+  это событие УСПЕХА (online lookup нашёл метаданные!), а не warning.
+  Метаданные уже отражены в title/author/year книги. Failure случай
+  (`isbn-meta: online lookup failed (...)`) сохранён — это реальный
+  warning для пользователя.
+
+### Diagnostic finding (NOT a bug)
+
+- **`Loading vision model "..." from prefs...` повторяется per book** —
+  это нормально. `getModelPool().acquire()` дедуплицирует через
+  `runOnChain`, реальная загрузка модели в LM Studio происходит ОДИН
+  раз; subsequent calls возвращают handle на уже-загруженную модель.
+  Лог-сообщение чисто декларативное (см. illustration-worker.ts:289).
+
+### Note
+
+User отправил логи импорта с большим количеством `[WARN]` строк и
+сказал «не работает». Реальный анализ показал: импорт успешный, 10
+книг добавлено, Versator применяется, vision triage работает. Проблема
+была **исключительно в восприятии лога** (визуальный шум). После fix'ов
+лог импорта станет в ~5× короче и в нём останутся только реальные
+проблемы (corrupt DJVU summary, online lookup failures, OCR diagnostics
+если включён OCR).
+
+---
+
 ## [0.8.1] — 2026-05-03 — Reader Hot-Versator + UI/Log Diamond Polish
 
 Patch follow-up к 0.8.0: пользователь обнаружил, что **существующие книги**

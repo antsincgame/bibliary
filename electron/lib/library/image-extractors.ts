@@ -494,6 +494,14 @@ async function extractDjvuImagesLegacy(
     }
     const pagesToRender = Math.min(pageCount, rasterPageLimit(opts?.maxImagesPerBook));
     const images: ImageRef[] = [];
+    /* Iter 13.2 (2026-05-03): page-level warnings собираем в отдельный
+       buffer, чтобы свернуть множественные cascade-failures (типичный
+       случай — corrupt DJVU где все 11 страниц подряд падают с одной
+       и той же ошибкой "Cannot decode page X / corrupt_BG44"). Без
+       этого лог раздувается до 11+ одинаковых строк на книгу.
+       Аналогичный pattern уже есть в pdf.ts:437-443. */
+    const pageWarnings: string[] = [];
+    let renderFailures = 0;
 
     for (let pageIndex = 0; pageIndex < pagesToRender; pageIndex++) {
       if (opts?.signal?.aborted) {
@@ -503,12 +511,12 @@ async function extractDjvuImagesLegacy(
       try {
         const tiff = await runDdjvu(filePath, pageIndex, dpi, opts?.signal);
         if (tiff.length === 0) {
-          warnings.push(`djvu-images: page ${pageIndex + 1} empty render`);
+          pageWarnings.push(`djvu-images: page ${pageIndex + 1} empty render`);
           continue;
         }
         const png = await imageBufferToPng(tiff, targetWidth);
         if (png.length > maxBytes) {
-          warnings.push(`djvu-images: page ${pageIndex + 1} rendered ${png.length} bytes > ${maxBytes} cap, skipped`);
+          pageWarnings.push(`djvu-images: page ${pageIndex + 1} rendered ${png.length} bytes > ${maxBytes} cap, skipped`);
           continue;
         }
         images.push({
@@ -518,7 +526,23 @@ async function extractDjvuImagesLegacy(
           caption: pageIndex === 0 ? "Page 1 (cover)" : `Page ${pageIndex + 1}`,
         });
       } catch (e) {
-        warnings.push(`djvu-images: page ${pageIndex + 1} render failed -- ${e instanceof Error ? e.message : String(e)}`);
+        renderFailures++;
+        const msg = e instanceof Error ? e.message : String(e);
+        pageWarnings.push(`djvu-images: page ${pageIndex + 1} render failed -- ${msg.slice(0, 120)}`);
+      }
+    }
+
+    /* Cascade-collapse: оставляем 2 первых уникальных warning + counter.
+       Если все страницы упали — даём диагностику высокого уровня. */
+    if (renderFailures >= pagesToRender && pagesToRender > 0) {
+      warnings.push(`djvu-images: всего ${renderFailures}/${pagesToRender} страниц не удалось декодировать (вероятно corrupt DJVU — попробуйте перекачать файл или проверить ddjvu)`);
+      const samples = Array.from(new Set(pageWarnings)).slice(0, 1);
+      for (const w of samples) warnings.push(w);
+    } else if (pageWarnings.length > 0) {
+      const uniquePageWarnings = Array.from(new Set(pageWarnings)).slice(0, 2);
+      for (const w of uniquePageWarnings) warnings.push(w);
+      if (pageWarnings.length > uniquePageWarnings.length) {
+        warnings.push(`(+ ${pageWarnings.length - uniquePageWarnings.length} more cascade warnings suppressed)`);
       }
     }
 

@@ -491,21 +491,26 @@ export async function convertBookToMarkdown(
         const timer = new Promise<null>((res) => setTimeout(() => res(null), ISBN_LOOKUP_TIMEOUT_MS));
         return Promise.race([p, timer]).catch(() => null);
       };
-      /* Try Open Library first (free, no key needed, good for ru/uk books). */
+      /* Try Open Library first (free, no key needed, good for ru/uk books).
+         Iter 13.2 (2026-05-03): success-сообщения "isbn-meta: Open Library
+         (ISBN xxx)" и "isbn-meta: Google Books (ISBN xxx)" больше НЕ
+         пушатся в warnings — это успех lookup'а, а не warning. Метаданные
+         уже отражены в title/author/year книги. Лог должен показывать
+         только реальные warnings (failure-случай ниже сохранён). */
       const olResult = await withTimeout(lookupIsbnOpenLibrary(candidateIsbn, opts.signal));
       if (olResult && (olResult.title || olResult.authors?.length)) {
         isbnMeta = olResult;
         onlineLookupHadResult = true;
-        allWarnings.push(`isbn-meta: Open Library (ISBN ${candidateIsbn})`);
       } else {
         /* Fallback: Google Books. */
         const gbResult = await withTimeout(lookupIsbnGoogleBooks(candidateIsbn, opts.signal));
         if (gbResult && (gbResult.title || gbResult.authors?.length)) {
           isbnMeta = gbResult;
           onlineLookupHadResult = true;
-          allWarnings.push(`isbn-meta: Google Books (ISBN ${candidateIsbn})`);
         } else {
-          /* Оба источника промолчали — например при offline или unknown ISBN. */
+          /* Оба источника промолчали — например при offline или unknown ISBN.
+             Это реальный warning — пользователь должен знать что online
+             lookup не сработал (могут быть дубликаты, missing meta). */
           allWarnings.push(`isbn-meta: online lookup failed (ISBN ${candidateIsbn}, no internet or both catalogs returned empty)`);
         }
       }

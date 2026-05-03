@@ -128,14 +128,11 @@ class SampleWindow {
     for (let i = 0; i < this.filled; i += 1) arr.push(this.buffer[i].latencyMs);
     arr.sort((a, b) => a - b);
     const n = arr.length;
-    /* Для малых выборок (n < 20) P95 нестабилен — возвращаем медиану чтобы
-       избежать over-aggressive decrease. При n >= 20 используем формулу
-       nearest-rank: ceil(p * n) - 1, обрезаем до [0, n-1]. */
-    if (n < 20) {
-      const midIdx = Math.floor(n / 2);
-      return arr[midIdx];
-    }
-    const idx = Math.min(n - 1, Math.ceil(n * 0.95) - 1);
+    /* Nearest-rank P95: ceil(p * n) - 1, clamped to [0, n-1].
+       Стабильность выборки — ответственность caller'а через `minSamples`
+       (controller не делает adjustments пока window.size() < minSamples).
+       Гейт против over-aggressive decrease — там, а не в самой метрике. */
+    const idx = Math.min(n - 1, Math.max(0, Math.ceil(n * 0.95) - 1));
     return arr[idx];
   }
 }

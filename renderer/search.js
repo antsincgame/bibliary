@@ -382,8 +382,10 @@ async function copyPath(path) {
 }
 
 async function openInLibrary(path) {
-  /* Найти книгу в каталоге по точному совпадению originalFile. Это самый
-     дешёвый путь без нового IPC: catalog уже умеет фильтровать по search. */
+  /* Find the matching book in the catalog by original file path, then
+     navigate to the Library route and open it in the reader.
+     We use sessionStorage as the cross-route messaging bus (same pattern
+     as the "Create dataset from collection" pre-fill in library.js). */
   try {
     const res = await window.api.library.catalog({
       search: extractFileName(path),
@@ -391,8 +393,16 @@ async function openInLibrary(path) {
     });
     const match = res?.rows?.find((r) => r.originalFile === path);
     if (match) {
-      window.location.hash = `#book/${match.id}`;
-      return;
+      try {
+        sessionStorage.setItem("bibliary_open_book_id", match.id);
+      } catch { /* private/restricted mode — fall through to copyPath */ }
+      const libraryBtn = /** @type {HTMLButtonElement|null} */ (
+        document.querySelector('.sidebar-icon[data-route="library"]')
+      );
+      if (libraryBtn) {
+        libraryBtn.click();
+        return;
+      }
     }
   } catch (err) {
     console.warn("[search] openInLibrary lookup failed:", err);

@@ -11,7 +11,7 @@
  */
 
 import type { LmsModelInfo } from "./lms-client.js";
-import type { WeightClass } from "./olympics.js";
+import type { WeightClass } from "./olympics-types.js";
 
 /**
  * Classify model weight class. Uses `paramsString` from LM Studio v1 API
