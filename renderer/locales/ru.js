@@ -895,8 +895,6 @@ export default {
   "settings.metadataOnlineLookup": "Онлайн-поиск метаданных по ISBN (Open Library / Google Books)",
   "settings.visionMetaEnabled": "Читать обложки книг с помощью AI (название, автор, год с обложки)",
   "settings.layoutAssistantEnabled": "AI-вёрстка (исправление глав, удаление OCR-шума)",
-  "settings.layoutAssistantModel": "Layout Assistant: модель LM Studio (пусто = первая загруженная)",
-  "settings.layoutAssistantModelFallbacks": "Layout Assistant: fallback модели (CSV)",
   "settings.layoutQueue.title": "Очередь AI-вёрстки",
   "settings.layoutQueue.idle": "Очередь пуста",
   "settings.layoutQueue.running": "Обрабатывается: {title}",

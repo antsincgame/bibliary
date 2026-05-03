@@ -49,8 +49,8 @@ function optionalT(key) {
 }
 
 function getVisibleSections() {
-  if (STATE.showAdvanced) return [...SECTIONS];
-  return SECTIONS.filter((s) => s.advanced !== true);
+  if (STATE.showAdvanced) return SECTIONS.filter((s) => s.hidden !== true);
+  return SECTIONS.filter((s) => s.advanced !== true && s.hidden !== true);
 }
 
 function setShowAdvanced(next) {

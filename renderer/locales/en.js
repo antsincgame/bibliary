@@ -897,8 +897,6 @@ export default {
   "settings.metadataOnlineLookup": "Online metadata lookup via ISBN (Open Library / Google Books)",
   "settings.visionMetaEnabled": "Read book covers with AI (title, author, year from cover image)",
   "settings.layoutAssistantEnabled": "AI layout cleanup (fix chapters, remove OCR noise)",
-  "settings.layoutAssistantModel": "Layout Assistant: LM Studio model (empty = first loaded)",
-  "settings.layoutAssistantModelFallbacks": "Layout Assistant: fallback models (CSV)",
   "settings.layoutQueue.title": "AI Layout Queue",
   "settings.layoutQueue.idle": "Queue is idle",
   "settings.layoutQueue.running": "Running: {title}",

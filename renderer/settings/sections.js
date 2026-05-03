@@ -158,6 +158,7 @@ export const SECTIONS = Object.freeze([
     descriptionKey: "settings.section.ocrAdvanced.desc",
     icon: "SCAN",
     advanced: true,
+    hidden: true,
     fields: [
       { key: "ocrAccuracy", type: "enum", options: ["fast", "accurate"], labelKey: "settings.ocrAccuracy" },
       { key: "ocrLanguages", type: "tags", labelKey: "settings.ocrLanguages", placeholder: "en, ru, uk" },
@@ -165,8 +166,6 @@ export const SECTIONS = Object.freeze([
       { key: "djvuOcrProvider", type: "enum", options: ["auto", "vision-llm", "system", "none"], labelKey: "settings.djvuOcrProvider" },
       { key: "djvuRenderDpi", type: "int", min: 100, max: 600, labelKey: "settings.djvuRenderDpi" },
       { key: "preferDjvuOverPdf", type: "bool", labelKey: "settings.preferDjvuOverPdf" },
-      { key: "layoutAssistantModel", type: "text", labelKey: "settings.layoutAssistantModel", placeholder: "qwen2.5-1.5b-instruct" },
-      { key: "layoutAssistantModelFallbacks", type: "text", labelKey: "settings.layoutAssistantModelFallbacks", placeholder: "model1,model2" },
     ],
   },
 ]);
