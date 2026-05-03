@@ -286,7 +286,15 @@ export function renderOlympicsReport(report) {
   const visionInfo = report.visionAggregateInfo;
   const VISION_ROLE_NAMES = new Set(["vision_meta", "vision_ocr", "vision_illustration"]);
 
-  for (const agg of aggregates) {
+  /* ── Горизонтальные вкладки по ролям ── */
+  let activeRoleTab = aggregates.length > 0 ? aggregates[0].role : null;
+
+  const rolesTabBar = el("div", { class: "mp-olympics-role-tabs" });
+  const rolesPanel  = el("div", { class: "mp-olympics-role-panel" });
+  root.appendChild(rolesTabBar);
+  root.appendChild(rolesPanel);
+
+  function renderRoleTab(agg) {
     const top = (agg.perModel ?? []).slice(0, 3);
     const optimumStats = agg.optimum ? agg.perModel.find((p) => p.model === agg.optimum) : null;
     const championStats = agg.champion ? agg.perModel.find((p) => p.model === agg.champion) : null;
@@ -362,6 +370,38 @@ export function renderOlympicsReport(report) {
         : el("div", { class: "mp-olympics-role-no-winner" },
             "Нет уверенного победителя — все модели не справились с этой ролью."),
     ]);
-    root.appendChild(card);
+    return card;
   }
+
+  function activateRoleTab(role) {
+    activeRoleTab = role;
+    /* Update tab styles */
+    rolesTabBar.querySelectorAll(".mp-olympics-role-tab").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.role === role);
+    });
+    /* Render panel */
+    clear(rolesPanel);
+    const agg = aggregates.find((a) => a.role === role);
+    if (agg) rolesPanel.appendChild(renderRoleTab(agg));
+  }
+
+  for (const agg of aggregates) {
+    const roleH = roleHuman(agg.role);
+    const hasWinner = !!(agg.champion || agg.optimum);
+    const tab = el("button", {
+      class: `mp-olympics-role-tab ${agg.role === activeRoleTab ? "active" : ""}`,
+      type: "button",
+      "data-role": agg.role,
+    }, [
+      el("span", { class: "mp-olympics-role-tab-icon" }, roleH.icon || roleIcon(agg.prefKey)),
+      el("span", { class: "mp-olympics-role-tab-name" }, aggregateRoleTitle(agg.role)),
+      hasWinner
+        ? el("span", { class: "mp-olympics-role-tab-badge" }, "✓")
+        : null,
+    ].filter(Boolean));
+    tab.addEventListener("click", () => activateRoleTab(agg.role));
+    rolesTabBar.appendChild(tab);
+  }
+
+  if (activeRoleTab) activateRoleTab(activeRoleTab);
 }

@@ -107,10 +107,11 @@ export const PreferencesSchema = z.object({
   visionModelKey: z.string().default(""),
   /**
    * Включить vision-meta (LLM-анализ обложки).
-   * Default false — используется как последний резерв после parsed metadata + ISBN lookup.
-   * Включайте только если у вас есть vision-capable модель в LM Studio и ISBN-lookup не помогает.
+   * Default true — дополняет parsed metadata + ISBN lookup данными с обложки.
+   * Требует vision-capable модель в LM Studio (llava, qwen-vl, minicpm-v и пр.).
+   * Gracefully no-ops если vision-модель не загружена.
    */
-  visionMetaEnabled: z.boolean().default(false),
+  visionMetaEnabled: z.boolean().default(true),
 
   // -- Metadata online lookup (ISBN → Open Library / Google Books) --
   /**
@@ -172,9 +173,9 @@ export const PreferencesSchema = z.object({
    * Включить LLM-верстальщика. Когда `true` — после импорта book.md
    * прогоняется через layout-assistant queue (см. layout-assistant-queue.ts):
    * модель размечает заголовки, dot-leader ToC, удаляет OCR-junk.
-   * Default `false` — opt-in, полагается на ручной запуск из reader.
+   * Default `true` — включён из коробки; ручной запуск из reader доступен всегда.
    */
-  layoutAssistantEnabled: z.boolean().default(false),
+  layoutAssistantEnabled: z.boolean().default(true),
   /** LM Studio модель для layout_assistant роли. Пусто = первая загруженная. */
   layoutAssistantModel: z.string().default(""),
   /** CSV fallback chain для layout_assistant. */

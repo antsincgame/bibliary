@@ -6,6 +6,34 @@ All notable changes to Bibliary are documented in this file. Format follows
 
 ## [Unreleased]
 
+## [0.10.1] — 2026-05-03 — Olympics tabs, Layout Assistant description, dropdown fix
+
+### Fixed
+
+- **Dropdown bug (Models → Pipeline Roles)**: native `<select>` закрывался через 8 сек
+  из-за `setInterval` → `refresh()` → `clear(host)` пока пользователь выбирал модель.
+  Фикс: `renderRoles()` пропускает re-render если любой `<select>` внутри host
+  в фокусе (`host.contains(document.activeElement)`).
+
+### Changed
+
+- **Olympics winners → горизонтальные вкладки**: вместо вертикального стека карточек
+  — tab-bar по ролям. Клик по вкладке показывает одну карточку. Победные роли
+  помечены `✓`. Использует ширину экрана вместо высоты.
+
+- **Layout Assistant**: добавлено в `ROLE_META` с label/help (EN + RU).
+  Теперь Pipeline Roles показывает "Layout Assistant" и подробное описание
+  вместо raw id `layout_assistant`.
+
+- **Domain tags**: `unclassified`/`unsorted` визуально приглушены
+  (opacity 0.4, grayscale, italic). Evaluator-промпт: улучшен пример
+  C++ книги (`domain: "C++ programming language"`), добавлены конкретные
+  примеры programming sub-domains в инструкцию.
+
+- **Settings**: OCR → 4 дружелюбных toggle'а; детальные настройки
+  (DPI, провайдеры, языки) вынесены в ADV. Defaults: `visionMetaEnabled=true`,
+  `layoutAssistantEnabled=true`. Resume-phase bug в queue badge исправлен.
+
 ## [0.10.0] — 2026-05-03 — Layout Assistant (AI-верстальщик, LM Studio)
 
 Полноценная интеграция локального LLM-верстальщика в пайплайн импорта и reader.

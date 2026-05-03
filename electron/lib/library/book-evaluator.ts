@@ -108,7 +108,10 @@ QUALITY ANALYSIS (think step by step inside <think>...</think>):
 4. TEXTURE ANALYSIS (Nodal Slices): Signal-to-Noise ratio.
    PENALTY: anecdotes, motivational filler, Wikipedia rewrites.
    REWARD: definitions, abstract models, non-obvious conclusions.
-5. DOMAIN CLASSIFICATION: pick ONE narrow area. NOT broad ("science", "psychology"). BE SPECIFIC ("cognitive load theory", "finite element analysis", "mycology of edible fungi").
+5. DOMAIN CLASSIFICATION: pick ONE narrow area. NOT broad ("science", "psychology", "programming"). BE SPECIFIC:
+   - For CS/tech: "C++ programming language", "Qt framework development", "Python data science", "compiler design", "network programming", "assembly language programming", "object-oriented design patterns"
+   - For math/science: "finite element analysis", "functional analysis", "mycology of edible fungi"
+   - For humanities: "cognitive load theory", "behavioral economics", "stoic philosophy"
 6. TAG GENERATION: produce 8-12 tags in BOTH languages:
    - tags: English — subject area, methodology, audience, era, key concepts, application domain.
    - tags_ru: Russian — same coverage (not a pedantic literal translation; natural Russian scholarly phrasing).
@@ -158,6 +161,17 @@ Example 2 — Motivational self-help (low score):
 
 Expected output (abbreviated):
 {"title_ru":"Думай и богатей: 21 закон успеха","author_ru":"Максвелл Дж.","title_en":"Think and Grow Rich: 21 Laws of Success","author_en":"Maxwell J.","year":2019,"domain":"motivational self-help","tags":["self-help","motivation","success mindset","personal development","leadership","positive thinking","business advice","bestseller"],"tags_ru":["саморазвитие","мотивация","установка на успех","личностный рост","лидерство","позитивное мышление","деловые советы","бестселлер"],"is_fiction_or_water":true,"conceptual_density":8,"originality":12,"quality_score":15,"verdict_reason":"Generic motivational self-help with anecdotal advice and no original research. Banal chapter structure. is_fiction_or_water=true due to lack of substantive content."}
+
+Example 3 — Programming textbook (specific domain, NOT generic "programming"):
+<surrogate>
+[METADATA] Bjarne Stroustrup — The C++ Programming Language. 4th Edition. © 2013 Addison-Wesley Professional. ISBN 978-0-321-56384-2
+[TOC] Part I: Introduction. Part II: Basic Facilities — Types, Pointers, Arrays. Part III: Abstraction Mechanisms — Classes, Templates, Move Semantics. Part IV: Standard Library — STL, Algorithms, Concurrency.
+[INTRO] ...C++ is a general-purpose programming language with a bias toward systems programming...
+[NODAL] ...Rvalue references enable move semantics, eliminating unnecessary copies. A concept constrains template arguments at compile time...
+</surrogate>
+
+Expected output (abbreviated):
+{"title_ru":"Язык программирования C++. 4-е издание","author_ru":"Страуструп Б.","title_en":"The C++ Programming Language. 4th Edition","author_en":"Stroustrup B.","year":2013,"domain":"C++ programming language","tags":["C++","systems programming","object-oriented programming","templates","move semantics","STL","concurrency","type system"],"tags_ru":["C++","системное программирование","объектно-ориентированное программирование","шаблоны","семантика перемещения","STL","конкурентность","система типов"],"is_fiction_or_water":false,"conceptual_density":82,"originality":76,"quality_score":90,"verdict_reason":"Definitive reference for the C++ language by its creator. Covers language semantics, type system, templates, and standard library with rigorous technical depth. Essential for professional C++ developers."}
 
 ━━━ END EXAMPLES ━━━`;
 

@@ -207,6 +207,7 @@ const SAMPLES: Record<string, Sample> = {
         { line: 1, level: 2, text: "Chapter 1: Hello" },
         { line: 7, level: 2, text: "Chapter 2: World" },
       ],
+      toc_block: null,
       junk_lines: [5],
     }),
     /* Плохой ответ: пропущен Chapter 2, junk не найден, добавлены ложные
@@ -217,6 +218,7 @@ const SAMPLES: Record<string, Sample> = {
         { line: 3, level: 2, text: "Body" },
         { line: 9, level: 1, text: "Other" },
       ],
+      toc_block: null,
       junk_lines: [1, 3, 7, 9], /* всё контентное помечено junk */
     }),
   },

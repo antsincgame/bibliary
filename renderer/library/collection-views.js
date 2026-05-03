@@ -122,10 +122,11 @@ function renderGroups(container, groups) {
   const list = el("div", { class: "lib-collections-cloud" },
     groups.map((group) => {
       const scale = 0.7 + 0.6 * (group.count / Math.max(maxCount, 1));
+      const isUnclassified = group.label === "unclassified" || group.label === "unsorted";
       const pill = el("button", {
-        class: "lib-collections-pill",
+        class: `lib-collections-pill${isUnclassified ? " lib-collections-pill-dim" : ""}`,
         type: "button",
-        style: `font-size: ${scale}em; opacity: ${0.5 + 0.5 * (group.count / Math.max(maxCount, 1))}`,
+        style: `font-size: ${scale}em; opacity: ${isUnclassified ? 0.4 : 0.5 + 0.5 * (group.count / Math.max(maxCount, 1))}`,
         onclick: () => {
           if (onFilterCallback) onFilterCallback(group.bookIds);
         },

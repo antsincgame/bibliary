@@ -53,7 +53,7 @@ export const SECTIONS = Object.freeze([
     ],
   },
 
-  /* ─── OCR & Vision ──────────────────────────────────────────────── */
+  /* ─── Распознавание (user-facing: только высокоуровневые toggle'ы) ── */
   {
     id: "ocr",
     titleKey: "settings.section.ocr",
@@ -61,17 +61,9 @@ export const SECTIONS = Object.freeze([
     icon: "OCR",
     fields: [
       { key: "ocrEnabled", type: "bool", labelKey: "settings.ocrEnabled" },
-      { key: "ocrAccuracy", type: "enum", options: ["fast", "accurate"], labelKey: "settings.ocrAccuracy" },
-      { key: "ocrLanguages", type: "tags", labelKey: "settings.ocrLanguages", placeholder: "en, ru, uk" },
-      { key: "ocrPdfDpi", type: "int", min: 100, max: 600, labelKey: "settings.ocrPdfDpi" },
-      { key: "djvuOcrProvider", type: "enum", options: ["auto", "vision-llm", "system", "none"], labelKey: "settings.djvuOcrProvider" },
-      { key: "djvuRenderDpi", type: "int", min: 100, max: 600, labelKey: "settings.djvuRenderDpi" },
-      { key: "preferDjvuOverPdf", type: "bool", labelKey: "settings.preferDjvuOverPdf" },
-      { key: "metadataOnlineLookup", type: "bool", labelKey: "settings.metadataOnlineLookup" },
       { key: "visionMetaEnabled", type: "bool", labelKey: "settings.visionMetaEnabled" },
+      { key: "metadataOnlineLookup", type: "bool", labelKey: "settings.metadataOnlineLookup" },
       { key: "layoutAssistantEnabled", type: "bool", labelKey: "settings.layoutAssistantEnabled" },
-      { key: "layoutAssistantModel", type: "text", labelKey: "settings.layoutAssistantModel", placeholder: "qwen2.5-1.5b-instruct" },
-      { key: "layoutAssistantModelFallbacks", type: "text", labelKey: "settings.layoutAssistantModelFallbacks", placeholder: "model1,model2" },
     ],
   },
 
@@ -158,6 +150,23 @@ export const SECTIONS = Object.freeze([
     advanced: true,
     fields: [
       { key: "resilienceBarHideDelayMs", type: "int", min: 1000, max: 30000, labelKey: "settings.resilienceBarHideDelayMs" },
+    ],
+  },
+  {
+    id: "ocr-advanced",
+    titleKey: "settings.section.ocrAdvanced",
+    descriptionKey: "settings.section.ocrAdvanced.desc",
+    icon: "SCAN",
+    advanced: true,
+    fields: [
+      { key: "ocrAccuracy", type: "enum", options: ["fast", "accurate"], labelKey: "settings.ocrAccuracy" },
+      { key: "ocrLanguages", type: "tags", labelKey: "settings.ocrLanguages", placeholder: "en, ru, uk" },
+      { key: "ocrPdfDpi", type: "int", min: 100, max: 600, labelKey: "settings.ocrPdfDpi" },
+      { key: "djvuOcrProvider", type: "enum", options: ["auto", "vision-llm", "system", "none"], labelKey: "settings.djvuOcrProvider" },
+      { key: "djvuRenderDpi", type: "int", min: 100, max: 600, labelKey: "settings.djvuRenderDpi" },
+      { key: "preferDjvuOverPdf", type: "bool", labelKey: "settings.preferDjvuOverPdf" },
+      { key: "layoutAssistantModel", type: "text", labelKey: "settings.layoutAssistantModel", placeholder: "qwen2.5-1.5b-instruct" },
+      { key: "layoutAssistantModelFallbacks", type: "text", labelKey: "settings.layoutAssistantModelFallbacks", placeholder: "model1,model2" },
     ],
   },
 ]);

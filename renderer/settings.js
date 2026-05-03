@@ -182,7 +182,7 @@ function applyQueueEvent(payload) {
     return;
   }
   if (type === "layout.resumed") {
-    QUEUE_STATE.phase = QUEUE_STATE.title ? "running" : "idle";
+    QUEUE_STATE.phase = (QUEUE_STATE.title || QUEUE_STATE.remaining > 0) ? "running" : "idle";
     return;
   }
   if (type === "layout.done" || type === "layout.skipped" || type === "layout.failed") {

@@ -38,6 +38,7 @@ const ROLE_META = {
   vision_meta:          { labelKey: "models.role.vision_meta.label",          helpKey: "models.role.vision_meta.help" },
   vision_ocr:           { labelKey: "models.role.vision_ocr.label",           helpKey: "models.role.vision_ocr.help" },
   vision_illustration:  { labelKey: "models.role.vision_illustration.label",  helpKey: "models.role.vision_illustration.help" },
+  layout_assistant:     { labelKey: "models.role.layout_assistant.label",     helpKey: "models.role.layout_assistant.help" },
 };
 
 export async function refreshHardware(force = false) {
@@ -223,6 +224,12 @@ function renderLoadFromDisk(downloaded, loaded) {
 function renderRoles(roleMap, loaded, downloaded) {
   const host = ctx.pageRoot?.querySelector("#mp-roles");
   if (!host) return;
+
+  /* Bug fix: если пользователь держит открытым нативный <select> для выбора модели,
+   * setInterval → refresh() → clear(host) убивает DOM и dropdown закрывается.
+   * Пропускаем re-render пока любой из role-select'ов в фокусе. */
+  if (document.activeElement && host.contains(document.activeElement)) return;
+
   clear(host);
 
   const loadedKeys = new Set(loaded.map((l) => l.modelKey));
