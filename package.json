@@ -10,7 +10,7 @@
   "scripts": {
     "inventory": "tsx scripts/inventory.ts",
     "validate-batch": "tsx scripts/validate-batch.ts",
-    "postinstall": "node scripts/fix-edgeparse-native.cjs && npx @electron/rebuild --only better-sqlite3 --force 2>nul || echo [postinstall] @electron/rebuild skipped (OK for non-Electron use)",
+    "postinstall": "node scripts/fix-edgeparse-native.cjs && npx @electron/rebuild --only better-sqlite3 --force 2>nul || echo \"[postinstall] @electron/rebuild skipped (OK for non-Electron use)\"",
     "electron:clean": "node --input-type=commonjs -e \"try{require('fs').rmSync('dist-electron',{recursive:true,force:true})}catch{}\"",
     "electron:compile": "npm run electron:clean && tsc -p tsconfig.electron.json && node scripts/prepare-electron.js",
     "electron:dev": "node scripts/ensure-sqlite-abi.cjs --target=electron && npm run electron:compile && electron dist-electron/main.js",

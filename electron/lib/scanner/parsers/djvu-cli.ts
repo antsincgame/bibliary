@@ -264,14 +264,16 @@ export async function runDdjvuToPdf(srcPath: string, outPath: string, signal?: A
  * НЕ throw — graceful degradation, caller просто получит пусто и пойдёт в OCR.
  */
 export async function runDjvutxtPage(srcPath: string, pageIndex: number, signal?: AbortSignal): Promise<string> {
+  if (signal?.aborted) return "";
   if (shouldUseNative()) {
     try {
       return await runDjvutxtPageNative(srcPath, pageIndex, signal);
     } catch (err) {
-      if (signal?.aborted) throw err;
-      if (!shouldFallbackToCli()) throw err;
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[djvu] native page ${pageIndex + 1} failed, falling back to CLI: ${msg.slice(0, 200)}`);
+      if (!shouldFallbackToCli() && !signal?.aborted) throw err;
+      if (!signal?.aborted) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[djvu] native page ${pageIndex + 1} failed, falling back to CLI: ${msg.slice(0, 200)}`);
+      }
     }
   }
   const tool = await resolveBinary("djvutxt");
