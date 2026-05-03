@@ -29,6 +29,7 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import { tmpdir } from "os";
 import { spawn } from "child_process";
+import { killChildTree } from "../../resilience/kill-tree.js";
 import { randomUUID } from "crypto";
 import { platformVendorDirsWithLegacy, platformExeName } from "../../platform.js";
 import {
@@ -99,12 +100,15 @@ function run7zExtract(
     );
     let stderr = "";
     const timer = setTimeout(() => {
-      child.kill();
+      /* Iter 14.3: tree-kill вместо child.kill() — на Windows 7z может
+         запускать поддочерние процессы которые переживут SIGTERM.
+         См. `electron/lib/resilience/kill-tree.ts`. */
+      killChildTree(child, { gracefulMs: 500 });
       reject(new Error(`7z extract timeout (${CHM_EXTRACT_TIMEOUT_MS}ms)`));
     }, CHM_EXTRACT_TIMEOUT_MS);
 
     const onAbort = (): void => {
-      child.kill();
+      killChildTree(child, { gracefulMs: 500 });
       clearTimeout(timer);
       reject(new Error("7z extract aborted"));
     };

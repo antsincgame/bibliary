@@ -1,16 +1,45 @@
 /**
  * Model Role Resolver — единая точка резолва "роль → modelKey".
  *
- * РОЛИ:
- *   crystallizer          — extractor для dataset-v2 (delta knowledge extraction)
- *   vision_meta           — извлечение метаданных книги из обложки (JSON)
- *   vision_ocr            — vision-based OCR страниц книг (plain text)
- *   vision_illustration   — описание иллюстраций для индексации в Qdrant
- *                           (тематический контекст главы → описание для RAG)
- *   evaluator             — book pre-flight evaluator (quality scoring)
- *   ukrainian_specialist  — украинский писатель (для генерации/перевода UK)
- *   lang_detector         — детект языка фрагмента (production: regex first)
- *   translator            — двунаправленный перевод (en↔ru, uk→ru)
+ * РОЛИ И ИХ РЕАЛЬНОЕ ИСПОЛЬЗОВАНИЕ
+ * (Iter 14.3 audit, 2026-05-04 — /omnissiah проверка):
+ *
+ *   crystallizer          ✅ ИСПОЛЬЗУЕТСЯ:
+ *                           - md-converter.ts (text-meta fallback при слабых metadata)
+ *                           - dataset-v2/delta-extractor.ts (extraction-runner)
+ *
+ *   vision_meta           ✅ ИСПОЛЬЗУЕТСЯ: extractMetadataFromCover (md-converter.ts)
+ *                           triggers: visionMetaEnabled === true И есть cover buffer
+ *
+ *   vision_ocr            ✅ ИСПОЛЬЗУЕТСЯ: recognizeWithVisionLlm
+ *                           triggers: страница без текстового слоя (PDF/DJVU scan)
+ *
+ *   vision_illustration   ✅ ИСПОЛЬЗУЕТСЯ: processIllustrations (background)
+ *                           triggers: непустой illustrations.json после импорта
+ *
+ *   evaluator             ✅ ИСПОЛЬЗУЕТСЯ: book-evaluator.ts (post-import queue)
+ *                           ⚠️  Резолв идёт через свой `pickEvaluatorModel`
+ *                           вместо resolve("evaluator") — рассинхронизация
+ *                           с remaining ролями (TODO: унифицировать).
+ *
+ *   layout_assistant      ✅ ИСПОЛЬЗУЕТСЯ: layout-assistant.ts (post-import queue)
+ *                           triggers: layoutAssistantEnabled === true
+ *
+ *   translator            ⚠️ НЕ ИСПОЛЬЗУЕТСЯ при импорте библиотеки.
+ *                           Живёт только в scanner/ingest.ts (legacy pipeline,
+ *                           триггер: translateNonRussian + lang ∈ {uk,be,kk,ky,tg}).
+ *                           В Олимпиаде тестируется, в импорте «декорация».
+ *
+ *   ukrainian_specialist  ⚠️ НЕ ИСПОЛЬЗУЕТСЯ нигде в production.
+ *                           Тестируется только Олимпиадой. В будущем планируется
+ *                           для UK→RU переводов и UK-генерации, но в текущем
+ *                           pipeline'е роль «декорационная».
+ *
+ *   lang_detector         ⚠️ LLM-путь НЕ ИСПОЛЬЗУЕТСЯ. Импорт использует
+ *                           `detectLanguageByRegex` (md-converter.ts:644-657).
+ *                           LLM `detectLanguage(..., llmCb)` написан, но caller'ов
+ *                           с llmCb в production нет. В Олимпиаде тестируется
+ *                           ради будущего ambiguity-fallback'а.
  *
  * ЦЕПОЧКА РЕЗОЛВА (для каждой роли):
  *   1. preference:   prefs[<role>Model] (явный выбор пользователя)

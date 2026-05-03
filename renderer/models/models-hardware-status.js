@@ -296,9 +296,22 @@ function renderRoles(roleMap, loaded, downloaded) {
 }
 
 export function buildHwStrip() {
-  /* Компактная полоска с железом: свёрнута по умолчанию,
-     разворачивается кликом на toggles. */
-  const details = el("details", { class: "mp-hw-details" }, [
+  /* Iter 14.2 (2026-05-04): UI-блок «GPU/VRAM info + Recommended offload +
+     Re-scan» убран по запросу — пользователи знают своё железо, ручной тюн
+     им не интересен. Авто-определение GPU/VRAM (`inferGpuOffloadForLmLoad`,
+     `pickHardwareAutoModel`) остаётся в коде и работает при загрузке
+     моделей и в welcome-wizard'е — просто не отображается на странице
+     Models.
+
+     Скрытые элементы остаются в DOM как display:none, чтобы:
+       - `renderHardwareStrip()` всё ещё мог записывать в `#mp-hw-text`/
+         `#mp-hw-reco` без падения (никаких null-checks по всему коду);
+       - `#mp-hw-refresh` существовал на случай восстановления функционала.
+
+     Pipeline-status-widget (live VRAM pressure + scheduler lanes counters)
+     ОСТАЁТСЯ видимым — он показывает реальный прогресс импорта, а не
+     спецификации железа. */
+  const details = el("details", { class: "mp-hw-details", style: "display: none;" }, [
     el("summary", { class: "mp-hw-summary" }, [
       el("span", { id: "mp-hw-text", class: "mp-hw-text" }, t("models.hardware.loading")),
     ]),
@@ -308,19 +321,12 @@ export function buildHwStrip() {
     ]),
   ]);
 
-  /* Iter 7: pipeline-status-widget — live VRAM pressure + scheduler lanes counters.
-     Виден только когда что-то идёт через scheduler (cbz/multi-tiff/ddjvu→PDF
-     converters, evaluator, illustration). Empty state — нули, не отвлекает. */
   const pipelineHost = el("div", { id: "mp-pipeline-status", class: "mp-pipeline-status" }, []);
 
-  /* Mount widget. Если был предыдущий — unmount чтобы не плодить IPC подписки. */
   if (pipelineWidgetUnmount) {
     pipelineWidgetUnmount();
     pipelineWidgetUnmount = null;
   }
-  /* Mount синхронно после возврата DOM — браузер уже вставил pipelineHost
-     в DOM tree. Используем microtask чтобы гарантировать что pipelineHost
-     уже в document (mount читает rootEl.appendChild). */
   queueMicrotask(() => {
     pipelineWidgetUnmount = mountPipelineStatusWidget(pipelineHost);
   });

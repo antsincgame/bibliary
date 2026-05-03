@@ -368,14 +368,29 @@ async function runOlympicsAndShow() {
     appendOlympicsLog(logEl, t("models.olympics.done", { ms: ((report.totalDurationMs ?? 0) / 1000).toFixed(1) }), "good");
     renderOlympicsReport(report);
     showToast(t("models.olympics.success"), "success");
-    /* Авто-применение: используем оптимум (лучший баланс качество/скорость). */
-    const recs = report.recommendations ?? {};
+
+    /* Iter 14.2 (2026-05-04): авто-применение ЧЕМПИОНОВ (не optimum).
+       Раньше использовался `report.recommendations` (best efficiency среди
+       топ-70%-от-чемпиона), что создавало рассинхрон: на карточках UI
+       подчёркнут «ЧЕМПИОН A», а в preferences уезжал «ОПТИМУМ B». Теперь
+       автоматически после Олимпиады в роли назначается ИМЕННО победитель
+       тестов — `report.recommendationsByScore`. Кнопка «Распределить роли»
+       удалена — авто-распределение однозначное по окончанию прогона. */
+    const recs = report.recommendationsByScore ?? report.recommendations ?? {};
     if (Object.keys(recs).length > 0 && window.api?.arena?.applyOlympicsRecommendations) {
       try {
         await window.api.arena.applyOlympicsRecommendations({ recommendations: recs });
+        const lines = Object.entries(recs).map(([k, v]) => `  ${k} = ${v}`).join("\n");
+        appendOlympicsLog(
+          logEl,
+          `⭐ ${t("models.olympics.distribute_done")} (${Object.keys(recs).length}):\n${lines}`,
+          "good",
+        );
         showToast(`⭐ ${t("models.olympics.distribute_done")} (${Object.keys(recs).length})`, "success");
         void refresh();
       } catch (applyErr) {
+        const msg = applyErr instanceof Error ? applyErr.message : String(applyErr);
+        appendOlympicsLog(logEl, `✗ auto-apply champions failed: ${msg}`, "bad");
         console.warn("[models] auto-apply failed:", applyErr);
       }
     }

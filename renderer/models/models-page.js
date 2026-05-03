@@ -99,7 +99,7 @@ export function mountModels(root) {
   if (typeof window.api?.arena?.getLastReport === "function") {
     void window.api.arena.getLastReport().then((report) => {
       if (ctx.olympicsBusy) return;
-      if (report && typeof report === "object" && (report.medals || report.roleAggregates)) {
+      if (report && typeof report === "object" && (report.disciplines || report.roleAggregates)) {
         renderOlympicsReport(report);
       }
     }).catch(() => { /* no saved report — ok */ });

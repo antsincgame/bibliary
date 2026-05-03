@@ -138,9 +138,9 @@ test("electron smoke: app launches, preload bridge works, IPC handlers respond",
   const sidebar = await window.locator('[data-route="library"]').count();
   if (sidebar > 0) {
     await window.locator('[data-route="library"]').first().click();
-    /* Ждём пока library-pane получит активный класс или появится lib-topbar. */
+    /* Ждём пока library-pane получит активный класс. */
     await window
-      .locator('#library-root, .lib-topbar, .library-page')
+      .locator('#library-root, .library-page')
       .first()
       .waitFor({ state: "visible", timeout: 10_000 });
   }

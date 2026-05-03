@@ -59,7 +59,6 @@ import type {
   OlympicsModelResult,
   OlympicsMatchResult,
   OlympicsDisciplineResult,
-  OlympicsMedalRow,
   OlympicsRoleReason,
   OlympicsModelCapabilities,
   OlympicsReport,
@@ -612,34 +611,11 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
     opts.onProgress?.({ type: "olympics.discipline.done", discipline: d.id, champion });
   }
 
-  /* Медальный зачёт. */
-  const stats = new Map<string, { gold: number; silver: number; bronze: number; totalScore: number; totalDurationMs: number }>();
-  const ensure = (m: string) => {
-    if (!stats.has(m)) stats.set(m, { gold: 0, silver: 0, bronze: 0, totalScore: 0, totalDurationMs: 0 });
-    return stats.get(m)!;
-  };
-  for (const r of results) {
-    const sorted = [...r.perModel].sort((a, b) => {
-      if (Math.abs(a.score - b.score) > 0.05) return b.score - a.score;
-      return a.durationMs - b.durationMs;
-    });
-    if (sorted[0]) ensure(sorted[0].model).gold++;
-    if (sorted[1]) ensure(sorted[1].model).silver++;
-    if (sorted[2]) ensure(sorted[2].model).bronze++;
-    for (const p of r.perModel) {
-      const s = ensure(p.model);
-      s.totalScore += p.score;
-      s.totalDurationMs += p.durationMs;
-    }
-  }
-  const medals: OlympicsMedalRow[] = [...stats.entries()]
-    .map(([model, s]) => ({ model, ...s }))
-    .sort((a, b) => {
-      if (a.gold !== b.gold) return b.gold - a.gold;
-      if (a.silver !== b.silver) return b.silver - a.silver;
-      if (a.bronze !== b.bronze) return b.bronze - a.bronze;
-      return b.totalScore - a.totalScore;
-    });
+  /* Iter 14.2 (2026-05-04): «Медальный зачёт» (gold/silver/bronze агрегация
+     по дисциплинам) удалён — он не нёс полезной информации для пользователя
+     (per-discipline 🥇🥈🥉 в табах дисциплин и так показывают podium). Вместо
+     общей таблицы медалей фокус на per-role champions. Поле `medals` в
+     `OlympicsReport` стало optional+deprecated и больше не заполняется. */
 
   /* Bradley-Terry MLE across ALL matches for global ranking (am-ELO, ICML 2025). */
   const allMatches = results.flatMap((r) => r.matches);
@@ -743,7 +719,6 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
     modelsRun: models.length - skippedModels,
     skippedModels,
     disciplineCount: results.length,
-    goldWinners: medals.filter((m) => m.gold > 0).map((m) => m.model),
   });
   telemetry.logEvent({
     type: "olympics.run",
@@ -779,7 +754,6 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
     modelCapabilities,
     disciplines: results,
     roleAggregates,
-    medals,
     btScores: Object.fromEntries(btScores),
     recommendations,
     recommendationsByScore,

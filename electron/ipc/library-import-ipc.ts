@@ -28,9 +28,15 @@ import {
   enqueueBook,
   pauseEvaluator,
   resumeEvaluator,
+  cancelCurrentEvaluation,
+  clearQueue as clearEvaluatorQueue,
   getEvaluatorStatus,
 } from "../lib/library/evaluator-queue.js";
-import { enqueueLayoutBook } from "../lib/library/layout-assistant-queue.js";
+import {
+  enqueueLayoutBook,
+  cancelCurrentLayoutAssistant,
+  clearLayoutAssistantQueue,
+} from "../lib/library/layout-assistant-queue.js";
 import { readPipelinePrefsOrNull } from "../lib/preferences/store.js";
 import {
   getImportLogger,
@@ -379,9 +385,33 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
     /* Не удаляем activeImports здесь: worker ещё может писать book.md/meta.json.
        Удаление делает finally в import-folder/import-files handler после
        реального завершения. */
+
+    /* Iter 14.3 (2026-05-04, /omnissiah audit) — КРИТИЧЕСКИЙ FIX утечки.
+       Раньше cancel импорта только abort'ил signal текущей сессии импорта,
+       но НЕ останавливал post-import LLM-очереди:
+         • evaluator-queue (book-evaluator → LM Studio chatWithPolicy)
+         • layout-assistant-queue (layout fix → LM Studio)
+       Каждый успешный импорт вызывает enqueueBook() + enqueueLayoutBook(),
+       у этих очередей СВОИ AbortController'ы, не связанные с импортным.
+       Поэтому пользователь видел: «остановил импорт» → но LM Studio
+       продолжает обрабатывать накопленные книги. Симптом: «vision/чат
+       продолжается после Cancel».
+
+       Лечение: чистим pending очередь + прерываем in-flight задачу.
+       Сами очереди остаются АКТИВНЫМИ (не paused) — это важно: при
+       следующем импорте новые книги начнут обрабатываться сразу, а не
+       требовать ручного `resume`. Если пользователь явно паузил очередь
+       раньше через UI — этот флаг pause не сбрасывается (paused-state
+       сохраняется через user-explicit pause/resume IPC, а не через cancel
+       import). */
+    clearEvaluatorQueue();
+    cancelCurrentEvaluation("import-cancelled");
+    clearLayoutAssistantQueue();
+    cancelCurrentLayoutAssistant("import-cancelled");
+
     await getImportLogger().write({
       importId, level: "warn", category: "import.cancel",
-      message: "Import cancelled by user",
+      message: "Import cancelled by user — stopped pending evaluator + layout-assistant queues and aborted in-flight LLM calls",
     });
     return true;
   });

@@ -184,8 +184,7 @@ function structureLeaderToc(html, headings) {
      of consecutive ToC-like <p>'s. */
   const PARA_RE = /<p\b[^>]*>([\s\S]*?)<\/p>/g;
   const matches = [];
-  let m;
-  while ((m = PARA_RE.exec(html)) !== null) {
+  for (let m = PARA_RE.exec(html); m !== null; m = PARA_RE.exec(html)) {
     const innerText = m[1].replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").trim();
     matches.push({ start: m.index, end: m.index + m[0].length, full: m[0], text: innerText, parsed: parseLine(innerText) });
   }
@@ -353,8 +352,7 @@ export async function openBook(bookId, root) {
   }
 
   root.classList.add("lib-reader-open");
-  /* P2 (2026-05-03): глобальный маркер «reader открыт» — CSS прячет
-     .lib-topbar (заголовок «Библиотека книг» мешает чтению, юзер сказал). */
+  /* В режиме reader скрываем вкладки библиотеки (см. styles.css). */
   document.body.classList.add("lib-reader-active");
   activeReaderRoot = root;
   catalogBody = root.querySelector(".lib-catalog-body");
@@ -466,9 +464,9 @@ export function closeReader(root) {
  * as broken: tab switches the pane but the just-closed reader is still in
  * the DOM tree of the previously-active pane.
  *
- * @param {HTMLElement} root
+ * @param {HTMLElement} _root
  */
-function installNavInterceptor(root) {
+function installNavInterceptor(_root) {
   if (navInterceptor) return;
   navInterceptor = (ev) => {
     if (!activeReaderRoot) return;

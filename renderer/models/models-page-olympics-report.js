@@ -8,7 +8,7 @@
 
 import { el, clear } from "../dom.js";
 import { t } from "../i18n.js";
-import { ctx, applyRecommendations } from "./models-page-internals.js";
+import { ctx } from "./models-page-internals.js";
 import {
   disciplineHuman,
   roleHuman,
@@ -16,7 +16,6 @@ import {
   aggregateRoleTitle,
   aggregateApplyHint,
 } from "./models-page-olympics-labels.js";
-import { refresh } from "./models-hardware-status.js";
 
 export function renderOlympicsReport(report) {
   const root = ctx.pageRoot?.querySelector("#mp-olympics-results");
@@ -56,7 +55,14 @@ export function renderOlympicsReport(report) {
     root.appendChild(warnBox);
   }
 
-  /* ── Медальный зачёт с BT-MLE и capabilities ── */
+  /* Iter 14.2 (2026-05-04): «Медальный зачёт» удалён по запросу — он не давал
+     полезной информации для конечного пользователя (золото/серебро/бронза
+     суммировались по дисциплинам, что путало с per-role чемпионами). Вместо
+     него — фокус на per-role champion'ах (рекомендации по ролям ниже) и
+     развёрнутых результатах по дисциплинам.
+
+     `capBadges` (👁/🧠/🔧/params) и `btScores` теперь нужны для карточек
+     ролей (ниже в renderRoleTab) — поэтому продолжаем читать их из report. */
   const caps = report.modelCapabilities ?? {};
   const btScores = report.btScores ?? {};
 
@@ -70,22 +76,6 @@ export function renderOlympicsReport(report) {
     if (c.paramsString) badges.push(c.paramsString);
     return badges.length > 0 ? ` [${badges.join(" ")}]` : "";
   }
-
-  const medalsBox = el("div", { class: "mp-olympics-medals" }, [
-    el("h3", {}, t("models.olympics.leaderboard")),
-    ...((report.medals ?? []).map((row, i) => {
-      const icon = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "  ";
-      const btScore = btScores[row.model];
-      const btStr = typeof btScore === "number" ? ` · BT: ${Math.round(btScore * 100)}` : "";
-      return el("div", { class: "mp-olympics-medal-row" }, [
-        el("span", { class: "mp-olympics-medals-rank" }, icon),
-        el("span", { class: "mp-olympics-medal-model" }, row.model + capBadges(row.model)),
-        el("span", { class: "mp-olympics-medals-cell" }, `${row.gold}🥇 ${row.silver}🥈 ${row.bronze}🥉${btStr}`),
-        el("span", { class: "mp-olympics-medals-time" }, `${(row.totalDurationMs / 1000).toFixed(1)}s`),
-      ]);
-    })),
-  ]);
-  root.appendChild(medalsBox);
 
   /* ── Результаты по дисциплинам ── */
   const allDisciplines = report.disciplines ?? [];
@@ -215,29 +205,14 @@ export function renderOlympicsReport(report) {
     return;
   }
 
-  /* Счётчик ролей для кнопки «Распределить»:
-   * показываем РЕАЛЬНОЕ число ролей с чемпионом (а не число уникальных pref-ключей).
-   * Vision_meta + vision_ocr + vision_illustration → 3 роли, но → 1 prefKey.
-   * Раньше показывали 7 (=уникальных prefs), это путало пользователя — он видит
-   * 9 категорий, ожидает 9 чемпионов. Теперь = (число aggregates с champion). */
-  const rolesWithOptimum = aggregates.filter((a) => a.optimum).length;
-
-  const distributeBtn = el("button", {
-    class: "btn btn-primary",
-    type: "button",
-    disabled: recsKeys.length === 0,
-    onclick: () => {
-      void applyRecommendations(recs, refresh);
-    },
-  }, [
-    el("span", { class: "mp-olympics-distribute-label" }, t("models.olympics.distribute")),
-    el("span", { class: "mp-olympics-distribute-count" }, ` (${rolesWithOptimum})`),
-  ]);
-
+  /* Iter 14.2 (2026-05-04): кнопка «Распределить роли» удалена.
+     Распределение чемпионов теперь происходит АВТОМАТИЧЕСКИ сразу по
+     окончании прогона — пользователь не должен дополнительно нажимать
+     кнопку, чтобы понять «применилось ли». В заголовке оставляем подсказку
+     о том что роли уже назначены, и список карточек с per-role чемпионами. */
   const recsHeader = el("div", { class: "mp-olympics-recs-header" }, [
     el("h3", {}, t("models.olympics.recommendations")),
     el("p", { class: "mp-card-sub" }, t("models.olympics.distribute_after_run")),
-    el("div", { class: "mp-olympics-apply-buttons" }, [distributeBtn]),
   ]);
   root.appendChild(recsHeader);
 

@@ -24,6 +24,14 @@ extraResources:
     to: vendor/7zip/${platform}-${arch}
     filter:
       - "**/*"
+  # Iter 14.4 (2026-05-04): pure-JS DjVu parser (RussCoder/djvu.js, GPL v2).
+  # Cross-platform IIFE bundle 544 KB — primary path в djvu-cli.ts; vendor
+  # DjVuLibre binaries остаются как graceful fallback (через 1-2 итерации
+  # удалим если native показывает себя стабильным на проде).
+  - from: vendor/djvu
+    to: vendor/djvu
+    filter:
+      - "**/*"
 win:
   target:
     - nsis

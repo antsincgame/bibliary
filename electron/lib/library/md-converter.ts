@@ -564,9 +564,11 @@ export async function convertBookToMarkdown(
   }
 
   /* Stage 2.6 — Vision-meta enrichment через ЛОКАЛЬНУЮ LM Studio vision-модель.
-     Opt-in (visionMetaEnabled: false по умолчанию). Используется как ПОСЛЕДНИЙ
-     резерв только когда parsed metadata И isbn-meta не дали достаточно данных.
-     Никогда не throw — на любой ошибке degrade gracefully. */
+     Default: visionMetaEnabled: TRUE (preferences/store.ts:114) — срабатывает на
+     каждый импорт с обложкой когда загружена vision-модель. Значительно уточняет
+     метаданные для книг со слабым PDF/EPUB header. Никогда не throw — на любой
+     ошибке degrade gracefully. Уровень приоритета в итоговых метаданных: 3-й из 5
+     (структурный parse > ISBN online > vision-meta > ai-text-meta > filename). */
   let visionMeta: import("../llm/vision-meta.js").VisionMeta | null = null;
   if (opts.visionMetaEnabled === true && cover && cover.buffer.length > 0) {
     const t0 = Date.now();

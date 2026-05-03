@@ -99,7 +99,20 @@ Respond with valid JSON only. No markdown.`;
  *
  * Если передан `fallbackModelKeys` — при ошибке/timeout первой модели
  * пробует следующие из списка. Возвращает первый успешный результат.
+ *
+ * Iter 14.2 (2026-05-04): добавлен `onFailure` callback для видимого
+ * логирования причины фейла. Раньше при `!resp.ok` мы делали `continue`
+ * без сохранения причины — пользователь видел `errors++` в счётчике, но
+ * не понимал почему vision «не работает ни разу нигде». Теперь caller
+ * получает причину каждого неудачного запроса (HTTP 4xx, timeout, parse).
  */
+type VisionFailureReason =
+  | { kind: "preflight"; reason: string }
+  | { kind: "http"; modelKey: string; status: number; body: string }
+  | { kind: "exception"; modelKey: string; message: string }
+  | { kind: "no-json"; modelKey: string; rawSample: string }
+  | { kind: "no-score"; modelKey: string; rawSample: string };
+
 async function analyzeImageWithVision(
   imageBuffer: Buffer,
   mimeType: string,
@@ -108,6 +121,7 @@ async function analyzeImageWithVision(
   signal?: AbortSignal,
   fallbackModelKeys: string[] = [],
   perModelTimeoutMs: number = 30_000,
+  onFailure?: (failure: VisionFailureReason) => void,
 ): Promise<SemanticTriageResult | null> {
   const candidates = [modelKey, ...fallbackModelKeys].filter(Boolean);
   const prompt = buildSemanticTriagePrompt(ctx);
@@ -120,6 +134,7 @@ async function analyzeImageWithVision(
       bytes: imageBuffer.length,
       modelKey,
     });
+    onFailure?.({ kind: "preflight", reason: preflight.reason });
     return null;
   }
   const validatedMime = preflight.mime;
@@ -178,30 +193,64 @@ async function analyzeImageWithVision(
         signal?.removeEventListener("abort", onExternalAbort);
       }
 
-      if (!resp.ok) continue; /* try next model */
+      if (!resp.ok) {
+        const errBody = await resp.text().catch(() => "");
+        onFailure?.({
+          kind: "http",
+          modelKey: candidate,
+          status: resp.status,
+          body: errBody.slice(0, 300),
+        });
+        continue;
+      }
 
       const json = (await resp.json()) as {
         choices?: Array<{ message?: { content?: string } }>;
       };
       const raw = json.choices?.[0]?.message?.content ?? "";
       const parsed = extractJsonFromResponse(raw);
-      if (!parsed) continue;
+      if (!parsed) {
+        onFailure?.({ kind: "no-json", modelKey: candidate, rawSample: raw.slice(0, 200) });
+        continue;
+      }
 
       const score = typeof parsed.score === "number"
         ? Math.round(Math.max(0, Math.min(10, parsed.score)))
         : null;
-      if (score === null) continue;
+      if (score === null) {
+        onFailure?.({ kind: "no-score", modelKey: candidate, rawSample: raw.slice(0, 200) });
+        continue;
+      }
 
       return {
         score,
         description: typeof parsed.description === "string" ? parsed.description.trim() : "",
       };
-    } catch {
-      /* timeout / network — try next model */
-      if (signal?.aborted) return null; /* but stop if user aborted */
+    } catch (err) {
+      if (signal?.aborted) return null;
+      onFailure?.({
+        kind: "exception",
+        modelKey: candidate,
+        message: err instanceof Error ? err.message : String(err),
+      });
     }
   }
   return null;
+}
+
+function formatVisionFailure(failure: VisionFailureReason): string {
+  switch (failure.kind) {
+    case "preflight":
+      return `image preflight failed: ${failure.reason}`;
+    case "http":
+      return `${failure.modelKey} → HTTP ${failure.status}: ${failure.body || "(empty body)"}`;
+    case "exception":
+      return `${failure.modelKey} → exception: ${failure.message}`;
+    case "no-json":
+      return `${failure.modelKey} → no JSON in response: "${failure.rawSample}"`;
+    case "no-score":
+      return `${failure.modelKey} → JSON has no numeric score: "${failure.rawSample}"`;
+  }
 }
 
 function extractJsonFromResponse(raw: string): Record<string, unknown> | null {
@@ -380,6 +429,11 @@ export async function processIllustrations(
     try {
       onProgress?.(`[Semantic Triage] ${entry.id} (${entry.bytes} bytes) via ${modelKey}`);
 
+      /* Iter 14.2: каждая неудача vision-запроса логируется в UI лог импорта,
+         чтобы пользователь видел КОНКРЕТНУЮ причину фейла (HTTP 400, timeout,
+         parse error, отсутствие vision-капабилити). Раньше всё проглатывалось
+         тихо, и юзер видел только «errors=N», что создавало ощущение
+         «vision не работает ни разу нигде». */
       const triage = await analyzeImageWithVision(
         await fs.readFile(blobPath),
         entry.mimeType,
@@ -387,10 +441,15 @@ export async function processIllustrations(
         { bookTitle: bookTitle ?? undefined, chapterTitle: entry.caption ?? undefined },
         signal,
         fallbackModelKeys,
+        30_000,
+        (failure) => {
+          onProgress?.(`[Semantic Triage] FAIL ${entry.id} ${formatVisionFailure(failure)}`);
+        },
       );
 
       if (!triage) {
         errors++;
+        onProgress?.(`[Semantic Triage] ${entry.id} — no vision model returned a usable response`);
         return;
       }
 
@@ -421,8 +480,10 @@ export async function processIllustrations(
         // Step D: E5 text-vector indexing — ВСЕГДА (default-on).
         //
       }
-    } catch {
+    } catch (err) {
       errors++;
+      const msg = err instanceof Error ? err.message : String(err);
+      onProgress?.(`[Semantic Triage] EXCEPTION ${entry.id}: ${msg}`);
     }
   }
 

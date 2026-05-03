@@ -5,6 +5,7 @@
 import { el, clear } from "../dom.js";
 import { t, getLocale } from "../i18n.js";
 import { showAlert, showConfirm } from "../components/ui-dialog.js";
+import { buildCollectionPicker } from "../components/collection-picker.js";
 import { CATALOG, STATE } from "./state.js";
 import { filterCatalog as filterCatalogPure, qualityClass, statusClass } from "./catalog-filter.js";
 import { fmtWords, fmtQuality } from "./format.js";
@@ -339,7 +340,44 @@ export function highlightCatalogBookRow(root, bookId) {
 export function buildCatalogToolbar(root) {
   /* Компактный однострочный toolbar: search занимает основную ширину,
      остальные контролы (Quality, Hide fiction, presets, refresh, rebuild)
-     прижаты вправо. На узком экране переносится через flex-wrap. */
+     прижаты вправо. На узком экране переносится через flex-wrap.
+
+     Iter 14.1 (2026-05-04): picker коллекции переехал сюда из удалённого
+     lib-topbar. Здесь же он логически нужен — для batch операций
+     (crystallize/delete/revert) над выбранными книгами. */
+  const picker = buildCollectionPicker({
+    id: "lib-target-collection",
+    onChange: (name) => {
+      STATE.targetCollection = name;
+      STATE.collection = name;
+    },
+    onCreate: () => { /* picker.refresh already called */ },
+    loadCollections: async () => {
+      try { return await window.api.getCollections(); } catch { return []; }
+    },
+    createCollection: async (name) => {
+      try {
+        const r = /** @type {any} */ (await window.api.qdrant.create({ name }));
+        if (!r || r.ok === false) return { ok: false, error: r?.error || "unknown" };
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    },
+    onDelete: async (name) => {
+      try {
+        await window.api.qdrant.remove(name);
+        if (STATE.targetCollection === name) {
+          STATE.targetCollection = "";
+          STATE.collection = "";
+        }
+      } catch (e) {
+        console.error("[library.collection.delete]", name, e);
+        throw e;
+      }
+    },
+  });
+
   const searchInput = el("input", {
     type: "text", class: "lib-catalog-search",
     placeholder: t("library.catalog.filter.search.placeholder"),
@@ -373,6 +411,7 @@ export function buildCatalogToolbar(root) {
   }, t("library.catalog.btn.tagCloud"));
 
   return el("div", { class: "lib-catalog-toolbar lib-catalog-toolbar-compact" }, [
+    picker.root,
     searchInput,
     tagCloudBtn,
     el("div", { class: "lib-catalog-quality-wrap" }, [

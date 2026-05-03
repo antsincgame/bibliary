@@ -196,56 +196,6 @@ export function registerQdrantIpc(): void {
   );
 
   ipcMain.handle(
-    "qdrant:search",
-    async (
-      _e,
-      args: {
-        collection: string;
-        vector?: number[];
-        query?: string;
-        limit?: number;
-        scoreThreshold?: number;
-      }
-    ): Promise<Array<{ id: string; score: number; payload: Record<string, unknown> }>> => {
-      if (!args || !args.collection) return [];
-      try {
-        let vector = args.vector;
-        if (!vector && args.query) {
-          const { embedQuery } = await import("../lib/embedder/shared.js");
-          vector = await embedQuery(args.query);
-        }
-        if (!vector) return [];
-        const prefs = await getPreferencesStore().getAll();
-        /* score_threshold: clamp to [0, 1]. Without it поиск «размывается» при
-           росте коллекции — даже плохие совпадения проходят. */
-        const rawThreshold = args.scoreThreshold ?? prefs.searchScoreThreshold;
-        const scoreThreshold = Math.max(0, Math.min(1, rawThreshold));
-        const data = await fetchQdrantJson<{
-          result: Array<{ id: string | number; score: number; payload: Record<string, unknown> }>;
-        }>(`${QDRANT_URL}/collections/${encodeURIComponent(args.collection)}/points/search`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            vector,
-            limit: args.limit ?? prefs.qdrantSearchLimit,
-            with_payload: true,
-            score_threshold: scoreThreshold,
-          }),
-          timeoutMs: prefs.qdrantTimeoutMs,
-        });
-        return data.result.map((r) => ({
-          id: String(r.id),
-          score: r.score,
-          payload: r.payload,
-        }));
-      } catch (e) {
-        console.error("[qdrant:search]", e instanceof Error ? e.message : e);
-        return [];
-      }
-    }
-  );
-
-  ipcMain.handle(
     "qdrant:cluster-info",
     async (): Promise<{ url: string; online: boolean; version?: string; collectionsCount: number }> => {
       try {

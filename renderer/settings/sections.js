@@ -19,29 +19,21 @@
  *   titleKey: string;
  *   descriptionKey: string;
  *   icon: string;
- *   advanced?: boolean;
  *   readonly?: boolean;
  *   fields: SettingsField[];
  * }} SettingsSection
  */
 
 /**
- * Iter 12 P5.4 settings rework: 4 базовых раздела (видны всегда) +
- * advanced toggle открывает legacy-разделы (resilience/pipeline/ui).
- *
- * Маппинг user request:
- *   "Библиотека и поиск" (ingest), "Устойчивость и политики" (resilience),
- *   "Пайплайн импорта" (pipeline) → УБРАТЬ из UI как разделы (advanced-only).
- *   Семантический чанкер → добавить промптовое поле для описания.
- *   Авто-режим (memory management): adaptiveSchedulingEnabled.
- *
- * Phase A+B Iter 9.6 (rev. 2 colibri-roadmap.md): Calibre удалён полностью —
- * нет внешних зависимостей. MOBI/AZW3/CHM теперь native JS.
+ * Iter 14.1 (2026-05-04): «бабушка-библиотекарь» — продвинутые разделы
+ * (распознавание / чанкер / авто-режим / устойчивость / пайплайн / UI)
+ * полностью удалены из UI настроек. Их значения берутся из дефолтов
+ * Zod schema (electron/lib/preferences/store.ts) и работают «из коробки».
+ * Для пользователя остаётся только главное — два URL.
  */
 
 /** @type {ReadonlyArray<SettingsSection>} */
 export const SECTIONS = Object.freeze([
-  /* ─── Основные ──────────────────────────────────────────────────── */
   {
     id: "general",
     titleKey: "settings.section.general",
@@ -50,122 +42,6 @@ export const SECTIONS = Object.freeze([
     fields: [
       { key: "lmStudioUrl", type: "url", labelKey: "settings.lmStudioUrl", placeholder: "http://localhost:1234", probe: "lmstudio" },
       { key: "qdrantUrl", type: "url", labelKey: "settings.qdrantUrl", placeholder: "http://localhost:6333", probe: "qdrant" },
-    ],
-  },
-
-  /* ─── Распознавание (user-facing: только высокоуровневые toggle'ы) ── */
-  {
-    id: "ocr",
-    titleKey: "settings.section.ocr",
-    descriptionKey: "settings.section.ocr.desc",
-    icon: "OCR",
-    fields: [
-      { key: "ocrEnabled", type: "bool", labelKey: "settings.ocrEnabled" },
-      { key: "visionMetaEnabled", type: "bool", labelKey: "settings.visionMetaEnabled" },
-      { key: "metadataOnlineLookup", type: "bool", labelKey: "settings.metadataOnlineLookup" },
-      { key: "layoutAssistantEnabled", type: "bool", labelKey: "settings.layoutAssistantEnabled" },
-    ],
-  },
-
-  /* ─── Семантический чанкер ──────────────────────────────────────── */
-  {
-    id: "chunker",
-    titleKey: "settings.section.chunker",
-    descriptionKey: "settings.section.chunker.desc",
-    icon: "CHNK",
-    fields: [
-      { key: "chunkSafeLimit", type: "int", min: 500, max: 20000, labelKey: "settings.chunkSafeLimit" },
-      { key: "chunkMinWords", type: "int", min: 50, max: 2000, labelKey: "settings.chunkMinWords" },
-      { key: "driftThreshold", type: "float", min: 0, max: 1, step: 0.05, labelKey: "settings.driftThreshold" },
-      { key: "maxParagraphsForDrift", type: "int", min: 100, max: 5000, labelKey: "settings.maxParagraphsForDrift" },
-      { key: "overlapParagraphs", type: "int", min: 0, max: 10, labelKey: "settings.overlapParagraphs" },
-      { key: "chunkerCustomPrompt", type: "textarea", rows: 5, labelKey: "settings.chunkerCustomPrompt", placeholder: "Опиши, как именно резать книгу…" },
-    ],
-  },
-
-  /* ─── Авто-режим (memory & adaptive) ────────────────────────────── */
-  {
-    id: "auto",
-    titleKey: "settings.section.auto",
-    descriptionKey: "settings.section.auto.desc",
-    icon: "AUTO",
-    fields: [
-      { key: "adaptiveSchedulingEnabled", type: "bool", labelKey: "settings.adaptiveSchedulingEnabled" },
-    ],
-  },
-
-  /* ─── Advanced (скрыто по умолчанию) ────────────────────────────── */
-  {
-    id: "ingest",
-    titleKey: "settings.section.ingest",
-    descriptionKey: "settings.section.ingest.desc",
-    icon: "BOOK",
-    advanced: true,
-    fields: [
-      { key: "ingestParallelism", type: "int", min: 1, max: 16, labelKey: "settings.ingestParallelism" },
-      { key: "searchPerSourceLimit", type: "int", min: 1, max: 50, labelKey: "settings.searchPerSourceLimit" },
-      { key: "qdrantSearchLimit", type: "int", min: 1, max: 100, labelKey: "settings.qdrantSearchLimit" },
-    ],
-  },
-  {
-    id: "resilience",
-    titleKey: "settings.section.resilience",
-    descriptionKey: "settings.section.resilience.desc",
-    icon: "SAFE",
-    advanced: true,
-    fields: [
-      { key: "policyMaxRetries", type: "int", min: 0, max: 20, labelKey: "settings.policyMaxRetries" },
-      { key: "policyBaseBackoffMs", type: "int", min: 100, max: 30000, labelKey: "settings.policyBaseBackoffMs" },
-      { key: "hardTimeoutCapMs", type: "int", min: 30000, max: 3600000, labelKey: "settings.hardTimeoutCapMs" },
-      { key: "lockRetries", type: "int", min: 0, max: 20, labelKey: "settings.lockRetries" },
-      { key: "lockStaleMs", type: "int", min: 1000, max: 60000, labelKey: "settings.lockStaleMs" },
-      { key: "healthPollIntervalMs", type: "int", min: 1000, max: 60000, labelKey: "settings.healthPollIntervalMs" },
-      { key: "healthFailThreshold", type: "int", min: 1, max: 20, labelKey: "settings.healthFailThreshold" },
-      { key: "watchdogLivenessTimeoutMs", type: "int", min: 500, max: 15000, labelKey: "settings.watchdogLivenessTimeoutMs" },
-    ],
-  },
-  {
-    id: "pipeline",
-    titleKey: "settings.section.pipeline",
-    descriptionKey: "settings.section.pipeline.desc",
-    icon: "PIPE",
-    advanced: true,
-    fields: [
-      { key: "schedulerLightConcurrency", type: "int", min: 1, max: 32, labelKey: "settings.schedulerLightConcurrency" },
-      { key: "schedulerMediumConcurrency", type: "int", min: 1, max: 8, labelKey: "settings.schedulerMediumConcurrency" },
-      { key: "schedulerHeavyConcurrency", type: "int", min: 1, max: 4, labelKey: "settings.schedulerHeavyConcurrency" },
-      { key: "parserPoolSize", type: "int", min: 0, max: 16, labelKey: "settings.parserPoolSize" },
-      { key: "evaluatorSlots", type: "int", min: 1, max: 8, labelKey: "settings.evaluatorSlots" },
-      { key: "visionOcrRpm", type: "int", min: 1, max: 600, labelKey: "settings.visionOcrRpm" },
-      { key: "illustrationParallelism", type: "int", min: 1, max: 16, labelKey: "settings.illustrationParallelism" },
-      { key: "illustrationParallelBooks", type: "int", min: 1, max: 16, labelKey: "settings.illustrationParallelBooks" },
-      { key: "converterCacheMaxBytes", type: "int", min: 0, max: 50_000_000_000, labelKey: "settings.converterCacheMaxBytes" },
-    ],
-  },
-  {
-    id: "ui",
-    titleKey: "settings.section.ui",
-    descriptionKey: "settings.section.ui.desc",
-    icon: "UI",
-    advanced: true,
-    fields: [
-      { key: "resilienceBarHideDelayMs", type: "int", min: 1000, max: 30000, labelKey: "settings.resilienceBarHideDelayMs" },
-    ],
-  },
-  {
-    id: "ocr-advanced",
-    titleKey: "settings.section.ocrAdvanced",
-    descriptionKey: "settings.section.ocrAdvanced.desc",
-    icon: "SCAN",
-    advanced: true,
-    hidden: true,
-    fields: [
-      { key: "ocrAccuracy", type: "enum", options: ["fast", "accurate"], labelKey: "settings.ocrAccuracy" },
-      { key: "ocrLanguages", type: "tags", labelKey: "settings.ocrLanguages", placeholder: "en, ru, uk" },
-      { key: "ocrPdfDpi", type: "int", min: 100, max: 600, labelKey: "settings.ocrPdfDpi" },
-      { key: "djvuOcrProvider", type: "enum", options: ["auto", "vision-llm", "system", "none"], labelKey: "settings.djvuOcrProvider" },
-      { key: "djvuRenderDpi", type: "int", min: 100, max: 600, labelKey: "settings.djvuRenderDpi" },
-      { key: "preferDjvuOverPdf", type: "bool", labelKey: "settings.preferDjvuOverPdf" },
     ],
   },
 ]);
@@ -178,7 +54,6 @@ export function getSectionMeta(sectionId) {
     titleKey: section.titleKey,
     descriptionKey: section.descriptionKey,
     icon: section.icon,
-    advanced: section.advanced === true,
     readonly: section.readonly === true,
   };
 }

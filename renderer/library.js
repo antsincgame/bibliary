@@ -15,7 +15,6 @@
  */
 import { el, clear } from "./dom.js";
 import { t } from "./i18n.js";
-import { buildCollectionPicker } from "./components/collection-picker.js";
 
 import { STATE, CATALOG } from "./library/state.js";
 import { loadPrefs } from "./library/browse.js";
@@ -72,83 +71,6 @@ function buildLibraryTabs(root) {
   ]);
 }
 
-function buildLibraryTopBar(root) {
-  const header = el("div", { class: "lib-topbar-header" }, [
-    el("div", { class: "lib-topbar-title" }, t("library.header.title")),
-    el("div", { class: "lib-topbar-sub" }, t("library.header.sub")),
-  ]);
-
-  const picker = buildCollectionPicker({
-    id: "lib-target-collection",
-    labelText: t("library.collection.target"),
-    onChange: (name) => {
-      STATE.targetCollection = name;
-      STATE.collection = name;
-      const legacyInput = /** @type {HTMLInputElement|null} */ (root.querySelector(".lib-collection-input"));
-      if (legacyInput && legacyInput.value !== name) legacyInput.value = name;
-    },
-    onCreate: () => { /* picker.refresh already called */ },
-    loadCollections: async () => {
-      try { return await window.api.getCollections(); } catch { return []; }
-    },
-    createCollection: async (name) => {
-      try {
-        const r = /** @type {any} */ (await window.api.qdrant.create({ name }));
-        if (!r || r.ok === false) return { ok: false, error: r?.error || "unknown" };
-        return { ok: true };
-      } catch (e) {
-        return { ok: false, error: e instanceof Error ? e.message : String(e) };
-      }
-    },
-    /* Иt 8Е.2 (симметрия удаления, 2026-05-02): добавлена кнопка «−» в picker.
-       Backend qdrant:delete-collection уже работает с момента Crystal wizard.
-       Теперь Library top bar тоже умеет удалять коллекции — чтобы пользователь
-       не нырял в Crystal вкладку для destructive операции. */
-    onDelete: async (name) => {
-      try {
-        await window.api.qdrant.remove(name);
-        if (STATE.targetCollection === name) {
-          STATE.targetCollection = "";
-          STATE.collection = "";
-        }
-      } catch (e) {
-        console.error("[library.collection.delete]", name, e);
-        throw e;
-      }
-    },
-  });
-
-  /* Quick-jump: создать датасет из выбранной коллекции прямо отсюда. Кладём
-     имя коллекции в sessionStorage и переключаем sidebar на Crystal — там
-     mountCrystal подхватит pre-fill при первом монтировании / re-mount. */
-  const goCreateBtn = el("button", {
-    class: "lib-btn lib-btn-accent lib-collection-go-create",
-    type: "button",
-    title: t("library.collection.goCreate.title"),
-    onclick: () => {
-      const name = STATE.targetCollection || STATE.collection || "";
-      if (!name) return;
-      try {
-        sessionStorage.setItem("bibliary_dataset_prefill_collection", name);
-      } catch { /* private mode */ }
-      const crystalRoot = document.getElementById("crystal-root");
-      if (crystalRoot) {
-        delete crystalRoot.dataset.mounted;
-        crystalRoot.innerHTML = "";
-      }
-      const trigger = /** @type {HTMLButtonElement | null} */ (
-        document.querySelector('.sidebar-icon[data-route="crystal"]')
-      );
-      trigger?.click();
-    },
-  }, t("library.collection.goCreate"));
-
-  return el("div", { class: "lib-topbar" }, [
-    header,
-    el("div", { class: "lib-topbar-row" }, [picker.root, goCreateBtn]),
-  ]);
-}
-
 function installWindowDropGuards(root) {
   if (root.dataset.dropGuard) return;
   root.dataset.dropGuard = "1";
@@ -173,7 +95,6 @@ export async function mountLibrary(root) {
 
   const catalogDeps = { renderCatalog, renderCatalogTable };
 
-  const topBar = buildLibraryTopBar(root);
   const tabs = buildLibraryTabs(root);
 
   const catalogPane = buildCatalogPane(root, catalogDeps);
@@ -185,7 +106,7 @@ export async function mountLibrary(root) {
   const searchPane = el("div", { class: "lib-pane lib-pane-search" }, [el("div", { class: "lib-search" })]);
   const collectionsPane = el("div", { class: "lib-pane lib-pane-collections" });
 
-  const layout = el("div", { class: "lib-page-layout" }, [topBar, tabs, importPane, catalogPane, searchPane, collectionsPane]);
+  const layout = el("div", { class: "lib-page-layout" }, [tabs, importPane, catalogPane, searchPane, collectionsPane]);
   root.append(layout);
 
   if (typeof CATALOG.unsubEvaluator === "function") CATALOG.unsubEvaluator();

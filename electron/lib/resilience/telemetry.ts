@@ -202,6 +202,29 @@ export type TelemetryEvent =
       strategy: "json_schema" | "text";
       ts: string;
     }
+  | {
+      /**
+       * Iter 14.4 (2026-05-04): native DjVu parser bundle (RussCoder/djvu.js)
+       * успешно загружен в vm sandbox при первом обращении. Используется для
+       * проверки что замена DjVuLibre CLI инициализируется корректно.
+       */
+      type: "djvu.native.bundle_loaded";
+      bundlePath: string;
+      bundleBytes: number;
+      loadMs: number;
+      ts: string;
+    }
+  | {
+      /**
+       * Iter 14.4 (2026-05-04): native DjVu parser словил ошибку при чтении
+       * конкретной страницы. Не fatal — caller продолжает со следующей.
+       */
+      type: "djvu.native.page_error";
+      filePath: string;
+      pageNumber: number;
+      error: string;
+      ts: string;
+    }
 ;
 
 export type TelemetryEventInput<E extends TelemetryEvent = TelemetryEvent> = E extends TelemetryEvent

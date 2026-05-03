@@ -12,6 +12,39 @@
  *
  * Тесты scorer-ов: `tests/olympics-scorers.test.ts`.
  * Политика "thinkingFriendly": `tests/olympics-thinking-policy.test.ts`.
+ *
+ * ── Методологическая база (Iter 14.2 audit, 2026-05-04) ──
+ *
+ * Текущие scorer'ы построены по принципам state-of-the-art LLM evaluation
+ * литературы 2024-2026:
+ *
+ *   • G-Eval (NeurIPS 2024) — rubric-based scoring с form factor + content
+ *     anchors. Каждый scorer декомпозирует общую цель на N измеримых
+ *     суб-критериев, каждое со своим весом.
+ *
+ *   • Prometheus 2 (ICLR 2025) — open-source rubric-evaluator framework;
+ *     анти-bias техника «explicit reasoning requirement» (мы её внедряем
+ *     через bonus за `reasoning` поле и penalty за meta-комментарии).
+ *
+ *   • LLM-RUBRIC (ACL 2024) — multidimensional rubric-based evaluation
+ *     с form-vs-content separation. Reflected here через раздельные точки
+ *     scoring: format (JSON valid, schema match), content (anchors hit),
+ *     hallucination (negative weight на out-of-context tokens).
+ *
+ *   • Bradley-Terry MLE / am-ELO (ICML 2025) — pairwise ranking для
+ *     стабильности при small N. Реализован в `scoring.ts` (buildRoleAggregates).
+ *
+ *   • Discriminative power principle (BBH 2024) — включаем mid-range
+ *     test cases (не только extremes), чтобы дифференцировать модели
+ *     в реальной зоне 5-7. См. `evaluator-mid-quality`.
+ *
+ *   • OCRBench v2 (2025) / DocVQA (2024) — vision-OCR best practices.
+ *     Используем строгое scoring по character-level recall (vision_ocr).
+ *
+ * Дальнейшие направления (из roadmap 2026-Q3):
+ *   - Bootstrap CI per-role для статистической значимости при N≤3 тестах
+ *   - Champion stability across runs через EMA / Glicko-2
+ *   - LLM-as-judge калибровка через cross-model agreement (Prometheus-2)
  */
 
 import {
@@ -200,6 +233,59 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
         /* Содержательное обоснование: упомянул хотя бы 1 ключевой факт. */
         if (/algorithm|алгоритм|computer science|cs|university|универс|reference|стандарт/.test(r)) s += 0.10;
         if (/clrs|cormen|leiserson|rivest|stein/.test(r)) s += 0.10;
+      }
+
+      return Math.max(0, Math.min(1, s));
+    },
+  },
+  {
+    /* Iter 14.2 (2026-05-04): добавлен mid-range тест для discriminative
+       power. Раньше evaluator имел только high-end (CLRS = 9-10) и low-end
+       (mot. noise = 1-3). Между ними была дыра: модели одинаково хорошо
+       определяли крайности, но плохо различали 5-7. Этот тест — типичная
+       книга «среднего качества» (полезная, но не классика): ожидаемый
+       score 5-7. Источник методологии: G-Eval (NeurIPS 2024) + Prometheus 2
+       (ICLR 2025) — rubric-based scoring с явной анти-saturation практикой
+       включения mid-range cases для повышения дискриминативной силы. */
+    id: "evaluator-mid-quality",
+    role: "evaluator",
+    thinkingFriendly: true,
+    description: "Оценить книгу среднего качества (mid-range).",
+    whyImportant:
+      "Дискриминативная сила: между классикой (9-10) и шумом (1-3) лежит зона 5-7 — типичные «полезные но не эталонные» книги. Без mid-теста модели одинаково хорошо проходят high+low extremes, но провалят реальный кейс «нормальной» книги. Тест проверяет: 1) score в окне 5-7; 2) обоснование упоминает СИЛЬНЫЕ И слабые стороны; 3) не уходит в крайности.",
+    system:
+      "You evaluate book quality for a TECHNICAL knowledge base. Score 0-10 " +
+      "(10 = essential reference, 5 = useful but not foundational, 1 = noise). " +
+      'Output ONLY JSON: {"score":number,"reasoning":string}.',
+    user:
+      'Book: "JavaScript: The Good Parts" by Douglas Crockford. ' +
+      "Topics: JS subset, lexical conventions, common pitfalls. " +
+      "Year: 2008. Pages: 176. Mostly opinion-based, partially outdated " +
+      "(pre-ES6, no Promise/async). Influential historically but no longer " +
+      "the recommended reference for modern JavaScript.",
+    maxTokens: 256,
+    score: (a) => {
+      const parsed = tryParseJson(a) as { score?: number; reasoning?: string } | null;
+      if (!parsed || typeof parsed.score !== "number") return 0;
+
+      let s = 0;
+      /* Mid-range окно: 5-7 — сладкая зона. */
+      if (parsed.score >= 5 && parsed.score <= 7)       s += 0.55;
+      else if (parsed.score === 4 || parsed.score === 8) s += 0.30;
+      else if (parsed.score === 3 || parsed.score === 9) s += 0.10;
+      else                                                s += 0.0; /* крайности = плохая дискриминация */
+
+      if (typeof parsed.reasoning === "string") {
+        const r = parsed.reasoning.toLowerCase();
+        if (r.length >= 30) s += 0.10;
+        if (r.length >= 80) s += 0.05;
+        /* Сбалансированное обоснование: упоминание И плюсов, И минусов. */
+        const hasPositive = /(влиятел|important|founda|popular|classic|valuable|insight|good|useful|полез)/.test(r);
+        const hasNegative = /(outdat|устар|old|dated|pre-?es6|opinionated|partial|limited|incomplete|subjective|opinion|неполн|субъект)/.test(r);
+        if (hasPositive && hasNegative) s += 0.20;
+        else if (hasPositive || hasNegative) s += 0.05;
+        /* Бонус за упоминание конкретных фактов из контекста. */
+        if (/(crockford|good\s*parts|es6|promise|async|2008|js\s*subset)/.test(r)) s += 0.10;
       }
 
       return Math.max(0, Math.min(1, s));

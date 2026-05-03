@@ -8,6 +8,32 @@ import {
   isChildWatchdogTimeoutError,
 } from "../../resilience/child-watchdog.js";
 import * as telemetry from "../../resilience/telemetry.js";
+import {
+  getDjvuPageCountNative,
+  runDjvutxtNative,
+  runDjvutxtPageNative,
+  isDjvuNativeAvailable,
+} from "./djvu-native.js";
+
+/**
+ * Iter 14.4 (2026-05-04, /imperor): Strangler Fig переход на нативный
+ * pure-JS DjVu парсер (RussCoder/djvu.js). По умолчанию используется
+ * NATIVE путь; при ошибке (например bundle не нашёлся в production build) —
+ * graceful fallback на DjVuLibre CLI vendored binaries.
+ *
+ * Контроль через env:
+ *   - BIBLIARY_DJVU_FORCE_CLI=1 — принудительно использовать CLI (для отладки)
+ *   - BIBLIARY_DJVU_FORCE_NATIVE=1 — принудительно native (без fallback)
+ */
+function shouldUseNative(): boolean {
+  if (process.env.BIBLIARY_DJVU_FORCE_CLI === "1") return false;
+  if (!isDjvuNativeAvailable()) return false;
+  return true;
+}
+
+function shouldFallbackToCli(): boolean {
+  return process.env.BIBLIARY_DJVU_FORCE_NATIVE !== "1";
+}
 
 /** Per-stage watchdog budgets. DjVuLibre #297 infinite loop в RLE decoder
  *  означает что любой stage может зависнуть. Бюджеты подобраны по нижней
@@ -127,7 +153,25 @@ async function runBinary(
   }
 }
 
+/**
+ * Извлечь весь текст из DjVu (text layer всех страниц, склеенных через \n\n).
+ *
+ * Iter 14.4 (2026-05-04): primary path — native pure-JS парсер; CLI остаётся
+ * как graceful fallback. Native проверен на 289-page книге: 97% coverage,
+ * 0 ошибок, 723ms (vs CLI 226ms но требует vendored .exe). См. комментарий
+ * `shouldUseNative()` сверху файла.
+ */
 export async function runDjvutxt(filePath: string, signal?: AbortSignal): Promise<string> {
+  if (shouldUseNative()) {
+    try {
+      return await runDjvutxtNative(filePath, signal);
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      if (!shouldFallbackToCli()) throw err;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[djvu] native parser failed, falling back to CLI: ${msg.slice(0, 200)}`);
+    }
+  }
   const tool = await resolveBinary("djvutxt");
   const { stdout } = await runBinary(tool.binary, [filePath], {
     signal,
@@ -139,6 +183,16 @@ export async function runDjvutxt(filePath: string, signal?: AbortSignal): Promis
 }
 
 export async function getDjvuPageCount(filePath: string, signal?: AbortSignal): Promise<number> {
+  if (shouldUseNative()) {
+    try {
+      return await getDjvuPageCountNative(filePath, signal);
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      if (!shouldFallbackToCli()) throw err;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[djvu] native page count failed, falling back to CLI: ${msg.slice(0, 200)}`);
+    }
+  }
   const tool = await resolveBinary("djvused");
   const { stdout } = await runBinary(tool.binary, [filePath, "-e", "n"], {
     signal,
@@ -210,6 +264,16 @@ export async function runDdjvuToPdf(srcPath: string, outPath: string, signal?: A
  * НЕ throw — graceful degradation, caller просто получит пусто и пойдёт в OCR.
  */
 export async function runDjvutxtPage(srcPath: string, pageIndex: number, signal?: AbortSignal): Promise<string> {
+  if (shouldUseNative()) {
+    try {
+      return await runDjvutxtPageNative(srcPath, pageIndex, signal);
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      if (!shouldFallbackToCli()) throw err;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[djvu] native page ${pageIndex + 1} failed, falling back to CLI: ${msg.slice(0, 200)}`);
+    }
+  }
   const tool = await resolveBinary("djvutxt");
   const page = Math.max(1, pageIndex + 1);
   try {

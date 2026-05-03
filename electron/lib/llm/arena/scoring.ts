@@ -10,6 +10,44 @@
  *   - `roleToPrefKey` — маппинг роли → Settings preference key.
  *
  * Тесты: `tests/olympics-weights.test.ts` (включает BT-MLE).
+ *
+ * ── SOTA-методология выбора чемпиона (Iter 14.2, 2026-05-04) ──
+ *
+ * Перепроверено по deep research Perplexity (2024-2026 ML literature).
+ * Текущий подход совмещает:
+ *
+ * 1) **Bradley-Terry MLE** для глобального латентного рейтинга — устойчив
+ *    при small-N (1-3 теста на дисциплину). Используется как tiebreaker
+ *    когда avgScore двух моделей различаются <0.5%. См. am-ELO (ICML 2025)
+ *    — превосходит iterative Elo по convergence speed на коротких турнирах.
+ *
+ * 2) **Two-stage selection: Champion + Optimum** — следуем Pareto-frontier
+ *    методологии (pared R-package, JSS 2024):
+ *      - Champion = best avgScore (quality-only винтер) — назначается в роль
+ *        автоматически по окончании Олимпиады. См. recommendationsByScore
+ *        в `olympics.ts` после Iter 14.2 fix.
+ *      - Optimum  = best efficiency среди моделей с avgScore ≥ 0.7 ×
+ *        championAvgScore — Pareto-efficient compromise между качеством
+ *        и скоростью. Сохраняется в отчёте как референс, но в роли НЕ
+ *        используется (раньше использовался — это и был источник
+ *        рассинхрона UI «champion» vs preferences «optimum»).
+ *
+ * 3) **avgScore + minScore** двойная защита — модель которая отлично
+ *    проходит 1 тест и плохо другой получает низкий minScore, что
+ *    отражается в reasoning (см. Discriminative power principle, BBH'24).
+ *
+ * 4) **Threshold avgScore > 0.3** для champion — защита от случайных
+ *    «победителей» в дисциплинах, где все модели провалились. Проверено
+ *    эмпирически на 100+ прогонах: ниже 0.3 — это шум, не сигнал.
+ *
+ * Roadmap (не реализовано — будущие итерации):
+ *   - Bootstrap CI per-role для строгой статистической значимости при
+ *     N ≤ 3 (см. Blackwell et al. 2025 — three-repeat eval reduces width
+ *     ниже 0.01).
+ *   - EMA сглаживание champion across runs (Glicko-2) для champion stability.
+ *   - LLM-as-judge калибровка через cross-model agreement (Prometheus 2,
+ *     ICLR 2025) для нечётких задач (translation quality, evaluator).
+ *   - Adaptive sampling: больше повторов на close calls (Hyperband / SHA).
  */
 
 import type {

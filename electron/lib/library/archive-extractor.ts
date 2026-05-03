@@ -21,6 +21,7 @@ import { detectExt } from "../scanner/parsers/index.js";
 import { SUPPORTED_BOOK_EXTS } from "./types.js";
 import { shouldIncludeImportCandidate } from "./import-candidate-filter.js";
 import { verifyExtMatchesContent, verifyExtMatchesContentHead } from "./import-magic-guard.js";
+import { killChildTree } from "../resilience/kill-tree.js";
 /* Phase A+B Iter 9.4 (rev. 2): расширение для торрент-дампов IT-архивов 2000-х.
    tar/gz/bz2/xz — 7zip handle их одинаково через `7z x`. Двойные .tar.gz / .tar.bz2
    распознаются через basename match ниже. */
@@ -184,7 +185,12 @@ function run7z(args: string[], signal?: AbortSignal): Promise<{ stdout: string; 
     let stdout = "";
     let stderr = "";
     const onAbort = (): void => {
-      child.kill();
+      /* Iter 14.3: на Windows `child.kill()` посылает SIGTERM, который
+         завершает только сам 7z.exe; его поддочерние процессы (если 7z
+         запустит worker'ов) могут пережить kill и стать orphans. Tree-kill
+         через `taskkill /T /F` гарантированно убирает всё поддерево.
+         См. `electron/lib/resilience/kill-tree.ts`. */
+      killChildTree(child, { gracefulMs: 500 });
       reject(new Error("aborted"));
     };
     signal?.addEventListener("abort", onAbort, { once: true });

@@ -105,48 +105,12 @@ export async function withBusy(fn, errKey, refreshFn) {
 }
 
 /**
- * Применить рекомендации Olympics (через IPC) и обновить UI.
- * Используется и кнопкой «Распределить роли» (controls), и пост-турнирным
- * автоприменением.
+ * Iter 14.2 (2026-05-04): функция `applyRecommendations` удалена.
  *
- * Поведение (2026-04-30 fix):
- *   1. Ждём IPC-ответ с обновлёнными prefs (до этого UI не двигаем).
- *   2. **Await** refresh() — селекты должны быть гарантированно перерендерены
- *      ДО того, как пользователь увидит toast «применено».
- *   3. Подсветка зелёным flash на применённых селектах — визуальный feedback,
- *      что роли реально получили модели (раньше пользователь видел toast,
- *      но не понимал, что в селекторах что-то изменилось).
- *
- * @param {Record<string, string>} recs
- * @param {() => Promise<void>=} refreshFn
+ * Кнопка «Распределить роли» убрана из UI — распределение чемпионов теперь
+ * происходит АВТОМАТИЧЕСКИ сразу после прогона Олимпиады в
+ * `runOlympicsAndShow()`. Auto-apply путь делает свой собственный
+ * `applyOlympicsRecommendations` IPC-вызов и refresh() — отдельная общая
+ * функция здесь больше не нужна, и `flashAppliedRoleSelects` стал мёртвым
+ * вместе с ней. Логирование назначенных ролей делается в лог Олимпиады.
  */
-export async function applyRecommendations(recs, refreshFn) {
-  if (!window.api?.arena?.applyOlympicsRecommendations) return;
-  try {
-    await window.api.arena.applyOlympicsRecommendations({ recommendations: recs });
-    if (typeof refreshFn === "function") {
-      const result = refreshFn();
-      if (result && typeof result.then === "function") await result;
-    }
-    flashAppliedRoleSelects(Object.values(recs));
-    const appliedCount = Object.keys(recs).filter((k) => typeof recs[k] === "string" && recs[k].length > 0).length;
-    showToast(`${t("models.olympics.distribute_done")} (${appliedCount})`, "success");
-  } catch (e) {
-    showToast(errMsg(e), "error");
-  }
-}
-
-/** Зелёный flash на role-select'ах, чьи value совпали с только что применёнными
- *  моделями. Длительность 1.4 сек, без блокировки UI. */
-function flashAppliedRoleSelects(modelKeys) {
-  if (!ctx.pageRoot) return;
-  const wanted = new Set(modelKeys.filter(Boolean));
-  if (wanted.size === 0) return;
-  const selects = ctx.pageRoot.querySelectorAll("select.mp-role-select");
-  for (const sel of selects) {
-    if (wanted.has(sel.value)) {
-      sel.classList.add("mp-role-select-flash");
-      setTimeout(() => sel.classList.remove("mp-role-select-flash"), 1400);
-    }
-  }
-}

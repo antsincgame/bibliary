@@ -252,11 +252,15 @@ function collectDroppedPaths(ev) {
 }
 
 export function buildGroupControl(root, listEl) {
+  /* Iter 14.5 (2026-05-04): исправлены i18n-ключи.
+     Были: library.group.none/ext/status/folder (несуществующие ключи → raw key в UI).
+     Стали: library.group.mode.none/ext/status/folder (реальные ключи из locales/).
+     Заголовок: library.group.label.control не существует → library.group.title. */
   const select = el("select", { class: "lib-group-select-box" }, [
-    el("option", { value: "none" }, t("library.group.none")),
-    el("option", { value: "ext" }, t("library.group.ext")),
-    el("option", { value: "status" }, t("library.group.status")),
-    el("option", { value: "folder" }, t("library.group.folder")),
+    el("option", { value: "none" }, t("library.group.mode.none")),
+    el("option", { value: "ext" }, t("library.group.mode.ext")),
+    el("option", { value: "status" }, t("library.group.mode.status")),
+    el("option", { value: "folder" }, t("library.group.mode.folder")),
   ]);
   select.value = STATE.prefs.groupBy;
   select.addEventListener("change", () => {
@@ -264,24 +268,11 @@ export function buildGroupControl(root, listEl) {
     renderBooks(listEl, root);
     try { window.api.preferences.set({ libraryGroupBy: select.value }); } catch (_e) { /* tolerate: pref save non-critical */ }
   });
-  return el("label", { class: "lib-group-label" }, [t("library.group.label.control") + " ", select]);
+  return el("label", { class: "lib-group-label" }, [t("library.group.title") + " ", select]);
 }
 
-export function buildCollectionInput() {
-  const wrap = el("div", { class: "lib-collection-wrap" });
-  const label = el("label", { class: "lib-collection-label" }, t("library.collection.label"));
-  const input = el("input", {
-    type: "text", class: "lib-collection-input",
-    placeholder: "library", list: "lib-collection-suggestions",
-  });
-  input.value = STATE.collection || "library";
-  input.addEventListener("input", () => {
-    STATE.collection = input.value.trim();
-  });
-  const datalist = el("datalist", { id: "lib-collection-suggestions" });
-  wrap.append(label, input, datalist);
-  return { wrap, input, datalist };
-}
+/* Iter 14.5 (2026-05-04): buildCollectionInput удалён — был частью старого
+   lib-topbar (удалённого в Iter 14.1). Экспорт не имел ни одного импортёра. */
 
 export function buildLibrarySummary() {
   return el("div", { class: "lib-summary" }, [

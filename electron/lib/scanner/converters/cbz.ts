@@ -27,6 +27,7 @@ import * as path from "path";
 import { tmpdir } from "os";
 import { randomUUID } from "crypto";
 import { spawn } from "child_process";
+import { killChildTree } from "../../resilience/kill-tree.js";
 import { existsSync } from "fs";
 import { createRequire } from "module";
 import JSZip from "jszip";
@@ -187,7 +188,8 @@ async function extractImagesFromRar(
     const child = spawn(sevenZ, ["x", "-y", `-o${tempDir}`, cbrPath], { windowsHide: true });
     let stderr = "";
     const onAbort = (): void => {
-      child.kill();
+      /* Iter 14.3: tree-kill — см. `electron/lib/resilience/kill-tree.ts`. */
+      killChildTree(child, { gracefulMs: 500 });
       reject(new Error("CBR extraction aborted"));
     };
     signal?.addEventListener("abort", onAbort, { once: true });

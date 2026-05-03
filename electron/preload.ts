@@ -48,12 +48,6 @@ interface QdrantClusterInfo {
   collectionsCount: number;
 }
 
-interface QdrantSearchHit {
-  id: string;
-  score: number;
-  payload: Record<string, unknown>;
-}
-
 interface LibraryBookMeta {
   id: string;
   title: string;
@@ -209,9 +203,6 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.invoke("qdrant:create-collection", args),
     remove: (name: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke("qdrant:delete-collection", name),
-    search: (
-      args: { collection: string; query?: string; vector?: number[]; limit?: number; scoreThreshold?: number }
-    ): Promise<QdrantSearchHit[]> => ipcRenderer.invoke("qdrant:search", args),
     cluster: (): Promise<QdrantClusterInfo> => ipcRenderer.invoke("qdrant:cluster-info"),
   },
 

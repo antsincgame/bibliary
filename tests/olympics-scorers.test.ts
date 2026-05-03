@@ -72,6 +72,17 @@ const SAMPLES: Record<string, Sample> = {
     bad: JSON.stringify({ score: 1, reasoning: "ok" }),
   },
 
+  /* Iter 14.2 (2026-05-04): SOTA-aligned mid-range eval — discriminative
+     power test (G-Eval / Prometheus 2 methodology). Хорошее обоснование
+     должно содержать И положительную, И негативную сторону книги. */
+  "evaluator-mid-quality": {
+    good: JSON.stringify({
+      score: 6,
+      reasoning: "Crockford's Good Parts is historically influential and useful for beginners learning the JS subset, but it's outdated (2008, pre-ES6, no Promise/async) and opinion-based — partially relevant for modern JavaScript work.",
+    }),
+    bad: JSON.stringify({ score: 10, reasoning: "great" }),
+  },
+
   "evaluator-ru-classic": {
     good: JSON.stringify({
       score: 10,

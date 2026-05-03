@@ -191,6 +191,12 @@ export interface OlympicsRoleAggregate {
   optimumReason: string | null;
 }
 
+/**
+ * @deprecated Iter 14.2 (2026-05-04): «Медальный зачёт» удалён из UI и из
+ * `OlympicsReport.medals` тоже удалено. Тип оставлен на один релиз для
+ * обратной совместимости — старые сохранённые отчёты могут содержать поле
+ * `medals`. Не используется новой логикой; будет полностью удалён в 0.12.
+ */
 export interface OlympicsMedalRow {
   model: string;
   gold: number;
@@ -247,7 +253,12 @@ export interface OlympicsReport {
    * собирает все свои дисциплины и усредняет per-model результаты.
    */
   roleAggregates: OlympicsRoleAggregate[];
-  medals: OlympicsMedalRow[];
+  /**
+   * @deprecated Iter 14.2 (2026-05-04): «Медальный зачёт» удалён.
+   * Поле больше не заполняется; оставлено optional для обратной совместимости
+   * со старыми сохранёнными `olympics-report.json`.
+   */
+  medals?: OlympicsMedalRow[];
   /**
    * Bradley-Terry MLE scores (am-ELO, ICML 2025) — latent quality
    * estimated from pairwise match outcomes. More stable than raw averages.

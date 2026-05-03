@@ -4,18 +4,16 @@ import { mountLibrary, isLibraryBusy, unmountLibrary, checkPendingLibraryNav } f
 import { mountCrystal, isCrystalBusy } from "./dataset-v2.js";
 import { mountDatasets } from "./datasets.js";
 import { mountSettings } from "./settings.js";
-import { mountSearch } from "./search.js";
 import { applyI18n, getLocale, setLocale, listLocales, onLocaleChange, t } from "./i18n.js";
 import { mountResilienceBar } from "./components/resilience-bar.js";
 import { openWelcomeWizard } from "./components/welcome-wizard.js";
 import { mountVersionBadge } from "./components/version-badge.js";
 
-const ROUTES = ["models", "library", "crystal", "datasets", "search", "docs", "settings"];
+const ROUTES = ["models", "library", "crystal", "datasets", "docs", "settings"];
 const REMOUNT_ON_LOCALE = new Set([
   "library",
   "crystal",
   "datasets",
-  "search",
   "models",
   "docs",
   "settings",
@@ -27,7 +25,6 @@ function mountRoute(name) {
   else if (name === "crystal") mountCrystal(document.getElementById("crystal-root"));
   else if (name === "datasets") mountDatasets(document.getElementById("datasets-root"));
   else if (name === "models") mountModels(document.getElementById("models-root"));
-  else if (name === "search") mountSearch(document.getElementById("search-root"));
   else if (name === "docs") mountDocs(document.getElementById("docs-root"));
   else if (name === "settings") mountSettings(document.getElementById("settings-root"));
   mounted.add(name);
@@ -46,9 +43,8 @@ function showRoute(name) {
     btn.classList.toggle("active", btn.dataset.route === name);
   });
   if (!mounted.has(name)) mountRoute(name);
-  /* Handle cross-route navigation payload (e.g. Search → "Open in Library").
-     When library is already mounted, mountLibrary won't run, so we must check
-     sessionStorage here instead. */
+  /* checkPendingLibraryNav резервный хук на случай если sessionStorage
+     содержит флаг открытия книги (например, из других модулей). */
   if (name === "library" && mounted.has(name)) {
     checkPendingLibraryNav(document.getElementById("library-root"));
   }

@@ -9,22 +9,11 @@ import { SECTIONS } from "./settings/sections.js";
 /** @returns {any} */
 function api() { return /** @type {any} */ (window).api; }
 
-/** @typedef {{ phase: 'idle'|'running'|'paused'; title: string; remaining: number; processed: number; failed: number; skipped: number; }} QueueStateSnapshot */
-
-/** @type {QueueStateSnapshot} */
-const QUEUE_STATE = {
-  phase: "idle",
-  title: "",
-  remaining: 0,
-  processed: 0,
-  failed: 0,
-  skipped: 0,
-};
-
-/** @type {(() => void) | null} */
-let _unsubscribeQueueEvents = null;
-
-const LA_QUEUE_PANEL_ID = "la-queue-panel";
+/**
+ * Iter 14.1 (2026-05-04): настройки сильно упрощены.
+ * Только базовые URL (LM Studio + Qdrant) — остальное живёт в Zod-дефолтах
+ * (electron/lib/preferences/store.ts) и работает «из коробки».
+ */
 
 const STATE = {
   /** @type {Record<string, unknown>} */
@@ -33,166 +22,11 @@ const STATE = {
   defaults: {},
   dirty: false,
   saving: false,
-  activeSectionId: "general",
-  searchQuery: "",
-  /* Iter 12: legacy-разделы (resilience/pipeline/ui/ingest) скрыты по умолчанию.
-     Сохраняется в localStorage между сессиями для опытных пользователей. */
-  showAdvanced: (() => {
-    try { return localStorage.getItem("settings.showAdvanced") === "true"; }
-    catch { return false; }
-  })(),
 };
 
 function optionalT(key) {
   const value = t(key);
   return value === key ? "" : value;
-}
-
-function getVisibleSections() {
-  if (STATE.showAdvanced) return SECTIONS.filter((s) => s.hidden !== true);
-  return SECTIONS.filter((s) => s.advanced !== true && s.hidden !== true);
-}
-
-function setShowAdvanced(next) {
-  STATE.showAdvanced = next;
-  try { localStorage.setItem("settings.showAdvanced", String(next)); }
-  catch { /* localStorage может быть недоступен в strict-режиме */ }
-}
-
-function filteredFields(section) {
-  const query = STATE.searchQuery.trim().toLowerCase();
-  if (!query) return section.fields;
-  return section.fields.filter((field) => t(field.labelKey).toLowerCase().includes(query));
-}
-
-function getMatchesBySection(visibleSections) {
-  return visibleSections
-    .map((section) => ({ section, fields: filteredFields(section) }))
-    .filter((entry) => entry.fields.length > 0);
-}
-
-/**
- * Renders the inner content of the live queue status card from QUEUE_STATE.
- * @returns {HTMLElement}
- */
-function buildQueueStatusContent() {
-  const { phase, title, remaining, processed, failed, skipped } = QUEUE_STATE;
-
-  let phaseLabel = "";
-  let phaseCls = "settings-la-phase-idle";
-  if (phase === "running") {
-    phaseLabel = t("settings.layoutQueue.running", { title: title || "…" });
-    phaseCls = "settings-la-phase-running";
-  } else if (phase === "paused") {
-    phaseLabel = t("settings.layoutQueue.paused");
-    phaseCls = "settings-la-phase-paused";
-  } else {
-    phaseLabel = t("settings.layoutQueue.idle");
-  }
-
-  const dot = el("span", { class: `settings-la-dot ${phaseCls}` }, "");
-  const phaseEl = el("span", { class: "settings-la-phase-label" }, phaseLabel);
-  const row1 = el("div", { class: "settings-la-row" }, [dot, phaseEl]);
-
-  const children = [row1];
-
-  if (remaining > 0) {
-    children.push(
-      el("div", { class: "settings-la-queued" },
-        t("settings.layoutQueue.queued", { n: String(remaining) })),
-    );
-  }
-
-  if (processed > 0 || failed > 0 || skipped > 0) {
-    children.push(
-      el("div", { class: "settings-la-stats" },
-        t("settings.layoutQueue.stats", {
-          n: String(processed),
-          f: String(failed),
-          s: String(skipped),
-        })),
-    );
-  }
-
-  return el("div", { class: "settings-la-content" }, children);
-}
-
-/**
- * Builds the full queue status panel element (with stable id for in-place updates).
- * @returns {HTMLElement}
- */
-function buildLayoutQueuePanel() {
-  const inner = buildQueueStatusContent();
-  const panel = el("div", { class: "settings-la-queue-panel", id: LA_QUEUE_PANEL_ID }, [
-    el("div", { class: "settings-la-queue-title" }, t("settings.layoutQueue.title")),
-    inner,
-  ]);
-  return panel;
-}
-
-/**
- * Updates the queue badge DOM in-place (no full re-render of the settings page).
- * Called on every layout-assistant event while settings is open.
- * @param {HTMLElement} root
- */
-function updateQueueBadge(root) {
-  const panel = root.querySelector(`#${LA_QUEUE_PANEL_ID}`);
-  if (!panel) return;
-  const existing = panel.querySelector(".settings-la-content");
-  const next = buildQueueStatusContent();
-  if (existing) {
-    panel.replaceChild(next, existing);
-  } else {
-    panel.appendChild(next);
-  }
-}
-
-/**
- * Applies an incoming layout-assistant event payload to QUEUE_STATE.
- *
- * Canonical event sources:
- * - layout.queued: payload.remaining = queue length AFTER push (authoritative)
- * - layout.idle:   queue is empty, set remaining = 0
- * - layout.done/skipped/failed: bumps counters; phase is recomputed
- *   AFTER decrementing remaining so UI doesn't show stale "running" state.
- *
- * @param {{ type: string; title?: string; remaining?: number; }} payload
- */
-function applyQueueEvent(payload) {
-  const type = payload.type;
-  if (type === "layout.started") {
-    QUEUE_STATE.phase = "running";
-    QUEUE_STATE.title = payload.title || "";
-    return;
-  }
-  if (type === "layout.queued") {
-    QUEUE_STATE.remaining = typeof payload.remaining === "number"
-      ? payload.remaining
-      : QUEUE_STATE.remaining + 1;
-    return;
-  }
-  if (type === "layout.idle") {
-    QUEUE_STATE.phase = "idle";
-    QUEUE_STATE.title = "";
-    QUEUE_STATE.remaining = 0;
-    return;
-  }
-  if (type === "layout.paused") {
-    QUEUE_STATE.phase = "paused";
-    return;
-  }
-  if (type === "layout.resumed") {
-    QUEUE_STATE.phase = (QUEUE_STATE.title || QUEUE_STATE.remaining > 0) ? "running" : "idle";
-    return;
-  }
-  if (type === "layout.done" || type === "layout.skipped" || type === "layout.failed") {
-    if (type === "layout.done") QUEUE_STATE.processed += 1;
-    else if (type === "layout.skipped") QUEUE_STATE.skipped += 1;
-    else QUEUE_STATE.failed += 1;
-    QUEUE_STATE.title = "";
-    if (QUEUE_STATE.remaining > 0) QUEUE_STATE.remaining -= 1;
-    QUEUE_STATE.phase = QUEUE_STATE.remaining > 0 ? "running" : "idle";
-  }
 }
 
 function buildResetBtn(key, dflt, applyToInput, isDefault, root) {
@@ -222,110 +56,6 @@ function wrapFieldCard(field, controls, hint) {
     description ? el("div", { class: "settings-field-desc" }, description) : null,
     el("div", { class: "settings-field-control" }, controls),
   ].filter(Boolean));
-}
-
-function buildNumberField(field, root) {
-  const value = STATE.prefs[field.key] ?? STATE.defaults[field.key];
-  const dflt = STATE.defaults[field.key];
-  const isDefault = value === dflt;
-  const input = el("input", {
-    type: "number",
-    class: "settings-input",
-    value: String(value),
-    min: String(field.min),
-    max: String(field.max),
-    step: String(field.step || 1),
-  });
-  input.addEventListener("input", () => {
-    const next = field.type === "float" ? parseFloat(input.value) : parseInt(input.value, 10);
-    if (!isNaN(next) && next >= field.min && next <= field.max) {
-      STATE.prefs[field.key] = next;
-      STATE.dirty = true;
-      updateSaveUi(root);
-    }
-  });
-  const resetBtn = buildResetBtn(field.key, dflt, () => { input.value = String(dflt); }, isDefault, root);
-  return wrapFieldCard(field, [input, resetBtn], `${field.min} -- ${field.max}`);
-}
-
-function buildBoolField(field, root) {
-  const value = Boolean(STATE.prefs[field.key] ?? STATE.defaults[field.key]);
-  const dflt = STATE.defaults[field.key];
-  const cb = el("input", { type: "checkbox", class: "settings-input settings-input-bool" });
-  cb.checked = value;
-  cb.addEventListener("change", () => {
-    STATE.prefs[field.key] = cb.checked;
-    STATE.dirty = true;
-    updateSaveUi(root);
-  });
-  const resetBtn = buildResetBtn(field.key, dflt, () => { cb.checked = Boolean(dflt); }, value === dflt, root);
-  return wrapFieldCard(field, [cb, resetBtn], "");
-}
-
-function buildEnumField(field, root) {
-  const value = String(STATE.prefs[field.key] ?? STATE.defaults[field.key]);
-  const dflt = STATE.defaults[field.key];
-  const select = el("select", { class: "settings-input settings-input-select" });
-  for (const option of field.options || []) {
-    const opt = el("option", { value: option }, option);
-    if (option === value) opt.selected = true;
-    select.appendChild(opt);
-  }
-  select.addEventListener("change", () => {
-    STATE.prefs[field.key] = select.value;
-    STATE.dirty = true;
-    updateSaveUi(root);
-  });
-  const resetBtn = buildResetBtn(field.key, dflt, () => { select.value = String(dflt); }, value === dflt, root);
-  return wrapFieldCard(field, [select, resetBtn], (field.options || []).join(" / "));
-}
-
-function buildTagsField(field, root) {
-  const value = Array.isArray(STATE.prefs[field.key]) ? STATE.prefs[field.key] : (STATE.defaults[field.key] || []);
-  const dflt = STATE.defaults[field.key] || [];
-  const input = el("input", {
-    type: "text",
-    class: "settings-input",
-    value: value.join(", "),
-    placeholder: field.placeholder || "en, ru",
-  });
-  input.addEventListener("input", () => {
-    const next = String(input.value)
-      .split(/[,\s]+/)
-      .map((part) => part.trim())
-      .filter((part) => part.length > 0 && part.length <= 10);
-    STATE.prefs[field.key] = next;
-    STATE.dirty = true;
-    updateSaveUi(root);
-  });
-  const resetBtn = buildResetBtn(
-    field.key,
-    dflt,
-    () => { input.value = (dflt || []).join(", "); },
-    value.join(",") === (dflt || []).join(","),
-    root,
-  );
-  return wrapFieldCard(field, [input, resetBtn], t("settings.tags.hint"));
-}
-
-function buildPasswordField(field, root) {
-  const value = String(STATE.prefs[field.key] ?? STATE.defaults[field.key] ?? "");
-  const dflt = String(STATE.defaults[field.key] ?? "");
-  const input = el("input", {
-    type: "password",
-    class: "settings-input",
-    value,
-    placeholder: field.placeholder || "",
-    autocomplete: "off",
-    spellcheck: "false",
-  });
-  input.addEventListener("input", () => {
-    STATE.prefs[field.key] = String(input.value);
-    STATE.dirty = true;
-    updateSaveUi(root);
-  });
-  const resetBtn = buildResetBtn(field.key, dflt, () => { input.value = dflt; }, value === dflt, root);
-  return wrapFieldCard(field, [input, resetBtn], t("settings.password.hint"));
 }
 
 function buildUrlField(field, root) {
@@ -402,54 +132,11 @@ function buildUrlField(field, root) {
   return wrapFieldCard(field, [input, testBtn, resetBtn, status], t("settings.url.hint"));
 }
 
-function buildTextField(field, root) {
-  const value = String(STATE.prefs[field.key] ?? STATE.defaults[field.key] ?? "");
-  const dflt = String(STATE.defaults[field.key] ?? "");
-  const input = el("input", {
-    type: "text",
-    class: "settings-input",
-    value,
-    placeholder: field.placeholder || "",
-    spellcheck: "false",
-    autocomplete: "off",
-  });
-  input.addEventListener("input", () => {
-    STATE.prefs[field.key] = String(input.value);
-    STATE.dirty = true;
-    updateSaveUi(root);
-  });
-  const resetBtn = buildResetBtn(field.key, dflt, () => { input.value = dflt; }, value === dflt, root);
-  return wrapFieldCard(field, [input, resetBtn], "");
-}
-
-function buildTextareaField(field, root) {
-  const value = String(STATE.prefs[field.key] ?? STATE.defaults[field.key] ?? "");
-  const dflt = String(STATE.defaults[field.key] ?? "");
-  const input = el("textarea", {
-    class: "settings-textarea",
-    rows: String(field.rows || 4),
-    placeholder: field.placeholder || "",
-    spellcheck: "true",
-  });
-  input.value = value;
-  input.addEventListener("input", () => {
-    STATE.prefs[field.key] = String(input.value);
-    STATE.dirty = true;
-    updateSaveUi(root);
-  });
-  const resetBtn = buildResetBtn(field.key, dflt, () => { input.value = dflt; }, value === dflt, root);
-  return wrapFieldCard(field, [input, resetBtn], "");
-}
-
 function buildField(field, root) {
-  if (field.type === "bool") return buildBoolField(field, root);
-  if (field.type === "enum") return buildEnumField(field, root);
-  if (field.type === "tags") return buildTagsField(field, root);
-  if (field.type === "password") return buildPasswordField(field, root);
   if (field.type === "url") return buildUrlField(field, root);
-  if (field.type === "text") return buildTextField(field, root);
-  if (field.type === "textarea") return buildTextareaField(field, root);
-  return buildNumberField(field, root);
+  /* В упрощённом UI остался только тип "url"; остальные типы доступны
+     через Zod schema, но в настройки не выносятся. */
+  throw new Error(`[settings] unexpected field type for "${field.key}": ${field.type}`);
 }
 
 async function probeEndpoint(kind, baseUrl) {
@@ -501,7 +188,7 @@ async function resetAll(root) {
   }
 }
 
-function buildFieldsStack(root, section, fields) {
+function buildFieldsStack(root, fields) {
   const stack = el("div", { class: "settings-fields-stack" });
   for (const field of fields) {
     try {
@@ -509,7 +196,7 @@ function buildFieldsStack(root, section, fields) {
     } catch (e) {
       console.error(`[settings] buildField failed for "${field.key}"`, e);
       stack.appendChild(el("div", { class: "settings-field-card settings-field-error" },
-        `⚠ ${field.key}: ${e instanceof Error ? e.message : String(e)}`));
+        `\u26A0 ${field.key}: ${e instanceof Error ? e.message : String(e)}`));
     }
   }
   if (!fields.length) {
@@ -518,45 +205,19 @@ function buildFieldsStack(root, section, fields) {
   return stack;
 }
 
-function renderPanelContent(root, visibleSections) {
-  const panel = el("section", { class: "settings-panel" });
-  const query = STATE.searchQuery.trim();
-  if (query) {
-    const groups = getMatchesBySection(visibleSections);
-    panel.appendChild(el("div", { class: "settings-panel-header" }, [
-      el("h2", { class: "settings-panel-title" }, t("settings.search.results")),
-      el("p", { class: "settings-panel-subtitle" }, `"${query}"`),
-    ]));
-    for (const { section, fields } of groups) {
-      panel.appendChild(el("div", { class: "settings-group-title" }, t(section.titleKey)));
-      panel.appendChild(buildFieldsStack(root, section, fields));
-    }
-    if (!groups.length) {
-      panel.appendChild(buildFieldsStack(root, { id: "none" }, []));
-    }
-    return panel;
-  }
-
-  const current = visibleSections.find((section) => section.id === STATE.activeSectionId) || visibleSections[0];
-  if (!current) return panel;
-  STATE.activeSectionId = current.id;
+function renderPanelContent(root) {
+  const panel = el("section", { class: "settings-panel settings-panel-solo" });
+  const current = SECTIONS[0];
   panel.appendChild(el("div", { class: "settings-panel-header" }, [
     el("h2", { class: "settings-panel-title" }, t(current.titleKey)),
     el("p", { class: "settings-panel-subtitle" }, optionalT(current.descriptionKey)),
   ]));
-  panel.appendChild(buildFieldsStack(root, current, current.fields));
-  if (current.id === "ocr") {
-    panel.appendChild(buildLayoutQueuePanel());
-  }
+  panel.appendChild(buildFieldsStack(root, current.fields));
   return panel;
 }
 
 function render(root) {
   clear(root);
-  const visibleSections = getVisibleSections();
-  if (!visibleSections.some((section) => section.id === STATE.activeSectionId)) {
-    STATE.activeSectionId = visibleSections[0]?.id || "";
-  }
 
   root.appendChild(buildNeonHero({
     title: t("settings.header.title"),
@@ -565,63 +226,9 @@ function render(root) {
   }));
   root.appendChild(neonDivider());
 
-  const search = el("div", { class: "settings-search" }, [
-    el("input", {
-      class: "settings-search-input",
-      type: "search",
-      value: STATE.searchQuery,
-      placeholder: t("settings.search.placeholder"),
-      oninput: (event) => {
-        STATE.searchQuery = /** @type {HTMLInputElement} */ (event.currentTarget).value;
-        render(root);
-      },
-    }),
-  ]);
-  root.appendChild(search);
+  root.appendChild(renderPanelContent(root));
 
-  const shell = el("div", { class: "settings-shell" });
-  const rail = el("nav", { class: "settings-rail", "aria-label": "Settings sections" });
-
-  /* Advanced toggle: показывает/скрывает legacy-разделы (resilience/pipeline/ui/ingest). */
-  const advToggle = el("button", {
-    class: `settings-rail-item settings-advanced-toggle${STATE.showAdvanced ? " is-on" : ""}`,
-    type: "button",
-    title: t("settings.advanced.tooltip"),
-    onclick: () => {
-      setShowAdvanced(!STATE.showAdvanced);
-      render(root);
-    },
-  }, [
-    el("span", { class: "settings-rail-icon" }, "ADV"),
-    el("span", { class: "settings-rail-label" },
-      STATE.showAdvanced ? t("settings.advanced.hide") : t("settings.advanced.show")),
-  ]);
-  rail.appendChild(advToggle);
-
-  for (const section of visibleSections) {
-    const matches = filteredFields(section).length;
-    const isActive = !STATE.searchQuery && section.id === STATE.activeSectionId;
-    const item = el("button", {
-      class: `settings-rail-item${isActive ? " settings-rail-item-active" : ""}`,
-      type: "button",
-      "aria-current": isActive ? "page" : undefined,
-      onclick: () => {
-        STATE.activeSectionId = section.id;
-        STATE.searchQuery = "";
-        render(root);
-      },
-    }, [
-      el("span", { class: "settings-rail-icon" }, section.icon),
-      el("span", { class: "settings-rail-label" }, t(section.titleKey)),
-      STATE.searchQuery ? el("span", { class: "settings-rail-count" }, String(matches)) : null,
-    ].filter(Boolean));
-    rail.appendChild(item);
-  }
-  shell.appendChild(rail);
-  shell.appendChild(renderPanelContent(root, visibleSections));
-  root.appendChild(shell);
-
-  const actionItems = [
+  const actions = el("div", { class: "settings-actions" }, [
     el("span", { id: "settings-unsaved-count", class: "settings-unsaved-count" }, ""),
     el("button", {
       class: "neon-btn neon-btn-primary",
@@ -644,26 +251,16 @@ function render(root) {
         openWelcomeWizard({ force: true });
       },
     }, t("settings.replayOnboarding")),
-  ];
-  if (STATE.showAdvanced) {
-    actionItems.push(buildBurnLibraryBtn());
-  }
-  const actions = el("div", { class: "settings-actions" }, actionItems);
+    buildBurnLibraryBtn(),
+  ]);
   root.appendChild(actions);
   updateSaveUi(root);
 }
 
 /**
- * Iter 13.2 (P6, dev-mode): кнопка "Сжечь библиотеку".
- *
- * Видима только при включённом advanced-toggle (см. settings.showAdvanced).
- * Удаляет ВСЁ под data/library/ + bibliary-cache.db + Qdrant коллекции
- * bibliary-*. Идёт через двойной confirm (deletion is destructive).
- *
- * Зачем: пользователь жалуется что после удаления книг через UI файлы
- * остались на диске (delete-book best-effort убирает только sidecars +
- * empty bookDir, но не .blobs/.import). Burn даёт чистый старт для
- * regression-тестирования импорта.
+ * Кнопка «Сжечь библиотеку» — destructive операция (удаляет ВСЁ под
+ * data/library/, bibliary-cache.db и Qdrant коллекции bibliary-*).
+ * Защищена двойным confirm.
  */
 function buildBurnLibraryBtn() {
   const btn = el("button", {
@@ -715,12 +312,6 @@ export async function mountSettings(root) {
   if (root.dataset.mounted === "1") return;
   root.dataset.mounted = "1";
 
-  /* Cleanup any previous event subscription (locale re-mount). */
-  if (_unsubscribeQueueEvents) {
-    _unsubscribeQueueEvents();
-    _unsubscribeQueueEvents = null;
-  }
-
   clear(root);
   root.appendChild(el("div", { class: "settings-loading" }, t("settings.loading")));
   try {
@@ -738,34 +329,4 @@ export async function mountSettings(root) {
     return;
   }
   render(root);
-
-  /* Seed initial queue state from a one-shot status poll (queue sub-object).
-     API path: window.api.library.layoutAssistantStatus (preload exposes it
-     under the `library` namespace; see electron/preload.ts ~line 786). */
-  try {
-    const lib = api().library;
-    if (lib && typeof lib.layoutAssistantStatus === "function") {
-      const statusResp = await lib.layoutAssistantStatus();
-      const q = /** @type {any} */ (statusResp)?.queue;
-      if (q) {
-        QUEUE_STATE.phase = q.running ? "running" : (q.paused ? "paused" : "idle");
-        QUEUE_STATE.remaining = q.queueLength ?? 0;
-        QUEUE_STATE.processed = q.totalProcessed ?? 0;
-        QUEUE_STATE.failed = q.totalFailed ?? 0;
-        QUEUE_STATE.skipped = q.totalSkipped ?? 0;
-        updateQueueBadge(root);
-      }
-    }
-  } catch { /* non-critical: badge shows idle by default */ }
-
-  /* Subscribe to live events; update badge in-place. */
-  try {
-    const lib = api().library;
-    if (lib && typeof lib.onLayoutAssistantEvent === "function") {
-      _unsubscribeQueueEvents = lib.onLayoutAssistantEvent((/** @type {any} */ payload) => {
-        applyQueueEvent(payload);
-        updateQueueBadge(root);
-      });
-    }
-  } catch { /* non-critical */ }
 }

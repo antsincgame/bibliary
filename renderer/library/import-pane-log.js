@@ -86,9 +86,21 @@ export function buildLogPanel() {
     filterSelect, clearBtn, copyBtn,
   ]);
 
+  /* Iter 14.1: видимые подписи колонок над списком — иначе пользователь
+     не понимает что значит каждая полоска текста.
+     Должны точно соответствовать grid-template-columns в .lib-import-log-row-head. */
+  const columns = el("div", { class: "lib-import-log-columns" }, [
+    el("span", { class: "lib-import-log-col lib-import-log-col-expand", "aria-hidden": "true" }, ""),
+    el("span", { class: "lib-import-log-col lib-import-log-col-time" }, t("library.import.log.col.time")),
+    el("span", { class: "lib-import-log-col lib-import-log-col-cat" }, t("library.import.log.col.category")),
+    el("span", { class: "lib-import-log-col lib-import-log-col-msg" }, t("library.import.log.col.message")),
+    el("span", { class: "lib-import-log-col lib-import-log-col-dur" }, t("library.import.log.col.duration")),
+    el("span", { class: "lib-import-log-col lib-import-log-col-file" }, t("library.import.log.col.file")),
+  ]);
+
   const list = el("div", { class: "lib-import-log-list", "aria-live": "polite" });
 
-  const panel = el("div", { class: "lib-import-log-panel" }, [header, list]);
+  const panel = el("div", { class: "lib-import-log-panel" }, [header, columns, list]);
 
   LOG_PANEL_REF = panel;
   /** @type {any} */ (panel)._counterErr = counterErr;
@@ -169,14 +181,10 @@ function appendLogRow(entry) {
   const fileLabel = entry.file ? trimFile(entry.file) : "";
   const hasDetails = hasMeaningfulDetails(entry);
 
-  /* Iter 13.3 fix (P2 наложение строк лога, 2026-05-03):
-     раньше при отсутствии expand-toggle / duration / file соответствующие
-     слоты выбрасывались `.filter(Boolean)`, и оставшиеся children сдвигались
-     на 1–2 колонки влево в `grid-template-columns: 14px 60px 100px 1fr auto 280px`.
-     Текст времени попадал в 14px-колонку, message — в 60px и т.д.; визуально
-     это выглядело как «строки логов накладываются друг на друга».
-     Решение: всегда отдаём 6 children, отсутствующие — пустыми spacer'ами,
-     чтобы grid-treck'и оставались стабильными. */
+  /* Iter 14.1: 4 колонки grid + meta встроена в колонку message через flex.
+     Так длинный текст message переносится на новую строку, не наезжая на
+     duration/file. expand-toggle всегда есть как первый child — иначе grid
+     сдвигается. */
   const expandToggle = hasDetails
     ? el("span", {
       class: "lib-import-log-expand",
@@ -185,21 +193,30 @@ function appendLogRow(entry) {
     }, "▸")
     : el("span", { class: "lib-import-log-expand lib-import-log-slot-empty", "aria-hidden": "true" });
 
-  const durationSlot = typeof entry.durationMs === "number"
-    ? el("span", { class: "lib-import-log-duration", title: `${entry.durationMs} ms` }, formatDuration(entry.durationMs))
-    : el("span", { class: "lib-import-log-duration lib-import-log-slot-empty", "aria-hidden": "true" });
+  const metaChildren = [];
+  if (typeof entry.durationMs === "number") {
+    metaChildren.push(
+      el("span", { class: "lib-import-log-duration", title: `${entry.durationMs} ms` }, formatDuration(entry.durationMs)),
+    );
+  }
+  if (fileLabel) {
+    metaChildren.push(
+      el("span", { class: "lib-import-log-file", title: entry.file }, fileLabel),
+    );
+  }
 
-  const fileSlot = fileLabel
-    ? el("span", { class: "lib-import-log-file", title: entry.file }, fileLabel)
-    : el("span", { class: "lib-import-log-file lib-import-log-slot-empty", "aria-hidden": "true" });
+  const msgCell = el("div", { class: "lib-import-log-msg" }, [
+    el("span", { class: "lib-import-log-msg-text", title: entry.message }, entry.message),
+    metaChildren.length > 0
+      ? el("span", { class: "lib-import-log-msg-meta" }, metaChildren)
+      : null,
+  ].filter(Boolean));
 
   const headerRow = el("div", { class: "lib-import-log-row-head" }, [
     expandToggle,
     el("span", { class: "lib-import-log-time" }, time),
-    el("span", { class: "lib-import-log-cat" }, entry.category),
-    el("span", { class: "lib-import-log-msg", title: entry.message }, entry.message),
-    durationSlot,
-    fileSlot,
+    el("span", { class: "lib-import-log-cat", title: entry.category }, entry.category),
+    msgCell,
   ]);
 
   const row = el("div", {
@@ -220,6 +237,16 @@ function appendLogRow(entry) {
   }, [headerRow]);
 
   if (hasDetails && expandToggle) {
+    /* Iter 14.1: события warn/error авторазвёрнуты — пользователь видит
+     контекст ошибки сразу, без клика. Info-события c details остаются
+     свёрнутыми (иначе панель захламляется лишними строками). */
+    const autoExpand = entry.level === "warn" || entry.level === "error";
+    if (autoExpand) {
+      row.classList.add("lib-import-log-expanded");
+      expandToggle.textContent = "▾";
+      row.appendChild(el("pre", { class: "lib-import-log-details" }, formatDetailsForDisplay(entry)));
+    }
+
     /* Expand-collapse: клик по голове разворачивает блок details. */
     headerRow.addEventListener("click", (ev) => {
       if ((ev.target instanceof HTMLElement) && ev.target.classList.contains("lib-import-log-file")) return;

@@ -13,7 +13,8 @@
  */
 import { el } from "../dom.js";
 import { t } from "../i18n.js";
-import { showAlert, showConfirm, showPrompt } from "./ui-dialog.js";
+import { showAlert, showConfirm } from "./ui-dialog.js";
+import { showCreateCollectionModal } from "./create-collection-modal.js";
 
 /**
  * @typedef {object} CollectionPickerOptions
@@ -152,17 +153,8 @@ export function buildCollectionPicker(opts) {
 
   async function handleCreate() {
     if (!opts.onCreate) return;
-    const raw = await showPrompt(t("library.collection.create.prompt"), "");
-    if (raw === null) return;
-    const name = raw.trim();
-    if (!name) {
-      await showAlert(t("library.collection.create.empty"));
-      return;
-    }
-    if (!/^[a-zA-Z0-9_\-:.]{1,128}$/.test(name)) {
-      await showAlert(t("library.collection.create.invalid"));
-      return;
-    }
+    const name = await showCreateCollectionModal();
+    if (!name) return;
     if (cached.includes(name)) {
       await showAlert(t("library.collection.create.exists"));
       select.value = name;
