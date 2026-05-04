@@ -871,7 +871,6 @@ export default {
   "settings.section.ocr.desc": "Book recognition: OCR, cover analysis, AI layout cleanup. Everything works out of the box.",
   "settings.section.ocrAdvanced": "Recognition (advanced)",
   "settings.section.ocrAdvanced.desc": "Fine-tuning OCR engines, DPI, providers and AI model overrides.",
-  "settings.section.ocr.linuxHint": "OCR via @napi-rs/system-ocr is unavailable on Linux. A vision-LLM (Qwen3-VL-8B and similar) is the working cross-platform path.",
   "models.advanced.summary": "⚙ Advanced settings",
   "models.advanced.hint": "Pipeline tuning, model roles, OCR and connectivity settings now live in the Settings page (single source of truth). Duplicates were removed in Иt 8Б.",
   "models.advanced.linkToSettings": "Open Settings →",

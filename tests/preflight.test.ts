@@ -223,7 +223,7 @@ describe("[PREFLIGHT] filterOutImageOnly", () => {
       unknownFiles: entries.filter((e) => e.status === "unknown").length,
       invalidFiles: entries.filter((e) => e.status === "invalid").length,
       skippedFiles: 0,
-      ocr: { anyAvailable: false, systemOcr: { available: false, platform: "linux", languages: [] }, visionLlm: { available: false } },
+      ocr: { anyAvailable: false, systemOcr: { available: false, platform: "win32", languages: [] }, visionLlm: { available: false } },
       evaluator: { ready: false, reason: "test", fallbackPolicyEnabled: false },
       entries: entries.map((e) => ({ path: e.path, size: 1000, ext: "pdf", status: e.status })),
       elapsedMs: 10,

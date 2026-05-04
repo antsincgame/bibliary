@@ -12,10 +12,7 @@ files:
   - node_modules/**/*
   - package.json
 extraResources:
-  # Per-platform vendor binaries (Phase 4.4 cross-platform roadmap, 2026-04-30).
-  # `${platform}-${arch}` подставляется electron-builder во время упаковки:
-  #   Win build      → win32-x64
-  #   Linux x64 build → linux-x64
+  # Vendor binaries — win32-x64 only.
   - from: vendor/djvulibre/${platform}-${arch}
     to: vendor/djvulibre/${platform}-${arch}
     filter:
@@ -41,19 +38,6 @@ win:
 nsis:
   oneClick: true
   perMachine: false
-linux:
-  # AppImage = portable single-file (запуск без install)
-  # deb = установка через apt в /usr/lib/bibliary
-  # tar.gz = ручная распаковка для нестандартных дистро
-  target:
-    - AppImage
-    - deb
-    - tar.gz
-  category: Office
-  synopsis: Personal knowledge base from books
-  description: Bibliary turns a book collection into a vector knowledge base via local LLMs (LM Studio) and Qdrant.
-  maintainer: Bibliary contributors
-  # icon: build/icon.png  # uncomment when build/icon.png is added
 asar: true
 asarUnpack:
   - "node_modules/sharp/**/*"
@@ -63,16 +47,10 @@ asarUnpack:
   - "node_modules/7zip-bin/**/*"
   - "node_modules/@firecrawl/pdf-inspector/**/*"
   - "node_modules/edgeparse/dist/**/*"
-  # Per-platform edgeparse native bindings. electron-builder сам выбирает
-  # нужные при сборке — Win берёт win32-x64-msvc, Linux linux-x64-gnu и т.д.
   - "node_modules/edgeparse/npm/edgeparse-node.win32-x64-msvc.node"
-  - "node_modules/edgeparse/npm/edgeparse-node.linux-x64-gnu.node"
-  - "node_modules/edgeparse/npm/edgeparse-node.linux-arm64-gnu.node"
   - "node_modules/edgeparse/npm/win32-x64-msvc/**/*"
   - "node_modules/edgeparse/package.json"
   - "node_modules/edgeparse-win32-x64-msvc/**/*"
-  - "node_modules/edgeparse-linux-x64-gnu/**/*"
-  - "node_modules/edgeparse-linux-arm64-gnu/**/*"
   - "node_modules/@napi-rs/system-ocr/**/*"
 extraMetadata:
   type: commonjs

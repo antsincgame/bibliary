@@ -54,12 +54,8 @@ try { fs.writeFileSync(marker, "electron"); }
 catch (e) { console.warn("[build-portable] failed to write abi-marker:", e.message); }
 
 /* ── Step 2: Run electron-builder ─────────────────────────────────────
-   Platform-aware target selection (Phase 4.6 cross-platform roadmap, 2026-04-30):
-     - Win  → --win portable (single-file .exe, без installer)
-     - Linux → --linux AppImage (single-file portable AppImage)
-     - macOS → --mac dir (unsigned bundle для dev-теста; release использует --dmg)
-   Пользователь может override через env BIBLIARY_BUILD_TARGET, например:
-     BIBLIARY_BUILD_TARGET="--linux deb" node scripts/build-portable.js */
+   Windows-only portable build target.
+   Override via env: BIBLIARY_BUILD_TARGET="--win nsis" */
 const out = process.env.BIBLIARY_BUILD_OUT?.trim();
 const targetOverride = process.env.BIBLIARY_BUILD_TARGET?.trim();
 let targetArgs;
@@ -68,12 +64,8 @@ if (targetOverride) {
   console.log(`[build-portable] target override: ${targetOverride}`);
 } else if (process.platform === "win32") {
   targetArgs = ["--win", "portable"];
-} else if (process.platform === "linux") {
-  targetArgs = ["--linux", "AppImage"];
-} else if (process.platform === "darwin") {
-  targetArgs = ["--mac", "dir"];
 } else {
-  console.error(`[build-portable] unsupported platform: ${process.platform}`);
+  console.error(`[build-portable] unsupported platform: ${process.platform}. Only win32 is supported.`);
   process.exit(1);
 }
 const args = ["electron-builder", ...targetArgs];

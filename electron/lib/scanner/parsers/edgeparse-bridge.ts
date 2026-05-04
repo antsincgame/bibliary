@@ -51,8 +51,6 @@ export async function loadEdgeParse(): Promise<EdgeParseModule | null> {
       const platformKey = `${process.platform}-${process.arch}`;
       const addonMap: Record<string, string> = {
         "win32-x64": "edgeparse-node.win32-x64-msvc.node",
-        "linux-x64": "edgeparse-node.linux-x64-gnu.node",
-        "linux-arm64": "edgeparse-node.linux-arm64-gnu.node",
         "darwin-x64": "edgeparse-node.darwin-x64.node",
         "darwin-arm64": "edgeparse-node.darwin-arm64.node",
       };

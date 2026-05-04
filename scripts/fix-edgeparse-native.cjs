@@ -11,8 +11,6 @@ const path = require("path");
 
 const platforms = {
   "win32-x64": { pkg: "edgeparse-win32-x64-msvc", file: "edgeparse-node.win32-x64-msvc.node" },
-  "linux-x64": { pkg: "edgeparse-linux-x64-gnu", file: "edgeparse-node.linux-x64-gnu.node" },
-  "linux-arm64": { pkg: "edgeparse-linux-arm64-gnu", file: "edgeparse-node.linux-arm64-gnu.node" },
   "darwin-x64": { pkg: "edgeparse-darwin-x64", file: "edgeparse-node.darwin-x64.node" },
   "darwin-arm64": { pkg: "edgeparse-darwin-arm64", file: "edgeparse-node.darwin-arm64.node" },
 };
@@ -39,7 +37,7 @@ if (fs.existsSync(targetFile)) {
 }
 
 const sourceFile = path.join(edgeparsePkg, "npm", info.file);
-const sourcePkgJson = path.join(edgeparsePkg, "npm", key.replace("-", path.sep === "\\" ? "-" : "-").replace("win32-x64", "win32-x64-msvc").replace("linux-x64", "linux-x64-gnu").replace("linux-arm64", "linux-arm64-gnu"), "package.json");
+const sourcePkgJson = path.join(edgeparsePkg, "npm", subfolderMap[key], "package.json");
 
 if (!fs.existsSync(sourceFile)) {
   console.log(`[fix-edgeparse] native binary not found at ${sourceFile}, skipping`);
@@ -51,8 +49,6 @@ fs.copyFileSync(sourceFile, targetFile);
 
 const subfolderMap = {
   "win32-x64": "win32-x64-msvc",
-  "linux-x64": "linux-x64-gnu",
-  "linux-arm64": "linux-arm64-gnu",
   "darwin-x64": "darwin-x64",
   "darwin-arm64": "darwin-arm64",
 };

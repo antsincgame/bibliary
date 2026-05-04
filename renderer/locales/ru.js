@@ -869,7 +869,6 @@ export default {
   "settings.section.ocr.desc": "Распознавание книг: OCR, анализ обложек, AI-вёрстка. Всё работает из коробки.",
   "settings.section.ocrAdvanced": "Распознавание (продвинутое)",
   "settings.section.ocrAdvanced.desc": "Тонкая настройка OCR-движков, DPI, провайдеров и AI-моделей.",
-  "settings.section.ocr.linuxHint": "OCR через @napi-rs/system-ocr недоступен на Linux. Vision-LLM (Qwen3-VL-8B и др.) — рабочий cross-platform путь.",
   "settings.section.pipeline": "Пайплайн импорта",
   "settings.section.pipeline.desc": "Лимиты планировщика задач, vision-OCR rate-limit, пути к внешним конвертерам и кэшу. Меняй с осторожностью — высокие значения могут привести к OOM или freeze LM Studio.",
   "settings.schedulerLightConcurrency": "Scheduler: light lane (≤8 GB модели)",

@@ -18,7 +18,7 @@ concurrency:
 jobs:
   smoke:
     name: "Quick: lint + dirty-world tests"
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     timeout-minutes: 5
 
     steps:
@@ -73,9 +73,8 @@ jobs:
             tests/illustration-semaphore.test.ts
 
       # Полный test suite кроме env-зависимых (vision-meta требует LM Studio).
-      # Best-effort на Linux: помечаем какие тесты падают на ubuntu-latest, чтобы
-      # затем починить или явно skip-on-linux. Не блокирует merge.
-      - name: Full unit suite (best-effort, Linux baseline)
+      # Best-effort: не блокирует merge.
+      - name: Full unit suite (best-effort)
         continue-on-error: true
         env:
           BIBLIARY_SKIP_OCR: '1'

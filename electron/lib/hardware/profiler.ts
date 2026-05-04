@@ -98,7 +98,6 @@ async function detectGpus(platform: NodeJS.Platform): Promise<GpuInfo[]> {
 
   if (platform === "win32") return await detectGpusWindows();
   if (platform === "darwin") return await detectGpusMac();
-  if (platform === "linux") return await detectGpusLinux();
   return [];
 }
 
@@ -218,27 +217,6 @@ async function detectGpusMac(): Promise<GpuInfo[]> {
       });
     }
     return gpus;
-  } catch {
-    return [];
-  }
-}
-
-async function detectGpusLinux(): Promise<GpuInfo[]> {
-  // Fallback для Linux без nvidia-smi: lspci.
-  try {
-    const { stdout } = await execAsync("lspci -nn | grep -Ei 'vga|3d|display'", {
-      timeout: EXEC_TIMEOUT_MS,
-    });
-    return stdout
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((s) => s.length > 0)
-      .map((line) => {
-        // "01:00.0 VGA compatible controller [0300]: NVIDIA Corporation GA106 [GeForce RTX 3060]"
-        const nameMatch = line.match(/:\s*(.+)$/);
-        const name = nameMatch ? nameMatch[1].trim() : line;
-        return { name, vramGB: null, backend: detectBackend(name) };
-      });
   } catch {
     return [];
   }
