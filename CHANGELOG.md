@@ -6,6 +6,70 @@ All notable changes to Bibliary are documented in this file. Format follows
 
 ## [Unreleased]
 
+## [0.11.7] — 2026-05-04 — Remove Linux platform support
+
+### Removed
+
+- **Linux CI build** — удалён workflow `release-linux.yml` (AppImage / deb / tar.gz сборки).
+- **`ci-linux` job** — убран ubuntu-latest runner из `ci.yml`; `olympics-policy` переведён
+  на `windows-latest`.
+- **`smoke.yml`** — переключён с `ubuntu-latest` на `windows-latest`.
+- **`scripts/download-djvulibre-linux.cjs`** — удалён Linux-специфичный хелпер DjVuLibre.
+- **`electron-builder.yml`: `linux:` target block** — убраны AppImage / deb / tar.gz цели
+  и соответствующие `asarUnpack` записи для `edgeparse-linux-x64-gnu` / `arm64-gnu`.
+- **`scripts/build-portable.js`: Linux ветка** — скрипт теперь Windows-only;
+  неWindows платформа завершается с явной ошибкой.
+- **`scripts/fix-edgeparse-native.cjs`: Linux платформы** — удалены `linux-x64` и
+  `linux-arm64` записи из `platforms` и `subfolderMap`.
+- **`profiler.ts`: `detectGpusLinux()`** — удалена функция и вызов `lspci`-based GPU-детекта.
+- **`edgeparse-bridge.ts`: Linux native keys** — убраны `linux-x64` и `linux-arm64` из
+  `addonMap`.
+- **Locale strings** — удалён ключ `settings.section.ocr.linuxHint` из `en.js` и `ru.js`.
+
+### Verified
+
+- **Import flow audit** — кнопка "Выбрать папку" → `importFromFolder` → `showConfirm`
+  (z-index 11000) → preflight IPC → `showPreflightModal` (z-index 11050): цепочка
+  корректна, блокировок нет. Единственный защитный барьер — `IMPORT_STATE.busy`, но он
+  имеет 30-секундный автосброс при застревании.
+
+## [0.11.6] — 2026-05-04 — CI cross-platform paths, zombie timers, import error hardening
+
+### Fixed
+
+- **CI: cross-platform test paths** — `tests/import-candidate-filter.test.ts` и
+  `tests/path-sanitizer.test.ts` заменили Windows-only пути `D:\\Bibliarifull\\...` на
+  `path.join(os.tmpdir(), ...)`. CI на Linux теперь проходил все 1054 теста.
+- **`lmstudio-client.ts`: `getServerStatus()` timeout** — добавлен `Promise.race` с
+  8-секундным `.unref()` таймаутом: WebSocket-зависание LM Studio больше не блокирует
+  завершение приложения.
+- **`lmstudio-watchdog.ts`: unref poll timer** — `pollTimer.unref()` в `scheduleNextPoll`
+  предотвращает удержание event loop при простое.
+- **`child-watchdog.ts`: unref watchdog timers** — `.unref()` добавлен на `watchdogTimer`
+  и на SIGKILL grace-period таймер.
+- **`import-pane-actions.js`: timeout leak** — `clearTimeout(timeoutHandle)` в `finally`
+  блоке для `runPreflightAndDecide` и DnD; предотвращает срабатывание отложенного reject
+  после завершения гонки.
+- **`import-pane-actions.js`: `handleDecision` unhandled rejection** — вызов
+  `opts.handleDecision(decision)` обёрнут в `try-catch` с toast-уведомлением.
+- **`import-pane-preflight.js`: drag-and-drop error boundary** — `showPreflightModal` в
+  DnD-пути обёрнут в `try-catch`; ошибки DOM не роняют весь drop-handler.
+
+## [0.11.5] — 2026-05-04 — Zombie process on close, preflight timeout hardening
+
+### Fixed
+
+- **Zombie process on restart** — `hardExit()` добавлен как failsafe при `before-quit`:
+  если `teardownSubsystems()` не завершается за 6 с — `process.exit(0)` принудительно.
+  Устраняет зависание при повторном запуске Bibliary.
+- **`disposeClientAsync()`** — явное закрытие LM Studio WebSocket перед quit.
+  Добавлен `8-second timeout` + `setTimeout(...).unref()` в `withSdk()`.
+- **`preflight.ts`: `.unref()` on internal timers** — `setTimeout` внутри `withTimeout`
+  теперь не держит event loop при пустых preflight-запросах; устраняло 10-секундный
+  подвис теста в `preflight.test.ts`.
+- **`lmstudio-client.ts`: graceful dispose on refresh** — `refreshLmStudioClient()`
+  ждёт `disposeClientAsync()` перед созданием нового клиента.
+
 ## [0.11.4] — 2026-05-04 — Fix stuck import button, clear logs, scan safety
 
 ### Fixed
