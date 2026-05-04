@@ -53,11 +53,16 @@ export function buildLogPanel() {
   const clearBtn = el("button", {
     type: "button",
     class: "lib-btn lib-btn-ghost lib-import-log-btn",
-    onclick: () => {
-      console.log("[import-log] clear button clicked, ring size:", LOG_RING.length);
+    onclick: (ev) => {
+      ev.stopPropagation();
+      const had = LOG_RING.length;
       LOG_RING.length = 0;
       rerenderLogList();
       updateCounters();
+      if (had > 0) {
+        clearBtn.textContent = "✓";
+        setTimeout(() => { clearBtn.textContent = t("library.import.log.clear") || "Clear"; }, 800);
+      }
     },
   }, t("library.import.log.clear") || "Clear");
 

@@ -66,8 +66,19 @@ async function runPreflightAndDecide(runPreflightIpc, _typeHint) {
 /** @param {{renderCatalog: (root: HTMLElement) => Promise<void>; focusCatalogBook?: (id: string) => void}} deps */
 export async function importFromFolder(deps) {
   if (IMPORT_STATE.busy) {
-    console.warn("[import] importFromFolder blocked: IMPORT_STATE.busy=true");
-    return;
+    /* Если busy застрял без importId дольше 30 с — принудительный сброс.
+       Без этого пользователь не может начать новый импорт после crash/scan hang. */
+    if (!IMPORT_STATE.importId && IMPORT_STATE.aggregate.startedAt) {
+      const elapsed = Date.now() - IMPORT_STATE.aggregate.startedAt;
+      if (elapsed > 30_000) {
+        console.warn("[import] force-reset IMPORT_STATE.busy (stuck", Math.round(elapsed / 1000), "s)");
+        IMPORT_STATE.busy = false;
+      }
+    }
+    if (IMPORT_STATE.busy) {
+      showLibraryToast({ kind: "info", message: t("library.import.busy") || "Import in progress…" });
+      return;
+    }
   }
   /** @type {string|null} */
   let folderPath = null;
@@ -150,7 +161,19 @@ function openOcrSettings() {
 
 /** @param {{renderCatalog: (root: HTMLElement) => Promise<void>; focusCatalogBook?: (id: string) => void}} deps */
 export async function importFromFiles(deps) {
-  if (IMPORT_STATE.busy) return;
+  if (IMPORT_STATE.busy) {
+    if (!IMPORT_STATE.importId && IMPORT_STATE.aggregate.startedAt) {
+      const elapsed = Date.now() - IMPORT_STATE.aggregate.startedAt;
+      if (elapsed > 30_000) {
+        console.warn("[import] force-reset IMPORT_STATE.busy (stuck", Math.round(elapsed / 1000), "s)");
+        IMPORT_STATE.busy = false;
+      }
+    }
+    if (IMPORT_STATE.busy) {
+      showLibraryToast({ kind: "info", message: t("library.import.busy") || "Import in progress…" });
+      return;
+    }
+  }
   /** @type {string[]} */
   let paths = [];
   try {
@@ -506,6 +529,7 @@ export async function scanFolderForDuplicates(statusEl, reportContainer) {
   if (!folderPath) return;
 
   IMPORT_STATE.busy = true;
+  IMPORT_STATE.aggregate.startedAt = Date.now();
   statusEl.textContent = t("library.import.scan.starting");
   reportContainer.innerHTML = "";
 
@@ -514,8 +538,11 @@ export async function scanFolderForDuplicates(statusEl, reportContainer) {
   let unsubProgress = null;
   /** @type {(() => void)|null} */
   let unsubReport = null;
+  /** @type {ReturnType<typeof setTimeout>|null} */
+  let safetyTimer = null;
 
   const cleanup = () => {
+    if (safetyTimer !== null) { clearTimeout(safetyTimer); safetyTimer = null; }
     if (typeof unsubProgress === "function") { try { unsubProgress(); } catch (_e) { /* */ } }
     if (typeof unsubReport === "function") { try { unsubReport(); } catch (_e) { /* */ } }
     unsubProgress = null;
@@ -553,6 +580,13 @@ export async function scanFolderForDuplicates(statusEl, reportContainer) {
   try {
     const res = await window.api.library.scanFolder(folderPath);
     scanId = res.scanId;
+    safetyTimer = setTimeout(() => {
+      if (IMPORT_STATE.busy) {
+        console.warn("[scan] safety timeout — scan report never arrived, resetting busy");
+        statusEl.textContent = t("library.import.scan.error", { msg: "timeout — no report received" });
+        cleanup();
+      }
+    }, 120_000);
   } catch (e) {
     statusEl.textContent = t("library.import.scan.error", {
       msg: e instanceof Error ? e.message : String(e),

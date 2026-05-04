@@ -197,11 +197,11 @@ export function buildImportPane(deps) {
      пока импорт активен — UX-симметрия с другими async-операциями (catalog
      batch, dataset synth). */
   const updateImportUiState = () => {
-    /* Safety: если busy застрял true без importId дольше 5 минут — сбросить.
-       Защита от zombie-busy после crash/reload. */
+    /* Safety: если busy застрял true без importId дольше 60 с — сбросить.
+       Защита от zombie-busy после crash/reload/scan-hang. */
     if (IMPORT_STATE.busy && !IMPORT_STATE.importId && IMPORT_STATE.aggregate.startedAt) {
       const elapsed = Date.now() - IMPORT_STATE.aggregate.startedAt;
-      if (elapsed > 5 * 60_000) {
+      if (elapsed > 60_000) {
         console.warn("[import] safety reset: IMPORT_STATE.busy stuck for", Math.round(elapsed / 1000), "s — resetting");
         IMPORT_STATE.busy = false;
       }

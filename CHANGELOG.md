@@ -6,6 +6,25 @@ All notable changes to Bibliary are documented in this file. Format follows
 
 ## [Unreleased]
 
+## [0.11.4] — 2026-05-04 — Fix stuck import button, clear logs, scan safety
+
+### Fixed
+
+- **Import button unresponsive (root cause)** — `IMPORT_STATE.busy` мог навсегда застревать
+  в `true` после `scanFolderForDuplicates` если main-process не отправлял `scan-report` event.
+  Добавлен safety timeout (120 с) для принудительного сброса busy.
+- **Force-reset busy on click** — если пользователь нажимает "Выбрать папку"/"Выбрать файлы"
+  и busy застрял >30 с без активного importId — автоматический сброс вместо тихого return.
+- **User feedback when busy** — вместо беззвучного игнора теперь показывается toast
+  "Импорт или сканирование ещё не завершены".
+- **Clear logs visual feedback** — кнопка "Очистить" теперь моргает "✓" на 0.8 с после
+  очистки. Добавлен `stopPropagation` для предотвращения перехвата клика родителем.
+- **Zombie busy-state** — таймаут сброса уменьшен с 5 мин до 60 с (UI-poller).
+- **Log counter CSS** — добавлены отсутствующие стили для счётчиков дубликатов и пропусков
+  (`.lib-import-log-counter-dup`, `.lib-import-log-counter-skip`).
+- **Log buttons clickability** — увеличен размер кнопок "Очистить"/"Скопировать" в шапке
+  лога: padding 4px 10px, min-height 24px (было 2px 8px без min-height).
+
 ## [0.11.3] — 2026-05-04 — Olympics "Copy Protocol", import diagnostics, dead code cleanup
 
 ### Added

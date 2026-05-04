@@ -5259,6 +5259,8 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
 .lib-import-log-counter-err { background: rgba(220, 60, 60, 0.18); color: #ff7373; border: 1px solid rgba(220, 60, 60, 0.4); }
 .lib-import-log-counter-warn { background: rgba(220, 180, 60, 0.16); color: #f5c14a; border: 1px solid rgba(220, 180, 60, 0.36); }
 .lib-import-log-counter-info { background: rgba(60, 160, 220, 0.14); color: #6ec4f5; border: 1px solid rgba(60, 160, 220, 0.32); }
+.lib-import-log-counter-dup  { background: rgba(180, 120, 255, 0.14); color: #c49eff; border: 1px solid rgba(180, 120, 255, 0.32); }
+.lib-import-log-counter-skip { background: rgba(120, 120, 120, 0.14); color: #aaa; border: 1px solid rgba(120, 120, 120, 0.32); }
 .lib-import-log-spacer { flex: 1; }
 .lib-import-log-filter {
   font-family: var(--font-mono);
@@ -5269,7 +5271,7 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   border-radius: 3px;
   padding: 1px 4px;
 }
-.lib-import-log-btn { font-size: 10px !important; padding: 2px 8px !important; }
+.lib-import-log-btn { font-size: 11px !important; padding: 4px 10px !important; min-height: 24px; }
 .lib-import-log-list {
   font-family: var(--font-mono);
   font-size: 11px;
