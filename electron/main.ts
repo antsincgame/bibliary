@@ -10,7 +10,7 @@ import {
   flushLibraryImports,
   bootstrapLibrarySubsystem,
 } from "./ipc";
-import { disposeClient } from "./lmstudio-client";
+import { disposeClientAsync } from "./lmstudio-client";
 import { triggerAppShutdown } from "./lib/app-lifecycle.js";
 import {
   initResilienceLayer,
@@ -215,6 +215,10 @@ if (!gotLock) {
   const FORCE_EXIT_MS = 4_000;
 
   function teardownSubsystems(): void {
+    /* Iter 14.3 (2026-05-04): disposeClient вынесен из этого sync-массива в
+     * вызов disposeClientAsync() непосредственно перед app.exit() — иначе
+     * SDK websocket оставался жив, и LM Studio видел «зомби-клиент» от
+     * закрытого Bibliary процесса. */
     const subsystems: [string, () => void][] = [
       ["triggerAppShutdown", triggerAppShutdown],
       ["stopWatchdog", stopWatchdog],
@@ -225,7 +229,6 @@ if (!gotLock) {
       ["killAllSynthChildren", killAllSynthChildren],
       ["abortAllBookhunter", () => abortAllBookhunter("app-quit")],
       ["abortAllLibrary", () => abortAllLibrary("app-quit")],
-      ["disposeClient", disposeClient],
       ["closeCacheDb", closeCacheDb],
     ];
     for (const [label, fn] of subsystems) {
@@ -254,13 +257,25 @@ if (!gotLock) {
 
     if (idle) {
       console.log("[main/shutdown] idle path — no active batches or imports");
-      teardownSubsystems();
-      telemetry.flush()
-        .catch((err) => console.error("[main/shutdown] telemetry.flush Error:", err))
-        .finally(() => {
-          console.log("[main/shutdown] idle path — telemetry flushed, clearing force timer");
-          clearTimeout(forceTimer);
-        });
+      /* Idle path остаётся sync, но ОБЯЗАТЕЛЬНО ждём async dispose LM Studio
+       * перед тем как разрешить event loop закрыться. Иначе SDK websocket
+       * остаётся открытым → старый процесс «болтается» в LM Studio как
+       * клиент-фантом. event.preventDefault() не нужен — exit произойдёт
+       * естественно после event loop drain.
+       *
+       * Iter 14.3 fix: даже idle path теперь блокирует quit на 1.5s макс
+       * для гарантированного закрытия websocket. */
+      event.preventDefault();
+      isQuitting = true;
+      void (async () => {
+        teardownSubsystems();
+        const closedOk = await disposeClientAsync(1_500);
+        console.log(`[main/shutdown] LM Studio dispose: ${closedOk ? "OK" : "TIMEOUT/ERROR"}`);
+        await telemetry.flush().catch((err) => console.error("[main/shutdown] telemetry.flush Error:", err));
+        console.log("[main/shutdown] idle path — clean exit");
+        clearTimeout(forceTimer);
+        app.exit(0);
+      })();
       return;
     }
 
@@ -273,6 +288,8 @@ if (!gotLock) {
         const ok = await flushLibraryImports(SHUTDOWN_FLUSH_TIMEOUT_MS, "app-quit");
         console.log(`[main/shutdown] library import flush ${ok ? "OK" : "TIMEOUT"} in ${Date.now() - startedAt}ms`);
         teardownSubsystems();
+        const closedOk = await disposeClientAsync(1_500);
+        console.log(`[main/shutdown] LM Studio dispose: ${closedOk ? "OK" : "TIMEOUT/ERROR"}`);
         await telemetry.flush().catch((err) => console.error("[main/shutdown] telemetry.flush Error:", err));
         clearTimeout(forceTimer);
         app.exit(0);
@@ -308,6 +325,8 @@ if (!gotLock) {
         exitCode = 0;
       } finally {
         teardownSubsystems();
+        const closedOk = await disposeClientAsync(1_500);
+        console.log(`[main/shutdown] LM Studio dispose: ${closedOk ? "OK" : "TIMEOUT/ERROR"}`);
         await telemetry.flush().catch((err) => console.error("[main/shutdown] telemetry.flush Error:", err));
         console.log("[main/shutdown] exiting with code", exitCode);
         clearTimeout(forceTimer);

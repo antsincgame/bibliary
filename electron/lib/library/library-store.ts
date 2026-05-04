@@ -12,7 +12,7 @@
 
 import { promises as fs } from "fs";
 import * as path from "path";
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 
 const BLOBS_DIR = ".blobs";
 
@@ -85,7 +85,11 @@ export async function putBlob(
   const dir = path.dirname(absPath);
   await fs.mkdir(dir, { recursive: true });
 
-  const tmpPath = `${absPath}.tmp.${Date.now()}`;
+  /* C3 fix (2026-05-04, /imperor): добавляем PID + crypto-random чтобы
+   * избежать коллизии когда параллельные импорты двух книг пишут blobs в
+   * один и тот же тик (CAS-имя одинаковое только для идентичного контента,
+   * но мы можем писать ИДЕНТИЧНУЮ обложку из двух книг одновременно). */
+  const tmpPath = `${absPath}.tmp.${process.pid}.${Date.now()}.${randomBytes(8).toString("hex")}`;
   try {
     await fs.writeFile(tmpPath, buffer);
     await fs.rename(tmpPath, absPath);

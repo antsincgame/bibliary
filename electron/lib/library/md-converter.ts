@@ -221,6 +221,47 @@ const IMAGE_REFS_MARKER_CAS = "<!-- Image references (CAS asset links) -->";
 const CHAPTER_RE = /^## (?!Evaluator Reasoning)(.+)$/;
 
 /**
+ * Iter 14.4 (2026-05-04, /imperor — H11 fix): найти НАЧАЛО блока image-refs
+ * чтобы безопасно отрезать его при перезаписи.
+ *
+ * Раньше использовался `body.lastIndexOf("\n---\n", imgIdx)` — ловил ЛЮБОЙ
+ * `\n---\n` перед маркером. Если в книге есть Markdown-разделитель сцен
+ * `---` (валидный element в CommonMark), всё после него обрезалось,
+ * УНИЧТОЖАЯ контент книги при reimport обложки.
+ *
+ * Новая логика: ищем точную последовательность `\n\n---\n\n<MARKER>\n`,
+ * которая создаётся только `buildImageRefs`. Если маркер найден без такой
+ * рамки (legacy книги) — возвращаем позицию маркера и полагаемся на
+ * caller'a, который не отрежет тело ниже маркера.
+ *
+ * @returns индекс позиции `\n` ПЕРЕД `\n---\n\n<MARKER>` или -1 если
+ *          маркер вообще не найден.
+ */
+function findImageRefsBlockStart(body: string): number {
+  const cas = body.indexOf(IMAGE_REFS_MARKER_CAS);
+  const old = body.indexOf(IMAGE_REFS_MARKER);
+  const imgIdx = cas !== -1 ? cas : old;
+  if (imgIdx === -1) return -1;
+
+  /* Ищем ровно ту разделительную последовательность, что генерирует
+   * buildImageRefs: `\n---\n\n<MARKER>` (двойной перенос строки между
+   * `---` и комментарием). Это уникальная подпись image-refs блока. */
+  const marker = cas !== -1 ? IMAGE_REFS_MARKER_CAS : IMAGE_REFS_MARKER;
+  const exact = `\n---\n\n${marker}`;
+  const exactIdx = body.lastIndexOf(exact, imgIdx);
+  if (exactIdx !== -1) return exactIdx;
+
+  /* Fallback для legacy-книг без двойного переноса: `\n---\n<MARKER>`. */
+  const legacy = `\n---\n${marker}`;
+  const legacyIdx = body.lastIndexOf(legacy, imgIdx);
+  if (legacyIdx !== -1) return legacyIdx;
+
+  /* Маркер есть, но без `---` рамки → отрезаем только сам маркер
+   * и всё после него, не трогая контент выше. */
+  return -2; /* sentinel: «есть imgIdx но нет фрейма — отрезай по imgIdx» */
+}
+
+/**
  * Парсит chapters из готового book.md. Возвращает массив `{ title, paragraphs }`.
  * Используется evaluator-queue для построения surrogate-документа без повторного
  * прогона тяжёлого parser'а.
@@ -245,12 +286,18 @@ export function parseBookMarkdownChapters(markdown: string): ConvertedChapter[] 
       : -1;
     if (reasoningEnd !== -1) rest = rest.slice(0, reasoningStart) + rest.slice(reasoningEnd);
   }
-  /* Отрезаем секцию image refs (Base64 или CAS asset links). */
-  let imgIdx = rest.indexOf(IMAGE_REFS_MARKER_CAS);
-  if (imgIdx === -1) imgIdx = rest.indexOf(IMAGE_REFS_MARKER);
-  if (imgIdx !== -1) {
-    const sep = rest.lastIndexOf("\n---\n", imgIdx);
-    rest = sep !== -1 ? rest.slice(0, sep) : rest.slice(0, imgIdx);
+  /* Отрезаем секцию image refs (Base64 или CAS asset links).
+   * H11 fix: используем findImageRefsBlockStart с точной подписью маркера,
+   * чтобы не порезать книгу по случайному `---` Markdown-разделителю. */
+  const imgBlockStart = findImageRefsBlockStart(rest);
+  if (imgBlockStart >= 0) {
+    rest = rest.slice(0, imgBlockStart);
+  } else if (imgBlockStart === -2) {
+    /* Маркер найден без `---` рамки — отрезаем только маркер и ниже. */
+    const cas = rest.indexOf(IMAGE_REFS_MARKER_CAS);
+    const old = rest.indexOf(IMAGE_REFS_MARKER);
+    const imgIdx = cas !== -1 ? cas : old;
+    if (imgIdx !== -1) rest = rest.slice(0, imgIdx);
   }
   /* Разбиваем по `## Title` -- главы. */
   const lines = rest.split(/\r?\n/);
@@ -297,14 +344,24 @@ export function parseBookMarkdownChapters(markdown: string): ConvertedChapter[] 
  *   3. Заменяет frontmatter на finalMeta.
  */
 export function injectCasImageRefs(markdown: string, images: ImageRef[], meta: BookCatalogMeta): string {
-  // Strip existing image refs section (both markers)
+  /* H11 fix (2026-05-04, /imperor): раньше `lastIndexOf("\n---\n", oldIdx)`
+   * мог поймать ЛЮБОЙ Markdown-разделитель `---` в теле книги (валидный
+   * CommonMark scene-break) и отрезать всё после него — катастрофа для UX
+   * (пол-книги теряется при reimport обложки). Новая логика ищет точную
+   * сигнатуру блока image-refs (см. findImageRefsBlockStart). */
   let body = markdown;
-  let casIdx = body.indexOf(IMAGE_REFS_MARKER_CAS);
-  let oldIdx = casIdx === -1 ? body.indexOf(IMAGE_REFS_MARKER) : casIdx;
-  if (oldIdx !== -1) {
-    const sep = body.lastIndexOf("\n---\n", oldIdx);
-    body = sep !== -1 ? body.slice(0, sep) : body.slice(0, oldIdx);
+  const blockStart = findImageRefsBlockStart(body);
+  if (blockStart >= 0) {
+    body = body.slice(0, blockStart);
     body = body.replace(/\n+$/, "\n");
+  } else if (blockStart === -2) {
+    /* Legacy-вариант: маркер без `---` рамки — отрезаем строго от маркера. */
+    const cas = body.indexOf(IMAGE_REFS_MARKER_CAS);
+    const old = body.indexOf(IMAGE_REFS_MARKER);
+    const imgIdx = cas !== -1 ? cas : old;
+    if (imgIdx !== -1) {
+      body = body.slice(0, imgIdx).replace(/\n+$/, "\n");
+    }
   }
 
   // Build new refs section

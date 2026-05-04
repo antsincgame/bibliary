@@ -147,7 +147,11 @@ export async function setCachedConvert(
   const finalPath = path.join(cacheDir, `${key}.${outExt}`);
   if (existsSync(finalPath)) return; /* уже cached */
 
-  const tmpPath = `${finalPath}.tmp-${process.pid}-${Date.now()}`;
+  /* C3 fix (2026-05-04, /imperor): добавляем 8-байтный crypto-random к
+   * tmp-имени. Раньше было только PID + ms — при параллельном импорте
+   * двух книг с одного PID в один тик две операции получали одинаковое
+   * имя tmp-файла → коллизия (особенно злая на NTFS из-за file lock). */
+  const tmpPath = `${finalPath}.tmp-${process.pid}-${Date.now()}-${crypto.randomBytes(8).toString("hex")}`;
   try {
     await fs.copyFile(convertedFilePath, tmpPath);
     await fs.rename(tmpPath, finalPath);

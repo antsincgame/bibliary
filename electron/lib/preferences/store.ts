@@ -288,6 +288,32 @@ export type PreferencesFile = z.infer<typeof PreferencesFileSchema>;
 // Store
 // ---------------------------------------------------------------------------
 
+/**
+ * Уведомление о повреждённом preferences.json — приёмники могут показать
+ * пользователю warning toast вместо тихого reset настроек к defaults.
+ *
+ * Заполняется при корраптед-ситуации (неparsable JSON / Zod schema fail).
+ * Хранится в global state модуля — тонкий канал между store ↔ UI без
+ * введения зависимости от Electron BrowserWindow.
+ */
+export interface PrefsCorruptionEvent {
+  /** Имя файла бэкапа (`preferences.json.corrupted-1714...`). Null если backup не удался. */
+  backupPath: string | null;
+  /** Текст ошибки парсинга/валидации. */
+  reason: string;
+  /** UNIX ms когда произошло. */
+  detectedAt: number;
+}
+
+let lastCorruption: PrefsCorruptionEvent | null = null;
+
+/** Возвращает (и очищает) последнее событие повреждения prefs. UI читает раз. */
+export function takePrefsCorruptionEvent(): PrefsCorruptionEvent | null {
+  const ev = lastCorruption;
+  lastCorruption = null;
+  return ev;
+}
+
 export class FsPreferencesStore {
   private readonly file: string;
   private cache: PreferencesFile | null = null;
@@ -300,9 +326,54 @@ export class FsPreferencesStore {
     await fs.mkdir(path.dirname(this.file), { recursive: true });
     try {
       const raw = await fs.readFile(this.file, "utf8");
-      if (raw.trim()) return;
+      if (raw.trim()) {
+        /* C5 fix (2026-05-04, /imperor): проверяем валидность ДО return, чтобы
+         * corrupted JSON не оставался лежать как «существующий» файл — иначе
+         * следующий readOverrides тихо отдаст {} и юзер потеряет настройки
+         * без следа. Если corrupted — переименовываем в .corrupted-<ts> и
+         * пересоздаём preferences.json с дефолтами + сигналим UI. */
+        try {
+          PreferencesFileSchema.parse(JSON.parse(raw));
+          return; /* всё ок */
+        } catch (parseErr) {
+          await this.quarantineCorruptedFile(parseErr);
+          /* Дальше — fall-through к writeJsonAtomic с дефолтами. */
+        }
+      }
     } catch { /* ENOENT */ }
     await writeJsonAtomic(this.file, { version: 1 as const, prefs: {} });
+  }
+
+  /**
+   * Iter 14.4 (C5 fix): повреждённый preferences.json не молчит — мы
+   * переименовываем его в `.corrupted-<ts>` (для пост-mortem анализа
+   * и возможного ручного восстановления пользователем) и сигнализируем
+   * UI через takePrefsCorruptionEvent().
+   */
+  private async quarantineCorruptedFile(reason: unknown): Promise<void> {
+    const ts = Date.now();
+    const backupPath = `${this.file}.corrupted-${ts}`;
+    let actualBackup: string | null = null;
+    try {
+      await fs.rename(this.file, backupPath);
+      actualBackup = backupPath;
+      console.error(
+        `[preferences/store] corrupted preferences.json detected, quarantined to ${backupPath}.\n` +
+        `  Reason: ${reason instanceof Error ? reason.message : String(reason)}\n` +
+        `  Defaults restored. Original kept for manual recovery.`,
+      );
+    } catch (renameErr) {
+      console.error(
+        `[preferences/store] FAILED to quarantine corrupted preferences.json:`,
+        renameErr,
+        `\n  Original error:`, reason,
+      );
+    }
+    lastCorruption = {
+      backupPath: actualBackup,
+      reason: reason instanceof Error ? reason.message : String(reason),
+      detectedAt: ts,
+    };
   }
 
   async getAll(): Promise<Preferences> {
@@ -363,12 +434,22 @@ export class FsPreferencesStore {
 
   private async readOverrides(): Promise<Partial<Preferences>> {
     if (this.cache) return this.cache.prefs;
+    let raw: string;
     try {
-      const raw = await fs.readFile(this.file, "utf8");
+      raw = await fs.readFile(this.file, "utf8");
+    } catch {
+      /* ENOENT — файл ещё не создан, нормальное состояние при первом запуске. */
+      return {};
+    }
+    try {
       const parsed = PreferencesFileSchema.parse(JSON.parse(raw));
       this.cache = parsed;
       return parsed.prefs;
-    } catch {
+    } catch (parseErr) {
+      /* C5 fix: ошибка парсинга существующего файла — это РЕАЛЬНОЕ
+       * повреждение (а не отсутствие). Карантиним и сигналим UI вместо
+       * тихого reset к defaults. */
+      await this.quarantineCorruptedFile(parseErr);
       return {};
     }
   }

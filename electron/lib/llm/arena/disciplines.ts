@@ -52,6 +52,13 @@ import {
   TRANSLATE_TO_RU_SYSTEM_PROMPT,
 } from "./role-prompts.js";
 import type { OlympicsRole } from "./olympics-types.js";
+import {
+  asImageDataUrl,
+  VISION_OCR_SIMPLE,
+  VISION_OCR_TWO_LINES,
+  VISION_OCR_NUMBERS,
+  VISION_OCR_BLANK,
+} from "./fixtures/vision-ocr-fixtures.js";
 
 /* ─── ДИСЦИПЛИНЫ ─────────────────────────────────────────────────────── */
 
@@ -136,6 +143,84 @@ function ukLangScore(a: string): number {
   if (t === "ru" || t === "russian") return 0.0; /* грубая ошибка: перепутал uk↔ru */
   if (t === "")           return 0.05; /* пустой ответ */
   return 0.1;
+}
+
+/**
+ * Scorer для vision_ocr дисциплин с реальным печатным текстом.
+ *
+ * Считает recall ожидаемых токенов в ответе модели:
+ *   - точное вхождение каждого ожидаемого токена даёт полный балл;
+ *   - частичное (substring/prefix) — половину балла;
+ *   - регистр игнорируется, пунктуация очищается.
+ *
+ * Дополнительные penalty:
+ *   - markdown fences (```), JSON-обёртка, prose («Here is the text»);
+ *   - hallucination: ответ ≥ 4× ожидаемой длины → -0.15;
+ *   - NO_TEXT когда текст есть → -0.50 (грубая ошибка).
+ *
+ * Шкала:
+ *   - 100/100 = все ожидаемые токены распознаны точно, без штрафов;
+ *   - 50/100 = половина токенов или один из всех + штраф формата;
+ *   - 0/100 = ничего не распознано или галлюцинация NO_TEXT.
+ *
+ * Соответствует character-level recall + format compliance из OCRBench v2 (2025).
+ */
+function scoreOcrRecall(answer: string, expectedTokens: ReadonlyArray<string>): number {
+  if (expectedTokens.length === 0) return 0; /* expected пустой — используй blank-control scorer */
+
+  const raw = answer.trim();
+  const lowered = raw.toLowerCase();
+  /* Грубая ошибка: ответил NO_TEXT когда текст реально есть. */
+  if (/^no[_\s]?text\.?$/i.test(raw)) return 0;
+
+  /* Две нормализации:
+   *   - normalized: пунктуация → пробелы (для wordRe со словесными границами).
+   *   - digitsOnly: цифры без пунктуации (для чисел типа "1,234.56" → "123456",
+   *     где expected="1234" совпадёт substring-ом). */
+  const normalized = lowered.replace(/[^a-zа-я0-9\s]/giu, " ").replace(/\s+/g, " ");
+  const digitsOnly = lowered.replace(/[^0-9]/g, "");
+
+  let hits = 0;
+  for (const token of expectedTokens) {
+    const tok = token.toLowerCase();
+    /* Полное совпадение слова — максимальный балл. */
+    const wordRe = new RegExp(`\\b${tok.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`);
+    if (wordRe.test(normalized)) {
+      hits += 1;
+      continue;
+    }
+    /* Substring в text (для коротких токенов): полный балл. */
+    if (normalized.includes(tok)) {
+      hits += 1;
+      continue;
+    }
+    /* Числовые токены: ищем как substring в digits-only (учитывает разделители). */
+    if (/^\d+$/.test(tok) && digitsOnly.includes(tok)) {
+      hits += 1;
+      continue;
+    }
+    /* Дробное совпадение для очень коротких числовых частей. */
+    if (/^\d{1,3}$/.test(tok) && normalized.includes(tok)) {
+      hits += 0.5;
+    }
+  }
+
+  /* Recall: какая доля ожидаемых токенов распознана. */
+  const recall = hits / expectedTokens.length;
+
+  /* Iter 14.3 — формат имеет ВЕС: чистый plain text получает full recall;
+   * любое нарушение формата (JSON / markdown / prose-обёртка) даёт жёсткий
+   * множитель. Цель — научить модель именно формату, а не «лишь бы ответ
+   * содержал слова». */
+  let formatMultiplier = 1.0;
+  if (answer.includes("```"))                                     formatMultiplier *= 0.45;
+  if (/^\s*\{/.test(answer))                                      formatMultiplier *= 0.40;
+  if (/^(here\s+is|the\s+text\s+is|i\s+see|extracted)/i.test(raw)) formatMultiplier *= 0.55;
+  /* Hallucination: ответ многократно длиннее ожидаемого текста. */
+  const expectedLen = expectedTokens.join(" ").length;
+  if (raw.length > expectedLen * 4 + 40)                          formatMultiplier *= 0.70;
+
+  return Math.max(0, Math.min(1, recall * formatMultiplier));
 }
 
 export const OLYMPICS_DISCIPLINES: Discipline[] = [
@@ -665,40 +750,108 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
     },
   },
 
+  /* ─── Vision OCR: РЕАЛЬНЫЙ ПЕЧАТНЫЙ ТЕКСТ ──────────────────────────────
+   *
+   * До Iter 14.3 (2026-05-04) была одна дисциплина с пустой картинкой —
+   * fixture без текста, модель должна была вернуть `NO_TEXT`. Из-за этого
+   * scorer имел потолок 50/100 by design (только один позитивный сигнал
+   * `NO_TEXT` = +0.50, остальное — штрафы), что было невозможно перебить
+   * для топовых VLM (Qwen2.5-VL, InternVL3, Gemma3-Vision).
+   *
+   * Решение по OCRBench v2 / DocVQA рекомендациям 2025:
+   *   - 3 дисциплины с реальным печатным текстом разной сложности
+   *     (1 строка, 2 строки, числа+символы), каждая со scorer'ом на основе
+   *     character-level recall (доля распознанных ожидаемых токенов).
+   *   - 1 контрольная дисциплина с пустой картинкой → модель должна
+   *     ответить `NO_TEXT` (тест на дисциплину «не галлюцинируй»).
+   *   - Все scorer'ы достижимы 90-100/100 при правильном OCR.
+   *
+   * Fixtures генерируются программно через Sharp+SVG в build-time —
+   * см. `scripts/generate-vision-ocr-fixtures.cjs`. */
   {
-    /* Production-aligned: vision_ocr = картинка → plain text (никакого JSON,
-     * никаких markdown, чистый текст). */
-    id: "vision_ocr-plain-text",
+    id: "vision_ocr-print-simple",
     role: "vision_ocr",
-    description: "Vision-OCR должен вернуть plain text — никакого JSON или markdown.",
+    description: "Распознать одну строку чёткого печатного текста (THE QUICK BROWN FOX).",
     whyImportant:
-      "OCR sканированных страниц требует чистого plain text для последующего chunking. " +
-      "Если модель добавит JSON, markdown fences или prose-обёртку («Here is the text:») — " +
-      "pipeline сломается. Тест проверяет дисциплину plain-text-вывода.",
+      "Базовый тест VLM-OCR: одна строка крупного печатного шрифта на белом фоне. " +
+      "Любая production-grade VLM должна давать 100% recall на таком вводе. " +
+      "Scorer считает долю распознанных слов (the, quick, brown, fox) с учётом регистра. " +
+      "По OCRBench v2 / DocVQA 2025 — обязательная начальная точка для калибровки.",
     system:
       "Extract any visible text from this image as plain text only. " +
       "If there is no text, output the literal string: NO_TEXT. " +
       "No JSON, no markdown, no fences, no commentary, no quotes.",
     user: "Extract text:",
-    imageUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFAAAAAeCAIAAAA0IQ7mAAAAUklEQVR4nO3PwQkAIAwEweu/MrvSjxVIArLZ5d4hk2QNW9Yek2B6gukJpieYXjM4eV/XR4JrzwsWLFhw7UeCa88LZoP/SzA9wfQE0xNM74JH7QAkJZohvhUzSwAAAABJRU5ErkJggg==",
+    imageUrl: asImageDataUrl(VISION_OCR_SIMPLE),
     maxTokens: 64,
+    score: (a) => scoreOcrRecall(a, VISION_OCR_SIMPLE.expectedTokens),
+  },
+  {
+    id: "vision_ocr-print-two-lines",
+    role: "vision_ocr",
+    description: "Распознать 2 строки текста: «Hello World» + дата «2024-12-25».",
+    whyImportant:
+      "Многострочный OCR с числами и дефисами. Проверяет сохранение порядка строк " +
+      "и правильное распознавание цифр и знаков пунктуации. Распространённый случай " +
+      "в реальных книгах (заголовок главы + дата публикации, таблицы дат).",
+    system:
+      "Extract any visible text from this image as plain text only. " +
+      "Preserve line breaks. " +
+      "If there is no text, output the literal string: NO_TEXT. " +
+      "No JSON, no markdown, no fences, no commentary, no quotes.",
+    user: "Extract text:",
+    imageUrl: asImageDataUrl(VISION_OCR_TWO_LINES),
+    maxTokens: 96,
+    score: (a) => scoreOcrRecall(a, VISION_OCR_TWO_LINES.expectedTokens),
+  },
+  {
+    id: "vision_ocr-print-numbers",
+    role: "vision_ocr",
+    description: "Сложный OCR: «INVOICE #4291» + «Total: $1,234.56» (числа и символы).",
+    whyImportant:
+      "Stress-тест на спецсимволы (#, $, ,, .) и числа с тысячными разделителями. " +
+      "Проверяет точность распознавания пунктуации, важной для финансовых/счётов сцен. " +
+      "Слабые VLM ошибаются на разделителях; топовые (Qwen2.5-VL-72B, InternVL3) — нет.",
+    system:
+      "Extract any visible text from this image as plain text only. " +
+      "Preserve numbers, punctuation and symbols exactly as shown. " +
+      "If there is no text, output the literal string: NO_TEXT. " +
+      "No JSON, no markdown, no fences, no commentary, no quotes.",
+    user: "Extract text:",
+    imageUrl: asImageDataUrl(VISION_OCR_NUMBERS),
+    maxTokens: 96,
+    score: (a) => scoreOcrRecall(a, VISION_OCR_NUMBERS.expectedTokens),
+  },
+  {
+    /* Контроль: пустой PNG → модель должна сказать NO_TEXT (anti-hallucination). */
+    id: "vision_ocr-blank-control",
+    role: "vision_ocr",
+    description: "Контроль: пустая картинка → модель не должна галлюцинировать.",
+    whyImportant:
+      "Модели иногда «видят» текст там где его нет (галлюцинации OCR). Этот тест " +
+      "ловит таких. Правильный ответ — литерал `NO_TEXT`. Любой другой текст — штраф. " +
+      "Проверяет дисциплину «не выдумывать» — критично для качества каталога книг.",
+    system:
+      "Extract any visible text from this image as plain text only. " +
+      "If there is no text, output the literal string: NO_TEXT. " +
+      "No JSON, no markdown, no fences, no commentary, no quotes.",
+    user: "Extract text:",
+    imageUrl: asImageDataUrl(VISION_OCR_BLANK),
+    maxTokens: 32,
     score: (a) => {
       const t = a.trim();
       let s = 0;
+      /* Только точный литерал «NO_TEXT» (заглавные, без пунктуации) даёт
+       * полный балл — это контракт, который модель должна выучить. */
+      if (/^NO_TEXT\.?$/.test(t)) s = 1.0;
+      else if (/^no_text\.?$/i.test(t)) s = 0.70; /* lower-case — нарушение строгого контракта */
+      else if (/\bno[_\s]?text\b/i.test(t) && t.length <= 30) s = 0.55; /* в фразе — частично */
+      else if (t.length === 0) s = 0.10; /* пустой ответ — лучше чем галлюцинация, но не идеал */
+      else s = Math.max(0, 0.30 - t.length * 0.005); /* любой текст → штраф пропорц. длине */
 
-      /* Главный сигнал: картинка БЕЗ текста — модель должна сказать NO_TEXT. */
-      if (/no[_\s]?text/i.test(t)) s += 0.50;
-      else if (t.length === 0)     s += 0.05; /* пустой ответ — допустимо но не идеал */
-
-      /* === ШТРАФЫ за нарушение формата === */
-      if (a.includes("```")) s -= 0.30; /* markdown fences */
-      if (/^\s*\{/.test(a)) s -= 0.30;  /* JSON вместо plain text */
-      if (/here\s+is\s+the\s+text|the\s+text\s+is/i.test(a)) s -= 0.20; /* prose-обёртка */
-      if (/^['"]/.test(t) && /['"]$/.test(t)) s -= 0.10; /* кавычки вокруг */
-      if (a.length > 200) s -= 0.20; /* раздул, галлюцинирует */
-
-      /* Если модель сказала что-то вменяемое (даже если не идеально) */
-      if (s <= 0 && t.length >= 1 && t.length <= 80 && !/[{}`]/.test(t)) s = 0.15;
+      /* Штрафы за нарушение формата */
+      if (a.includes("```")) s -= 0.20;
+      if (/^\s*\{/.test(a)) s -= 0.30;
 
       return Math.max(0, Math.min(1, s));
     },

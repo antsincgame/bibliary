@@ -377,16 +377,36 @@ async function runOlympicsAndShow() {
        тестов — `report.recommendationsByScore`. Кнопка «Распределить роли»
        удалена — авто-распределение однозначное по окончанию прогона. */
     const recs = report.recommendationsByScore ?? report.recommendations ?? {};
-    if (Object.keys(recs).length > 0 && window.api?.arena?.applyOlympicsRecommendations) {
+    const recsCount = Object.keys(recs).length;
+    /* Iter 14.3 — детальная диагностика champions ДО apply.
+       Если champions пустые / неправильные — пользователь увидит причину
+       прямо в логе вместо «всё обнулилось» без объяснений. */
+    if (recsCount === 0) {
+      const aggCount = Array.isArray(report.roleAggregates) ? report.roleAggregates.length : 0;
+      const allFailed = (report.warnings ?? []).filter((w) => typeof w === "string" && w.startsWith("role_no_winner"));
+      appendOlympicsLogDetail(
+        logEl,
+        `⚠ Чемпионы не определены (recommendationsByScore пустой). Роли остались как были.`,
+        el("div", {}, [
+          el("div", {}, `roleAggregates: ${aggCount} ролей`),
+          el("div", {}, `recommendations.by_score: 0 (champion avgScore < 0.3 для всех ролей)`),
+          el("div", {}, `recommendations.optimum: ${Object.keys(report.recommendations ?? {}).length}`),
+          el("div", {}, `warnings.role_no_winner: ${allFailed.length} (${allFailed.join(", ")})`),
+        ]),
+        "bad",
+      );
+    } else if (window.api?.arena?.applyOlympicsRecommendations) {
       try {
-        await window.api.arena.applyOlympicsRecommendations({ recommendations: recs });
         const lines = Object.entries(recs).map(([k, v]) => `  ${k} = ${v}`).join("\n");
+        appendOlympicsLog(logEl, `⚡ Применяю рекомендации (${recsCount}):\n${lines}`, "info");
+
+        await window.api.arena.applyOlympicsRecommendations({ recommendations: recs });
         appendOlympicsLog(
           logEl,
-          `⭐ ${t("models.olympics.distribute_done")} (${Object.keys(recs).length}):\n${lines}`,
+          `⭐ ${t("models.olympics.distribute_done")} (${recsCount}):\n${lines}`,
           "good",
         );
-        showToast(`⭐ ${t("models.olympics.distribute_done")} (${Object.keys(recs).length})`, "success");
+        showToast(`⭐ ${t("models.olympics.distribute_done")} (${recsCount})`, "success");
         void refresh();
       } catch (applyErr) {
         const msg = applyErr instanceof Error ? applyErr.message : String(applyErr);

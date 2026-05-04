@@ -18,6 +18,7 @@ import { globalLlmLock } from "../lib/llm/global-llm-lock.js";
 import { modelRoleResolver } from "../lib/llm/model-role-resolver.js";
 import { runOlympics, type OlympicsReport, type OlympicsRole } from "../lib/llm/arena/olympics.js";
 import { refreshLmStudioClient, listLoaded, loadModel } from "../lmstudio-client.js";
+import { getAppShutdownSignal } from "../lib/app-lifecycle.js";
 
 function getOlympicsReportPath(): string {
   const dataDir = process.env.BIBLIARY_DATA_DIR ?? path.join(process.cwd(), "data");
@@ -31,6 +32,44 @@ async function persistOlympicsReport(report: OlympicsReport): Promise<void> {
     await fs.writeFile(p, JSON.stringify(report, null, 2), "utf-8");
   } catch (err) {
     console.warn("[arena] failed to persist Olympics report:", err);
+  }
+}
+
+/**
+ * Iter 14.3 (2026-05-04): partial-progress persistence.
+ *
+ * До этого фикса отчёт сохранялся ТОЛЬКО после полного `runOlympics`
+ * — если приложение упало, пользователь нажал «Очистить кэш», или
+ * `applyOlympicsRecommendations` бросил ошибку — все результаты
+ * пропадали, и пользователь видел «обнуление» Олимпиады.
+ *
+ * Теперь сохраняем JSONL-стрим per-model результатов:
+ *   data/olympics-progress.jsonl
+ * Каждая строка = JSON с полем `discipline`, `model`, `score`, etc.
+ * При старте новой Олимпиады — truncate. При краше — UI может
+ * прочитать этот файл и показать частичные результаты.
+ */
+function getOlympicsProgressPath(): string {
+  const dataDir = process.env.BIBLIARY_DATA_DIR ?? path.join(process.cwd(), "data");
+  return path.join(dataDir, "olympics-progress.jsonl");
+}
+
+async function truncateOlympicsProgress(): Promise<void> {
+  try {
+    const p = getOlympicsProgressPath();
+    await fs.mkdir(path.dirname(p), { recursive: true });
+    await fs.writeFile(p, "", "utf-8");
+  } catch (err) {
+    console.warn("[arena] failed to truncate progress JSONL:", err);
+  }
+}
+
+async function appendOlympicsProgress(record: Record<string, unknown>): Promise<void> {
+  try {
+    const p = getOlympicsProgressPath();
+    await fs.appendFile(p, JSON.stringify(record) + "\n", "utf-8");
+  } catch (err) {
+    console.warn("[arena] failed to append progress record:", err);
   }
 }
 
@@ -60,6 +99,34 @@ export function registerArenaIpc(): void {
   /* ─── Олимпиада: реальный турнир локальных моделей через LM Studio ─── */
 
   let activeOlympicsCtrl: AbortController | null = null;
+  /**
+   * Iter 14.3 (2026-05-04, /imperor): отдельный AbortController для
+   * фонового auto-load после applyOlympicsRecommendations.
+   * Раньше auto-load запускался fire-and-forget без отмены — при выходе
+   * из приложения или повторной Олимпиаде старая загрузка моделей
+   * продолжала держать LM Studio занятым (зомби-процесс симптомы).
+   */
+  let activeAutoLoadCtrl: AbortController | null = null;
+  function abortActiveAutoLoad(reason: string): void {
+    if (activeAutoLoadCtrl) {
+      console.log(`[arena] aborting active auto-load: ${reason}`);
+      activeAutoLoadCtrl.abort();
+      activeAutoLoadCtrl = null;
+    }
+  }
+
+  /* При app-quit (triggerAppShutdown в main.ts:teardownSubsystems) — гасим
+   * любую активную фоновую загрузку моделей и текущую Олимпиаду, чтобы LM
+   * Studio не продолжал получать команды от мёртвого процесса. */
+  const shutdownSignal = getAppShutdownSignal();
+  shutdownSignal.addEventListener("abort", () => {
+    abortActiveAutoLoad("app-shutdown");
+    if (activeOlympicsCtrl) {
+      console.log("[arena] aborting active Olympics: app-shutdown");
+      activeOlympicsCtrl.abort();
+      activeOlympicsCtrl = null;
+    }
+  }, { once: true });
 
   ipcMain.handle("arena:run-olympics", async (e, payload: unknown): Promise<OlympicsReport> => {
     if (activeOlympicsCtrl) {
@@ -83,6 +150,17 @@ export function registerArenaIpc(): void {
       if (win && !win.isDestroyed()) win.webContents.send(channel, data);
     };
 
+    /* Iter 14.3 — обнуляем JSONL-progress перед стартом, чтобы UI после
+     * краша видел только текущий прогон. */
+    await truncateOlympicsProgress();
+    await appendOlympicsProgress({
+      type: "olympics.start",
+      ts: new Date().toISOString(),
+      requestedModels: Array.isArray(args.models) ? args.models : null,
+      requestedDisciplines: Array.isArray(args.disciplines) ? args.disciplines : null,
+      testAll: args.testAll === true,
+    });
+
     try {
       const report = await runOlympics({
         models: Array.isArray(args.models) ? (args.models as string[]) : undefined,
@@ -90,12 +168,33 @@ export function registerArenaIpc(): void {
         testAll: args.testAll === true,
         roles: Array.isArray(args.roles) ? (args.roles as OlympicsRole[]) : undefined,
         signal: ctrl.signal,
-        onProgress: (ev) => send("arena:olympics-progress", ev),
+        onProgress: (ev) => {
+          send("arena:olympics-progress", ev);
+          /* Стримим только «крупные» события (model.done / discipline.done /
+           * load_failed) в jsonl. Низкоуровневые logs/loading опускаем — они
+           * нужны только для live UI, не для restore. fire-and-forget. */
+          if (ev.type === "olympics.model.done"
+              || ev.type === "olympics.discipline.done"
+              || ev.type === "olympics.model.load_failed"
+              || ev.type === "olympics.vram_guard") {
+            void appendOlympicsProgress({ ...ev, ts: new Date().toISOString() });
+          }
+        },
       });
       if (ctrl.signal.aborted) {
         throw new Error("Olympics aborted by user");
       }
-      void persistOlympicsReport(report);
+      /* CRITICAL Iter 14.3: persist ДО возврата в renderer.
+       * Раньше persist был void (fire-and-forget), и если auto-apply падал —
+       * fs.writeFile мог не успеть до краша process. Теперь awaited. */
+      await persistOlympicsReport(report);
+      await appendOlympicsProgress({
+        type: "olympics.persisted",
+        ts: new Date().toISOString(),
+        modelsRun: report.models.length,
+        disciplineCount: report.disciplineCount,
+        recommendations: report.recommendationsByScore,
+      });
       return report;
     } finally {
       unregisterOlympicsProbe();
@@ -143,11 +242,30 @@ export function registerArenaIpc(): void {
     if (Object.keys(filtered).length === 0) {
       throw new Error("Нет валидных рекомендаций для применения");
     }
+    console.log("[arena/apply-recommendations] applying:", JSON.stringify(filtered));
+    await appendOlympicsProgress({
+      type: "apply-recommendations",
+      ts: new Date().toISOString(),
+      filtered,
+    });
+
     await getPreferencesStore().set(filtered);
     modelRoleResolver.invalidate();
     refreshLmStudioClient();
     const prefs = await getPreferencesStore().getAll();
     broadcastPreferencesChanged(prefs);
+
+    /* Iter 14.3 — отменяем предыдущий auto-load (если был) и запускаем новый
+     * с фрешным AbortController. registerProbe в globalLlmLock — чтобы UI
+     * корректно показывал «LM Studio занята: arena auto-load» во время
+     * фонового переключения, а другие IPC (импорт, evaluator) ждали. */
+    abortActiveAutoLoad("new apply-recommendations request");
+    const autoLoadCtrl = new AbortController();
+    activeAutoLoadCtrl = autoLoadCtrl;
+    const unregisterAutoLoadProbe = globalLlmLock.registerProbe("arena.auto-load", () => ({
+      busy: !autoLoadCtrl.signal.aborted,
+      reason: "Arena: switching to recommended models",
+    }));
 
     /* ── Auto-load recommended models into LM Studio ──
      * Olympics только записывает prefs, но если модели не загружены — весь
@@ -159,14 +277,26 @@ export function registerArenaIpc(): void {
      * моделей (primary = extractorModel, secondary = visionModelKey).
      * Остальные роли часто разделяют одну из этих двух моделей.
      * Если модель уже загружена — пропускаем. Ошибка load — не фатальна. */
-    void ensureRecommendedModelsLoaded(filtered).catch((err) => {
-      console.warn("[arena] auto-load after apply failed (non-fatal):", err);
-    });
+    void ensureRecommendedModelsLoaded(filtered, autoLoadCtrl.signal)
+      .catch((err) => {
+        if (autoLoadCtrl.signal.aborted) {
+          console.log("[arena] auto-load aborted (expected)");
+        } else {
+          console.warn("[arena] auto-load after apply failed (non-fatal):", err);
+        }
+      })
+      .finally(() => {
+        unregisterAutoLoadProbe();
+        if (activeAutoLoadCtrl === autoLoadCtrl) activeAutoLoadCtrl = null;
+      });
 
     return prefs;
   });
 
-  async function ensureRecommendedModelsLoaded(recs: Partial<Preferences>): Promise<void> {
+  async function ensureRecommendedModelsLoaded(
+    recs: Partial<Preferences>,
+    signal?: AbortSignal,
+  ): Promise<void> {
     const PRIORITY_KEYS = ["extractorModel", "visionModelKey", "evaluatorModel"] as const;
     /* Build PRIORITY-ORDERED list, не Set: первые 2 — гарантированно
      * extractorModel/visionModelKey/evaluatorModel (если заданы), остальные —
@@ -192,11 +322,19 @@ export function registerArenaIpc(): void {
       }
     }
     if (orderedKeys.length === 0) return;
+    if (signal?.aborted) {
+      console.log("[arena/auto-load] aborted before listLoaded");
+      return;
+    }
 
     let loaded: Array<{ modelKey: string }>;
     try {
       loaded = await listLoaded();
     } catch {
+      return;
+    }
+    if (signal?.aborted) {
+      console.log("[arena/auto-load] aborted after listLoaded");
       return;
     }
     const alreadyLoaded = new Set(loaded.map((m) => m.modelKey));
@@ -225,6 +363,10 @@ export function registerArenaIpc(): void {
         console.log(`[arena] VRAM cleanup: ${loaded.length} loaded, evicting ${toEvict.length} non-recommended: ${toEvict.join(", ")}`);
         const { unloadModel } = await import("../lmstudio-client.js");
         for (const evictKey of toEvict) {
+          if (signal?.aborted) {
+            console.log("[arena/auto-load] aborted during VRAM cleanup");
+            return;
+          }
           try {
             await unloadModel(evictKey);
             console.log(`[arena] VRAM cleanup OK: "${evictKey}" unloaded`);
@@ -237,6 +379,10 @@ export function registerArenaIpc(): void {
 
     console.log(`[arena] auto-load: attempting ${selected.length} models: ${selected.join(", ")}`);
     for (const modelKey of selected) {
+      if (signal?.aborted) {
+        console.log(`[arena/auto-load] aborted before loading "${modelKey}"`);
+        return;
+      }
       try {
         await loadModel(modelKey, { gpuOffload: "max" });
         console.log(`[arena] auto-load OK: "${modelKey}"`);
@@ -244,5 +390,6 @@ export function registerArenaIpc(): void {
         console.warn(`[arena] auto-load "${modelKey}" failed:`, err);
       }
     }
+    console.log("[arena] auto-load: completed");
   }
 }

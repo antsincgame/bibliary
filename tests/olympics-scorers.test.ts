@@ -367,3 +367,119 @@ test("samples: каждая дисциплина (кроме vision) имеет 
   }
   assert.deepEqual(missing, [], `Дисциплины без эталона:\n  - ${missing.join("\n  - ")}`);
 });
+
+/* ─── Vision OCR scorers (Iter 14.3, 2026-05-04) ──────────────────────────
+ *
+ * Эти тесты НЕ обращаются к VLM — они валидируют что scorer корректно
+ * оценивает синтетические ответы для каждой vision_ocr дисциплины.
+ *
+ * Цель: гарантировать что топовая VLM, которая распознала текст идеально,
+ * получит ≥ 0.85, а слабая модель, которая выдумала текст или
+ * испортила формат — ≤ 0.40. Раньше потолок vision_ocr был 50/100 (см.
+ * commit history) — это убивало discriminative power для топовых моделей.
+ */
+
+const VISION_OCR_SAMPLES: Record<string, { perfect: string; weak: string; junk: string }> = {
+  "vision_ocr-print-simple": {
+    perfect: "THE QUICK BROWN FOX",
+    weak: "the brown fox", /* пропустил quick — частичный recall */
+    junk: "{\n  \"text\": \"THE QUICK BROWN FOX\"\n}", /* JSON вместо plain text */
+  },
+  "vision_ocr-print-two-lines": {
+    perfect: "Hello World\n2024-12-25",
+    weak: "Hello World", /* пропустил вторую строку */
+    junk: "```\nHello World\n2024-12-25\n```", /* markdown fences */
+  },
+  "vision_ocr-print-numbers": {
+    perfect: "INVOICE #4291\nTotal: $1,234.56",
+    weak: "INVOICE\nTotal", /* потерял числа */
+    junk: "Here is the text: INVOICE #4291", /* prose-обёртка */
+  },
+  "vision_ocr-blank-control": {
+    perfect: "NO_TEXT",
+    weak: "no text", /* допустимо но не идеал */
+    junk: "I see some kind of empty rectangle but cannot read any text from it specifically", /* галлюцинация */
+  },
+};
+
+test("vision_ocr: все 4 vision_ocr дисциплины присутствуют", () => {
+  const expected = new Set([
+    "vision_ocr-print-simple",
+    "vision_ocr-print-two-lines",
+    "vision_ocr-print-numbers",
+    "vision_ocr-blank-control",
+  ]);
+  const found = new Set(
+    OLYMPICS_DISCIPLINES.filter((d) => d.role === "vision_ocr").map((d) => d.id),
+  );
+  for (const id of expected) {
+    assert.ok(found.has(id), `vision_ocr дисциплина ${id} отсутствует в OLYMPICS_DISCIPLINES`);
+  }
+});
+
+test("vision_ocr: идеальный ответ получает ≥ 0.85 (потолок 100/100 достижим)", () => {
+  const failures: string[] = [];
+  for (const d of OLYMPICS_DISCIPLINES) {
+    if (d.role !== "vision_ocr") continue;
+    const sample = VISION_OCR_SAMPLES[d.id];
+    if (!sample) {
+      failures.push(`${d.id}: нет сэмпла в VISION_OCR_SAMPLES`);
+      continue;
+    }
+    const s = d.score(sample.perfect);
+    if (s < 0.85) {
+      failures.push(`${d.id}: идеальный ответ получил ${s.toFixed(2)} (ожидаем ≥ 0.85)`);
+    }
+  }
+  assert.deepEqual(failures, [], `Vision OCR scorers слишком строгие:\n  - ${failures.join("\n  - ")}`);
+});
+
+test("vision_ocr: слабый ответ получает между 0.10 и 0.70 (mid range)", () => {
+  /* Mid-range нужен чтобы scorer ОТЛИЧАЛ слабую модель от средней:
+   *   - perfect: 0.85+
+   *   - weak: 0.10..0.70
+   *   - junk: 0..0.40
+   * Если weak == perfect — нет дискриминативной силы. */
+  const failures: string[] = [];
+  for (const d of OLYMPICS_DISCIPLINES) {
+    if (d.role !== "vision_ocr") continue;
+    const sample = VISION_OCR_SAMPLES[d.id];
+    if (!sample) continue;
+    const s = d.score(sample.weak);
+    if (s < 0.10 || s > 0.80) {
+      failures.push(`${d.id}: weak ответ получил ${s.toFixed(2)} (ожидаем 0.10..0.80)`);
+    }
+  }
+  assert.deepEqual(failures, [], `Vision OCR mid-range broken:\n  - ${failures.join("\n  - ")}`);
+});
+
+test("vision_ocr: junk (JSON/markdown/prose-wrap/halucination) штрафуется ≤ 0.50", () => {
+  const failures: string[] = [];
+  for (const d of OLYMPICS_DISCIPLINES) {
+    if (d.role !== "vision_ocr") continue;
+    const sample = VISION_OCR_SAMPLES[d.id];
+    if (!sample) continue;
+    const s = d.score(sample.junk);
+    if (s > 0.50) {
+      failures.push(`${d.id}: junk получил ${s.toFixed(2)} (ожидаем ≤ 0.50)`);
+    }
+  }
+  assert.deepEqual(failures, [], `Vision OCR не штрафует junk:\n  - ${failures.join("\n  - ")}`);
+});
+
+test("vision_ocr: perfect СУЩЕСТВЕННО лучше weak (margin ≥ 0.20)", () => {
+  const failures: string[] = [];
+  for (const d of OLYMPICS_DISCIPLINES) {
+    if (d.role !== "vision_ocr") continue;
+    const sample = VISION_OCR_SAMPLES[d.id];
+    if (!sample) continue;
+    const sP = d.score(sample.perfect);
+    const sW = d.score(sample.weak);
+    if (sP - sW < 0.20) {
+      failures.push(
+        `${d.id}: perfect(${sP.toFixed(2)}) - weak(${sW.toFixed(2)}) = ${(sP - sW).toFixed(2)} < 0.20`,
+      );
+    }
+  }
+  assert.deepEqual(failures, [], `Vision OCR margin perfect-vs-weak недостаточен:\n  - ${failures.join("\n  - ")}`);
+});

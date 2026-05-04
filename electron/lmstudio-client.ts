@@ -658,9 +658,54 @@ export async function getServerStatus(): Promise<{ online: boolean; version?: st
   return inflightStatus;
 }
 
+/**
+ * Sync-fire path: запускает disposal SDK клиента в фоне без await.
+ *
+ * ВАЖНО: используй ТОЛЬКО когда вызывающий код не может быть async
+ * (например, обработчики синхронных subsystems в `main.ts:teardownSubsystems`
+ * — они построены как массив `() => void`).
+ *
+ * Для graceful-shutdown с гарантией закрытия websocket'а используй
+ * `disposeClientAsync()` (см. ниже).
+ *
+ * Iter 14.3 (2026-05-04, /imperor): найдено что LM Studio после quit
+ * Bibliary держал JSON-RPC соединение, потому что Symbol.asyncDispose
+ * запускался fire-and-forget без await. Теперь у нас ДВА пути:
+ * sync (legacy, для обратной совместимости массивов teardown) и async.
+ */
 export function disposeClient(): void {
   if (cachedClient) {
+    /* fire-and-forget — websocket МОЖЕТ остаться висеть, см. async-вариант. */
     cachedClient[Symbol.asyncDispose]?.().catch((err) => console.error("[lmstudio-client/disposeClient] Error:", err));
     dropClient();
+  }
+}
+
+/**
+ * Async-вариант disposal: ОЖИДАЕТ полного закрытия SDK клиента
+ * (websocket → http2 streams) с timeout. Используется в `before-quit`
+ * чтобы LM Studio не держал соединение от мёртвого процесса.
+ *
+ * @param timeoutMs макс время ожидания закрытия (по умолчанию 1.5 сек —
+ *                  быстрее force-exit timer = 4 сек в main.ts).
+ * @returns true если closed gracefully, false по таймауту/ошибке.
+ */
+export async function disposeClientAsync(timeoutMs = 1_500): Promise<boolean> {
+  if (!cachedClient) return true;
+  const client = cachedClient;
+  dropClient(); /* сразу убираем cache, чтобы новые getClient() не использовали старый */
+  const dispose = client[Symbol.asyncDispose];
+  if (!dispose) return true;
+  try {
+    await Promise.race([
+      dispose.call(client),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`disposeClientAsync timeout ${timeoutMs}ms`)), timeoutMs).unref(),
+      ),
+    ]);
+    return true;
+  } catch (err) {
+    console.error("[lmstudio-client/disposeClientAsync] Error (websocket may leak):", err);
+    return false;
   }
 }
