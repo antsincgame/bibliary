@@ -64,6 +64,27 @@ export function buildOlympicsCard() {
             : t("models.olympics.log.header");
         },
       }, t("models.olympics.log.header")),
+      el("button", {
+        id: "mp-olympics-copy-protocol",
+        class: "btn btn-ghost btn-xs",
+        type: "button",
+        onclick: async () => {
+          const logEl = ctx.pageRoot?.querySelector("#mp-olympics-log");
+          const body = logEl?.querySelector(".mp-olympics-log-body");
+          if (!body || !body.textContent?.trim()) {
+            showToast(t("models.olympics.log.events.zero"), "info");
+            return;
+          }
+          try {
+            await navigator.clipboard.writeText(body.innerText);
+            showToast(t("models.olympics.log.copy_protocol_ok"), "success");
+          } catch (err) {
+            showToast(t("models.olympics.log.copy_protocol_fail", {
+              msg: err instanceof Error ? err.message : String(err),
+            }), "error");
+          }
+        },
+      }, t("models.olympics.log.copy_protocol")),
     ]),
 
     /* Лог-панель: collapsible <details>, расширяющийся вниз по мере турнира.

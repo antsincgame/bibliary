@@ -69,12 +69,6 @@ interface EvaluatorDeps {
    * остаются на старом auto-pick поведении через `pickEvaluatorModel`).
    */
   readEvaluatorPrefs: () => Promise<EvaluatorPrefs>;
-  /**
-   * @deprecated Iter 13: больше не вызывается из evaluator-queue. Логика
-   * smart-fallback в pickEvaluatorModel теперь делает то же без скрытого
-   * VRAM-overflow. Поле сохранено для backward-compat существующих тестов.
-   */
-  ensurePreferredLoaded: (modelKey: string) => Promise<void>;
 }
 
 interface EvaluatorPrefs {
@@ -106,30 +100,12 @@ async function defaultReadEvaluatorPrefs(): Promise<EvaluatorPrefs> {
   }
 }
 
-async function defaultEnsurePreferredLoaded(modelKey: string): Promise<void> {
-  /* Раньше вызывался прямой loadModel() — две параллельные книги в очереди
-     дёргали client.llm.load одной и той же модели одновременно, что для
-     тяжёлых evaluator-моделей (>20 GB) приводило к OOM и крэшу LM Studio.
-     Теперь pool.acquire сериализует всё через runOnChain и дедуплицирует
-     in-flight загрузки. Immediate release: refCount удержится через
-     последующий evaluateBook → pool.withModel; модель не выгрузится между
-     ними (LRU eviction только при нехватке места). */
-  const { getModelPool } = await import("../llm/model-pool.js");
-  const handle = await getModelPool().acquire(modelKey, {
-    role: "evaluator-prewarm",
-    ttlSec: 900,
-    gpuOffload: "max",
-  });
-  handle.release();
-}
-
 const defaultDeps: EvaluatorDeps = {
   evaluateBook: (s, o) => evaluateBookImpl(s, o),
   pickEvaluatorModel: (opts) => pickEvaluatorModelImpl(opts),
   readFile: (p) => fs.readFile(p, "utf-8"),
   writeFile: (p, c) => fs.writeFile(p, c, "utf-8"),
   readEvaluatorPrefs: defaultReadEvaluatorPrefs,
-  ensurePreferredLoaded: defaultEnsurePreferredLoaded,
 };
 
 let deps: EvaluatorDeps = defaultDeps;
@@ -527,30 +503,10 @@ async function evaluateOneInSlot(bookId: string, slot: SlotState): Promise<void>
             хотя бы одна loaded LLM есть.
        `allowAutoLoad: false` запрещает скрытую загрузку моделей с диска. */
     const evaluatorPrefs = await deps.readEvaluatorPrefs();
-    /* Pre-load PREFERRED модели ДО pickEvaluatorModel.
-     *
-     * КРИТИЧЕСКИЙ FIX (Шерлок v0.4.6): pickEvaluatorModel(allowAutoLoad=true)
-     * возвращает preferred ТОЛЬКО если она уже в loaded. Иначе — отправляет
-     * preferred в общий пул кандидатов и выбирает по СКОРИНГУ. Результат:
-     * юзер указал "qwen-3-8b", а picker загрузил "deepseek-r1-32b" с
-     * лучшим скором. Это нарушает контракт «выбор пользователя сильнее
-     * любой эвристики», заявленный в комментарии к pickEvaluatorModel.
-     *
-     * Решение: явно загружаем preferred в LM Studio, потом picker найдёт её
-     * в loaded и вернёт. allowAutoLoad: false — никакая heuristic не сможет
-     * переопределить выбор юзера.
-     *
-     * Pre-load выполняется только для НЕпустого preferred. При пустом —
-     * picker берёт лучшую loaded с allowAutoLoad: false (без скрытой
-     * догрузки чужих моделей). */
-    /* Iter 13: убран ensurePreferredLoaded() — он молча обходил allowAutoLoad: false
-       контракт picker'а через pool.acquire с gpuOffload: "max" и мог выгружать 
-       активные vision-модели из VRAM. Архитектура теперь честная:
-         - Если юзер хочет конкретную модель → загружает её сам в LM Studio.
-         - Если preferred не загружена → picker через allowAnyLoadedFallback 
-           берёт любую loaded LLM (default policy ON, см. prefs.evaluatorAllowFallback).
-         - Если фолбэк выключен и preferred не загружена → честный failed
-           с понятным warning'ом, без скрытой загрузки. */
+    /* Модель выбирается через pickEvaluatorModel с allowAutoLoad: false —
+       picker НЕ загружает ничего с диска, а выбирает среди уже loaded LLM.
+       Если preferred не загружена — picker либо берёт fallback/auto-pick
+       (когда allowAnyLoadedFallback=true), либо возвращает null (honest fail). */
     const allowFallback = evaluatorPrefs.allowFallback;
     const model = modelOverride ?? (await deps.pickEvaluatorModel({
       preferred: evaluatorPrefs.preferred,

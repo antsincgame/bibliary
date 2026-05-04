@@ -54,6 +54,7 @@ export function buildLogPanel() {
     type: "button",
     class: "lib-btn lib-btn-ghost lib-import-log-btn",
     onclick: () => {
+      console.log("[import-log] clear button clicked, ring size:", LOG_RING.length);
       LOG_RING.length = 0;
       rerenderLogList();
       updateCounters();

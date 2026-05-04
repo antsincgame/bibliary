@@ -6,6 +6,24 @@ All notable changes to Bibliary are documented in this file. Format follows
 
 ## [Unreleased]
 
+## [0.11.3] — 2026-05-04 — Olympics "Copy Protocol", import diagnostics, dead code cleanup
+
+### Added
+
+- **Olympics "Copy Protocol" button** — кнопка "Скопировать протокол" в Олимпиаде: копирует
+  весь лог турнира в буфер обмена для дебага и отчётов.
+- **Preflight status feedback** — при анализе файлов перед импортом теперь отображается
+  статус "Анализ файлов перед импортом…" вместо пустого ожидания.
+- **Diagnostic logging** — кнопки "Выбрать папку" и "Очистить" логи теперь пишут
+  диагностику в console при вызове для отладки нечувствительных к кликам элементов.
+
+### Fixed
+
+- **Zombie busy-state protection** — если `IMPORT_STATE.busy` застревает в `true` без
+  активного importId дольше 5 минут, автоматический сброс предотвращает блокировку UI.
+- **evaluator-queue dead code** — удалён deprecated `ensurePreferredLoaded` (~50 строк) и
+  устаревшие комментарии. Тесты синхронизированы с текущей кодовой базой.
+
 ## [0.11.2] — 2026-05-04 — Preflight scan, CoT lang-detect, evaluator smart-fallback
 
 ### Added

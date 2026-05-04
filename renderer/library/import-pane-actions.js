@@ -65,7 +65,10 @@ async function runPreflightAndDecide(runPreflightIpc, _typeHint) {
 
 /** @param {{renderCatalog: (root: HTMLElement) => Promise<void>; focusCatalogBook?: (id: string) => void}} deps */
 export async function importFromFolder(deps) {
-  if (IMPORT_STATE.busy) return;
+  if (IMPORT_STATE.busy) {
+    console.warn("[import] importFromFolder blocked: IMPORT_STATE.busy=true");
+    return;
+  }
   /** @type {string|null} */
   let folderPath = null;
   try { folderPath = await window.api.library.pickFolder(); } catch (_e) {
@@ -77,9 +80,12 @@ export async function importFromFolder(deps) {
 
   /* Preflight: probe всех DjVu/PDF на наличие text-layer'а + проверка OCR
      readiness. Заменяет старый showConfirm — даёт honest expectations. */
+  const statusEl = document.querySelector(".lib-import-status");
+  if (statusEl) statusEl.textContent = t("library.import.progress.preflight") || "Preflight scan…";
   const decision = await runPreflightAndDecide(
     () => window.api.library.preflightFolder(folderPath, { recursive: IMPORT_STATE.recursive }),
   );
+  if (statusEl) statusEl.textContent = "";
   if (!decision || decision.action === "cancel") return;
   if (decision.action === "configure-ocr") {
     openOcrSettings();
@@ -158,9 +164,12 @@ export async function importFromFiles(deps) {
   if (paths.length === 0) return;
 
   /* Preflight перед импортом файлов: probe DjVu/PDF, OCR readiness, summary. */
+  const statusEl2 = document.querySelector(".lib-import-status");
+  if (statusEl2) statusEl2.textContent = t("library.import.progress.preflight") || "Preflight scan…";
   const decision = await runPreflightAndDecide(
     () => window.api.library.preflightFiles(paths),
   );
+  if (statusEl2) statusEl2.textContent = "";
   if (!decision || decision.action === "cancel") return;
   if (decision.action === "configure-ocr") {
     openOcrSettings();
@@ -194,6 +203,7 @@ async function runImport(invoke, deps) {
   if (!root) return;
   const status = root.querySelector(".lib-import-status");
   IMPORT_STATE.busy = true;
+  IMPORT_STATE.aggregate.startedAt = Date.now();
   resetBooksState();
   rerenderStatusBar();
   if (status) status.textContent = t("library.import.progress.starting");
