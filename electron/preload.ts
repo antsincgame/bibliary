@@ -995,5 +995,17 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.on("library:scan-report", l);
       return () => ipcRenderer.removeListener("library:scan-report", l);
     },
+    /* Preflight: лёгкая проверка папки/файлов до старта импорта.
+       Возвращает разбивку файлов на text-bearing vs image-only сканы +
+       готовность OCR-движков. UI на основании этого показывает summary
+       block с действиями [Continue all] [Skip image-only] [Configure OCR]. */
+    preflightFolder: (folder: string, opts?: { recursive?: boolean }): Promise<unknown> =>
+      smokeLibrary
+        ? Promise.resolve({ totalFiles: 0, okFiles: 0, imageOnlyFiles: 0, unknownFiles: 0, invalidFiles: 0, skippedFiles: 0, ocr: { systemOcr: { available: false, platform: "smoke", languages: [] }, visionLlm: { available: false }, anyAvailable: false }, entries: [], elapsedMs: 0 })
+        : ipcRenderer.invoke("library:preflight-folder", { folder, recursive: opts?.recursive ?? true }),
+    preflightFiles: (paths: string[]): Promise<unknown> =>
+      smokeLibrary
+        ? Promise.resolve({ totalFiles: paths.length, okFiles: 0, imageOnlyFiles: 0, unknownFiles: 0, invalidFiles: 0, skippedFiles: paths.length, ocr: { systemOcr: { available: false, platform: "smoke", languages: [] }, visionLlm: { available: false }, anyAvailable: false }, entries: [], elapsedMs: 0 })
+        : ipcRenderer.invoke("library:preflight-files", { paths }),
   },
 });

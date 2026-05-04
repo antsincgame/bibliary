@@ -278,7 +278,7 @@ export function renderCatalogTable(root) {
       el("td", { class: "lib-catalog-cell-year" }, row.year ? String(row.year) : ""),
       el("td", { class: "lib-catalog-cell-domain" }, row.domain || ""),
       el("td", { class: "lib-catalog-cell-words" }, fmtWords(row.wordCount)),
-      el("td", { class: "lib-catalog-cell-quality" }, q !== null ? fmtQuality(q) : ""),
+      el("td", { class: "lib-catalog-cell-quality" }, q !== null ? fmtQuality(q) : "—"),
       statusCell,
     ]);
     tbody.appendChild(tr);
@@ -425,15 +425,15 @@ export function buildCatalogToolbar(root) {
 export function buildCatalogTable() {
   const thead = el("thead", {}, [
     el("tr", {}, [
-      el("th", { class: "lib-catalog-th-cb" }),
-      el("th", { class: "lib-catalog-th-cover" }),
-      el("th", {}, t("library.catalog.col.title")),
-      el("th", {}, t("library.catalog.col.author")),
-      el("th", { class: "lib-catalog-th-year" }, t("library.catalog.col.year")),
-      el("th", {}, t("library.catalog.col.domain")),
-      el("th", {}, t("library.catalog.col.words")),
-      el("th", {}, t("library.catalog.col.quality")),
-      el("th", {}, t("library.catalog.col.status")),
+      el("th", { class: "lib-catalog-th lib-catalog-th-cb" }),
+      el("th", { class: "lib-catalog-th lib-catalog-th-cover" }),
+      el("th", { class: "lib-catalog-th lib-catalog-th-title" }, t("library.catalog.col.title")),
+      el("th", { class: "lib-catalog-th lib-catalog-th-author" }, t("library.catalog.col.author")),
+      el("th", { class: "lib-catalog-th lib-catalog-th-year" }, t("library.catalog.col.year")),
+      el("th", { class: "lib-catalog-th lib-catalog-th-domain" }, t("library.catalog.col.domain")),
+      el("th", { class: "lib-catalog-th lib-catalog-th-words" }, t("library.catalog.col.words")),
+      el("th", { class: "lib-catalog-th lib-catalog-th-quality" }, t("library.catalog.col.quality")),
+      el("th", { class: "lib-catalog-th lib-catalog-th-status" }, t("library.catalog.col.status")),
     ]),
   ]);
   const tbody = el("tbody", { class: "lib-catalog-tbody" });

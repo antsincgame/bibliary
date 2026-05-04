@@ -490,17 +490,21 @@ async function runImportTaskWithTimeout(
 }
 
 /** Копирует abort из внешнего сигнала в локальный controller. Возвращает
- *  cleanup-функцию для отписки listener'а (избегает утечки на 50k файлов). */
+ *  cleanup-функцию для отписки listener'а (избегает утечки на 50k файлов).
+ *
+ *  Reason из внешнего сигнала ПРОКИДЫВАЕТСЯ дальше — это критично для UX:
+ *  djvu.ts / pdf.ts могут различить причину abort (user-cancel vs timeout)
+ *  и показать пользователю осмысленное сообщение вместо «aborted». */
 function linkAbortSignal(
   external: AbortSignal | undefined,
   ctl: AbortController,
 ): () => void {
   if (!external) return () => {};
   if (external.aborted) {
-    ctl.abort();
+    ctl.abort(external.reason);
     return () => {};
   }
-  const onAbort = (): void => ctl.abort();
+  const onAbort = (): void => ctl.abort(external.reason);
   external.addEventListener("abort", onAbort, { once: true });
   return () => external.removeEventListener("abort", onAbort);
 }

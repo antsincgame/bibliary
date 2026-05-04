@@ -128,6 +128,14 @@ export interface PickEvaluatorModelOptions {
    * из VRAM или вызвать swap-thrashing вплоть до freeze ОС.
    */
   allowAutoLoad?: boolean;
+  /**
+   * Разрешить smart-fallback: если preferred + CSV fallbacks не подходят,
+   * выбрать топ из УЖЕ ЗАГРУЖЕННЫХ LLM по скорингу. Default: true.
+   *
+   * Off для строгого режима (юзер выбрал конкретную модель — никаких
+   * подмен «втихую»). При off возвращается null если preferred не loaded.
+   */
+  allowAnyLoadedFallback?: boolean;
   /** DI hook для тестов — подменить `listLoaded()`. */
   listLoadedImpl?: typeof listLoaded;
   /** DI hook для тестов — подменить `listDownloaded()`. */
@@ -210,6 +218,14 @@ async function pickEvaluatorModelUnsafe(
     if (trimmed && loadedKeys.has(trimmed)) {
       return trimmed;
     }
+  }
+
+  /* 2.5 Smart-fallback gate: если юзер выбрал конкретную модель, но она не
+     загружена, И опция allowAnyLoadedFallback=false — НЕ подменяем втихую.
+     Возвращаем null чтобы caller пометил книгу с понятным warning'ом. */
+  const allowAnyLoadedFallback = opts.allowAnyLoadedFallback !== false;
+  if (preferred && !allowAnyLoadedFallback && !allowAutoLoad) {
+    return null;
   }
 
   /* Дальше — авто-выбор. Ограничиваемся только loaded моделями, если

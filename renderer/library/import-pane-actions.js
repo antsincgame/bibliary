@@ -13,9 +13,10 @@ import { t } from "../i18n.js";
 import { IMPORT_STATE, STATE } from "./state.js";
 import { refreshCollectionViews } from "./collection-views.js";
 import { showLibraryToast } from "./toast.js";
-import { showConfirm } from "../components/ui-dialog.js";
+import { showAlert } from "../components/ui-dialog.js";
 import { rerenderBooksPanel, resetBooksState } from "./import-pane-books.js";
 import { rerenderStatusBar } from "./import-pane-statusbar.js";
+import { showPreflightModal } from "./import-pane-preflight.js";
 
 const IN_FLIGHT_TRIM = 200;
 
@@ -35,6 +36,33 @@ function resolveOcrEnabled() {
   return Boolean(STATE?.prefs?.ocrEnabled);
 }
 
+/**
+ * Запускает preflight (через IPC) и показывает модал с разбивкой
+ * текстовых/image-only/инвалидных файлов + готовность OCR-движков.
+ * Возвращает решение пользователя или null если preflight упал.
+ *
+ * @param {() => Promise<unknown>} runPreflightIpc — функция вызова IPC
+ * @param {(import("./import-pane-preflight.js")).PreflightDecision | undefined} _typeHint
+ * @returns {Promise<import("./import-pane-preflight.js").PreflightDecision | null>}
+ */
+async function runPreflightAndDecide(runPreflightIpc, _typeHint) {
+  /** @type {any} */
+  let report;
+  try {
+    report = await runPreflightIpc();
+  } catch (err) {
+    console.warn("[import] preflight failed:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    await showAlert(t("library.import.preflight.failed", { msg }));
+    return null;
+  }
+  if (!report || report.totalFiles === 0) {
+    await showAlert(t("library.import.preflight.failed", { msg: "no supported files found" }));
+    return null;
+  }
+  return await showPreflightModal(report);
+}
+
 /** @param {{renderCatalog: (root: HTMLElement) => Promise<void>; focusCatalogBook?: (id: string) => void}} deps */
 export async function importFromFolder(deps) {
   if (IMPORT_STATE.busy) return;
@@ -47,17 +75,35 @@ export async function importFromFolder(deps) {
   }
   if (!folderPath) return;
 
-  /* Подтверждение перед стартом — пользователь видит выбранный путь и
-     может отменить, если выбрал не ту папку. */
-  const confirmed = await showConfirm(
-    t("library.import.confirm.startMessage", { folder: folderPath }),
-    {
-      title: t("library.import.confirm.startTitle"),
-      okText: t("library.import.btn.start"),
-      cancelText: t("library.import.btn.cancel"),
-    },
+  /* Preflight: probe всех DjVu/PDF на наличие text-layer'а + проверка OCR
+     readiness. Заменяет старый showConfirm — даёт honest expectations. */
+  const decision = await runPreflightAndDecide(
+    () => window.api.library.preflightFolder(folderPath, { recursive: IMPORT_STATE.recursive }),
   );
-  if (!confirmed) return;
+  if (!decision || decision.action === "cancel") return;
+  if (decision.action === "configure-ocr") {
+    openOcrSettings();
+    return;
+  }
+
+  /* "skip-image-only" для папки невозможен через текущий IPC importFolder
+     (он ходит сам); поэтому если пользователь выбрал skip — конвертим
+     решение в importFiles с отфильтрованным списком путей. */
+  if (decision.action === "skip-image-only") {
+    if (decision.paths.length === 0) {
+      await showAlert(t("library.import.preflight.allImageOnly"));
+      return;
+    }
+    await runImport(async () =>
+      window.api.library.importFiles({
+        paths: decision.paths,
+        scanArchives: IMPORT_STATE.scanArchives,
+        ocrEnabled: resolveOcrEnabled(),
+      }),
+      deps,
+    );
+    return;
+  }
 
   await runImport(async () =>
     window.api.library.importFolder({
@@ -68,6 +114,26 @@ export async function importFromFolder(deps) {
     }),
     deps,
   );
+}
+
+/**
+ * Активирует Settings секцию OCR — пользователь может настроить vision_ocr
+ * модель или поменять system OCR languages. Без жёсткой связи с router'ом —
+ * просто переключаем активную секцию через DOM event который слушает
+ * settings.js (если доступен) или показываем алерт-подсказку.
+ */
+function openOcrSettings() {
+  /* Diff: dispatch событие; settings.js может его слушать. Если нет —
+     fallback toast подсказывает пользователю куда зайти. */
+  try {
+    window.dispatchEvent(new CustomEvent("bibliary:open-settings", { detail: { section: "ocr" } }));
+  } catch (_e) {
+    /* swallow */
+  }
+  showLibraryToast({
+    kind: "info",
+    message: t("library.import.preflight.btn.configureOcr") + " → Settings → Models",
+  });
 }
 
 /* Иt 8Г.4: importFolderAsBundle удалён — мёртвая функция (Inquisitor
@@ -91,21 +157,27 @@ export async function importFromFiles(deps) {
   }
   if (paths.length === 0) return;
 
-  if (paths.length > 1) {
-    const confirmed = await showConfirm(
-      t("library.import.confirm.startFilesMessage", { count: String(paths.length) }),
-      {
-        title: t("library.import.confirm.startFilesTitle"),
-        okText: t("library.import.btn.start"),
-        cancelText: t("library.import.btn.cancel"),
-      },
-    );
-    if (!confirmed) return;
+  /* Preflight перед импортом файлов: probe DjVu/PDF, OCR readiness, summary. */
+  const decision = await runPreflightAndDecide(
+    () => window.api.library.preflightFiles(paths),
+  );
+  if (!decision || decision.action === "cancel") return;
+  if (decision.action === "configure-ocr") {
+    openOcrSettings();
+    return;
+  }
+
+  const finalPaths = decision.action === "skip-image-only" ? decision.paths : paths;
+  if (finalPaths.length === 0) {
+    if (decision.action === "skip-image-only") {
+      await showAlert(t("library.import.preflight.allImageOnly"));
+    }
+    return;
   }
 
   await runImport(async () =>
     window.api.library.importFiles({
-      paths,
+      paths: finalPaths,
       scanArchives: IMPORT_STATE.scanArchives,
       ocrEnabled: resolveOcrEnabled(),
     }),
@@ -280,6 +352,61 @@ export function installImportDropHandlers(dropzone, deps) {
   dropzone.addEventListener("drop", async (ev) => {
     const entries = collectDroppedEntries(/** @type {DragEvent} */ (ev));
     if (entries.length === 0) return;
+
+    /* Preflight для DnD: собираем все пути (в т.ч. рекурсивно через preflight
+       для папок) — IPC сам обходит. Подаём в preflight либо folder paths
+       (если drop был на папку), либо файлы. Если миксованный drop —
+       приоритет у файлов; для папок отдельный preflightFolder вызов. */
+    const filePaths = entries.filter((e) => !e.isDirectory).map((e) => e.path);
+    const dirPaths = entries.filter((e) => e.isDirectory).map((e) => e.path);
+
+    /** @type {any} */
+    let report = null;
+    try {
+      if (dirPaths.length === 1 && filePaths.length === 0) {
+        report = await window.api.library.preflightFolder(dirPaths[0], { recursive: IMPORT_STATE.recursive });
+      } else if (filePaths.length > 0 && dirPaths.length === 0) {
+        report = await window.api.library.preflightFiles(filePaths);
+      } else {
+        /* Mixed: для DnD это редкий кейс — пропускаем preflight и идём напрямую
+           (как было раньше). Чисто technical compromise. */
+        await runImport(() => importDroppedEntries(entries), deps);
+        return;
+      }
+    } catch (err) {
+      console.warn("[import] preflight (DnD) failed:", err);
+      await showAlert(t("library.import.preflight.failed", { msg: err instanceof Error ? err.message : String(err) }));
+      return;
+    }
+
+    if (!report || report.totalFiles === 0) {
+      await showAlert(t("library.import.preflight.failed", { msg: "no supported files in drop" }));
+      return;
+    }
+
+    const decision = await showPreflightModal(report);
+    if (decision.action === "cancel") return;
+    if (decision.action === "configure-ocr") {
+      openOcrSettings();
+      return;
+    }
+
+    if (decision.action === "skip-image-only") {
+      if (decision.paths.length === 0) {
+        await showAlert(t("library.import.preflight.allImageOnly"));
+        return;
+      }
+      await runImport(async () =>
+        window.api.library.importFiles({
+          paths: decision.paths,
+          scanArchives: IMPORT_STATE.scanArchives,
+          ocrEnabled: resolveOcrEnabled(),
+        }),
+        deps,
+      );
+      return;
+    }
+
     await runImport(() => importDroppedEntries(entries), deps);
   });
 }

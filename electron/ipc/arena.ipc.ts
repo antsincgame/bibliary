@@ -341,9 +341,38 @@ export function registerArenaIpc(): void {
     const toLoad = orderedKeys.filter((k) => !alreadyLoaded.has(k));
     if (toLoad.length === 0) return;
 
-    const MAX_AUTO_LOAD = 2;
+    /* Iter 14.5 (2026-05-04, день рождения user): MAX_AUTO_LOAD 2 → 6.
+     *
+     * Корень бага «работает только одна нейросеть»: после Олимпиады юзер
+     * получает champion-set из 6-8 уникальных моделей (по одной на роль:
+     * crystallizer / vision_meta / evaluator / layout_assistant /
+     * lang_detector / translator / ukrainian_specialist). Старый лимит 2
+     * означал что 4-6 ролей оставались БЕЗ загруженной модели → resolver
+     * выдавал null → fallback на единственную случайно загруженную модель,
+     * которая часто не подходит по capability (например, не-vision модель
+     * на роль vision_ocr). Результат — пайплайн «не работает».
+     *
+     * 6 моделей × ~3-5GB Q4_K_M = 18-30GB VRAM. На современных RTX 4080/90
+     * (16-24GB) часть модели идёт offload в RAM; LM Studio handles это сам.
+     * Если железа не хватает — load просто упадёт graceful (см. catch
+     * ниже), и юзер увидит в логе какие именно модели не влезли.
+     *
+     * env BIBLIARY_MAX_AUTO_LOAD=N override для power-users. */
+    const envOverride = process.env.BIBLIARY_MAX_AUTO_LOAD
+      ? Math.max(1, Math.min(12, Number(process.env.BIBLIARY_MAX_AUTO_LOAD) | 0))
+      : null;
+    const MAX_AUTO_LOAD = envOverride ?? 6;
     const selected = toLoad.slice(0, MAX_AUTO_LOAD);
+    const skipped = toLoad.slice(MAX_AUTO_LOAD);
     const targetSet = new Set(selected);
+    if (skipped.length > 0) {
+      console.warn(
+        `[arena/auto-load] BIBLIARY_MAX_AUTO_LOAD=${MAX_AUTO_LOAD} reached, ` +
+          `skipping ${skipped.length} model(s): ${skipped.join(", ")}. ` +
+          `These roles will fall back to existing loaded models. ` +
+          `Increase via env BIBLIARY_MAX_AUTO_LOAD if you have spare VRAM.`,
+      );
+    }
 
     /* VRAM safety: если в LM Studio УЖЕ загружено много моделей (≥3) и среди
      * них есть НЕ-recommended — выгружаем "лишние" перед загрузкой новых.

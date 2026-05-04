@@ -291,8 +291,9 @@ test("runOlympics: reasoning model gets increased maxTokens (thinking overhead)"
   }) as typeof fetch;
 
   try {
-    /* lang-detect-en — короткая non-thinking-friendly дисциплина (maxTokens=16),
-     * заменила удалённую judge-bst (2026-04-30, sync ALL_ROLES = PIPELINE_ROLES). */
+    /* lang-detect-en — non-thinking-friendly дисциплина. После Iter 14.4
+     * (2026-05-04) base maxTokens поднят 16 → 96, чтобы reasoning-модели
+     * успевали дописать final answer после CoT-prose. См. extractLangCode. */
     await runOlympics({
       models: ["thinking-model-4b", "normal-model-4b"],
       disciplines: ["lang-detect-en"],
@@ -307,8 +308,8 @@ test("runOlympics: reasoning model gets increased maxTokens (thinking overhead)"
       thinkingMax! > normalMax!,
       `thinking model maxTokens (${thinkingMax}) should be > normal (${normalMax})`,
     );
-    assert.equal(normalMax, 16, "lang-detect-en base maxTokens=16");
-    assert.equal(thinkingMax, 64, "lang-detect-en × 4 overhead = 64");
+    assert.equal(normalMax, 96, "lang-detect-en base maxTokens=96 (Iter 14.4)");
+    assert.equal(thinkingMax, 384, "lang-detect-en × 4 overhead = 384 (Iter 14.4)");
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -68,34 +68,41 @@ interface EvaluatorDeps {
    * (тестовая среда) — возвращает пустой объект (тесты, у которых нет prefs,
    * остаются на старом auto-pick поведении через `pickEvaluatorModel`).
    */
-  readEvaluatorPrefs: () => Promise<{ preferred?: string; fallbacks?: string[] }>;
+  readEvaluatorPrefs: () => Promise<EvaluatorPrefs>;
   /**
-   * Загрузить preferred модель в LM Studio ДО pickEvaluatorModel.
-   * Closes Шерлок-bug v0.4.6: picker возвращает preferred ТОЛЬКО если она
-   * уже в loaded; иначе скоринг может выбрать другую (более крупную) модель.
-   * По дефолту идёт через `getModelPool().acquire()` (с Итерации 1) — раньше
-   * был прямой `lmstudio-client.loadModel`, что давало конкурентную загрузку
-   * при N>1 evaluator-слотах одной модели. Тесты — no-op.
-   * МОЖЕТ throw: исключение от pool пробрасывается, caller (`evaluateOneInSlot`)
-   * оборачивает в try/catch и идёт по fallback пути через picker.
+   * @deprecated Iter 13: больше не вызывается из evaluator-queue. Логика
+   * smart-fallback в pickEvaluatorModel теперь делает то же без скрытого
+   * VRAM-overflow. Поле сохранено для backward-compat существующих тестов.
    */
   ensurePreferredLoaded: (modelKey: string) => Promise<void>;
 }
 
-async function defaultReadEvaluatorPrefs(): Promise<{ preferred?: string; fallbacks?: string[] }> {
+interface EvaluatorPrefs {
+  preferred?: string;
+  fallbacks?: string[];
+  /** Если true (default) — picker может взять любую loaded LLM при отсутствии preferred. */
+  allowFallback: boolean;
+}
+
+async function defaultReadEvaluatorPrefs(): Promise<EvaluatorPrefs> {
   try {
     const prefs = await readPipelinePrefsOrNull();
-    if (!prefs) return {};
+    if (!prefs) return { allowFallback: true };
     const preferred = prefs.evaluatorModel?.trim() || undefined;
+    /* Разделитель ` /[\s,;]+/ ` — такой же как в evaluator-readiness.ts,
+       чтобы preflight и очередь видели одинаковый список fallback-ключей. */
     const fallbacks = (prefs.evaluatorModelFallbacks ?? "")
-      .split(",")
+      .split(/[\s,;]+/)
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
-    return { preferred, fallbacks };
+    /* allowFallback по умолчанию true — пользователь не должен застревать
+       на "Ошибка" из-за того что забыл загрузить конкретную модель. */
+    const allowFallback = prefs.evaluatorAllowFallback ?? true;
+    return { preferred, fallbacks, allowFallback };
   } catch {
     /* PreferencesStore не инициализирован (например, в юнит-тестах без
        initPreferencesStore) — поведение как раньше: чистый auto-pick. */
-    return {};
+    return { allowFallback: true };
   }
 }
 
@@ -466,7 +473,7 @@ async function runSlot(idx: number): Promise<void> {
 }
 
 async function evaluateOneInSlot(bookId: string, slot: SlotState): Promise<void> {
-  const meta = getBookById(bookId);
+  let meta = getBookById(bookId);
   if (!meta) {
     emit({ type: "evaluator.skipped", bookId, error: "book not in cache-db" });
     return;
@@ -536,30 +543,44 @@ async function evaluateOneInSlot(bookId: string, slot: SlotState): Promise<void>
      * Pre-load выполняется только для НЕпустого preferred. При пустом —
      * picker берёт лучшую loaded с allowAutoLoad: false (без скрытой
      * догрузки чужих моделей). */
-    const hasPreferred = !!evaluatorPrefs.preferred;
-    if (hasPreferred && !modelOverride && evaluatorPrefs.preferred) {
-      try {
-        await deps.ensurePreferredLoaded(evaluatorPrefs.preferred);
-      } catch (err) {
-        console.warn(`[evaluator-queue] pre-load "${evaluatorPrefs.preferred}" failed (will fallback to picker scoring):`, err);
-        /* НЕ прерываем — picker попробует CSV fallbacks или скорит loaded. */
-      }
-    }
+    /* Iter 13: убран ensurePreferredLoaded() — он молча обходил allowAutoLoad: false
+       контракт picker'а через pool.acquire с gpuOffload: "max" и мог выгружать 
+       активные vision-модели из VRAM. Архитектура теперь честная:
+         - Если юзер хочет конкретную модель → загружает её сам в LM Studio.
+         - Если preferred не загружена → picker через allowAnyLoadedFallback 
+           берёт любую loaded LLM (default policy ON, см. prefs.evaluatorAllowFallback).
+         - Если фолбэк выключен и preferred не загружена → честный failed
+           с понятным warning'ом, без скрытой загрузки. */
+    const allowFallback = evaluatorPrefs.allowFallback;
     const model = modelOverride ?? (await deps.pickEvaluatorModel({
       preferred: evaluatorPrefs.preferred,
       fallbacks: evaluatorPrefs.fallbacks,
       allowAutoLoad: false,
+      allowAnyLoadedFallback: allowFallback,
     }));
     if (!model) {
       const reason = evaluatorPrefs.preferred
-        ? `evaluator: selected model "${evaluatorPrefs.preferred}" not loaded in LM Studio (auto-load attempted)`
-        : "evaluator: no LLM loaded";
+        ? (allowFallback
+            ? `evaluator: preferred model "${evaluatorPrefs.preferred}" not loaded AND no other LLM loaded in LM Studio`
+            : `evaluator: preferred model "${evaluatorPrefs.preferred}" not loaded in LM Studio (smart-fallback disabled in Settings)`)
+        : "evaluator: no LLM loaded in LM Studio";
       const failed: BookCatalogMeta = { ...meta, status: "failed", warnings: [...(meta.warnings ?? []), reason] };
       upsertBook(failed, meta.mdPath);
       await persistFrontmatter(failed, meta.mdPath, md);
       totalFailed += 1;
       emit({ type: "evaluator.failed", bookId, title: slot.title, error: reason });
       return;
+    }
+    /* Если picker подменил preferred на любую loaded LLM — добавим в warnings
+       прозрачную трассу, чтобы юзер видел почему оценка от другой модели. */
+    if (evaluatorPrefs.preferred && model !== evaluatorPrefs.preferred) {
+      meta = {
+        ...meta,
+        warnings: [
+          ...(meta.warnings ?? []),
+          `evaluator: preferred "${evaluatorPrefs.preferred}" not loaded — using "${model}" as fallback`,
+        ],
+      };
     }
 
     /* 4. LLM call. Используем signal этого слота — параллельные слоты

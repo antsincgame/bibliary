@@ -127,6 +127,82 @@ function tryParseJson(answer: string): unknown | null {
   }
 }
 
+/**
+ * Извлечь язык-кодовый ответ из произвольного текста модели.
+ *
+ * Зачем: reasoning-модели (Qwen3, GLM-4, GPT-OSS) часто пишут CoT-prose
+ * прямо в content без `<think>` тегов:
+ *   "Thinking Process: ... \n\nThe answer is: en"
+ *   "Okay, let's see. The user wants ... ru"
+ *   "* Input: ... * Final: en"
+ * Строгое равенство `t === "en"` после `replace(/[^a-z]/g,"")` даёт 0
+ * на таких ответах, хотя финальный токен корректный.
+ *
+ * Стратегия (детерминированная, без false-positives):
+ *   1. Убрать `<think>...</think>` (на случай если postProcess не отработал).
+ *   2. Trim + lowercase.
+ *   3. Если ответ короткий (<=24 символа) — старая логика equality по
+ *      stripped letters (быстрый путь для cooperative-моделей).
+ *   4. Иначе ищем `\b(ru|uk|en|de)\b` или `\b(russian|ukrainian|english|german)\b`
+ *      в ПОСЛЕДНИХ 256 символах ответа (final-answer обычно в конце CoT).
+ *      Возвращаем код последнего match-а.
+ *   5. Если ничего не найдено — возвращаем "" (scorer интерпретирует как fail).
+ *
+ * Confidence:
+ *   - "exact"   — короткий ответ совпал точно (ru/uk/en/de или *ian/*ish/*an).
+ *   - "tail"    — найдено в хвосте длинного ответа (CoT-fallback, чуть ниже балл).
+ *   - "none"    — не нашли вообще.
+ */
+type LangExtractResult = {
+  code: "ru" | "uk" | "en" | "de" | "";
+  confidence: "exact" | "tail" | "none";
+};
+
+const LANG_CODE_RE = /\b(ru|uk|en|de)\b/g;
+const LANG_FULL_RE = /\b(russian|ukrainian|english|german)\b/g;
+const LANG_FULL_TO_CODE: Record<string, "ru" | "uk" | "en" | "de"> = {
+  russian: "ru",
+  ukrainian: "uk",
+  english: "en",
+  german: "de",
+};
+
+export function extractLangCode(answer: string): LangExtractResult {
+  const noThink = stripThinkingBlock(answer).trim();
+  if (!noThink) return { code: "", confidence: "none" };
+
+  const lowered = noThink.toLowerCase();
+
+  if (lowered.length <= 24) {
+    const stripped = lowered.replace(/[^a-z]/g, "");
+    if (stripped === "ru" || stripped === "russian") return { code: "ru", confidence: "exact" };
+    if (stripped === "uk" || stripped === "ukrainian") return { code: "uk", confidence: "exact" };
+    if (stripped === "en" || stripped === "english") return { code: "en", confidence: "exact" };
+    if (stripped === "de" || stripped === "german") return { code: "de", confidence: "exact" };
+    if (stripped.startsWith("uk") && stripped.length <= 12) return { code: "uk", confidence: "exact" };
+    if (stripped.startsWith("en") && stripped.length <= 12) return { code: "en", confidence: "exact" };
+    if (stripped.startsWith("de") && stripped.length <= 12) return { code: "de", confidence: "exact" };
+    if (stripped.startsWith("ru") && stripped.length <= 12) return { code: "ru", confidence: "exact" };
+  }
+
+  const TAIL_LEN = 256;
+  const tail = lowered.slice(-TAIL_LEN);
+
+  let lastCode: "ru" | "uk" | "en" | "de" | "" = "";
+  for (const m of tail.matchAll(LANG_CODE_RE)) {
+    lastCode = m[1] as "ru" | "uk" | "en" | "de";
+  }
+  if (lastCode) return { code: lastCode, confidence: "tail" };
+
+  let lastFull: "ru" | "uk" | "en" | "de" | "" = "";
+  for (const m of tail.matchAll(LANG_FULL_RE)) {
+    lastFull = LANG_FULL_TO_CODE[m[1]] ?? "";
+  }
+  if (lastFull) return { code: lastFull, confidence: "tail" };
+
+  return { code: "", confidence: "none" };
+}
+
 /** Scorer для всех украинских lang-detect дисциплин.
  *  Принимает: uk / ukrainian / Українська (кириллица удаляется, проверяем latin) /
  *             украинська / українська (Cyrillic check отдельно).
@@ -134,14 +210,15 @@ function tryParseJson(answer: string): unknown | null {
  */
 function ukLangScore(a: string): number {
   const raw = a.trim().toLowerCase();
-  /* Кириллический ответ: «українська», «украинский» — проверяем до strip */
-  if (raw.includes("укра")) return 0.85;  /* "українська", "украинська", "украинский" - but not "uk" = penalize a little */
-  const t = raw.replace(/[^a-z]/g, "");
-  if (t === "uk")         return 1.0;
-  if (t.startsWith("uk") && t.length <= 10) return 0.85;  /* "ukrainian", "ukrainain" typo */
-  if (t === "ukrainian")  return 0.85;
-  if (t === "ru" || t === "russian") return 0.0; /* грубая ошибка: перепутал uk↔ru */
-  if (t === "")           return 0.05; /* пустой ответ */
+  if (raw === "") return 0.05;
+  /* Кириллический ответ: «українська», «украинский» — проверяем до strip
+   * (extractLangCode видит только латиницу). */
+  if (raw.includes("укра")) return 0.85;
+
+  const { code, confidence } = extractLangCode(a);
+  if (code === "uk") return confidence === "exact" ? 1.0 : 0.85;
+  if (code === "ru") return 0.0; /* грубая ошибка: перепутал uk↔ru */
+  if (code === "en" || code === "de") return 0.05;
   return 0.1;
 }
 
@@ -676,13 +753,20 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
     system:
       LANG_DETECT_SYSTEM_PROMPT,
     user:
-      "What language is this text?\n\n" +
-      "«Штучний інтелект є невід'ємною частиною сучасного технологічного прогресу. " +
+      /* ASCII кавычки вместо `«»` (U+00AB/U+00BB): часть моделей плохо
+       * декодирует UTF-8 multi-byte символы и эхом выдаёт `\uFFFD<` (мусор в
+       * CoT-логе). Содержимое теста от этого не страдает. */
+      'What language is this text?\n\n' +
+      '"Штучний інтелект є невід\'ємною частиною сучасного технологічного прогресу. ' +
       "Алгоритми машинного навчання дозволяють комп'ютерам вчитися з даних та вирішувати " +
       "складні завдання без явного програмування. Системи глибокого навчання досягають " +
       "вражаючих результатів у галузях розпізнавання мовлення, обробки зображень та " +
-      "обробки природної мови.»",
-    maxTokens: 16,
+      'обробки природної мови."\n\n' +
+      "Reply with ONLY the language code (one of: ru, uk, en, de). Final answer:",
+    /* 16 → 96: reasoning-моделям (Qwen3, GLM-4, GPT-OSS) нужно ~50-80 токенов
+     * на CoT-prose до final answer. С max_tokens=16 они обрезаются на середине
+     * reasoning и финальный код не успевает попасть в content. */
+    maxTokens: 96,
     score: ukLangScore,
   },
   {
@@ -694,16 +778,17 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
     system:
       LANG_DETECT_SYSTEM_PROMPT,
     user:
-      "What language is this text?\n\n" +
-      "«The depth-first search algorithm traverses the tree starting from the root node. " +
+      'What language is this text?\n\n' +
+      '"The depth-first search algorithm traverses the tree starting from the root node. ' +
       "It explores each branch completely before backtracking to explore other branches. " +
-      "This approach uses a stack data structure, either explicitly or via the call stack.»",
-    maxTokens: 16,
+      'This approach uses a stack data structure, either explicitly or via the call stack."\n\n' +
+      "Reply with ONLY the language code (one of: ru, uk, en, de). Final answer:",
+    maxTokens: 96,
     score: (a) => {
-      const t = a.trim().toLowerCase().replace(/[^a-z]/g, "");
-      if (t === "en" || t === "english") return 1.0;
-      if (t.startsWith("en"))             return 0.85;
-      return 0.0;
+      if (!a.trim()) return 0;
+      const { code, confidence } = extractLangCode(a);
+      if (code === "en") return confidence === "exact" ? 1.0 : 0.85;
+      return 0;
     },
   },
 

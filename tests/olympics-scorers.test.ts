@@ -16,6 +16,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { OLYMPICS_DISCIPLINES } from "../electron/lib/llm/arena/olympics.ts";
+import { extractLangCode } from "../electron/lib/llm/arena/disciplines.ts";
 
 interface Sample {
   good: string;
@@ -482,4 +483,142 @@ test("vision_ocr: perfect СУЩЕСТВЕННО лучше weak (margin ≥ 0.2
     }
   }
   assert.deepEqual(failures, [], `Vision OCR margin perfect-vs-weak недостаточен:\n  - ${failures.join("\n  - ")}`);
+});
+
+/* ─── Iter 14.4 (2026-05-04): CoT-устойчивый lang-detect ─────────────────
+ *
+ * Реальные данные `data/olympics-progress.jsonl` показали что 10/29 моделей
+ * проваливают `lang-detect-en` — но не потому что не знают английский, а
+ * потому что эмитят CoT-prose («Thinking Process:», «Okay, let's see»)
+ * прямо в content без `<think>` тегов. Старый scorer строго сравнивал
+ * `t.replace(/[^a-z]/g,"") === "en"` → 0.
+ *
+ * `extractLangCode` (disciplines.ts) ищет код языка в хвосте ответа,
+ * чтобы CoT-модели не штрафовались за reasoning. Эти тесты — регрессия
+ * против возврата к строгому equality.
+ */
+
+test("extractLangCode: короткий cooperative ответ → exact", () => {
+  assert.deepEqual(extractLangCode("en"), { code: "en", confidence: "exact" });
+  assert.deepEqual(extractLangCode("ru"), { code: "ru", confidence: "exact" });
+  assert.deepEqual(extractLangCode("uk"), { code: "uk", confidence: "exact" });
+  assert.deepEqual(extractLangCode("de"), { code: "de", confidence: "exact" });
+  assert.deepEqual(extractLangCode("English"), { code: "en", confidence: "exact" });
+  assert.deepEqual(extractLangCode("ukrainian"), { code: "uk", confidence: "exact" });
+  assert.deepEqual(extractLangCode("  en\n"), { code: "en", confidence: "exact" });
+  assert.deepEqual(extractLangCode("EN."), { code: "en", confidence: "exact" });
+});
+
+test("extractLangCode: prose-CoT с финальным кодом → tail", () => {
+  const cot1 = "Thinking Process: 1. **Analyze the Request:** The user wants " +
+    "to identify the language. The text contains 'depth-first search algorithm' " +
+    "which is English. Final answer: en";
+  assert.equal(extractLangCode(cot1).code, "en");
+
+  const cot2 = "Okay, let's see. The user is asking what language the text is. " +
+    "Looking at the markers (depth-first, traverses, branch) — this is English. en";
+  assert.equal(extractLangCode(cot2).code, "en");
+
+  const cot3 = "Got it, let's see. The text mentions «depth-first» which is " +
+    "an English term. The answer is\n\nen";
+  assert.equal(extractLangCode(cot3).code, "en");
+});
+
+test("extractLangCode: CoT с `<think>` тегами → ответ извлечён", () => {
+  const wrapped = "<think>Let me analyze this. The text is in English clearly.</think>\n\nen";
+  assert.equal(extractLangCode(wrapped).code, "en");
+});
+
+test("extractLangCode: ошибочное распознавание → возвращаем что увидели", () => {
+  /* Модель сказала «Russian» на английский текст — scorer должен это поймать
+   * как 'ru' и lang-detect-en вернёт 0. */
+  const wrong = "This text is in Russian (ru).";
+  assert.equal(extractLangCode(wrong).code, "ru");
+
+  /* Модель колеблется — last-match выигрывает. */
+  const ambiguous = "Could be English, but probably Russian.\n\nRussian";
+  assert.equal(extractLangCode(ambiguous).code, "ru");
+});
+
+test("extractLangCode: пустой / мусорный → none", () => {
+  assert.equal(extractLangCode("").code, "");
+  assert.equal(extractLangCode("   \n  ").code, "");
+  assert.equal(extractLangCode("xyz qrs lol").code, "");
+});
+
+test("lang-detect-en: prose-CoT с правильным финалом получает score 1.0 (после exact-fallback)", () => {
+  const d = OLYMPICS_DISCIPLINES.find((x) => x.id === "lang-detect-en");
+  assert.ok(d, "lang-detect-en должна существовать");
+
+  /* Чистый exact: */
+  assert.equal(d!.score("en"), 1.0);
+
+  /* Prose-CoT, заканчивающийся на 'en' — scorer должен извлечь и дать 0.85+ */
+  const cot = "Thinking Process: The user wants me to identify the language " +
+    "of a paragraph about depth-first search. The text is in English. en";
+  const s = d!.score(cot);
+  assert.ok(s >= 0.85, `prose-CoT с правильным ответом получил ${s} (ожидаем ≥ 0.85)`);
+
+  /* Prose с «English» (полным словом) — также должно сработать. */
+  const proseFull = "I see the text. It is clearly English.";
+  assert.ok(d!.score(proseFull) >= 0.85, "Полное слово English в хвосте должно дать ≥ 0.85");
+
+  /* Prose, распознавшая язык неправильно («Russian») — score 0. */
+  const wrong = "This text is in Russian (ru).";
+  assert.equal(d!.score(wrong), 0, "Неправильное распознавание Russian для английского текста = 0");
+
+  /* Пустой ответ → 0. */
+  assert.equal(d!.score(""), 0);
+
+  /* Полный мусор без кодов → 0. */
+  assert.equal(d!.score("xyz qrs lol"), 0);
+});
+
+test("lang-detect-uk: prose-CoT с правильным финалом получает score ≥ 0.85", () => {
+  const d = OLYMPICS_DISCIPLINES.find((x) => x.id === "lang-detect-uk");
+  assert.ok(d, "lang-detect-uk должна существовать");
+
+  /* Чистый exact: */
+  assert.equal(d!.score("uk"), 1.0);
+
+  /* Prose-CoT с правильным uk в конце. */
+  const cot = "Thinking Process: The text contains markers like є, ї, дозволяє " +
+    "which are Ukrainian. Final answer: uk";
+  const s = d!.score(cot);
+  assert.ok(s >= 0.85, `prose-CoT uk-ответ получил ${s} (ожидаем ≥ 0.85)`);
+
+  /* Кириллический «українська» — accepted (старая логика сохранена). */
+  assert.ok(d!.score("українська") >= 0.80);
+
+  /* Грубая ошибка: модель сказала «Russian» на украинский текст — score 0. */
+  const wrong = "This text is in Russian.";
+  assert.equal(d!.score(wrong), 0);
+
+  /* Пустой → 0.05 (cooperative-режим: модель пыталась, но не успела). */
+  assert.equal(d!.score(""), 0.05);
+});
+
+test("lang-detect: max_tokens = 96 (для CoT-моделей)", () => {
+  const ids = ["lang-detect-en", "lang-detect-uk"];
+  for (const id of ids) {
+    const d = OLYMPICS_DISCIPLINES.find((x) => x.id === id);
+    assert.ok(d, `${id} должна существовать`);
+    assert.ok(
+      d!.maxTokens >= 64,
+      `${id}: maxTokens=${d!.maxTokens} слишком мал для reasoning-моделей (нужно ≥ 64)`,
+    );
+  }
+});
+
+test("lang-detect: фикстуры не содержат `«»` (mojibake-prone guillemets)", () => {
+  const ids = ["lang-detect-en", "lang-detect-uk"];
+  for (const id of ids) {
+    const d = OLYMPICS_DISCIPLINES.find((x) => x.id === id);
+    assert.ok(d, `${id} должна существовать`);
+    assert.ok(
+      !d!.user.includes("«") && !d!.user.includes("»"),
+      `${id}: user-prompt содержит французские кавычки «» — некоторые модели мангли их в \uFFFD<. ` +
+        "Используй ASCII \" вместо.",
+    );
+  }
 });

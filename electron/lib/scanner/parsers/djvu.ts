@@ -121,14 +121,22 @@ async function parseDjvu(filePath: string, opts: ParseOptions = {}): Promise<Par
     if (visionAvailable) {
       return ocrDjvuPages(filePath, baseName, "vision-llm", opts, warnings);
     }
-    warnings.push("DJVU OCR auto-fallback: system OCR unsupported AND vision-llm unavailable");
-    warnings.push(getDjvuInstallHint());
+    /* НЕ DjVuLibre проблема — DjVu успешно прочитан, у файла просто нет text-layer'а.
+       Реальная проблема: ни system OCR, ни vision-LLM не работают. Указываем
+       конкретно что чинить в настройках. */
+    warnings.push("DJVU has no embedded OCR text layer (image-only scan)");
+    warnings.push("System OCR: unavailable on this OS (works only on Windows/macOS)");
+    warnings.push("Vision-LLM: no model assigned to vision_ocr role (configure in Models)");
+    warnings.push("To extract text from this DjVu: assign a vision_ocr model in LM Studio");
     return { metadata: { title: baseName, warnings }, sections: [], rawCharCount: 0 };
   }
 
   if (provider === "system" && !isOcrSupported()) {
-    warnings.push("System OCR for DJVU is available only on Windows and macOS");
-    warnings.push(getDjvuInstallHint());
+    /* Пользователь явно выбрал system OCR, но платформа Linux. DjVuLibre тут не
+       при чём — он сделал свою работу. Указываем альтернативу. */
+    warnings.push("DJVU has no embedded OCR text layer (image-only scan)");
+    warnings.push("System OCR is available only on Windows and macOS");
+    warnings.push("Linux alternative: switch DJVU OCR provider to vision-llm and assign a vision_ocr model");
     return { metadata: { title: baseName, warnings }, sections: [], rawCharCount: 0 };
   }
 
@@ -186,7 +194,27 @@ async function ocrDjvuPages(
   let textLayerPages = 0;
 
   for (let page = 0; page < pageCount; page++) {
-    if (opts.signal?.aborted) throw new Error("djvu OCR aborted");
+    if (opts.signal?.aborted) {
+      /* Различаем причину abort: пользовательская отмена / per-file timeout /
+       * unknown. Текстовая подсказка попадает в UI (Import failed: ...).
+       * До этого фикса всегда писалось 'djvu OCR aborted' без пояснения. */
+      const reason = opts.signal.reason;
+      const reasonStr =
+        typeof reason === "string"
+          ? reason
+          : reason instanceof Error
+            ? reason.message
+            : reason !== undefined
+              ? String(reason)
+              : "unknown";
+      const friendly =
+        reasonStr === "user-cancel"
+          ? "DjVu OCR cancelled by user"
+          : reasonStr.includes("timeout")
+            ? `DjVu OCR exceeded per-file time budget (${reasonStr})`
+            : `DjVu OCR aborted: ${reasonStr}`;
+      throw new Error(friendly);
+    }
 
     /* Tier 0 per-page: пробуем встроенный текстовый слой страницы. Дешёво
        (один djvutxt --page=N вызов, обычно <100ms). Если на странице есть
@@ -243,8 +271,10 @@ async function ocrDjvuPages(
   if (textLayerPages > 0) warnings.push(`DJVU per-page text layer used for ${textLayerPages}/${pageCount} page(s) (heavy lane saved)`);
   if (ocrPages > 0) warnings.push(`DJVU OCR applied to ${ocrPages}/${pageCount} page(s) using ${provider}`);
   if (ocrPages === 0 && textLayerPages === 0) {
-    warnings.push("DJVU OCR produced no text. Check djvulibre binaries and OCR settings.");
-    warnings.push(getDjvuInstallHint());
+    /* DjVuLibre отработал на page count и rasterise; пусто — это OCR engine
+       (system / vision-LLM) ничего не распознал. Указываем настоящую причину. */
+    warnings.push(`DJVU OCR engine (${provider}) produced no text from any page`);
+    warnings.push("Possible causes: missing language pack (system OCR), vision-LLM model mismatch, or unreadable scan quality");
   }
 
   const sections = paragraphsToSections(paragraphs);
@@ -277,7 +307,8 @@ function textToSections(text: string): BookSection[] {
   return sections.filter((s) => s.paragraphs.length > 0);
 }
 
-function paragraphsToSections(paragraphs: Array<{ page: number; text: string }>): BookSection[] {
+/** Экспорт для регрессионных тестов (Iter 14.5: вертикальный текст). */
+export function paragraphsToSections(paragraphs: Array<{ page: number; text: string }>): BookSection[] {
   const sections: BookSection[] = [];
   let current: BookSection | null = null;
   let lastPage = -1;
@@ -287,12 +318,21 @@ function paragraphsToSections(paragraphs: Array<{ page: number; text: string }>)
       sections.push(current);
       lastPage = page;
     }
-    if (looksLikeHeading(text) && text.length < 100) {
-      current = { level: 1, title: text, paragraphs: [] };
+    /* Per-page DjVu OCR (особенно из встроенного текстового слоя) часто
+     * приходит как «слово\nслово\nслово» — одно слово на строку. Это убивает
+     * вёрстку: книга превращается в вертикальный столбик букв. Склейка
+     * одиночных `\n` в пробел восстанавливает абзацы. Двойные `\n` уже стали
+     * границами блоков выше (`pageText.split(/\n{2,}/)`), поэтому абзацы
+     * не теряются. Соответствует поведению `textToSections` для full-doc
+     * пути (см. djvu.ts:textToSections). */
+    const flat = text.replace(/\n/g, " ").replace(/\s{2,}/g, " ").trim();
+    if (!flat) continue;
+    if (looksLikeHeading(flat) && flat.length < 100) {
+      current = { level: 1, title: flat, paragraphs: [] };
       sections.push(current);
       continue;
     }
-    current!.paragraphs.push(text);
+    current!.paragraphs.push(flat);
   }
   return sections.filter((s) => s.paragraphs.length > 0);
 }
