@@ -265,11 +265,11 @@ async function runImport(invoke, deps) {
   const status = root.querySelector(".lib-import-status");
   IMPORT_STATE.busy = true;
   IMPORT_STATE.aggregate.startedAt = Date.now();
-  resetBooksState();
-  rerenderStatusBar();
-  if (status) status.textContent = t("library.import.progress.starting");
   let unsubscribeProgress = null;
   try {
+    resetBooksState();
+    rerenderStatusBar();
+    if (status) status.textContent = t("library.import.progress.starting");
     if (typeof window.api?.library?.onImportProgress === "function") {
       unsubscribeProgress = window.api.library.onImportProgress((evt) => {
         if (evt?.importId && !IMPORT_STATE.importId) {
@@ -357,16 +357,22 @@ async function runImport(invoke, deps) {
     if (typeof res?.skipped === "number") IMPORT_STATE.aggregate.skipped = res.skipped;
     if (typeof res?.failed === "number") IMPORT_STATE.aggregate.failed = res.failed;
     rerenderStatusBar();
-    if (status) status.textContent = t("library.import.progress.done", {
+    const doneMsg = t("library.import.progress.done", {
       added: String(res.added ?? 0),
       skipped: String((res.skipped ?? 0) + (res.duplicate ?? 0) + (res.failed ?? 0)),
     });
+    if (status) status.textContent = doneMsg;
+    if ((res.added ?? 0) === 0) {
+      showLibraryToast({ kind: "info", message: doneMsg });
+    }
     void deps.renderCatalog(root);
     refreshCollectionViews();
   } catch (e) {
-    if (status) status.textContent = t("library.import.progress.failed", {
+    const errMsg = t("library.import.progress.failed", {
       error: e instanceof Error ? e.message : String(e),
     });
+    if (status) status.textContent = errMsg;
+    showLibraryToast({ kind: "error", message: errMsg });
   } finally {
     if (typeof unsubscribeProgress === "function") {
       try { unsubscribeProgress(); } catch (_e) { /* tolerate: listener cleanup */ }
