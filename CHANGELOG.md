@@ -6,6 +6,86 @@ All notable changes to Bibliary are documented in this file. Format follows
 
 ## [Unreleased]
 
+## [0.11.2] — 2026-05-04 — Preflight scan, CoT lang-detect, evaluator smart-fallback
+
+### Added
+
+- **Preflight scan** — перед каждым импортом (папка / файлы / drag-and-drop) показывается
+  модальное окно-отчёт: текстовые файлы vs image-only сканы, готовность OCR и Evaluator.
+  Кнопки: `Continue all`, `Skip image-only`, `Configure OCR`, `Cancel`.
+- **DjVu IFF probe** (`djvu-iff-probe.ts`) — легковесный in-process парсер IFF-структуры:
+  определяет наличие текстового слоя без запуска внешнего `djvutxt`.
+- **PDF text probe** (`pdf-text-probe.ts`) — обёртка над `@firecrawl/pdf-inspector`
+  для классификации PDF (TextBased / Scanned / ImageBased / Mixed) до импорта.
+- **OCR Capabilities** (`ocr-capabilities.ts`) — агрегация статуса System OCR + Vision-LLM.
+- **Evaluator Readiness** (`evaluator-readiness.ts`) — preflight-проверка готовности
+  Book Evaluator: preferred → CSV fallbacks → auto-pick; отражается в preflight-модале.
+- **`extractLangCode`** (`disciplines.ts`) — CoT-устойчивое извлечение кода языка для
+  моделей (Qwen3, GLM-4, GPT-OSS), которые пишут reasoning до финального ответа.
+  `max_tokens` дисциплин lang-detect повышен 16 → 96.
+- **PDF hex-title decode** (`title-heuristics.ts`) — CP1251 / UTF-16BE декодер для PDF
+  Info-словаря: российские OCR-сканы (FineReader, PRO100) теперь дают читаемые заголовки
+  вместо hex-мусора в каталоге.
+- **`sanitizeRawTitle`** — публичный хелпер санитизации title до `pickBestBookTitle`.
+- **`paragraphsToSections` экспорт** — теперь тестируемая функция (регрессионные тесты).
+- **Arena MAX_AUTO_LOAD 6** (`arena.ipc.ts`) — лимит автозагрузки моделей 2 → 6
+  (champion-set 6-8 ролей не умещался в старый лимит). Env override `BIBLIARY_MAX_AUTO_LOAD`.
+- Новые тесты: `olympics-scorers` +14 (extractLangCode + CoT scorers), `title-heuristics-pdf-hex`
+  14 тестов, `djvu-vertical-text-fix`, `auto-load-max-models`.
+
+### Fixed
+
+- **DjVu вертикальный текст** — `paragraphsToSections` склеивает одно-слово-на-строку
+  (встроенный текстовый слой) в нормальные абзацы через `text.replace(/\n/g, " ")`.
+- **Abort reason propagation** — `linkAbortSignal` и `ocrDjvuPages` пробрасывают причину
+  abort: UI видит `"DjVu OCR cancelled by user"` vs `"exceeded per-file time budget"`.
+- **Evaluator smart-fallback gate** — `evaluator-readiness.ts`: при `preferred` пустом
+  и `fallbackPolicyEnabled=false` + загруженные LLM → теперь корректно `ready: true`
+  (раньше неверно возвращало `no-llm-loaded`).
+- **CSV separator inconsistency** — `evaluator-queue.ts` использует `/[\s,;]+/` как
+  `evaluator-readiness.ts`: `;` и пробельные разделители теперь работают в обоих модулях.
+- **Skip image-only + 0 файлов → тихий выход** — все три пути (importFromFolder,
+  importFromFiles, drag-and-drop) теперь показывают информативный alert вместо `return`.
+- **`hex.substr` deprecated** — заменено на `hex.slice` в `title-heuristics.ts`.
+- Стили: статусная ячейка каталога получила `max-width + overflow: ellipsis`.
+- Заголовки `<th>` каталога получили семантические классы (`lib-catalog-th-*`).
+- Пустое значение quality заменено с `""` на `"—"` для визуальной ясности.
+- DjVu OCR warnings теперь указывают точную причину вместо универсального
+  `"Check djvulibre binaries"`.
+
+### Changed
+
+- `ensurePreferredLoaded()` удалён из `evaluator-queue` (создавал скрытые VRAM overflow,
+  обходил контракт `allowAutoLoad: false`). Теперь picker сам делает smart-fallback.
+- `evaluatorAllowFallback` добавлен в `PreferencesSchema` (default: `true`).
+- `allowAnyLoadedFallback` в `book-evaluator-model-picker.ts` — строгий режим (off):
+  если preferred не загружена — честный `failed` с понятным сообщением.
+
+## [0.11.1] — 2026-05-04 — Critical fixes: image-refs, atomic write, prefs corruption
+
+### Fixed
+
+- **H11** — `injectCasImageRefs`/`parseBookMarkdownChapters` резали книгу по любому
+  Markdown scene-break `---`. Исправлен поиск точной сигнатуры image-refs блока.
+- **C3** — tmp-имена в `cache.ts`/`library-store.ts`: добавлен `randomBytes(8)` против
+  race condition при параллельном импорте.
+- **C4** — `writeTextAtomic` теперь делает `fdatasync` перед `rename` (NTFS power-off).
+- **C5** — corrupted `preferences.json` карантируется в `.corrupted-<ts>`, UI получает
+  событие.
+- **vision_ocr Олимпиада**: 4 новые дисциплины, `scoreOcrRecall` достигает 100/100.
+- **Zombie LM Studio**: `disposeClientAsync` блокирует quit до закрытия WebSocket.
+- **Olympics persist**: arena.ipc — JSONL стрим + persist до возврата в renderer.
+
+## [0.11.0] — 2026-05-04 — DjVu native, Olympics auto-roles, library UI
+
+### Added
+
+- **DjVu native parser** (`djvu-native.ts`) — `djvu.js` как альтернатива CLI с fallback.
+- **Олимпиада**: авто-роли чемпионов, новая дисциплина, документация скоринга.
+- **Library UI**: модалка создания коллекции, логи импорта в Import pane.
+- **Отмена импорта**: очищает очереди LLM, `killChildTree` для 7z на Windows.
+- **Vision LLM**: логирование ошибок улучшено.
+
 ## [0.10.1] — 2026-05-03 — Olympics tabs, Layout Assistant description, dropdown fix
 
 ### Fixed

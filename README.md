@@ -2,7 +2,7 @@
 
 > Превращает коллекцию книг в датасет для дообучения LLM — через структурированный Markdown, смысловые чанки и Qdrant-коллекции.
 
-**Версия:** 0.10.1 · **Платформа:** Windows (portable .exe) · **Модели:** LM Studio (локально)
+**Версия:** 0.11.2 · **Платформа:** Windows (portable .exe) · **Модели:** LM Studio (локально)
 
 ---
 
@@ -396,9 +396,25 @@ tests/
 
 Полный список: [CHANGELOG.md](CHANGELOG.md)
 
+**v0.11.2** (2026-05-04) — Preflight scan, CoT lang-detect, evaluator smart-fallback
+- **Preflight scan** перед импортом: DjVu IFF probe + PDF text probe, OCR readiness, Evaluator readiness в одном модальном окне
+- **CoT-устойчивый lang-detect** (`extractLangCode`): Qwen3/GLM-4 с reasoning теперь правильно засчитываются
+- **Evaluator smart-fallback**: `allowAnyLoadedFallback`, честные warnings, убран скрытый `ensurePreferredLoaded`
+- **CP1251/UTF-16BE decode** для PDF hex-заголовков (российские OCR-сканы)
+- **DjVu вертикальный текст** — починены абзацы из встроенного text layer
+- Фиксы: abort reason, CSV separator, skip-image-only UX, `hex.substr`, каталог UI
+
+**v0.11.1** (2026-05-04) — Critical fixes: H11/C3/C4/C5 + vision_ocr + zombie LM Studio
+- **H11**: image-refs block signature fix (scene-break `---` не режет книгу)
+- **C3/C4**: атомарная запись с `randomBytes` + `fdatasync` перед `rename`
+- **C5**: corrupted preferences.json → карантин `.corrupted-<ts>`
+- vision_ocr Олимпиада: 100/100 достижим; zombie LM Studio fix; Olympics persist
+
+**v0.11.0** (2026-05-04) — DjVu native, Olympics auto-roles, library UI
+- DjVu native parser (`djvu-native.ts`), Олимпиада авто-роли, Library UI улучшения
+
 **v0.10.1** — portable и зависимости
 - В `dependencies` добавлен **`jsonrepair`** (раньше модуль мог отсутствовать в `app.asar` при сборке, если пакет не был в `package.json` — падение main process при старте).
-- Перед **`electron:build`** и **`electron:build-portable`** выполняется **`verify:deps-for-packaging`**: сверка корня lock с `package.json`, `npm ls --depth=0`, knip production (`unlisted`, `unresolved`). Подробности — раздел «Сборка и зависимости» выше.
 
 **v0.8.0** (2026-05-03) — Reader Purge + Versator Premium Layout
 - **Удалено**: тяжёлая нативная читалка foliate-js (~3.7 MB vendor) + custom protocol `bibliary-book://` + DJVU→PDF UI-конвертер. Книги читаются через премиум-рендер `book.md` в существующем reader.
