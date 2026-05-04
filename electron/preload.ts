@@ -1006,6 +1006,37 @@ contextBridge.exposeInMainWorld("api", {
       smokeLibrary
         ? Promise.resolve({ totalFiles: 0, okFiles: 0, imageOnlyFiles: 0, unknownFiles: 0, invalidFiles: 0, skippedFiles: 0, ocr: { systemOcr: { available: false, platform: "smoke", languages: [] }, visionLlm: { available: false }, anyAvailable: false }, entries: [], elapsedMs: 0 })
         : ipcRenderer.invoke("library:preflight-folder", { folder, recursive: opts?.recursive ?? true }),
+    onPreflightProgress: (cb: (evt: {
+      sessionId: string;
+      phase: "walking" | "ocr" | "evaluator" | "probing" | "complete";
+      current?: number;
+      total?: number;
+      currentPath?: string;
+      status?: "ok" | "skipped" | "timeout" | "failed";
+      message?: string;
+    }) => void): (() => void) => {
+      const l = (_e: unknown, payload: {
+        sessionId: string;
+        phase: "walking" | "ocr" | "evaluator" | "probing" | "complete";
+        current?: number;
+        total?: number;
+        currentPath?: string;
+        status?: "ok" | "skipped" | "timeout" | "failed";
+        message?: string;
+      }) => cb(payload);
+      ipcRenderer.on("library:preflight-progress", l);
+      return () => ipcRenderer.removeListener("library:preflight-progress", l);
+    },
+    cancelPreflight: (): Promise<number> => smokeLibrary
+      ? Promise.resolve(0)
+      : ipcRenderer.invoke("library:cancel-preflight"),
+    peekFolder: (folder: string, opts?: { recursive?: boolean }): Promise<{
+      totalFiles: number;
+      sampleNames: string[];
+      truncated: boolean;
+    }> => smokeLibrary
+      ? Promise.resolve({ totalFiles: 0, sampleNames: [], truncated: false })
+      : ipcRenderer.invoke("library:peek-folder", { folder, recursive: opts?.recursive ?? true }),
     preflightFiles: (paths: string[]): Promise<unknown> =>
       smokeLibrary
         ? Promise.resolve({ totalFiles: paths.length, okFiles: 0, imageOnlyFiles: 0, unknownFiles: 0, invalidFiles: 0, skippedFiles: paths.length, ocr: { systemOcr: { available: false, platform: "smoke", languages: [] }, visionLlm: { available: false }, anyAvailable: false }, entries: [], elapsedMs: 0 })

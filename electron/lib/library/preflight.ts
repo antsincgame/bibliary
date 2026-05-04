@@ -6,9 +6,8 @@
  * нужен OCR. Если OCR не настроен — эти файлы вернут пусто.
  *
  * Скорость: probe одного DjVu = 1-5 мс (IFF in-process), PDF = 50-200 мс
- * (pdf-inspector). Большие папки (сотни DjVu на сетевом диске) требуют
- * большего IPC-таймаута на стороне renderer и выше параллельности probe
- * (см. CONCURRENCY ниже).
+ * (pdf-inspector). Для 100 файлов общий preflight ~20-30 секунд при PDF
+ * heavy папке. DjVu-only — секунды.
  */
 
 import { promises as fs } from "fs";
@@ -56,6 +55,27 @@ export interface PreflightReport {
   elapsedMs: number;
 }
 
+export type PreflightProgressPhase =
+  | "walking"   /* идёт обход папки, считаем файлы */
+  | "ocr"       /* проверяем OCR capabilities (system / vision-LLM) */
+  | "evaluator" /* проверяем готовность evaluator'а в LM Studio */
+  | "probing"   /* пробуем text-layer для DjVu/PDF */
+  | "complete"; /* всё готово */
+
+export interface PreflightProgressEvent {
+  phase: PreflightProgressPhase;
+  /** Сколько файлов обнаружено к этому моменту (walking) или просканировано (probing). */
+  current?: number;
+  /** Сколько ВСЕГО файлов нужно пройти (только для probing). */
+  total?: number;
+  /** Текущий путь файла (для probing — последний пробуемый). */
+  currentPath?: string;
+  /** Чек-точки готовности: ocr/evaluator завершились с этим статусом. */
+  status?: "ok" | "skipped" | "timeout" | "failed";
+  /** Опциональное человекочитаемое сообщение. */
+  message?: string;
+}
+
 export interface PreflightOptions {
   /** Если true — рекурсивно обходим вложенные папки (для folder-flow). */
   recursive?: boolean;
@@ -63,6 +83,8 @@ export interface PreflightOptions {
   maxFiles?: number;
   /** AbortSignal для отмены длинных preflight'ов. */
   signal?: AbortSignal;
+  /** Подписка на этапы preflight для UI прогресс-бара. */
+  onProgress?: (evt: PreflightProgressEvent) => void;
 }
 
 const PROBED_EXTS = new Set(["djvu", "djv", "pdf"]);
@@ -80,21 +102,42 @@ export async function preflightFolder(folderPath: string, opts: PreflightOptions
   const recursive = opts.recursive ?? true;
   const maxFiles = opts.maxFiles ?? DEFAULT_MAX_FILES;
 
+  const onProgress = opts.onProgress;
+  onProgress?.({ phase: "walking", current: 0, message: `scanning ${folderPath}` });
+
   const collected: string[] = [];
-  await walkCollect(folderPath, recursive, maxFiles, collected, opts.signal);
+  let lastWalkEmit = Date.now();
+  await walkCollect(folderPath, recursive, maxFiles, collected, opts.signal, () => {
+    /* эмитим каждые ~250ms или каждые 100 файлов чтобы UI был отзывчив без спама */
+    const now = Date.now();
+    if (collected.length % 100 === 0 || now - lastWalkEmit > 250) {
+      lastWalkEmit = now;
+      onProgress?.({ phase: "walking", current: collected.length });
+    }
+  });
+  onProgress?.({ phase: "walking", current: collected.length, status: "ok", message: `found ${collected.length} files` });
+
   return preflightFiles(collected, { ...opts, _startTime: start });
 }
 
-const PREFLIGHT_SUB_TIMEOUT_MS = 10_000;
+/* LM Studio probe должен быть БЫСТРЫМ — если она offline, ждём максимум 5s
+   (раньше было 10s, что плюсом давало двойную задержку для ocr+evaluator). */
+const PREFLIGHT_LM_TIMEOUT_MS = 5_000;
 
-function withTimeout<T>(promise: Promise<T>, fallback: T, label: string): Promise<T> {
+function withTimeout<T>(
+  promise: Promise<T>,
+  fallback: T,
+  label: string,
+  onTimeout?: () => void,
+): Promise<T> {
   return Promise.race([
     promise,
     new Promise<T>((resolve) => {
       const t = setTimeout(() => {
-        console.warn(`[preflight] ${label} timed out after ${PREFLIGHT_SUB_TIMEOUT_MS}ms — using fallback`);
+        console.warn(`[preflight] ${label} timed out after ${PREFLIGHT_LM_TIMEOUT_MS}ms — using fallback`);
+        onTimeout?.();
         resolve(fallback);
-      }, PREFLIGHT_SUB_TIMEOUT_MS);
+      }, PREFLIGHT_LM_TIMEOUT_MS);
       t.unref(); /* allow process to exit if nothing else is pending */
     }),
   ]);
@@ -117,11 +160,27 @@ export async function preflightFiles(
   opts: PreflightOptions & { _startTime?: number } = {},
 ): Promise<PreflightReport> {
   const start = opts._startTime ?? Date.now();
+  const onProgress = opts.onProgress;
+
+  /* Эмитим старт всех трёх параллельных подзадач, чтобы UI показал чек-листы. */
+  onProgress?.({ phase: "ocr", message: "checking OCR capabilities…" });
+  onProgress?.({ phase: "evaluator", message: "checking LM Studio…" });
+  onProgress?.({ phase: "probing", current: 0, total: paths.length });
 
   const [ocr, evaluator, entries] = await Promise.all([
-    withTimeout(getOcrCapabilities(), FALLBACK_OCR, "getOcrCapabilities"),
-    withTimeout(getEvaluatorReadiness(), FALLBACK_EVALUATOR, "getEvaluatorReadiness"),
-    probeAll(paths, opts.signal),
+    withTimeout(getOcrCapabilities(), FALLBACK_OCR, "getOcrCapabilities", () => {
+      onProgress?.({ phase: "ocr", status: "timeout", message: "OCR check timed out" });
+    }).then((v) => {
+      onProgress?.({ phase: "ocr", status: "ok", message: v.anyAvailable ? "OCR ready" : "OCR not configured" });
+      return v;
+    }),
+    withTimeout(getEvaluatorReadiness(), FALLBACK_EVALUATOR, "getEvaluatorReadiness", () => {
+      onProgress?.({ phase: "evaluator", status: "timeout", message: "LM Studio unreachable" });
+    }).then((v) => {
+      onProgress?.({ phase: "evaluator", status: v.ready ? "ok" : "skipped", message: v.ready ? `evaluator: ${v.willUse}` : (v.reason ?? "no LLM") });
+      return v;
+    }),
+    probeAll(paths, opts.signal, onProgress),
   ]);
 
   let ok = 0;
@@ -138,6 +197,8 @@ export async function preflightFiles(
 
   /* Skipped — это всё что preflight не пробовал классифицировать (epub, fb2, etc). */
   skipped = paths.length - entries.length;
+
+  onProgress?.({ phase: "complete", current: paths.length, total: paths.length, status: "ok" });
 
   return {
     totalFiles: paths.length,
@@ -159,6 +220,7 @@ async function walkCollect(
   maxFiles: number,
   out: string[],
   signal?: AbortSignal,
+  onFileFound?: () => void,
 ): Promise<void> {
   if (signal?.aborted) throw new Error("preflight aborted");
   if (out.length >= maxFiles) return;
@@ -174,24 +236,33 @@ async function walkCollect(
     if (out.length >= maxFiles) return;
     const full = path.join(dir, ent.name);
     if (ent.isDirectory()) {
-      if (recursive) await walkCollect(full, recursive, maxFiles, out, signal);
+      if (recursive) await walkCollect(full, recursive, maxFiles, out, signal, onFileFound);
       continue;
     }
     if (!ent.isFile()) continue;
     const ext = path.extname(ent.name).toLowerCase().replace(/^\./, "");
     if (PREFLIGHT_WALK_EXTS.has(ext)) {
       out.push(full);
+      onFileFound?.();
     }
   }
 }
 
-async function probeAll(paths: ReadonlyArray<string>, signal?: AbortSignal): Promise<PreflightFileEntry[]> {
+async function probeAll(
+  paths: ReadonlyArray<string>,
+  signal?: AbortSignal,
+  onProgress?: (evt: PreflightProgressEvent) => void,
+): Promise<PreflightFileEntry[]> {
   const result: PreflightFileEntry[] = [];
-  /* DjVu IFF-probe читает ≤64 KB на файл — можно выше параллельности.
-     PDF-inspector буферизует весь файл → при заметной доле PDF держим ниже. */
-  const pdfish = paths.filter((p) => path.extname(p).toLowerCase() === ".pdf").length;
-  const CONCURRENCY = pdfish > 64 ? 6 : pdfish > 16 ? 8 : 16;
+  /* Адаптивная параллельность:
+     - DjVu IFF-probe читает ≤64 KB → можно высокую параллельность.
+     - PDF-inspector буферизует весь файл в памяти → при большой доле PDF держим ниже.
+     Для E:\Bibliarifull (1000 DjVu, 0 PDF): CONCURRENCY=16 vs hardcoded 4 = 4x быстрее. */
+  const pdfCount = paths.filter((p) => path.extname(p).toLowerCase() === ".pdf").length;
+  const CONCURRENCY = pdfCount > 64 ? 6 : pdfCount > 16 ? 8 : 16;
   let idx = 0;
+  let processed = 0;
+  let lastEmit = Date.now();
   async function worker(): Promise<void> {
     while (idx < paths.length) {
       if (signal?.aborted) throw new Error("preflight aborted");
@@ -200,20 +271,30 @@ async function probeAll(paths: ReadonlyArray<string>, signal?: AbortSignal): Pro
       const ext = path.extname(p).toLowerCase().replace(/^\./, "");
       if (!PROBED_EXTS.has(ext)) {
         /* Пропускаем — для preflight не интересен (epub/fb2 имеют свой text). */
+        processed++;
         continue;
       }
       const entry = await probeOne(p, ext);
       result.push(entry);
+      processed++;
+      const now = Date.now();
+      if (processed % 25 === 0 || now - lastEmit > 250 || processed === paths.length) {
+        lastEmit = now;
+        onProgress?.({ phase: "probing", current: processed, total: paths.length, currentPath: p });
+      }
     }
   }
   const workers: Promise<void>[] = [];
   for (let i = 0; i < CONCURRENCY; i++) workers.push(worker());
   await Promise.all(workers);
+  onProgress?.({ phase: "probing", current: paths.length, total: paths.length, status: "ok" });
   return result;
 }
 
 async function probeOne(filePath: string, ext: string): Promise<PreflightFileEntry> {
   if (ext === "djvu" || ext === "djv") {
+    /* DjVu probe уже читает fh.stat() внутри — используем r.fileSize, избегая
+       двойного stat-вызова на файл. Для 1000 DjVu = 1000 лишних syscall'ов. */
     try {
       const r = await probeDjvuTextLayer(filePath);
       const size = typeof r.fileSize === "number" ? r.fileSize : 0;
@@ -226,30 +307,22 @@ async function probeOne(filePath: string, ext: string): Promise<PreflightFileEnt
         ext,
         status: r.hasTextLayer ? "ok" : "image-only",
       };
-    } catch (err: unknown) {
+    } catch (err) {
       const code = typeof err === "object" && err !== null && "code" in err
         ? String((err as NodeJS.ErrnoException).code ?? "")
         : "";
       const msg = err instanceof Error ? err.message : String(err);
-      if (code === "ENOENT" || /ENOENT/i.test(msg)) {
-        return {
-          path: filePath,
-          size: 0,
-          ext,
-          status: "invalid",
-          reason: `stat failed: ${msg}`,
-        };
-      }
       return {
         path: filePath,
         size: 0,
         ext,
-        status: "unknown",
+        status: code === "ENOENT" ? "invalid" : "unknown",
         reason: msg,
       };
     }
   }
 
+  /* PDF и прочие — stat нужен отдельно (probePdfTextLayer сам его не возвращает). */
   let size = 0;
   try {
     size = (await fs.stat(filePath)).size;
@@ -299,4 +372,40 @@ async function probeOne(filePath: string, ext: string): Promise<PreflightFileEnt
 export function filterOutImageOnly(paths: ReadonlyArray<string>, report: PreflightReport): string[] {
   const imageOnlySet = new Set(report.entries.filter((e) => e.status === "image-only").map((e) => e.path));
   return paths.filter((p) => !imageOnlySet.has(p));
+}
+
+export interface FolderPeekResult {
+  /** Сколько файлов поддерживаемых типов найдено (с учётом recursive). */
+  totalFiles: number;
+  /** Первые N имён (только basename без полного пути), для отображения в confirm-диалоге. */
+  sampleNames: string[];
+  /** Достиг ли peek лимита maxFiles (значит totalFiles может быть больше). */
+  truncated: boolean;
+}
+
+/**
+ * Быстрый "peek" папки — БЕЗ probe, БЕЗ stat'ов, только readdir+filter.
+ * Цель: показать пользователю "Найдено 1024 файла, например: book1.djvu, …" в
+ * подтверждающем диалоге сразу после picker'а, ДО старта preflight.
+ *
+ * Дешевле preflight в 100+ раз: только обход dir entries.
+ */
+export async function peekFolderFiles(
+  folderPath: string,
+  opts: { recursive?: boolean; maxFiles?: number; sampleSize?: number } = {},
+): Promise<FolderPeekResult> {
+  const recursive = opts.recursive ?? true;
+  const maxFiles = opts.maxFiles ?? DEFAULT_MAX_FILES;
+  const sampleSize = opts.sampleSize ?? 10;
+  const collected: string[] = [];
+  await walkCollect(folderPath, recursive, maxFiles, collected);
+  const sample = collected.slice(0, sampleSize).map((p) => {
+    const idx = Math.max(p.lastIndexOf("\\"), p.lastIndexOf("/"));
+    return idx >= 0 ? p.slice(idx + 1) : p;
+  });
+  return {
+    totalFiles: collected.length,
+    sampleNames: sample,
+    truncated: collected.length >= maxFiles,
+  };
 }

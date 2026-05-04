@@ -6,37 +6,85 @@ All notable changes to Bibliary are documented in this file. Format follows
 
 ## [Unreleased]
 
-## [0.11.11] — 2026-05-04 — Import graceful degrade + no double confirm
+## [0.11.12] — 2026-05-05 — Remove preflight from import flow
+
+### Removed
+
+- **Preflight scan полностью удалён из UI-потока импорта.**
+  Теперь: Выбрать папку → импорт стартует сразу. Без confirm-диалога,
+  без preflight-модала, без timeout-проблем. Как работало до v0.11.2.
+  - Удалены: `runPreflightAndDecide`, `runImportFlowCore`, `openOcrSettings`,
+    preflight-overlay, peek-folder, preflight-timeout escape-hatch.
+  - Drag&drop: drop → import напрямую (без preflight).
+  - Backend IPC-каналы preflight (`library:preflight-folder`, `preflight-files`,
+    `preflight-progress`, `cancel-preflight`, `peek-folder`) остаются — они
+    используются тестами и могут понадобиться для будущего UI.
+  - Импорты `showConfirm`, `showPreflightModal`, `showPreflightProgress`
+    убраны из `import-pane-actions.js`.
+
+## [0.11.11] — 2026-05-05 — Preflight visibility: progress overlay + folder peek + cancel
+
+### Added
+
+- **Preflight Progress Overlay** — полупрозрачный модал с реальной обратной связью
+  во время preflight-скана:
+  - Чек-лист подзадач: Walking (`найдено N…`) / OCR check / LM Studio check
+  - Прогресс-бар: `Probing files: 234 / 1024` + текущий файл
+  - Кнопка **[Отмена]** прерывает preflight через `library:cancel-preflight`
+  - ESC закрывает с отменой
+  - Файлы: `renderer/library/import-pane-preflight-progress.js`, CSS в `styles.css`
+- **Folder Peek** — после выбора папки confirm-диалог теперь показывает
+  `Найдено файлов: 1024. Первые: book1.djvu, book2.pdf, …` — пользователь
+  видит содержимое до старта preflight (ранее Windows folder-picker не
+  показывал файлы вообще). API: `peekFolderFiles()` в `preflight.ts` +
+  IPC `library:peek-folder` + preload `peekFolder()`.
+- **Streaming preflight progress** — IPC channel `library:preflight-progress`
+  + preload `onPreflightProgress` + структурное логирование каждого этапа в
+  Import Logger (категория `scan.discovered`).
+- **Cancel preflight** — IPC `library:cancel-preflight` отменяет все
+  активные preflight-сессии через AbortController.
+
+### Changed
+
+- `PreflightOptions` расширен полем `onProgress: (evt) => void` —
+  callback с этапами `walking | ocr | evaluator | probing | complete`.
+- `walkCollect` принимает `onFileFound` — эмитит каждый найденный supported file.
+- `probeAll` эмитит `phase: "probing", current/total/currentPath` каждые
+  25 файлов или 250ms.
+- LM Studio sub-timeout снижен `10s → 5s` (раньше OCR + Evaluator =
+  суммарно до 20с задержки если LM Studio offline).
 
 ### Fixed
 
-- **Импорт не запускался при preflight timeout** — коренная причина: в `runImportFlowCore`
-  был добавлен `showConfirm` **перед** preflight, создав двойное подтверждение. При timeout
-  preflight (30 с) пользователь видел ошибку «анализ упал» и импорт никогда не стартовал.
-  Убран лишний `showConfirm` (preflight modal сам является подтверждением, как в исходном
-  дизайне v0.11.2: «Preflight **заменяет** старый showConfirm — даёт honest expectations»).
-- **Preflight timeout больше не блокирует импорт** — при любом сбое preflight (timeout, IPC
-  ошибка, крэш modal) функция `runPreflightAndDecide` теперь возвращает `"bypass"` вместо
-  `null`, показывает информационный toast и запускает импорт напрямую — так же, как
-  работало до v0.11.2 до введения preflight. Это поведение распространяется и на
-  drag-and-drop путь.
-- **Graceful degrade для DnD preflight** — DnD путь (`installImportDropHandlers`) тоже
-  переключился на `runPreflightAndDecide` с `"bypass"` вместо блокирующего `showAlert`.
+- **Пользователь не видит что preflight работает** — раньше после Continue
+  в подтверждающем диалоге был чёрный экран на 5 минут без признаков жизни.
+  Теперь видны все этапы + есть Cancel.
 
-## [0.11.10] — 2026-05-04 — Preflight: large DjVu folders + timeout
+### Tests
+
+- 24/24 preflight тестов проходят (API контракт сохранён).
+
+## [0.11.10] — 2026-05-05 — Preflight timeout escape hatch (large folders fix)
 
 ### Fixed
 
-- **«Папка пуста» в диалоге выбора папки** — это стандартное поведение Windows
-  для `dialog.showOpenDialog({ properties: ["openDirectory"] })`: в списке
-  не показываются файлы, только вложенные каталоги. Файлы в `E:\Bibliarifull`
-  при этом учитываются после нажатия «Выбор папки».
-- **«preflight timeout» на больших каталогах DjVu** — рендерер обрывал IPC
-  через 30 с, пока main рекурсивно собирал сотни/тысячи `.djvu` и прогонял
-  IFF-probe с параллельностью 4. Таймаут preflight увеличен до **120 с**;
-  параллельность probe **адаптивная** (до 16 для каталогов без тяжёлых PDF);
-  для DjVu убран лишний `fs.stat` перед probe (размер берётся из
-  `probeDjvuTextLayer`).
+- **КРИТИЧЕСКИЙ:** Импорт больших папок (1000+ файлов) падал с `preflight timeout`
+  и не давал пользователю продолжить.
+  - Renderer hard-timeout `30s → 300s` (5 минут): покрывает большие папки на
+    HDD/сетевых дисках, а также ожидание `listLoaded()` к недоступной LM Studio.
+  - При timeout теперь **показывается диалог** с предложением продолжить
+    импорт без preflight-проверки. Раньше пользователь получал только OK-алерт
+    и не мог импортировать папку.
+  - Тот же escape-hatch добавлен в drag&drop ветку.
+  - Локали: `library.import.preflight.timeoutTitle`, `library.import.preflight.timeoutSkip`.
+
+### Notes
+
+- Preflight информационный — main-процесс корректно импортирует все файлы
+  и без preflight-данных. Skip preflight безопасен.
+- Воспроизводилось на `E:\Bibliarifull` (~1000 DjVu-файлов), скорее всего из-за
+  recursive `walkCollect` + 1000 `fs.stat` на медленном диске + параллельного
+  `listLoaded()` к LM Studio с TCP-таймаутом.
 
 ## [0.11.9] — 2026-05-04 — Clear logs button deletes log files
 

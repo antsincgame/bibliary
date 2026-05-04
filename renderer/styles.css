@@ -5233,6 +5233,133 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   letter-spacing: 0.04em;
 }
 
+/* ── Preflight Progress Overlay ──
+   Полупрозрачный overlay поверх библиотеки во время preflight-скана.
+   Видимый признак работы pipeline + обратная связь по этапам. */
+.lib-preflight-progress-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(8, 12, 20, 0.78);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+}
+.lib-preflight-progress-card {
+  width: min(560px, 92vw);
+  background: var(--panel, #0d1320);
+  border: 1px solid rgba(0, 240, 255, 0.25);
+  border-radius: 8px;
+  padding: 22px 24px 18px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.lib-preflight-progress-title {
+  font-size: 13px;
+  color: var(--gold, #f5c14a);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 600;
+  word-break: break-all;
+}
+.lib-preflight-progress-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 4px;
+}
+.lib-preflight-check-row {
+  display: grid;
+  grid-template-columns: 18px 180px 1fr;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+}
+.lib-preflight-check-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+.lib-preflight-check-pending { color: rgba(255,255,255,0.3); }
+.lib-preflight-check-active  { color: var(--cyan); animation: pf-pulse 1.2s ease-in-out infinite; }
+.lib-preflight-check-ok      { color: #6ad97a; }
+.lib-preflight-check-warn    { color: #f5c14a; }
+.lib-preflight-check-label {
+  color: rgba(255, 255, 255, 0.78);
+  letter-spacing: 0.04em;
+}
+.lib-preflight-check-message {
+  color: var(--text-dim, rgba(255,255,255,0.55));
+  font-size: 11px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+@keyframes pf-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+.lib-preflight-progress-probing {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lib-preflight-progress-probing-label {
+  font-size: 11px;
+  color: var(--cyan);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+.lib-preflight-progress-bar {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid rgba(0, 240, 255, 0.15);
+}
+.lib-preflight-progress-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--cyan), var(--gold));
+  transition: width 200ms ease-out;
+}
+.lib-preflight-progress-current-file {
+  font-size: 10px;
+  color: var(--text-dim, rgba(255,255,255,0.45));
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: 12px;
+}
+.lib-preflight-progress-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.lib-preflight-progress-cancel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 6px 14px;
+  color: var(--text-dim, rgba(255,255,255,0.65));
+}
+.lib-preflight-progress-cancel:hover {
+  color: #ff7373;
+  border-color: rgba(255, 115, 115, 0.4);
+}
+
 /* ── Import Log Panel ── */
 .lib-import-log-panel {
   display: flex;

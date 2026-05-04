@@ -16,7 +16,6 @@ import { showLibraryToast } from "./toast.js";
 import { showAlert } from "../components/ui-dialog.js";
 import { rerenderBooksPanel, resetBooksState } from "./import-pane-books.js";
 import { rerenderStatusBar } from "./import-pane-statusbar.js";
-import { showPreflightModal } from "./import-pane-preflight.js";
 
 const IN_FLIGHT_TRIM = 200;
 
@@ -34,110 +33,6 @@ function resolveOcrEnabled() {
   if (STATE?.ocrOverride === true) return true;
   if (STATE?.ocrOverride === false) return false;
   return Boolean(STATE?.prefs?.ocrEnabled);
-}
-
-/**
-/* Большие папки (сотни DjVu/PDF на сетевом диске): main-процесс обходит дерево
-   и прогоняет probe — 30s часто недостаточно и даёт ложный «preflight timeout».
-   При timeout graceful-degrade: запускаем импорт без preflight-отчёта
-   (как работало до v0.11.2), не блокируем пользователя. */
-const PREFLIGHT_TIMEOUT_MS = 120_000;
-
-/**
- * Запускает preflight (через IPC) и показывает модал с разбивкой
- * текстовых/image-only/инвалидных файлов + готовность OCR-движков.
- *
- * Возвращает:
- *   - PreflightDecision — если preflight + modal прошли успешно
- *   - `"bypass"` — если preflight упал/таймаут (graceful degrade: запускать импорт напрямую)
- *   - `null` — если пользователь отменил
- *
- * @param {() => Promise<unknown>} runPreflightIpc
- * @returns {Promise<import("./import-pane-preflight.js").PreflightDecision | "bypass" | null>}
- */
-async function runPreflightAndDecide(runPreflightIpc) {
-  /** @type {any} */
-  let report;
-  /** @type {ReturnType<typeof setTimeout>|undefined} */
-  let timeoutHandle;
-  try {
-    report = await Promise.race([
-      runPreflightIpc(),
-      new Promise((_, reject) => {
-        timeoutHandle = setTimeout(() => reject(new Error("preflight timeout")), PREFLIGHT_TIMEOUT_MS);
-      }),
-    ]);
-  } catch (err) {
-    /* Preflight упал (timeout, IPC error, etc.) — не блокируем пользователя.
-       Показываем toast-предупреждение и возвращаем "bypass" чтобы импорт
-       запустился напрямую (как до v0.11.2 когда preflight ещё не было). */
-    console.warn("[import] preflight failed:", err);
-    showLibraryToast({
-      kind: "info",
-      message: t("library.import.preflight.skipped") || "Pre-scan skipped — starting import directly",
-      dedupeKey: "preflight-skipped",
-      dedupeMs: 5000,
-    });
-    return "bypass";
-  } finally {
-    clearTimeout(timeoutHandle);
-  }
-  if (!report || report.totalFiles === 0) {
-    /* Папка пустая или нет поддерживаемых файлов — сообщаем и не стартуем. */
-    await showAlert(t("library.import.preflight.failed", { msg: "no supported files found" }));
-    return null;
-  }
-  try {
-    return await showPreflightModal(report);
-  } catch (modalErr) {
-    /* Модал упал — graceful degrade: импорт напрямую. */
-    console.warn("[import] showPreflightModal failed:", modalErr);
-    showLibraryToast({
-      kind: "info",
-      message: t("library.import.preflight.skipped") || "Pre-scan modal failed — starting import directly",
-      dedupeKey: "preflight-skipped",
-      dedupeMs: 5000,
-    });
-    return "bypass";
-  }
-}
-
-/**
- * Общий поток «preflight → решение» для pick-based import.
- * Устраняет дублирование между importFromFolder и importFromFiles.
- *
- * Preflight НЕ блокирует импорт: при таймауте/ошибке — graceful degrade
- * ("bypass"), импорт запускается без preflight-отчёта (поведение до v0.11.2).
- *
- * @param {{
- *   preflightIpc: () => Promise<unknown>;
- *   handleDecision: (decision: import("./import-pane-preflight.js").PreflightDecision | "bypass") => Promise<void>;
- * }} opts
- * @returns {Promise<void>}
- */
-async function runImportFlowCore(opts) {
-  const statusEl = document.querySelector(".lib-import-status");
-  if (statusEl) statusEl.textContent = t("library.import.progress.preflight") || "Preflight scan…";
-  const decision = await runPreflightAndDecide(opts.preflightIpc);
-  if (statusEl) statusEl.textContent = "";
-
-  /* null = cancelled by user (in preflight modal or empty folder).
-     "bypass" и PreflightDecision идут в handleDecision. */
-  if (decision === null) return;
-  if (decision !== "bypass" && decision.action === "cancel") return;
-  if (decision !== "bypass" && decision.action === "configure-ocr") { openOcrSettings(); return; }
-
-  try {
-    await opts.handleDecision(decision);
-  } catch (err) {
-    console.error("[import] handleDecision threw unexpectedly:", err);
-    showLibraryToast({
-      kind: "error",
-      message: t("library.import.progress.failed", {
-        error: err instanceof Error ? err.message : String(err),
-      }),
-    });
-  }
 }
 
 /** @param {{renderCatalog: (root: HTMLElement) => Promise<void>; focusCatalogBook?: (id: string) => void}} deps */
@@ -164,65 +59,16 @@ export async function importFromFolder(deps) {
   }
   if (!folderPath) return;
 
-  await runImportFlowCore({
-    preflightIpc: () => window.api.library.preflightFolder(folderPath, { recursive: IMPORT_STATE.recursive }),
-    handleDecision: async (decision) => {
-      /* "skip-image-only": importFolder IPC сам обходит дерево и не умеет
-         фильтровать — конвертим в importFiles с отфильтрованным списком путей.
-         "bypass" и "continue" → importFolder напрямую. */
-      if (decision !== "bypass" && decision.action === "skip-image-only") {
-        if (decision.paths.length === 0) {
-          await showAlert(t("library.import.preflight.allImageOnly"));
-          return;
-        }
-        await runImport(async () =>
-          window.api.library.importFiles({
-            paths: decision.paths,
-            scanArchives: IMPORT_STATE.scanArchives,
-            ocrEnabled: resolveOcrEnabled(),
-          }),
-          deps,
-        );
-        return;
-      }
-      await runImport(async () =>
-        window.api.library.importFolder({
-          folder: folderPath,
-          scanArchives: IMPORT_STATE.scanArchives,
-          ocrEnabled: resolveOcrEnabled(),
-          maxDepth: IMPORT_STATE.recursive ? 16 : 0,
-        }),
-        deps,
-      );
-    },
-  });
+  await runImport(async () =>
+    window.api.library.importFolder({
+      folder: folderPath,
+      scanArchives: IMPORT_STATE.scanArchives,
+      ocrEnabled: resolveOcrEnabled(),
+      maxDepth: IMPORT_STATE.recursive ? 16 : 0,
+    }),
+    deps,
+  );
 }
-
-/**
- * Активирует Settings секцию OCR — пользователь может настроить vision_ocr
- * модель или поменять system OCR languages. Без жёсткой связи с router'ом —
- * просто переключаем активную секцию через DOM event который слушает
- * settings.js (если доступен) или показываем алерт-подсказку.
- */
-function openOcrSettings() {
-  /* Diff: dispatch событие; settings.js может его слушать. Если нет —
-     fallback toast подсказывает пользователю куда зайти. */
-  try {
-    window.dispatchEvent(new CustomEvent("bibliary:open-settings", { detail: { section: "ocr" } }));
-  } catch (_e) {
-    /* swallow */
-  }
-  showLibraryToast({
-    kind: "info",
-    message: t("library.import.preflight.btn.configureOcr") + " → Settings → Models",
-  });
-}
-
-/* Иt 8Г.4: importFolderAsBundle удалён — мёртвая функция (Inquisitor
-   diagonal review подтвердил отсутствие callers в DOM/JSX и других модулях).
-   Backend (electron/lib/scanner/folder-bundle/* + IPC scanner:start-folder-bundle)
-   оставлен под @deprecated пометкой — модули используются тестами
-   tests/folder-bundle*.test.ts напрямую (без IPC). */
 
 /** @param {{renderCatalog: (root: HTMLElement) => Promise<void>; focusCatalogBook?: (id: string) => void}} deps */
 export async function importFromFiles(deps) {
@@ -251,29 +97,14 @@ export async function importFromFiles(deps) {
   }
   if (paths.length === 0) return;
 
-  await runImportFlowCore({
-    preflightIpc: () => window.api.library.preflightFiles(paths),
-    handleDecision: async (decision) => {
-      /* "bypass" = preflight упал/timeout → импортируем все пути напрямую. */
-      const finalPaths = (decision !== "bypass" && decision.action === "skip-image-only")
-        ? decision.paths
-        : paths;
-      if (finalPaths.length === 0) {
-        if (decision !== "bypass" && decision.action === "skip-image-only") {
-          await showAlert(t("library.import.preflight.allImageOnly"));
-        }
-        return;
-      }
-      await runImport(async () =>
-        window.api.library.importFiles({
-          paths: finalPaths,
-          scanArchives: IMPORT_STATE.scanArchives,
-          ocrEnabled: resolveOcrEnabled(),
-        }),
-        deps,
-      );
-    },
-  });
+  await runImport(async () =>
+    window.api.library.importFiles({
+      paths,
+      scanArchives: IMPORT_STATE.scanArchives,
+      ocrEnabled: resolveOcrEnabled(),
+    }),
+    deps,
+  );
 }
 
 /* Watchdog: если в течение этого окна не прилетел НИ ОДИН прогресс-эвент,
@@ -489,69 +320,6 @@ export function installImportDropHandlers(dropzone, deps) {
   dropzone.addEventListener("drop", async (ev) => {
     const entries = collectDroppedEntries(/** @type {DragEvent} */ (ev));
     if (entries.length === 0) return;
-
-    /* Preflight для DnD: собираем все пути (в т.ч. рекурсивно через preflight
-       для папок) — IPC сам обходит. Подаём в preflight либо folder paths
-       (если drop был на папку), либо файлы. Если миксованный drop —
-       приоритет у файлов; для папок отдельный preflightFolder вызов. */
-    const filePaths = entries.filter((e) => !e.isDirectory).map((e) => e.path);
-    const dirPaths = entries.filter((e) => e.isDirectory).map((e) => e.path);
-
-    /* Mixed drop (папки + файлы) — пропускаем preflight, идём напрямую. */
-    if (dirPaths.length > 0 && filePaths.length > 0) {
-      await runImport(() => importDroppedEntries(entries), deps);
-      return;
-    }
-
-    /* Для single-folder или чисто-файловых drop'ов: пробуем preflight.
-       При таймауте/ошибке — graceful degrade (импорт напрямую). */
-    /** @type {Promise<any>|null} */
-    let preflightP = null;
-    if (dirPaths.length === 1 && filePaths.length === 0) {
-      preflightP = window.api.library.preflightFolder(dirPaths[0], { recursive: IMPORT_STATE.recursive });
-    } else if (filePaths.length > 0 && dirPaths.length === 0) {
-      preflightP = window.api.library.preflightFiles(filePaths);
-    }
-
-    /** @type {import("./import-pane-preflight.js").PreflightDecision | "bypass" | null} */
-    let dndDecision = null;
-
-    if (preflightP) {
-      const result = await runPreflightAndDecide(() => preflightP);
-      if (result === null) return;
-      dndDecision = result;
-    } else {
-      dndDecision = "bypass";
-    }
-
-    if (dndDecision === "bypass") {
-      await runImport(() => importDroppedEntries(entries), deps);
-      return;
-    }
-
-    const decision = /** @type {import("./import-pane-preflight.js").PreflightDecision} */ (dndDecision);
-    if (decision.action === "cancel") return;
-    if (decision.action === "configure-ocr") {
-      openOcrSettings();
-      return;
-    }
-
-    if (decision.action === "skip-image-only") {
-      if (decision.paths.length === 0) {
-        await showAlert(t("library.import.preflight.allImageOnly"));
-        return;
-      }
-      await runImport(async () =>
-        window.api.library.importFiles({
-          paths: decision.paths,
-          scanArchives: IMPORT_STATE.scanArchives,
-          ocrEnabled: resolveOcrEnabled(),
-        }),
-        deps,
-      );
-      return;
-    }
-
     await runImport(() => importDroppedEntries(entries), deps);
   });
 }
