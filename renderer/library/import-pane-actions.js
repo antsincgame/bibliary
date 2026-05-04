@@ -45,11 +45,18 @@ function resolveOcrEnabled() {
  * @param {(import("./import-pane-preflight.js")).PreflightDecision | undefined} _typeHint
  * @returns {Promise<import("./import-pane-preflight.js").PreflightDecision | null>}
  */
+const PREFLIGHT_TIMEOUT_MS = 30_000;
+
 async function runPreflightAndDecide(runPreflightIpc, _typeHint) {
   /** @type {any} */
   let report;
   try {
-    report = await runPreflightIpc();
+    report = await Promise.race([
+      runPreflightIpc(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("preflight timeout")), PREFLIGHT_TIMEOUT_MS),
+      ),
+    ]);
   } catch (err) {
     console.warn("[import] preflight failed:", err);
     const msg = err instanceof Error ? err.message : String(err);
@@ -60,14 +67,20 @@ async function runPreflightAndDecide(runPreflightIpc, _typeHint) {
     await showAlert(t("library.import.preflight.failed", { msg: "no supported files found" }));
     return null;
   }
-  return await showPreflightModal(report);
+  try {
+    return await showPreflightModal(report);
+  } catch (modalErr) {
+    console.warn("[import] showPreflightModal failed:", modalErr);
+    await showAlert(t("library.import.preflight.failed", {
+      msg: modalErr instanceof Error ? modalErr.message : String(modalErr),
+    }));
+    return null;
+  }
 }
 
 /** @param {{renderCatalog: (root: HTMLElement) => Promise<void>; focusCatalogBook?: (id: string) => void}} deps */
 export async function importFromFolder(deps) {
   if (IMPORT_STATE.busy) {
-    /* Если busy застрял без importId дольше 30 с — принудительный сброс.
-       Без этого пользователь не может начать новый импорт после crash/scan hang. */
     if (!IMPORT_STATE.importId && IMPORT_STATE.aggregate.startedAt) {
       const elapsed = Date.now() - IMPORT_STATE.aggregate.startedAt;
       if (elapsed > 30_000) {
@@ -89,13 +102,14 @@ export async function importFromFolder(deps) {
   }
   if (!folderPath) return;
 
-  /* Preflight: probe всех DjVu/PDF на наличие text-layer'а + проверка OCR
-     readiness. Заменяет старый showConfirm — даёт honest expectations. */
+  console.warn("[import] folder selected:", folderPath, "— starting preflight");
   const statusEl = document.querySelector(".lib-import-status");
   if (statusEl) statusEl.textContent = t("library.import.progress.preflight") || "Preflight scan…";
+  const t0 = Date.now();
   const decision = await runPreflightAndDecide(
     () => window.api.library.preflightFolder(folderPath, { recursive: IMPORT_STATE.recursive }),
   );
+  console.warn("[import] preflight completed in", Date.now() - t0, "ms, decision:", decision?.action ?? "null");
   if (statusEl) statusEl.textContent = "";
   if (!decision || decision.action === "cancel") return;
   if (decision.action === "configure-ocr") {
@@ -186,12 +200,14 @@ export async function importFromFiles(deps) {
   }
   if (paths.length === 0) return;
 
-  /* Preflight перед импортом файлов: probe DjVu/PDF, OCR readiness, summary. */
+  console.warn("[import] files selected:", paths.length, "— starting preflight");
   const statusEl2 = document.querySelector(".lib-import-status");
   if (statusEl2) statusEl2.textContent = t("library.import.progress.preflight") || "Preflight scan…";
+  const t0 = Date.now();
   const decision = await runPreflightAndDecide(
     () => window.api.library.preflightFiles(paths),
   );
+  console.warn("[import] preflight completed in", Date.now() - t0, "ms, decision:", decision?.action ?? "null");
   if (statusEl2) statusEl2.textContent = "";
   if (!decision || decision.action === "cancel") return;
   if (decision.action === "configure-ocr") {
@@ -396,16 +412,22 @@ export function installImportDropHandlers(dropzone, deps) {
     /** @type {any} */
     let report = null;
     try {
+      /** @type {Promise<any>} */
+      let preflightP;
       if (dirPaths.length === 1 && filePaths.length === 0) {
-        report = await window.api.library.preflightFolder(dirPaths[0], { recursive: IMPORT_STATE.recursive });
+        preflightP = window.api.library.preflightFolder(dirPaths[0], { recursive: IMPORT_STATE.recursive });
       } else if (filePaths.length > 0 && dirPaths.length === 0) {
-        report = await window.api.library.preflightFiles(filePaths);
+        preflightP = window.api.library.preflightFiles(filePaths);
       } else {
-        /* Mixed: для DnD это редкий кейс — пропускаем preflight и идём напрямую
-           (как было раньше). Чисто technical compromise. */
         await runImport(() => importDroppedEntries(entries), deps);
         return;
       }
+      report = await Promise.race([
+        preflightP,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("preflight timeout")), PREFLIGHT_TIMEOUT_MS),
+        ),
+      ]);
     } catch (err) {
       console.warn("[import] preflight (DnD) failed:", err);
       await showAlert(t("library.import.preflight.failed", { msg: err instanceof Error ? err.message : String(err) }));

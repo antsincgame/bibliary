@@ -187,10 +187,15 @@ function getClient(): LMStudioClient {
 /**
  * Drop the SDK client so the next getClient() call rebuilds with the
  * fresh URL from preferences. Use after the user changes LM Studio URL
- * in Settings. The SDK doesn't expose a public disconnect; we just
- * release the reference and let GC + the next reconnect handle cleanup.
+ * in Settings.
+ *
+ * Iter 14.4 (2026-05-04): explicitly dispose old client so its WebSocket
+ * doesn't keep the process alive or show as a zombie in LM Studio.
  */
 export function refreshLmStudioClient(): void {
+  if (cachedClient) {
+    cachedClient[Symbol.asyncDispose]?.().catch(() => {});
+  }
   cachedClient = null;
 }
 
@@ -198,13 +203,25 @@ function dropClient(): void {
   cachedClient = null;
 }
 
+const SDK_TIMEOUT_MS = 8_000;
+
 async function withSdk<T>(operation: (client: LMStudioClient) => Promise<T>, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
   try {
-    return await operation(getClient());
+    const result = await Promise.race([
+      operation(getClient()),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("LM Studio SDK timeout")), SDK_TIMEOUT_MS);
+        timer.unref();
+      }),
+    ]);
+    if (timer) clearTimeout(timer);
+    return result;
   } catch (e) {
+    if (timer) clearTimeout(timer);
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[lmstudio-client]", msg);
-    if (msg.includes("ECONNREFUSED") || msg.includes("disconnect") || msg.includes("WebSocket")) {
+    if (msg.includes("ECONNREFUSED") || msg.includes("disconnect") || msg.includes("WebSocket") || msg.includes("timeout")) {
       dropClient();
     }
     return fallback;

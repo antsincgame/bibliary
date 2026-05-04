@@ -83,6 +83,32 @@ export async function preflightFolder(folderPath: string, opts: PreflightOptions
   return preflightFiles(collected, { ...opts, _startTime: start });
 }
 
+const PREFLIGHT_SUB_TIMEOUT_MS = 10_000;
+
+function withTimeout<T>(promise: Promise<T>, fallback: T, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) =>
+      setTimeout(() => {
+        console.warn(`[preflight] ${label} timed out after ${PREFLIGHT_SUB_TIMEOUT_MS}ms — using fallback`);
+        resolve(fallback);
+      }, PREFLIGHT_SUB_TIMEOUT_MS),
+    ),
+  ]);
+}
+
+const FALLBACK_OCR: OcrCapabilities = {
+  systemOcr: { available: false, platform: process.platform, languages: [], reason: "preflight timeout" },
+  visionLlm: { available: false, reason: "preflight timeout" },
+  anyAvailable: false,
+};
+
+const FALLBACK_EVALUATOR: EvaluatorReadiness = {
+  ready: false,
+  reason: "preflight timeout — LM Studio may be unreachable",
+  fallbackPolicyEnabled: true,
+};
+
 export async function preflightFiles(
   paths: ReadonlyArray<string>,
   opts: PreflightOptions & { _startTime?: number } = {},
@@ -90,8 +116,8 @@ export async function preflightFiles(
   const start = opts._startTime ?? Date.now();
 
   const [ocr, evaluator, entries] = await Promise.all([
-    getOcrCapabilities(),
-    getEvaluatorReadiness(),
+    withTimeout(getOcrCapabilities(), FALLBACK_OCR, "getOcrCapabilities"),
+    withTimeout(getEvaluatorReadiness(), FALLBACK_EVALUATOR, "getEvaluatorReadiness"),
     probeAll(paths, opts.signal),
   ]);
 
