@@ -941,6 +941,9 @@ contextBridge.exposeInMainWorld("api", {
         durationMs?: number;
       }>)
       : ipcRenderer.invoke("library:import-log-snapshot"),
+    clearImportLogs: (): Promise<number> => smokeLibrary
+      ? Promise.resolve(0)
+      : ipcRenderer.invoke("library:clear-import-logs"),
     onEvaluatorEvent: (cb: (payload: {
       type: string;
       bookId?: string;

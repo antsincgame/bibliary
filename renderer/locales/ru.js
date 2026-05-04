@@ -386,6 +386,7 @@ export default {
   "library.import.preflight.btn.configureOcr": "Настроить OCR",
   "library.import.preflight.btn.cancel": "Отмена",
   "library.import.preflight.failed": "Анализ перед импортом упал: {msg}",
+  "library.import.preflight.skipped": "Предварительный анализ пропущен — импорт запускается напрямую",
   "library.import.preflight.allImageOnly": "Все выбранные файлы — image-only сканы (нет текстового слоя). Настройте OCR в Настройки → Модели для их импорта.",
   "library.import.cancelFailed": "Не удалось отменить импорт — попробуйте закрыть окно.",
   "library.import.busy": "Импорт или сканирование ещё не завершены. Подождите.",

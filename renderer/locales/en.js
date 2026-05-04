@@ -386,6 +386,7 @@ export default {
   "library.import.preflight.btn.configureOcr": "Configure OCR",
   "library.import.preflight.btn.cancel": "Cancel",
   "library.import.preflight.failed": "Pre-import scan failed: {msg}",
+  "library.import.preflight.skipped": "Pre-scan skipped — starting import directly",
   "library.import.preflight.allImageOnly": "All selected files are image-only scans (no text layer). Configure an OCR engine in Settings → Models to import them.",
   "library.import.cancelFailed": "Could not cancel the import — try closing the window.",
   "library.import.busy": "Import or scan is still in progress. Please wait.",

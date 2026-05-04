@@ -224,6 +224,29 @@ class ImportLogger {
   }
 
   /**
+   * Полная очистка: удаляет ВСЕ .jsonl файлы из каталога логов + ring buffer.
+   * Возвращает число удалённых файлов.
+   */
+  async clearAll(): Promise<number> {
+    this.ring.length = 0;
+    this.writeBuffer = [];
+    const dir = this.resolveLogsDir();
+    let removed = 0;
+    try {
+      const files = await fs.readdir(dir);
+      for (const f of files) {
+        if (f.endsWith(".jsonl") && f.startsWith("import-")) {
+          try {
+            await fs.unlink(path.join(dir, f));
+            removed++;
+          } catch { /* skip locked / missing files */ }
+        }
+      }
+    } catch { /* logs dir doesn't exist — nothing to clear */ }
+    return removed;
+  }
+
+  /**
    * Загружает записи последних сессий с диска в ring-буфер.
    * Вызывается при первом обращении к snapshot когда ring пуст (app restart).
    * Читает до 3 последних .jsonl файлов, берёт не более RING_BUFFER_SIZE записей.

@@ -53,12 +53,15 @@ export function buildLogPanel() {
   const clearBtn = el("button", {
     type: "button",
     class: "lib-btn lib-btn-ghost lib-import-log-btn",
-    onclick: (ev) => {
+    onclick: async (ev) => {
       ev.stopPropagation();
       const had = LOG_RING.length;
       LOG_RING.length = 0;
       rerenderLogList();
       updateCounters();
+      if (typeof window.api?.library?.clearImportLogs === "function") {
+        try { await window.api.library.clearImportLogs(); } catch (_e) { /* tolerate */ }
+      }
       if (had > 0) {
         clearBtn.textContent = "✓";
         setTimeout(() => { clearBtn.textContent = t("library.import.log.clear") || "Clear"; }, 800);

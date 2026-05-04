@@ -8,6 +8,7 @@
  *   library:import-files
  *   library:cancel-import
  *   library:import-log-snapshot
+ *   library:clear-import-logs
  *   library:scan-folder
  *   library:cancel-scan
  *
@@ -396,6 +397,11 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
     const logger = getImportLogger();
     await logger.loadLastDiskSession();
     return logger.snapshot();
+  });
+
+  ipcMain.handle("library:clear-import-logs", async (): Promise<number> => {
+    const logger = getImportLogger();
+    return logger.clearAll();
   });
 
   ipcMain.handle("library:cancel-import", async (_e, importId: string): Promise<boolean> => {

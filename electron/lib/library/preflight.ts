@@ -6,8 +6,9 @@
  * нужен OCR. Если OCR не настроен — эти файлы вернут пусто.
  *
  * Скорость: probe одного DjVu = 1-5 мс (IFF in-process), PDF = 50-200 мс
- * (pdf-inspector). Для 100 файлов общий preflight ~20-30 секунд при PDF
- * heavy папке. DjVu-only — секунды.
+ * (pdf-inspector). Большие папки (сотни DjVu на сетевом диске) требуют
+ * большего IPC-таймаута на стороне renderer и выше параллельности probe
+ * (см. CONCURRENCY ниже).
  */
 
 import { promises as fs } from "fs";
@@ -186,9 +187,10 @@ async function walkCollect(
 
 async function probeAll(paths: ReadonlyArray<string>, signal?: AbortSignal): Promise<PreflightFileEntry[]> {
   const result: PreflightFileEntry[] = [];
-  /* Параллельность 4 — не нагружаем диск/IO больше чем нужно для preflight.
-     PDF-inspector держит рантайм буфер ~ размер PDF в памяти. */
-  const CONCURRENCY = 4;
+  /* DjVu IFF-probe читает ≤64 KB на файл — можно выше параллельности.
+     PDF-inspector буферизует весь файл → при заметной доле PDF держим ниже. */
+  const pdfish = paths.filter((p) => path.extname(p).toLowerCase() === ".pdf").length;
+  const CONCURRENCY = pdfish > 64 ? 6 : pdfish > 16 ? 8 : 16;
   let idx = 0;
   async function worker(): Promise<void> {
     while (idx < paths.length) {
@@ -211,6 +213,43 @@ async function probeAll(paths: ReadonlyArray<string>, signal?: AbortSignal): Pro
 }
 
 async function probeOne(filePath: string, ext: string): Promise<PreflightFileEntry> {
+  if (ext === "djvu" || ext === "djv") {
+    try {
+      const r = await probeDjvuTextLayer(filePath);
+      const size = typeof r.fileSize === "number" ? r.fileSize : 0;
+      if (!r.valid) {
+        return { path: filePath, size, ext, status: "invalid", reason: r.parseError };
+      }
+      return {
+        path: filePath,
+        size,
+        ext,
+        status: r.hasTextLayer ? "ok" : "image-only",
+      };
+    } catch (err: unknown) {
+      const code = typeof err === "object" && err !== null && "code" in err
+        ? String((err as NodeJS.ErrnoException).code ?? "")
+        : "";
+      const msg = err instanceof Error ? err.message : String(err);
+      if (code === "ENOENT" || /ENOENT/i.test(msg)) {
+        return {
+          path: filePath,
+          size: 0,
+          ext,
+          status: "invalid",
+          reason: `stat failed: ${msg}`,
+        };
+      }
+      return {
+        path: filePath,
+        size: 0,
+        ext,
+        status: "unknown",
+        reason: msg,
+      };
+    }
+  }
+
   let size = 0;
   try {
     size = (await fs.stat(filePath)).size;
@@ -222,29 +261,6 @@ async function probeOne(filePath: string, ext: string): Promise<PreflightFileEnt
       status: "invalid",
       reason: `stat failed: ${err instanceof Error ? err.message : String(err)}`,
     };
-  }
-
-  if (ext === "djvu" || ext === "djv") {
-    try {
-      const r = await probeDjvuTextLayer(filePath);
-      if (!r.valid) {
-        return { path: filePath, size, ext, status: "invalid", reason: r.parseError };
-      }
-      return {
-        path: filePath,
-        size,
-        ext,
-        status: r.hasTextLayer ? "ok" : "image-only",
-      };
-    } catch (err) {
-      return {
-        path: filePath,
-        size,
-        ext,
-        status: "unknown",
-        reason: err instanceof Error ? err.message : String(err),
-      };
-    }
   }
 
   if (ext === "pdf") {

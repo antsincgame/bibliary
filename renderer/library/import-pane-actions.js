@@ -13,7 +13,7 @@ import { t } from "../i18n.js";
 import { IMPORT_STATE, STATE } from "./state.js";
 import { refreshCollectionViews } from "./collection-views.js";
 import { showLibraryToast } from "./toast.js";
-import { showAlert, showConfirm } from "../components/ui-dialog.js";
+import { showAlert } from "../components/ui-dialog.js";
 import { rerenderBooksPanel, resetBooksState } from "./import-pane-books.js";
 import { rerenderStatusBar } from "./import-pane-statusbar.js";
 import { showPreflightModal } from "./import-pane-preflight.js";
@@ -37,15 +37,24 @@ function resolveOcrEnabled() {
 }
 
 /**
+/* Большие папки (сотни DjVu/PDF на сетевом диске): main-процесс обходит дерево
+   и прогоняет probe — 30s часто недостаточно и даёт ложный «preflight timeout».
+   При timeout graceful-degrade: запускаем импорт без preflight-отчёта
+   (как работало до v0.11.2), не блокируем пользователя. */
+const PREFLIGHT_TIMEOUT_MS = 120_000;
+
+/**
  * Запускает preflight (через IPC) и показывает модал с разбивкой
  * текстовых/image-only/инвалидных файлов + готовность OCR-движков.
- * Возвращает решение пользователя или null если preflight упал.
  *
- * @param {() => Promise<unknown>} runPreflightIpc — функция вызова IPC
- * @returns {Promise<import("./import-pane-preflight.js").PreflightDecision | null>}
+ * Возвращает:
+ *   - PreflightDecision — если preflight + modal прошли успешно
+ *   - `"bypass"` — если preflight упал/таймаут (graceful degrade: запускать импорт напрямую)
+ *   - `null` — если пользователь отменил
+ *
+ * @param {() => Promise<unknown>} runPreflightIpc
+ * @returns {Promise<import("./import-pane-preflight.js").PreflightDecision | "bypass" | null>}
  */
-const PREFLIGHT_TIMEOUT_MS = 30_000;
-
 async function runPreflightAndDecide(runPreflightIpc) {
   /** @type {any} */
   let report;
@@ -59,51 +68,64 @@ async function runPreflightAndDecide(runPreflightIpc) {
       }),
     ]);
   } catch (err) {
+    /* Preflight упал (timeout, IPC error, etc.) — не блокируем пользователя.
+       Показываем toast-предупреждение и возвращаем "bypass" чтобы импорт
+       запустился напрямую (как до v0.11.2 когда preflight ещё не было). */
     console.warn("[import] preflight failed:", err);
-    const msg = err instanceof Error ? err.message : String(err);
-    await showAlert(t("library.import.preflight.failed", { msg }));
-    return null;
+    showLibraryToast({
+      kind: "info",
+      message: t("library.import.preflight.skipped") || "Pre-scan skipped — starting import directly",
+      dedupeKey: "preflight-skipped",
+      dedupeMs: 5000,
+    });
+    return "bypass";
   } finally {
     clearTimeout(timeoutHandle);
   }
   if (!report || report.totalFiles === 0) {
+    /* Папка пустая или нет поддерживаемых файлов — сообщаем и не стартуем. */
     await showAlert(t("library.import.preflight.failed", { msg: "no supported files found" }));
     return null;
   }
   try {
     return await showPreflightModal(report);
   } catch (modalErr) {
+    /* Модал упал — graceful degrade: импорт напрямую. */
     console.warn("[import] showPreflightModal failed:", modalErr);
-    await showAlert(t("library.import.preflight.failed", {
-      msg: modalErr instanceof Error ? modalErr.message : String(modalErr),
-    }));
-    return null;
+    showLibraryToast({
+      kind: "info",
+      message: t("library.import.preflight.skipped") || "Pre-scan modal failed — starting import directly",
+      dedupeKey: "preflight-skipped",
+      dedupeMs: 5000,
+    });
+    return "bypass";
   }
 }
 
 /**
- * Общий поток «подтвердить → preflight → решение» для pick-based import.
+ * Общий поток «preflight → решение» для pick-based import.
  * Устраняет дублирование между importFromFolder и importFromFiles.
  *
+ * Preflight НЕ блокирует импорт: при таймауте/ошибке — graceful degrade
+ * ("bypass"), импорт запускается без preflight-отчёта (поведение до v0.11.2).
+ *
  * @param {{
- *   confirmMessage: string;
- *   confirmTitle: string;
  *   preflightIpc: () => Promise<unknown>;
- *   handleDecision: (decision: import("./import-pane-preflight.js").PreflightDecision) => Promise<void>;
+ *   handleDecision: (decision: import("./import-pane-preflight.js").PreflightDecision | "bypass") => Promise<void>;
  * }} opts
  * @returns {Promise<void>}
  */
 async function runImportFlowCore(opts) {
-  const ok = await showConfirm(opts.confirmMessage, { title: opts.confirmTitle });
-  if (!ok) return;
-
   const statusEl = document.querySelector(".lib-import-status");
   if (statusEl) statusEl.textContent = t("library.import.progress.preflight") || "Preflight scan…";
   const decision = await runPreflightAndDecide(opts.preflightIpc);
   if (statusEl) statusEl.textContent = "";
 
-  if (!decision || decision.action === "cancel") return;
-  if (decision.action === "configure-ocr") { openOcrSettings(); return; }
+  /* null = cancelled by user (in preflight modal or empty folder).
+     "bypass" и PreflightDecision идут в handleDecision. */
+  if (decision === null) return;
+  if (decision !== "bypass" && decision.action === "cancel") return;
+  if (decision !== "bypass" && decision.action === "configure-ocr") { openOcrSettings(); return; }
 
   try {
     await opts.handleDecision(decision);
@@ -111,8 +133,8 @@ async function runImportFlowCore(opts) {
     console.error("[import] handleDecision threw unexpectedly:", err);
     showLibraryToast({
       kind: "error",
-      message: t("library.import.preflight.failed", {
-        msg: err instanceof Error ? err.message : String(err),
+      message: t("library.import.progress.failed", {
+        error: err instanceof Error ? err.message : String(err),
       }),
     });
   }
@@ -143,14 +165,12 @@ export async function importFromFolder(deps) {
   if (!folderPath) return;
 
   await runImportFlowCore({
-    confirmMessage: t("library.import.confirm.startMessage", { folder: folderPath }),
-    confirmTitle: t("library.import.confirm.startTitle"),
     preflightIpc: () => window.api.library.preflightFolder(folderPath, { recursive: IMPORT_STATE.recursive }),
     handleDecision: async (decision) => {
-      /* "skip-image-only" для папки невозможен через текущий IPC importFolder
-         (он ходит сам); поэтому если пользователь выбрал skip — конвертим
-         решение в importFiles с отфильтрованным списком путей. */
-      if (decision.action === "skip-image-only") {
+      /* "skip-image-only": importFolder IPC сам обходит дерево и не умеет
+         фильтровать — конвертим в importFiles с отфильтрованным списком путей.
+         "bypass" и "continue" → importFolder напрямую. */
+      if (decision !== "bypass" && decision.action === "skip-image-only") {
         if (decision.paths.length === 0) {
           await showAlert(t("library.import.preflight.allImageOnly"));
           return;
@@ -232,13 +252,14 @@ export async function importFromFiles(deps) {
   if (paths.length === 0) return;
 
   await runImportFlowCore({
-    confirmMessage: t("library.import.confirm.startFilesMessage", { count: String(paths.length) }),
-    confirmTitle: t("library.import.confirm.startFilesTitle"),
     preflightIpc: () => window.api.library.preflightFiles(paths),
     handleDecision: async (decision) => {
-      const finalPaths = decision.action === "skip-image-only" ? decision.paths : paths;
+      /* "bypass" = preflight упал/timeout → импортируем все пути напрямую. */
+      const finalPaths = (decision !== "bypass" && decision.action === "skip-image-only")
+        ? decision.paths
+        : paths;
       if (finalPaths.length === 0) {
-        if (decision.action === "skip-image-only") {
+        if (decision !== "bypass" && decision.action === "skip-image-only") {
           await showAlert(t("library.import.preflight.allImageOnly"));
         }
         return;
@@ -476,53 +497,40 @@ export function installImportDropHandlers(dropzone, deps) {
     const filePaths = entries.filter((e) => !e.isDirectory).map((e) => e.path);
     const dirPaths = entries.filter((e) => e.isDirectory).map((e) => e.path);
 
-    /** @type {any} */
-    let report = null;
-    try {
-      /** @type {Promise<any>} */
-      let preflightP;
-      if (dirPaths.length === 1 && filePaths.length === 0) {
-        preflightP = window.api.library.preflightFolder(dirPaths[0], { recursive: IMPORT_STATE.recursive });
-      } else if (filePaths.length > 0 && dirPaths.length === 0) {
-        preflightP = window.api.library.preflightFiles(filePaths);
-      } else {
-        await runImport(() => importDroppedEntries(entries), deps);
-        return;
-      }
-      /** @type {ReturnType<typeof setTimeout>|undefined} */
-      let dndTimeoutHandle;
-      try {
-        report = await Promise.race([
-          preflightP,
-          new Promise((_, reject) => {
-            dndTimeoutHandle = setTimeout(() => reject(new Error("preflight timeout")), PREFLIGHT_TIMEOUT_MS);
-          }),
-        ]);
-      } finally {
-        clearTimeout(dndTimeoutHandle);
-      }
-    } catch (err) {
-      console.warn("[import] preflight (DnD) failed:", err);
-      await showAlert(t("library.import.preflight.failed", { msg: err instanceof Error ? err.message : String(err) }));
+    /* Mixed drop (папки + файлы) — пропускаем preflight, идём напрямую. */
+    if (dirPaths.length > 0 && filePaths.length > 0) {
+      await runImport(() => importDroppedEntries(entries), deps);
       return;
     }
 
-    if (!report || report.totalFiles === 0) {
-      await showAlert(t("library.import.preflight.failed", { msg: "no supported files in drop" }));
+    /* Для single-folder или чисто-файловых drop'ов: пробуем preflight.
+       При таймауте/ошибке — graceful degrade (импорт напрямую). */
+    /** @type {Promise<any>|null} */
+    let preflightP = null;
+    if (dirPaths.length === 1 && filePaths.length === 0) {
+      preflightP = window.api.library.preflightFolder(dirPaths[0], { recursive: IMPORT_STATE.recursive });
+    } else if (filePaths.length > 0 && dirPaths.length === 0) {
+      preflightP = window.api.library.preflightFiles(filePaths);
+    }
+
+    /** @type {import("./import-pane-preflight.js").PreflightDecision | "bypass" | null} */
+    let dndDecision = null;
+
+    if (preflightP) {
+      const result = await runPreflightAndDecide(() => preflightP);
+      if (result === null) return;
+      dndDecision = result;
+    } else {
+      dndDecision = "bypass";
+    }
+
+    if (dndDecision === "bypass") {
+      await runImport(() => importDroppedEntries(entries), deps);
       return;
     }
 
-    let decision;
-    try {
-      decision = await showPreflightModal(report);
-    } catch (modalErr) {
-      console.warn("[import] showPreflightModal (DnD) failed:", modalErr);
-      await showAlert(t("library.import.preflight.failed", {
-        msg: modalErr instanceof Error ? modalErr.message : String(modalErr),
-      }));
-      return;
-    }
-    if (!decision || decision.action === "cancel") return;
+    const decision = /** @type {import("./import-pane-preflight.js").PreflightDecision} */ (dndDecision);
+    if (decision.action === "cancel") return;
     if (decision.action === "configure-ocr") {
       openOcrSettings();
       return;

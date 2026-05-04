@@ -40,6 +40,8 @@ export interface DjvuProbeResult {
   formType: "DJVM" | "DJVU" | null;
   /** Размер просканированного буфера. */
   scannedBytes: number;
+  /** Полный размер файла (из fs.stat) — чтобы preflight не делал второй stat. */
+  fileSize?: number;
   /** Если parseError — диагностика, что пошло не так. */
   parseError?: string;
 }
@@ -50,13 +52,22 @@ export async function probeDjvuTextLayer(filePath: string): Promise<DjvuProbeRes
   const fh = await fs.open(filePath, "r");
   try {
     const stat = await fh.stat();
+    const fileSize = stat.size;
     const toRead = Math.min(stat.size, PROBE_WINDOW_BYTES);
     if (toRead < 16) {
-      return { valid: false, hasTextLayer: false, formType: null, scannedBytes: toRead, parseError: "file too small" };
+      return {
+        valid: false,
+        hasTextLayer: false,
+        formType: null,
+        scannedBytes: toRead,
+        parseError: "file too small",
+        fileSize,
+      };
     }
     const buf = Buffer.alloc(toRead);
     const { bytesRead } = await fh.read(buf, 0, toRead, 0);
-    return scanDjvuBuffer(buf.subarray(0, bytesRead));
+    const parsed = scanDjvuBuffer(buf.subarray(0, bytesRead));
+    return { ...parsed, fileSize };
   } finally {
     await fh.close();
   }

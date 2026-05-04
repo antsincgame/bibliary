@@ -6,6 +6,52 @@ All notable changes to Bibliary are documented in this file. Format follows
 
 ## [Unreleased]
 
+## [0.11.11] — 2026-05-04 — Import graceful degrade + no double confirm
+
+### Fixed
+
+- **Импорт не запускался при preflight timeout** — коренная причина: в `runImportFlowCore`
+  был добавлен `showConfirm` **перед** preflight, создав двойное подтверждение. При timeout
+  preflight (30 с) пользователь видел ошибку «анализ упал» и импорт никогда не стартовал.
+  Убран лишний `showConfirm` (preflight modal сам является подтверждением, как в исходном
+  дизайне v0.11.2: «Preflight **заменяет** старый showConfirm — даёт honest expectations»).
+- **Preflight timeout больше не блокирует импорт** — при любом сбое preflight (timeout, IPC
+  ошибка, крэш modal) функция `runPreflightAndDecide` теперь возвращает `"bypass"` вместо
+  `null`, показывает информационный toast и запускает импорт напрямую — так же, как
+  работало до v0.11.2 до введения preflight. Это поведение распространяется и на
+  drag-and-drop путь.
+- **Graceful degrade для DnD preflight** — DnD путь (`installImportDropHandlers`) тоже
+  переключился на `runPreflightAndDecide` с `"bypass"` вместо блокирующего `showAlert`.
+
+## [0.11.10] — 2026-05-04 — Preflight: large DjVu folders + timeout
+
+### Fixed
+
+- **«Папка пуста» в диалоге выбора папки** — это стандартное поведение Windows
+  для `dialog.showOpenDialog({ properties: ["openDirectory"] })`: в списке
+  не показываются файлы, только вложенные каталоги. Файлы в `E:\Bibliarifull`
+  при этом учитываются после нажатия «Выбор папки».
+- **«preflight timeout» на больших каталогах DjVu** — рендерер обрывал IPC
+  через 30 с, пока main рекурсивно собирал сотни/тысячи `.djvu` и прогонял
+  IFF-probe с параллельностью 4. Таймаут preflight увеличен до **120 с**;
+  параллельность probe **адаптивная** (до 16 для каталогов без тяжёлых PDF);
+  для DjVu убран лишний `fs.stat` перед probe (размер берётся из
+  `probeDjvuTextLayer`).
+
+## [0.11.9] — 2026-05-04 — Clear logs button deletes log files
+
+### Fixed
+
+- **Кнопка «Clear logs» теперь удаляет файлы логов с диска**, а не только
+  чистит ring-буфер в памяти renderer. Раньше логи возвращались после
+  перезапуска приложения через `hydrateLogSnapshot()`.
+
+### Added
+
+- `ImportLogger.clearAll()` — удаляет все `.jsonl` файлы из `data/logs/` и
+  очищает ring buffer в main-процессе.
+- IPC-канал `library:clear-import-logs` + preload bridge `clearImportLogs()`.
+
 ## [0.11.8] — 2026-05-04 — Visible import start + watchdog + IPC heartbeat
 
 ### Fixed
