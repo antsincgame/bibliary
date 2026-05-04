@@ -16,6 +16,7 @@ import { probeDjvuTextLayer } from "../scanner/parsers/djvu-iff-probe.js";
 import { probePdfTextLayer } from "../scanner/parsers/pdf-text-probe.js";
 import { getOcrCapabilities, type OcrCapabilities } from "./ocr-capabilities.js";
 import { getEvaluatorReadiness, type EvaluatorReadiness } from "./evaluator-readiness.js";
+import { SUPPORTED_BOOK_EXTS } from "./types.js";
 
 export interface PreflightFileEntry {
   /** Абсолютный путь. */
@@ -64,8 +65,8 @@ export interface PreflightOptions {
 }
 
 const PROBED_EXTS = new Set(["djvu", "djv", "pdf"]);
-/* Эти форматы всегда содержат структурированный текст — preflight не нужен. */
-const NATIVE_TEXT_EXTS = new Set(["epub", "fb2", "fb2.zip", "txt", "md", "mobi", "azw", "azw3", "html", "htm"]);
+/** Те же расширения, что `importFolderToLibrary` через `walkSupportedFiles` — иначе preflight даёт totalFiles=0 и UI не показывает модал. */
+const PREFLIGHT_WALK_EXTS = SUPPORTED_BOOK_EXTS as ReadonlySet<string>;
 
 const DEFAULT_MAX_FILES = 5000;
 
@@ -88,12 +89,13 @@ const PREFLIGHT_SUB_TIMEOUT_MS = 10_000;
 function withTimeout<T>(promise: Promise<T>, fallback: T, label: string): Promise<T> {
   return Promise.race([
     promise,
-    new Promise<T>((resolve) =>
-      setTimeout(() => {
+    new Promise<T>((resolve) => {
+      const t = setTimeout(() => {
         console.warn(`[preflight] ${label} timed out after ${PREFLIGHT_SUB_TIMEOUT_MS}ms — using fallback`);
         resolve(fallback);
-      }, PREFLIGHT_SUB_TIMEOUT_MS),
-    ),
+      }, PREFLIGHT_SUB_TIMEOUT_MS);
+      t.unref(); /* allow process to exit if nothing else is pending */
+    }),
   ]);
 }
 
@@ -176,7 +178,7 @@ async function walkCollect(
     }
     if (!ent.isFile()) continue;
     const ext = path.extname(ent.name).toLowerCase().replace(/^\./, "");
-    if (PROBED_EXTS.has(ext) || NATIVE_TEXT_EXTS.has(ext)) {
+    if (PREFLIGHT_WALK_EXTS.has(ext)) {
       out.push(full);
     }
   }

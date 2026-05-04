@@ -13,7 +13,7 @@ import { t } from "../i18n.js";
 import { IMPORT_STATE, STATE } from "./state.js";
 import { refreshCollectionViews } from "./collection-views.js";
 import { showLibraryToast } from "./toast.js";
-import { showAlert } from "../components/ui-dialog.js";
+import { showAlert, showConfirm } from "../components/ui-dialog.js";
 import { rerenderBooksPanel, resetBooksState } from "./import-pane-books.js";
 import { rerenderStatusBar } from "./import-pane-statusbar.js";
 import { showPreflightModal } from "./import-pane-preflight.js";
@@ -42,26 +42,29 @@ function resolveOcrEnabled() {
  * Возвращает решение пользователя или null если preflight упал.
  *
  * @param {() => Promise<unknown>} runPreflightIpc — функция вызова IPC
- * @param {(import("./import-pane-preflight.js")).PreflightDecision | undefined} _typeHint
  * @returns {Promise<import("./import-pane-preflight.js").PreflightDecision | null>}
  */
 const PREFLIGHT_TIMEOUT_MS = 30_000;
 
-async function runPreflightAndDecide(runPreflightIpc, _typeHint) {
+async function runPreflightAndDecide(runPreflightIpc) {
   /** @type {any} */
   let report;
+  /** @type {ReturnType<typeof setTimeout>|undefined} */
+  let timeoutHandle;
   try {
     report = await Promise.race([
       runPreflightIpc(),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("preflight timeout")), PREFLIGHT_TIMEOUT_MS),
-      ),
+      new Promise((_, reject) => {
+        timeoutHandle = setTimeout(() => reject(new Error("preflight timeout")), PREFLIGHT_TIMEOUT_MS);
+      }),
     ]);
   } catch (err) {
     console.warn("[import] preflight failed:", err);
     const msg = err instanceof Error ? err.message : String(err);
     await showAlert(t("library.import.preflight.failed", { msg }));
     return null;
+  } finally {
+    clearTimeout(timeoutHandle);
   }
   if (!report || report.totalFiles === 0) {
     await showAlert(t("library.import.preflight.failed", { msg: "no supported files found" }));
@@ -75,6 +78,43 @@ async function runPreflightAndDecide(runPreflightIpc, _typeHint) {
       msg: modalErr instanceof Error ? modalErr.message : String(modalErr),
     }));
     return null;
+  }
+}
+
+/**
+ * Общий поток «подтвердить → preflight → решение» для pick-based import.
+ * Устраняет дублирование между importFromFolder и importFromFiles.
+ *
+ * @param {{
+ *   confirmMessage: string;
+ *   confirmTitle: string;
+ *   preflightIpc: () => Promise<unknown>;
+ *   handleDecision: (decision: import("./import-pane-preflight.js").PreflightDecision) => Promise<void>;
+ * }} opts
+ * @returns {Promise<void>}
+ */
+async function runImportFlowCore(opts) {
+  const ok = await showConfirm(opts.confirmMessage, { title: opts.confirmTitle });
+  if (!ok) return;
+
+  const statusEl = document.querySelector(".lib-import-status");
+  if (statusEl) statusEl.textContent = t("library.import.progress.preflight") || "Preflight scan…";
+  const decision = await runPreflightAndDecide(opts.preflightIpc);
+  if (statusEl) statusEl.textContent = "";
+
+  if (!decision || decision.action === "cancel") return;
+  if (decision.action === "configure-ocr") { openOcrSettings(); return; }
+
+  try {
+    await opts.handleDecision(decision);
+  } catch (err) {
+    console.error("[import] handleDecision threw unexpectedly:", err);
+    showLibraryToast({
+      kind: "error",
+      message: t("library.import.preflight.failed", {
+        msg: err instanceof Error ? err.message : String(err),
+      }),
+    });
   }
 }
 
@@ -102,49 +142,40 @@ export async function importFromFolder(deps) {
   }
   if (!folderPath) return;
 
-  console.warn("[import] folder selected:", folderPath, "— starting preflight");
-  const statusEl = document.querySelector(".lib-import-status");
-  if (statusEl) statusEl.textContent = t("library.import.progress.preflight") || "Preflight scan…";
-  const t0 = Date.now();
-  const decision = await runPreflightAndDecide(
-    () => window.api.library.preflightFolder(folderPath, { recursive: IMPORT_STATE.recursive }),
-  );
-  console.warn("[import] preflight completed in", Date.now() - t0, "ms, decision:", decision?.action ?? "null");
-  if (statusEl) statusEl.textContent = "";
-  if (!decision || decision.action === "cancel") return;
-  if (decision.action === "configure-ocr") {
-    openOcrSettings();
-    return;
-  }
-
-  /* "skip-image-only" для папки невозможен через текущий IPC importFolder
-     (он ходит сам); поэтому если пользователь выбрал skip — конвертим
-     решение в importFiles с отфильтрованным списком путей. */
-  if (decision.action === "skip-image-only") {
-    if (decision.paths.length === 0) {
-      await showAlert(t("library.import.preflight.allImageOnly"));
-      return;
-    }
-    await runImport(async () =>
-      window.api.library.importFiles({
-        paths: decision.paths,
-        scanArchives: IMPORT_STATE.scanArchives,
-        ocrEnabled: resolveOcrEnabled(),
-      }),
-      deps,
-    );
-    return;
-  }
-
-  await runImport(async () =>
-    window.api.library.importFolder({
-      folder: folderPath,
-      scanArchives: IMPORT_STATE.scanArchives,
-      ocrEnabled: resolveOcrEnabled(),
-      maxDepth: IMPORT_STATE.recursive ? 16 : 0,
-    }),
-    deps,
-  );
+  await runImportFlowCore({
+    confirmMessage: t("library.import.confirm.startMessage", { folder: folderPath }),
+    confirmTitle: t("library.import.confirm.startTitle"),
+    preflightIpc: () => window.api.library.preflightFolder(folderPath, { recursive: IMPORT_STATE.recursive }),
+    handleDecision: async (decision) => {
+      /* "skip-image-only" для папки невозможен через текущий IPC importFolder
+         (он ходит сам); поэтому если пользователь выбрал skip — конвертим
+         решение в importFiles с отфильтрованным списком путей. */
+      if (decision.action === "skip-image-only") {
+        if (decision.paths.length === 0) {
+          await showAlert(t("library.import.preflight.allImageOnly"));
+          return;
+        }
+        await runImport(async () =>
+          window.api.library.importFiles({
+            paths: decision.paths,
+            scanArchives: IMPORT_STATE.scanArchives,
+            ocrEnabled: resolveOcrEnabled(),
+          }),
+          deps,
+        );
+        return;
+      }
+      await runImport(async () =>
+        window.api.library.importFolder({
+          folder: folderPath,
+          scanArchives: IMPORT_STATE.scanArchives,
+          ocrEnabled: resolveOcrEnabled(),
+          maxDepth: IMPORT_STATE.recursive ? 16 : 0,
+        }),
+        deps,
+      );
+    },
+  });
 }
 
 /**
@@ -200,37 +231,28 @@ export async function importFromFiles(deps) {
   }
   if (paths.length === 0) return;
 
-  console.warn("[import] files selected:", paths.length, "— starting preflight");
-  const statusEl2 = document.querySelector(".lib-import-status");
-  if (statusEl2) statusEl2.textContent = t("library.import.progress.preflight") || "Preflight scan…";
-  const t0 = Date.now();
-  const decision = await runPreflightAndDecide(
-    () => window.api.library.preflightFiles(paths),
-  );
-  console.warn("[import] preflight completed in", Date.now() - t0, "ms, decision:", decision?.action ?? "null");
-  if (statusEl2) statusEl2.textContent = "";
-  if (!decision || decision.action === "cancel") return;
-  if (decision.action === "configure-ocr") {
-    openOcrSettings();
-    return;
-  }
-
-  const finalPaths = decision.action === "skip-image-only" ? decision.paths : paths;
-  if (finalPaths.length === 0) {
-    if (decision.action === "skip-image-only") {
-      await showAlert(t("library.import.preflight.allImageOnly"));
-    }
-    return;
-  }
-
-  await runImport(async () =>
-    window.api.library.importFiles({
-      paths: finalPaths,
-      scanArchives: IMPORT_STATE.scanArchives,
-      ocrEnabled: resolveOcrEnabled(),
-    }),
-    deps,
-  );
+  await runImportFlowCore({
+    confirmMessage: t("library.import.confirm.startFilesMessage", { count: String(paths.length) }),
+    confirmTitle: t("library.import.confirm.startFilesTitle"),
+    preflightIpc: () => window.api.library.preflightFiles(paths),
+    handleDecision: async (decision) => {
+      const finalPaths = decision.action === "skip-image-only" ? decision.paths : paths;
+      if (finalPaths.length === 0) {
+        if (decision.action === "skip-image-only") {
+          await showAlert(t("library.import.preflight.allImageOnly"));
+        }
+        return;
+      }
+      await runImport(async () =>
+        window.api.library.importFiles({
+          paths: finalPaths,
+          scanArchives: IMPORT_STATE.scanArchives,
+          ocrEnabled: resolveOcrEnabled(),
+        }),
+        deps,
+      );
+    },
+  });
 }
 
 /**
@@ -422,12 +444,18 @@ export function installImportDropHandlers(dropzone, deps) {
         await runImport(() => importDroppedEntries(entries), deps);
         return;
       }
-      report = await Promise.race([
-        preflightP,
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("preflight timeout")), PREFLIGHT_TIMEOUT_MS),
-        ),
-      ]);
+      /** @type {ReturnType<typeof setTimeout>|undefined} */
+      let dndTimeoutHandle;
+      try {
+        report = await Promise.race([
+          preflightP,
+          new Promise((_, reject) => {
+            dndTimeoutHandle = setTimeout(() => reject(new Error("preflight timeout")), PREFLIGHT_TIMEOUT_MS);
+          }),
+        ]);
+      } finally {
+        clearTimeout(dndTimeoutHandle);
+      }
     } catch (err) {
       console.warn("[import] preflight (DnD) failed:", err);
       await showAlert(t("library.import.preflight.failed", { msg: err instanceof Error ? err.message : String(err) }));
@@ -439,8 +467,17 @@ export function installImportDropHandlers(dropzone, deps) {
       return;
     }
 
-    const decision = await showPreflightModal(report);
-    if (decision.action === "cancel") return;
+    let decision;
+    try {
+      decision = await showPreflightModal(report);
+    } catch (modalErr) {
+      console.warn("[import] showPreflightModal (DnD) failed:", modalErr);
+      await showAlert(t("library.import.preflight.failed", {
+        msg: modalErr instanceof Error ? modalErr.message : String(modalErr),
+      }));
+      return;
+    }
+    if (!decision || decision.action === "cancel") return;
     if (decision.action === "configure-ocr") {
       openOcrSettings();
       return;

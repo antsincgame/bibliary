@@ -115,8 +115,9 @@ export async function spawnWithWatchdog(
           killSucceeded = false;
         }
       }
-    }, killGraceMs);
+    }, killGraceMs).unref();
   }, opts.timeoutMs);
+  watchdogTimer.unref();
 
   const onExternalAbort = (): void => {
     try {
@@ -125,7 +126,7 @@ export async function spawnWithWatchdog(
         if (child.exitCode === null && child.signalCode === null) {
           try { child.kill("SIGKILL"); } catch { /* ignore */ }
         }
-      }, killGraceMs);
+      }, killGraceMs).unref();
     } catch { /* ignore */ }
   };
   if (externalSignal) externalSignal.addEventListener("abort", onExternalAbort, { once: true });

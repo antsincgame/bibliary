@@ -149,26 +149,28 @@ describe("resolveWithMaxPathGuard", () => {
 });
 
 describe("extractSphereFromImportPath", () => {
+  const importRoot = path.join(os.tmpdir(), "Bibliarifull");
+
   it("extracts first folder segment as sphere", () => {
     const sphere = extractSphereFromImportPath(
-      "D:\\Bibliarifull\\Mathematics\\Knuth.pdf",
-      "D:\\Bibliarifull",
+      path.join(importRoot, "Mathematics", "Knuth.pdf"),
+      importRoot,
     );
     assert.equal(sphere, "Mathematics");
   });
 
   it("returns unsorted for files in root", () => {
     const sphere = extractSphereFromImportPath(
-      "D:\\Bibliarifull\\book.pdf",
-      "D:\\Bibliarifull",
+      path.join(importRoot, "book.pdf"),
+      importRoot,
     );
     assert.equal(sphere, "unsorted");
   });
 
   it("handles deep nesting", () => {
     const sphere = extractSphereFromImportPath(
-      "D:\\Bibliarifull\\Science\\Physics\\Quantum\\book.pdf",
-      "D:\\Bibliarifull",
+      path.join(importRoot, "Science", "Physics", "Quantum", "book.pdf"),
+      importRoot,
     );
     assert.equal(sphere, "Science");
   });

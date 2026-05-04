@@ -144,6 +144,7 @@ function scheduleNextPoll(delayMs: number): void {
     pollTimer = null;
     void runPollCycle();
   }, Math.max(0, delayMs));
+  pollTimer.unref();
 }
 
 async function runPollCycle(): Promise<void> {

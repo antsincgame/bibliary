@@ -663,7 +663,13 @@ export async function getServerStatus(): Promise<{ online: boolean; version?: st
   inflightStatus = (async () => {
     try {
       const client = getClient();
-      const v = await client.system.getLMStudioVersion();
+      const v = await Promise.race([
+        client.system.getLMStudioVersion(),
+        new Promise<never>((_, reject) => {
+          const t = setTimeout(() => reject(new Error("LM Studio SDK timeout")), SDK_TIMEOUT_MS);
+          t.unref();
+        }),
+      ]);
       return { online: true, version: v.version };
     } catch {
       dropClient();

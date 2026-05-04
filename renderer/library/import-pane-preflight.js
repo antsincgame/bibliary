@@ -132,7 +132,9 @@ export function showPreflightModal(report) {
     modal.append(body, actions);
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
-    setTimeout(() => btnContinue.focus(), 30);
+    overlay.tabIndex = -1;
+    try { overlay.focus(); } catch { /* ignore: rare focus failures in embedded contexts */ }
+    setTimeout(() => { try { btnContinue.focus(); } catch { /* ignore */ } }, 30);
   });
 }
 
