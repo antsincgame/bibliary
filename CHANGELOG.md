@@ -6,6 +6,47 @@ All notable changes to Bibliary are documented in this file. Format follows
 
 ## [Unreleased]
 
+## [0.11.8] — 2026-05-04 — Visible import start + watchdog + IPC heartbeat
+
+### Fixed
+
+- **«Модал появился — импорт не запустился»** — устранена ситуация, когда после
+  Continue в preflight-модале пользователь не видел никакой реакции:
+  - В рендере `runImport` (`renderer/library/import-pane-actions.js`) теперь
+    при старте импорта **гарантированно показывается info-toast**
+    `"Import started — scanning folder…"` (`library.import.progress.startedToast`).
+  - Молчаливый `if (!root) return` заменён на error-toast с понятным сообщением;
+    добавлена явная проверка `window.api?.library?.importFolder` и error-toast
+    при отсутствии preload bridge.
+  - Добавлен **watchdog 15 сек** без прогресс-эвентов — при зависшем main-side
+    invoke (например, медленный `fs.stat`/`readdir` сетевой папки, антивирус,
+    зависший `appendFile` лога) пользователь получает info-toast
+    `library.import.progress.watchdog` с предложением отменить и попробовать снова.
+  - Watchdog корректно гасится в `finally` через `clearTimeout`.
+
+### Added
+
+- **Ранний IPC heartbeat** в `library:import-folder` и `library:import-files`
+  (`electron/ipc/library-import-ipc.ts`): сразу после получения args, ДО любого
+  медленного `await` (`logger.startSession`, `readImportPrefs`, `fs.stat`,
+  walker), отправляется `phase: "started"` через `broadcastImportProgress`. Это
+  даёт renderer'у мгновенный сигнал «main process принял вызов и работает» —
+  watchdog не сработает на медленной, но рабочей цепочке.
+- Новый член enum `ProgressEventPhase`: `"started"`
+  (`electron/lib/library/import-types.ts`).
+- Локали: `library.import.progress.startedToast`, `library.import.progress.watchdog`
+  в `en.js` и `ru.js`.
+
+### Why
+
+Ранее цепочка `Continue → handleDecision → runImport → invoke()` была корректной,
+но **полностью молчаливой** до первого progress-эвента из main process. Если
+первый эвент приходил поздно (большая папка, медленный диск, OCR/extract
+первого файла, или зависший await на ФС), пользователь ошибочно думал, что
+импорт «не запустился». Теперь видимая обратная связь поступает на каждом этапе:
+1) старт runImport (info-toast), 2) main принял вызов (heartbeat → status),
+3) при подвисании — предупреждение через 15 сек.
+
 ## [0.11.7] — 2026-05-04 — Remove Linux platform support
 
 ### Removed

@@ -83,7 +83,7 @@ export interface ImportFolderOptions {
  * Backward-compat поля `index` и `total`: дублируют `processed`/`discovered`,
  * чтобы старый UI-код не падал. Для новых интеграций — читать `phase`.
  */
-export type ProgressEventPhase = "discovered" | "file-start" | "processed" | "scan-complete";
+export type ProgressEventPhase = "started" | "discovered" | "file-start" | "processed" | "scan-complete";
 
 export interface ProgressEvent {
   phase: ProgressEventPhase;

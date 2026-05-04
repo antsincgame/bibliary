@@ -337,6 +337,8 @@ export default {
   "library.import.progress.scanning": "Scanning: {found} found",
   "library.import.progress.preflight": "Analyzing files before import…",
   "library.import.progress.starting": "Import starting...",
+  "library.import.progress.startedToast": "Import started — scanning folder…",
+  "library.import.progress.watchdog": "Import is not responding for {sec}s. Try cancelling and retrying.",
   "library.import.progress.processing": "Processing: {file} ({done} / {total})",
   "library.import.progress.unknownFile": "unknown file",
   "library.import.progress.copying": "Copying: {done} / {total}",

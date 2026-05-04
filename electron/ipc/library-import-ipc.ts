@@ -99,6 +99,18 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
       const ctrl = new AbortController();
       activeImports.set(importId, ctrl);
       const t0 = Date.now();
+      /* Ранний heartbeat: сообщаем renderer'у importId МГНОВЕННО, до любого
+         медленного await (startSession/readImportPrefs/fs.stat/walker). Без
+         этого пользователь после Continue в preflight видит долгое молчание,
+         если первый файл/архив обрабатывается несколько секунд. С heartbeat
+         renderer гарантированно получает сигнал "main принял вызов" сразу. */
+      broadcastImportProgress(getMainWindow, importId, {
+        phase: "started",
+        discovered: 0,
+        processed: 0,
+        index: 0,
+        total: 0,
+      });
       const logger = getImportLogger();
       const logFile = await logger.startSession(importId);
       const prefs = await readImportPrefs();
@@ -240,6 +252,14 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
       const importId = randomUUID();
       const ctrl = new AbortController();
       activeImports.set(importId, ctrl);
+      /* Ранний heartbeat: см. комментарий в "library:import-folder" handler. */
+      broadcastImportProgress(getMainWindow, importId, {
+        phase: "started",
+        discovered: paths.length,
+        processed: 0,
+        index: 0,
+        total: paths.length,
+      });
       const logger = getImportLogger();
       const logFile = await logger.startSession(importId);
       const prefs = await readImportPrefs();

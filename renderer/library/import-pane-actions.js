@@ -255,23 +255,69 @@ export async function importFromFiles(deps) {
   });
 }
 
+/* Watchdog: если в течение этого окна не прилетел НИ ОДИН прогресс-эвент,
+   показываем пользователю предупреждение, что invoke висит. Минимизирует
+   ситуацию "модал закрыл — а импорт молчит". 15 секунд — достаточно
+   для большой папки на сетевом диске, но мало чтобы пользователь
+   успел потерять терпение. */
+const PROGRESS_WATCHDOG_MS = 15_000;
+
 /**
  * @param {() => Promise<any>} invoke
  * @param {{renderCatalog: (root: HTMLElement) => Promise<void>; focusCatalogBook?: (id: string) => void}} deps
  */
 async function runImport(invoke, deps) {
   const root = document.getElementById("library-root");
-  if (!root) return;
+  if (!root) {
+    /* Раньше тут был молчаливый return без любого фидбэка — пользователь
+       видел "ничего не происходит" если library route не смонтирован. */
+    showLibraryToast({
+      kind: "error",
+      message: t("library.import.progress.failed", { error: "library route not mounted" }),
+    });
+    return;
+  }
+  if (typeof window.api?.library?.importFolder !== "function") {
+    showLibraryToast({
+      kind: "error",
+      message: t("library.import.progress.failed", { error: "IPC bridge missing (preload not loaded)" }),
+    });
+    return;
+  }
   const status = root.querySelector(".lib-import-status");
   IMPORT_STATE.busy = true;
   IMPORT_STATE.aggregate.startedAt = Date.now();
   let unsubscribeProgress = null;
+  /** @type {ReturnType<typeof setTimeout>|null} */
+  let watchdogTimer = null;
+  let lastProgressAt = Date.now();
+  /** Гарантированно-видимый сигнал "импорт стартовал". Без него пользователь
+      может думать, что Continue в preflight ничего не сделал — особенно
+      если первый файл обрабатывается долго и нет ранних progress-эвентов. */
+  showLibraryToast({
+    kind: "info",
+    message: t("library.import.progress.startedToast"),
+    dedupeKey: "import-started",
+    dedupeMs: 2000,
+  });
   try {
     resetBooksState();
     rerenderStatusBar();
     if (status) status.textContent = t("library.import.progress.starting");
+    /* Watchdog запускаем сразу — он сам себя гасит при первом прогресс-эвенте. */
+    watchdogTimer = setTimeout(() => {
+      if (Date.now() - lastProgressAt >= PROGRESS_WATCHDOG_MS) {
+        showLibraryToast({
+          kind: "info",
+          message: t("library.import.progress.watchdog", { sec: String(Math.round(PROGRESS_WATCHDOG_MS / 1000)) }),
+          dedupeKey: "import-watchdog",
+          dedupeMs: 30_000,
+        });
+      }
+    }, PROGRESS_WATCHDOG_MS);
     if (typeof window.api?.library?.onImportProgress === "function") {
       unsubscribeProgress = window.api.library.onImportProgress((evt) => {
+        lastProgressAt = Date.now();
         if (evt?.importId && !IMPORT_STATE.importId) {
           IMPORT_STATE.importId = evt.importId;
         }
@@ -374,6 +420,10 @@ async function runImport(invoke, deps) {
     if (status) status.textContent = errMsg;
     showLibraryToast({ kind: "error", message: errMsg });
   } finally {
+    if (watchdogTimer !== null) {
+      try { clearTimeout(watchdogTimer); } catch (_e) { /* tolerate */ }
+      watchdogTimer = null;
+    }
     if (typeof unsubscribeProgress === "function") {
       try { unsubscribeProgress(); } catch (_e) { /* tolerate: listener cleanup */ }
     }
