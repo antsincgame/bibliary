@@ -1,25 +1,22 @@
 // @ts-check
 /**
- * Hardware-strip + LM Studio status + загруженные/доступные модели + роли.
+ * Hardware-strip + LM Studio status + роли пайплайна.
  *
- * Извлечено из `models-page.js` (Phase 2.4 cross-platform roadmap, 2026-04-30).
- * Группа объединена т.к. все эти блоки переоткрываются в одном `refresh()`.
+ * v1.0.9 (2026-05-06): блоки «Загруженные модели» и «Загрузить с диска»
+ * удалены по запросу — ручное управление VRAM через UI убрано, модели
+ * загружаются on-demand при первом use (v1.0.7 evaluator-queue.allowAutoLoad).
  */
 
 import { el, clear } from "../dom.js";
 import { t } from "../i18n.js";
 import {
   hardwareSummaryLine,
-  inferGpuOffloadForLmLoad,
   offloadHintLine,
-  pickHardwareAutoModel,
-  suggestedContextLength,
 } from "./gpu-offload-hint.js";
 import {
   ctx,
   errMsg,
   showToast,
-  withBusy,
   PIPELINE_ROLES,
 } from "./models-page-internals.js";
 import { mountPipelineStatusWidget } from "./pipeline-status-widget.js";
@@ -75,8 +72,6 @@ export async function refresh() {
       window.api.modelRoles.list(PIPELINE_ROLES),
     ]);
     renderStatus(status);
-    renderLoaded(loaded);
-    renderLoadFromDisk(downloaded, loaded);
     renderRoles(roleMap, loaded, downloaded);
     renderHardwareStrip();
   } catch (e) {
@@ -96,119 +91,6 @@ function renderStatus(status) {
     ? t("models.status.online", { ver: status.version ? ` v${status.version}` : "" })
     : t("models.status.offline");
   node.className = `mp-status-pill ${status.online ? "mp-status-online" : "mp-status-offline"}`;
-}
-
-function renderLoaded(loaded) {
-  const host = ctx.pageRoot?.querySelector("#mp-loaded");
-  if (!host) return;
-  clear(host);
-  if (loaded.length === 0) {
-    host.appendChild(el("p", { class: "mp-empty" }, t("models.empty.no_loaded")));
-    return;
-  }
-  for (const m of loaded) {
-    const btn = el("button", { class: "btn btn-sm btn-ghost", type: "button" }, t("models.btn.unload"));
-    btn.addEventListener("click", () => withBusy(
-      () => window.api.lmstudio.unload(m.identifier),
-      "models.toast.unload_failed",
-      refresh,
-    ));
-    host.appendChild(el("div", { class: "mp-model-row mp-model-row-compact" }, [
-      el("span", { class: "mp-model-name", title: m.modelKey }, m.modelKey),
-      btn,
-    ]));
-  }
-}
-
-/**
- * @param {Array<{ modelKey: string }>} downloaded
- * @param {Array<{ modelKey: string; identifier: string }>} loaded
- */
-function renderLoadFromDisk(downloaded, loaded) {
-  const host = ctx.pageRoot?.querySelector("#mp-downloaded");
-  if (!host) return;
-  clear(host);
-
-  const loadedKeys = new Set(loaded.map((l) => l.modelKey));
-  if (downloaded.length === 0) {
-    host.appendChild(el("p", { class: "mp-empty" }, t("models.empty.no_downloaded")));
-    return;
-  }
-
-  const sorted = [...downloaded].sort((a, b) => a.modelKey.localeCompare(b.modelKey));
-
-  const select = el("select", { id: "mp-pick-downloaded", class: "mp-load-select" });
-  select.appendChild(el("option", { value: "" }, t("models.load.pick_placeholder")));
-  for (const m of sorted) {
-    const isLoaded = loadedKeys.has(m.modelKey);
-    const opt = el(
-      "option",
-      { value: m.modelKey, disabled: isLoaded ? "disabled" : undefined },
-      isLoaded ? `${m.modelKey} (${t("models.btn.loaded")})` : m.modelKey
-    );
-    select.appendChild(opt);
-  }
-
-  const loadBtn = el("button", { class: "btn btn-sm btn-primary", type: "button" }, t("models.btn.load"));
-
-  function syncLoadEnabled() {
-    const key = select.value;
-    loadBtn.disabled = !key || loadedKeys.has(key);
-  }
-  select.addEventListener("change", syncLoadEnabled);
-  syncLoadEnabled();
-
-  loadBtn.addEventListener("click", () => {
-    const key = select.value;
-    if (!key || loadedKeys.has(key)) return;
-    const offloadOpts = inferGpuOffloadForLmLoad(ctx.hardwareSnap);
-    void withBusy(
-      async () => {
-        showToast(t("models.toast.loading", { key }), "success");
-        await window.api.lmstudio.load(key, { gpuOffload: offloadOpts.gpuOffload ?? "max" });
-        showToast(t("models.toast.loaded", { key }), "success");
-      },
-      "models.toast.load_failed",
-      refresh,
-    );
-  });
-
-  const autoBtn = el(
-    "button",
-    { class: "btn btn-sm btn-ghost mp-load-auto", type: "button", title: t("models.autoconf.title") },
-    t("models.autoconf.btn")
-  );
-  autoBtn.addEventListener("click", () => {
-    const pick = pickHardwareAutoModel(downloaded, ctx.hardwareSnap);
-    if (!pick) {
-      showToast(t("models.autoconf.empty"));
-      return;
-    }
-    if (loadedKeys.has(pick.modelKey)) {
-      showToast(t("models.autoconf.already_loaded", { key: pick.modelKey }), "success");
-      return;
-    }
-    const offloadOpts = inferGpuOffloadForLmLoad(ctx.hardwareSnap);
-    const cl = suggestedContextLength(ctx.hardwareSnap);
-    void withBusy(
-      async () => {
-        showToast(t("models.autoconf.loading", { key: pick.modelKey, reason: t(pick.reasonKey) }), "success");
-        await window.api.lmstudio.load(pick.modelKey, {
-          gpuOffload: offloadOpts.gpuOffload ?? "max",
-          contextLength: cl,
-        });
-        showToast(t("models.toast.loaded", { key: pick.modelKey }), "success");
-      },
-      "models.toast.load_failed",
-      refresh,
-    );
-  });
-
-  host.appendChild(el("div", { class: "mp-load-stack" }, [
-    el("div", { class: "mp-load-row" }, [select, loadBtn]),
-    el("div", { class: "mp-load-row mp-load-row-auto" }, [autoBtn]),
-    el("p", { class: "mp-load-hint" }, t("models.load.hint")),
-  ]));
 }
 
 /**

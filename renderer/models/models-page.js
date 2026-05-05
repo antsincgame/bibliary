@@ -58,17 +58,6 @@ function buildLayout() {
 
     el("div", { class: "mp-toast-area" }),
 
-    el("div", { class: "mp-grid" }, [
-      el("section", { class: "mp-card mp-card-compact" }, [
-        el("h2", { class: "mp-card-title" }, t("models.card.loaded")),
-        el("div", { id: "mp-loaded", class: "mp-model-list" }, t("models.card.loading")),
-      ]),
-      el("section", { class: "mp-card mp-card-compact" }, [
-        el("h2", { class: "mp-card-title" }, t("models.card.from_disk")),
-        el("div", { id: "mp-downloaded", class: "mp-model-list" }, t("models.card.loading")),
-      ]),
-    ]),
-
     el("section", { class: "mp-card mp-roles-card mp-card-compact" }, [
       el("h2", { class: "mp-card-title" }, t("models.roles.title")),
       el("p", { class: "mp-card-sub" }, t("models.header.sub_simple")),

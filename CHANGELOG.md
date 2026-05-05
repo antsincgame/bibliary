@@ -4,6 +4,42 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.9] — 2026-05-06
+
+**Удалён блок ручного управления моделями LM Studio.** Пользователь указал на
+блок «Загруженные модели (в памяти)» + «На диске (загрузить в память)» +
+«Авто-настроить под железо» и потребовал его удалить (`/om /sparta`). Блок
+был последним пережитком эпохи ручного VRAM-управления и после v1.0.7/v1.0.8
+(on-demand auto-load + exterminatus proactive batch) стал бесполезен.
+
+### Удалено
+
+`renderer/models/models-page.js`:
+- Удалён `mp-grid` (две карточки: loaded models + load from disk).
+
+`renderer/models/models-hardware-status.js`:
+- Удалены функции `renderLoaded()` (~20 строк) и `renderLoadFromDisk()` (~90 строк).
+- Удалены вызовы обеих функций из `refresh()`.
+- Удалены неиспользуемые импорты: `inferGpuOffloadForLmLoad`, `pickHardwareAutoModel`,
+  `suggestedContextLength` из `gpu-offload-hint.js`; `withBusy` из `models-page-internals.js`.
+
+### Что осталось без изменений
+
+- **Роли пайплайна** (Кристаллизатор, OCR, Иллюстрация, Оценщик) — role selects
+  остаются, user can assign models to roles.
+- **Олимпиада** — запуск, протокол, авто-apply чемпионов.
+- **Pipeline status widget** — live VRAM pressure + scheduler lanes.
+- **Actions log** — структурированный лог действий LM Studio (v1.0.7).
+- **IPC `lmstudio:load`/`lmstudio:unload`** — backend остался (используется
+  Olympics, evaluator-queue), убран только UI-триггер.
+- **`gpu-offload-hint.js`** — модуль остался (используется welcome-wizard).
+
+### Verification
+
+- `tsc --noEmit`: clean
+- ReadLints: 0 errors
+- Targeted regression: 98/98 passed
+
 ## [1.0.8] — 2026-05-05
 
 **EXTERMINATUS release: убит 4-й канал autonomous load.** После v1.0.7 (где
