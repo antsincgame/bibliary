@@ -419,15 +419,19 @@ async function runOlympicsAndShow() {
     } else if (window.api?.arena?.applyOlympicsRecommendations) {
       try {
         const lines = Object.entries(recs).map(([k, v]) => `  ${k} = ${v}`).join("\n");
-        appendOlympicsLog(logEl, `⚡ Применяю рекомендации (${recsCount}):\n${lines}`, "info");
+        appendOlympicsLog(logEl, t("models.olympics.log.applying_prefs", { n: String(recsCount) }) + "\n" + lines, "info");
 
         await window.api.arena.applyOlympicsRecommendations({ recommendations: recs });
+        /* v1.0.8 (2026-05-05, /om /sparta): apply ТОЛЬКО prefs.
+         * Модели больше НЕ грузятся в VRAM фоном. Чёткое сообщение чтобы
+         * пользователь не думал что VRAM сейчас взорвётся. Загрузка
+         * произойдёт on-demand при первом импорте/оценке. */
         appendOlympicsLog(
           logEl,
-          `⭐ ${t("models.olympics.distribute_done")} (${recsCount}):\n${lines}`,
+          `⭐ ${t("models.olympics.log.prefs_applied", { n: String(recsCount) })}\n${lines}\n${t("models.olympics.log.prefs_ondemand_hint")}`,
           "good",
         );
-        showToast(`⭐ ${t("models.olympics.distribute_done")} (${recsCount})`, "success");
+        showToast(`⭐ ${t("models.olympics.log.prefs_applied", { n: String(recsCount) })}`, "success");
         void refresh();
       } catch (applyErr) {
         const msg = applyErr instanceof Error ? applyErr.message : String(applyErr);

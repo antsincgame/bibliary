@@ -607,6 +607,9 @@ export default {
   "models.olympics.vision_composite": "Applied model: {modelKey} · combined from 3 vision roles: {reason}",
   "models.olympics.distribute_done": "Champions auto-assigned to roles:",
   "models.olympics.distribute_after_run": "Roles distributed automatically. You can change any model in the list below — changes save as the default profile.",
+  "models.olympics.log.applying_prefs": "⚡ Writing champions to preferences ({n}):",
+  "models.olympics.log.prefs_applied": "Preferences updated — {n} role(s)",
+  "models.olympics.log.prefs_ondemand_hint": "ℹ Models were NOT loaded into VRAM. They will auto-load on first import/evaluation (on-demand). This is normal and prevents LM Studio chaos.",
 
   "models.profile.save_default": "💾 Save as default profile",
   "models.profile.save_default_hint": "Remembers your current model picks. Loaded on app start.",

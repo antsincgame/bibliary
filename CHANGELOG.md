@@ -4,6 +4,128 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.8] — 2026-05-05
+
+**EXTERMINATUS release: убит 4-й канал autonomous load.** После v1.0.7 (где
+закрыли 3 канала: bootstrap evaluator, UI snapshot resolve, periodic refresh)
+пользователь увидел 5 моделей в LM Studio при cold-start v1.0.7. Расследование
+(`/om` + `/sparta` + параллельные explore-агенты) показало: модели —
+**остатки прошлых сессий**, LM Studio держит их между запусками. НО был
+найден **четвёртый канал** autonomous load, который при следующем запуске
+Olympics снова бы взорвал VRAM:
+
+### Корень: `ensureRecommendedModelsLoaded` (130 строк ереси в `arena.ipc.ts`)
+
+Когда renderer после `runOlympics` автоматически вызывал
+`arena:apply-olympics-recommendations`, IPC-обработчик:
+
+1. Записывал champion-set в preferences (это полезно).
+2. **Запускал `void ensureRecommendedModelsLoaded(filtered, signal)` —
+   fire-and-forget proactive batch-load** до **6 моделей** в LM Studio через
+   `loadModel(modelKey, { gpuOffload: "max" })`.
+3. Если в LM Studio уже было ≥3 моделей — **выгружал «лишние»** через
+   `unloadModel()` ("VRAM cleanup", без user consent).
+4. **Логировался ТОЛЬКО в `console.log`** — не в `lmstudio-actions.log`,
+   введённом в v1.0.7. Невидимая ересь даже после нашего log-инфраструктуры.
+
+Этот код был добавлен в Iter 14.5 (2026-05-04) как compensating control от
+бага «работает только одна нейросеть после Olympics». Тогда корнем считалось
+"resolver выдаёт null если модель не загружена → fallback на единственную
+случайную модель". В v1.0.7 этот корень был решён правильно — через
+**per-book on-demand auto-load** в `evaluator-queue` (флаг `allowAutoLoad`,
+устанавливается ТОЛЬКО для user-triggered import/re-evaluate). Старый proactive
+batch-load стал избыточным И вредным:
+
+- **Грузит до 6 моделей фоном** без user consent на VRAM grab
+- **Выгружает чужие модели** (даже manually-loaded user-ом) через VRAM cleanup
+- **Невидим в actions-log** — пользователь не знает что происходит
+- **Race с user-операциями** — пока он жонглирует моделями, импорт ждёт `globalLlmLock`
+
+### EXTERMINATUS
+
+`electron/ipc/arena.ipc.ts`:
+- Полностью удалена функция `ensureRecommendedModelsLoaded` (~130 строк).
+- Удалены `activeAutoLoadCtrl`, `abortActiveAutoLoad`, `MAX_AUTO_LOAD`,
+  `BIBLIARY_MAX_AUTO_LOAD` env override, VRAM cleanup logic.
+- Удалены импорты `loadModel`, `unloadModel` из `lmstudio-client` —
+  IPC-обработчик больше НЕ имеет физической возможности грузить модели.
+- В `arena:apply-olympics-recommendations` после записи prefs теперь идёт
+  единственный side-effect: `logModelAction("OLYMPICS-APPLY-PREFS-ONLY", ...)` —
+  audit-trail событие в новый actions-log, чтобы пользователь видел что
+  Olympics обновил настройки и **больше ничего**.
+
+`electron/lib/llm/lmstudio-actions-log.ts`:
+- Добавлен `OLYMPICS-APPLY-PREFS-ONLY` в `ModelActionKind`.
+
+`renderer/models/models-page-olympics-controls.js`:
+- Auto-apply после Olympics остался (это полезно — prefs автоматически
+  получают чемпионов), но лог-сообщение в "Протоколе игр" теперь честно
+  говорит: «Настройки обновлены — N ролей. Модели НЕ загружены в VRAM.
+  Они подгрузятся автоматически при первом импорте/оценке книги (on-demand)».
+
+`renderer/locales/ru.js`, `renderer/locales/en.js`:
+- 3 новых i18n-ключа: `applying_prefs`, `prefs_applied`, `prefs_ondemand_hint`.
+
+### Анти-регрессионный контракт
+
+`tests/auto-load-max-models.test.ts` полностью переписан в **анти-тест**.
+Раньше он защищал старый Iter 14.5 контракт (`MAX_AUTO_LOAD = 6`). Теперь
+он защищает противоположное:
+
+- ✅ Функция `ensureRecommendedModelsLoaded` удалена
+- ✅ Константа `MAX_AUTO_LOAD` удалена
+- ✅ `process.env.BIBLIARY_MAX_AUTO_LOAD` удалено
+- ✅ `activeAutoLoadCtrl` / `abortActiveAutoLoad` удалены
+- ✅ `loadModel` и `unloadModel` НЕ импортируются в `arena.ipc.ts`
+- ✅ Структурное событие `OLYMPICS-APPLY-PREFS-ONLY` пишется через
+  `logModelAction`, а не через `console.log`
+- ✅ `lmstudio-actions-log.ts` поддерживает новый kind
+
+Если в будущем кто-то захочет вернуть proactive batch-load — этот тест
+заставит сначала пройти ревью через v1.0.7-контракт on-demand auto-load.
+
+### Что НЕ затронуто (manifest-протекция)
+
+- Olympics запуск (`arena:run-olympics`) — внутри турнира load/unload работают
+  ровно по одной модели за раз, последовательно. Это нормальное поведение
+  турнира, к которому пользователь явно дал согласие нажав "Запустить Олимпиаду".
+- Кнопки в UI Models page (Auto-fit hardware, Load с диска, Unload) — это
+  manual user actions, грузят/выгружают **только по клику**, ровно по одной
+  модели и пишут в actions-log.
+- Custom Olympics disciplines (v1.0.6), Welcome Wizard (v1.0.6), evaluator
+  per-book opt-in (v1.0.7) — без изменений.
+
+### Verification
+
+- `npx tsc --noEmit -p tsconfig.electron.json`: **clean**
+- ReadLints (5 затронутых файлов): **0 ошибок**
+- Targeted regression: **190/190 тестов passed**
+  - evaluator-queue + slots: 21/21
+  - model-pool + race-fix + role-defaults + snapshot-broadcaster: 25/25
+  - model-role-resolver: 33/33 (включая v1.0.7 passive guard)
+  - lmstudio-actions-log: 6/6 (включая новый kind)
+  - olympics-* (lifecycle, vision, weights, thinking, sdk-route, load-config): 36/36
+  - book-evaluator-prefs + with-model-fallback + global-llm-lock: 18/18
+  - role-load-config + custom-disciplines + settings-roundtrip: 51/51
+  - **auto-load-max-models** (анти-регрессия v1.0.8): **6/6**
+
+### Acceptance contract
+
+После установки v1.0.8:
+
+1. Cold-start приложения → Models page открывается → **0 LOAD событий** в
+   actions-log (как и в v1.0.7).
+2. Запустить Olympics → турнир грузит/выгружает модели последовательно (это
+   нормально, видно в actions-log).
+3. После Olympics auto-apply → preferences обновляются → в actions-log одно
+   событие `OLYMPICS-APPLY-PREFS-ONLY` → **0 LOAD/UNLOAD событий**. В
+   "Протоколе игр" пользователь видит подсказку "модели подгрузятся on-demand".
+4. Импортировать книгу → evaluator при первом use грузит preferred модель
+   (через v1.0.7 `allowAutoLoad: true` — это явное user-action). Лог:
+   `AUTO-LOAD-START` → `AUTO-LOAD-OK` → `LOAD`.
+5. В LM Studio после Olympics + apply (без импорта) — **столько же моделей,
+   сколько и до**. Никакого VRAM grab.
+
 ## [1.0.7] — 2026-05-05
 
 **STOP-THE-CHAOS release.** Critical bug filed by user: simply launching

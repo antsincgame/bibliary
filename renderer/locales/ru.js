@@ -607,6 +607,9 @@ export default {
   "models.olympics.vision_composite": "Применённая модель: {modelKey} · агрегация трёх vision-ролей: {reason}",
   "models.olympics.distribute_done": "Чемпионы автоматически назначены на роли:",
   "models.olympics.distribute_after_run": "Роли распределены автоматически. Можешь поменять любую модель в списке ниже — изменения сохранятся как профиль по умолчанию.",
+  "models.olympics.log.applying_prefs": "⚡ Записываю чемпионов в настройки ({n}):",
+  "models.olympics.log.prefs_applied": "Настройки обновлены — {n} ролей",
+  "models.olympics.log.prefs_ondemand_hint": "ℹ Модели НЕ загружены в VRAM. Они подгрузятся автоматически при первом импорте/оценке книги (on-demand). Это нормально и предотвращает «хаос» в LM Studio.",
 
   "models.profile.save_default": "💾 Сохранить как профиль по умолчанию",
   "models.profile.save_default_hint": "Запоминает текущий выбор моделей. Загружается при старте приложения.",

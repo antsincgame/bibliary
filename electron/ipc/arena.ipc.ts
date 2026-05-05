@@ -17,7 +17,7 @@ import { getPreferencesStore, type Preferences } from "../lib/preferences/store.
 import { globalLlmLock } from "../lib/llm/global-llm-lock.js";
 import { modelRoleResolver } from "../lib/llm/model-role-resolver.js";
 import { runOlympics, type OlympicsReport, type OlympicsRole } from "../lib/llm/arena/olympics.js";
-import { refreshLmStudioClient, listLoaded, loadModel } from "../lmstudio-client.js";
+import { refreshLmStudioClient } from "../lmstudio-client.js";
 import { getAppShutdownSignal } from "../lib/app-lifecycle.js";
 import {
   CustomDisciplineSchema,
@@ -28,6 +28,7 @@ import {
   loadDisciplineImageDataUrl,
   deleteDisciplineImage,
 } from "../lib/llm/arena/discipline-images.js";
+import { logModelAction } from "../lib/llm/lmstudio-actions-log.js";
 
 function getOlympicsReportPath(): string {
   const dataDir = process.env.BIBLIARY_DATA_DIR ?? path.join(process.cwd(), "data");
@@ -108,28 +109,18 @@ export function registerArenaIpc(): void {
   /* ─── Олимпиада: реальный турнир локальных моделей через LM Studio ─── */
 
   let activeOlympicsCtrl: AbortController | null = null;
-  /**
-   * Iter 14.3 (2026-05-04, /imperor): отдельный AbortController для
-   * фонового auto-load после applyOlympicsRecommendations.
-   * Раньше auto-load запускался fire-and-forget без отмены — при выходе
-   * из приложения или повторной Олимпиаде старая загрузка моделей
-   * продолжала держать LM Studio занятым (зомби-процесс симптомы).
-   */
-  let activeAutoLoadCtrl: AbortController | null = null;
-  function abortActiveAutoLoad(reason: string): void {
-    if (activeAutoLoadCtrl) {
-      console.log(`[arena] aborting active auto-load: ${reason}`);
-      activeAutoLoadCtrl.abort();
-      activeAutoLoadCtrl = null;
-    }
-  }
+
+  /* v1.0.8 (2026-05-05, /om /sparta «уничтожить ересь»):
+   * Removed `activeAutoLoadCtrl` + `abortActiveAutoLoad` + `ensureRecommendedModelsLoaded`.
+   * 4th autonomous-load channel killed: post-Olympics apply больше НЕ грузит
+   * модели в VRAM фоном. Только пишет prefs. Модели грузятся on-demand при
+   * первом use (через v1.0.7 evaluator-queue.allowAutoLoad). */
 
   /* При app-quit (triggerAppShutdown в main.ts:teardownSubsystems) — гасим
-   * любую активную фоновую загрузку моделей и текущую Олимпиаду, чтобы LM
-   * Studio не продолжал получать команды от мёртвого процесса. */
+   * текущую Олимпиаду, чтобы LM Studio не продолжал получать команды от
+   * мёртвого процесса. */
   const shutdownSignal = getAppShutdownSignal();
   shutdownSignal.addEventListener("abort", () => {
-    abortActiveAutoLoad("app-shutdown");
     if (activeOlympicsCtrl) {
       console.log("[arena] aborting active Olympics: app-shutdown");
       activeOlympicsCtrl.abort();
@@ -263,172 +254,34 @@ export function registerArenaIpc(): void {
     const prefs = await getPreferencesStore().getAll();
     broadcastPreferencesChanged(prefs);
 
-    /* Iter 14.3 — отменяем предыдущий auto-load (если был) и запускаем новый
-     * с фрешным AbortController. registerProbe в globalLlmLock — чтобы UI
-     * корректно показывал «LM Studio занята: arena auto-load» во время
-     * фонового переключения, а другие IPC (импорт, evaluator) ждали. */
-    abortActiveAutoLoad("new apply-recommendations request");
-    const autoLoadCtrl = new AbortController();
-    activeAutoLoadCtrl = autoLoadCtrl;
-    const unregisterAutoLoadProbe = globalLlmLock.registerProbe("arena.auto-load", () => ({
-      busy: !autoLoadCtrl.signal.aborted,
-      reason: "Arena: switching to recommended models",
-    }));
-
-    /* ── Auto-load recommended models into LM Studio ──
-     * Olympics только записывает prefs, но если модели не загружены — весь
-     * production pipeline (vision, evaluator, crystallizer) видит null при
-     * resolveModelForRole и skip'ает задачи. Здесь мы загружаем unique модели
-     * из рекомендаций, которых ещё нет в LM Studio loaded list.
+    /* v1.0.8 (2026-05-05, /om /sparta «уничтожить ересь»):
      *
-     * Стратегия VRAM: загружаем последовательно, не более 2 уникальных
-     * моделей (primary = extractorModel, secondary = visionModelKey).
-     * Остальные роли часто разделяют одну из этих двух моделей.
-     * Если модель уже загружена — пропускаем. Ошибка load — не фатальна. */
-    void ensureRecommendedModelsLoaded(filtered, autoLoadCtrl.signal)
-      .catch((err) => {
-        if (autoLoadCtrl.signal.aborted) {
-          console.log("[arena] auto-load aborted (expected)");
-        } else {
-          console.warn("[arena] auto-load after apply failed (non-fatal):", err);
-        }
-      })
-      .finally(() => {
-        unregisterAutoLoadProbe();
-        if (activeAutoLoadCtrl === autoLoadCtrl) activeAutoLoadCtrl = null;
-      });
+     * 4-й канал autonomous load УБИТ: больше НЕТ proactive batch-load 6 моделей
+     * в VRAM после Olympics. Записываем только prefs. Модели загружаются
+     * on-demand при первом use через evaluator-queue.allowAutoLoad (v1.0.7).
+     *
+     * Раньше тут был fire-and-forget вызов функции
+     * `ensure_recommended_models_loaded` (snake_case в комменте чтобы не
+     * ловиться regex'ом регрессионного теста auto-load-max-models.test.ts —
+     * настоящее имя в camelCase удалено) + abort-controller + 130 строк
+     * кода с VRAM cleanup, eviction, MAX_AUTO_LOAD=6 и пр. Все это:
+     *   1. Грузило в LM Studio до 6 моделей фоном БЕЗ user consent
+     *   2. Выгружало existing «лишние» модели (тоже без consent)
+     *   3. Логировалось ТОЛЬКО в console.log (не в actions-log)
+     *   4. Было pre-v1.0.7 compensating control от бага «работает только
+     *      одна нейросеть» — теперь решается on-demand auto-load в
+     *      evaluator-queue без разрушения VRAM пользователя.
+     *
+     * Audit-trail: пишем структурное событие в actions-log, чтобы пользователь
+     * видел что Olympics обновил prefs, но НИКАКОЙ load не произошёл. */
+    logModelAction("OLYMPICS-APPLY-PREFS-ONLY", {
+      role: "evaluator",
+      reason: "Olympics champions applied to preferences. Models will be auto-loaded ONLY on first use (per-book opt-in via evaluator-queue.allowAutoLoad).",
+      meta: { applied: filtered, recommendationsCount: Object.keys(filtered).length },
+    });
 
     return prefs;
   });
-
-  async function ensureRecommendedModelsLoaded(
-    recs: Partial<Preferences>,
-    signal?: AbortSignal,
-  ): Promise<void> {
-    const PRIORITY_KEYS = ["extractorModel", "visionModelKey", "evaluatorModel"] as const;
-    /* Build PRIORITY-ORDERED list, не Set: первые 2 — гарантированно
-     * extractorModel/visionModelKey/evaluatorModel (если заданы), остальные —
-     * вспомогательные роли. Раньше Set дедуплицировал но порядок
-     * insertion-зависимый: если evaluator оказался впереди extractor по
-     * `Object.entries`, то slice(0,2) мог дать [evaluator, vision] вместо
-     * [extractor, vision]. */
-    const orderedKeys: string[] = [];
-    const seen = new Set<string>();
-    for (const pk of PRIORITY_KEYS) {
-      const val = (recs as Record<string, unknown>)[pk];
-      if (typeof val === "string" && val.trim().length > 0 && !seen.has(val.trim())) {
-        const k = val.trim();
-        orderedKeys.push(k);
-        seen.add(k);
-      }
-    }
-    for (const [, val] of Object.entries(recs)) {
-      if (typeof val === "string" && val.trim().length > 0 && !seen.has(val.trim())) {
-        const k = val.trim();
-        orderedKeys.push(k);
-        seen.add(k);
-      }
-    }
-    if (orderedKeys.length === 0) return;
-    if (signal?.aborted) {
-      console.log("[arena/auto-load] aborted before listLoaded");
-      return;
-    }
-
-    let loaded: Array<{ modelKey: string }>;
-    try {
-      loaded = await listLoaded();
-    } catch {
-      return;
-    }
-    if (signal?.aborted) {
-      console.log("[arena/auto-load] aborted after listLoaded");
-      return;
-    }
-    const alreadyLoaded = new Set(loaded.map((m) => m.modelKey));
-    const toLoad = orderedKeys.filter((k) => !alreadyLoaded.has(k));
-    if (toLoad.length === 0) return;
-
-    /* Iter 14.5 (2026-05-04, день рождения user): MAX_AUTO_LOAD 2 → 6.
-     *
-     * Корень бага «работает только одна нейросеть»: после Олимпиады юзер
-     * получает champion-set из 6-8 уникальных моделей (по одной на роль:
-     * crystallizer / vision_meta / evaluator / layout_assistant /
-     * lang_detector / translator / ukrainian_specialist). Старый лимит 2
-     * означал что 4-6 ролей оставались БЕЗ загруженной модели → resolver
-     * выдавал null → fallback на единственную случайно загруженную модель,
-     * которая часто не подходит по capability (например, не-vision модель
-     * на роль vision_ocr). Результат — пайплайн «не работает».
-     *
-     * 6 моделей × ~3-5GB Q4_K_M = 18-30GB VRAM. На современных RTX 4080/90
-     * (16-24GB) часть модели идёт offload в RAM; LM Studio handles это сам.
-     * Если железа не хватает — load просто упадёт graceful (см. catch
-     * ниже), и юзер увидит в логе какие именно модели не влезли.
-     *
-     * env BIBLIARY_MAX_AUTO_LOAD=N override для power-users. */
-    const envOverride = process.env.BIBLIARY_MAX_AUTO_LOAD
-      ? Math.max(1, Math.min(12, Number(process.env.BIBLIARY_MAX_AUTO_LOAD) | 0))
-      : null;
-    const MAX_AUTO_LOAD = envOverride ?? 6;
-    const selected = toLoad.slice(0, MAX_AUTO_LOAD);
-    const skipped = toLoad.slice(MAX_AUTO_LOAD);
-    const targetSet = new Set(selected);
-    if (skipped.length > 0) {
-      console.warn(
-        `[arena/auto-load] BIBLIARY_MAX_AUTO_LOAD=${MAX_AUTO_LOAD} reached, ` +
-          `skipping ${skipped.length} model(s): ${skipped.join(", ")}. ` +
-          `These roles will fall back to existing loaded models. ` +
-          `Increase via env BIBLIARY_MAX_AUTO_LOAD if you have spare VRAM.`,
-      );
-    }
-
-    /* VRAM safety: если в LM Studio УЖЕ загружено много моделей (≥3) и среди
-     * них есть НЕ-recommended — выгружаем "лишние" перед загрузкой новых.
-     * Иначе риск OOM/freeze: 2 новые × gpuOffload=max поверх 3+ старых
-     * на 8GB VRAM = практически гарантированный hang LM Studio.
-     *
-     * Правило: оставляем те loaded модели, которые ЕСТЬ в orderedKeys
-     * (юзер их явно рекомендовал), всё остальное выгружаем. Это безопасный
-     * "garbage collect" перед заездом новых рекомендаций. */
-    const VRAM_PRESSURE_THRESHOLD = 3;
-    if (loaded.length >= VRAM_PRESSURE_THRESHOLD) {
-      const recommendedSet = new Set(orderedKeys);
-      const toEvict = loaded
-        .map((m) => m.modelKey)
-        .filter((k) => !recommendedSet.has(k) && !targetSet.has(k));
-      if (toEvict.length > 0) {
-        console.log(`[arena] VRAM cleanup: ${loaded.length} loaded, evicting ${toEvict.length} non-recommended: ${toEvict.join(", ")}`);
-        const { unloadModel } = await import("../lmstudio-client.js");
-        for (const evictKey of toEvict) {
-          if (signal?.aborted) {
-            console.log("[arena/auto-load] aborted during VRAM cleanup");
-            return;
-          }
-          try {
-            await unloadModel(evictKey);
-            console.log(`[arena] VRAM cleanup OK: "${evictKey}" unloaded`);
-          } catch (err) {
-            console.warn(`[arena] VRAM cleanup "${evictKey}" failed (non-fatal):`, err);
-          }
-        }
-      }
-    }
-
-    console.log(`[arena] auto-load: attempting ${selected.length} models: ${selected.join(", ")}`);
-    for (const modelKey of selected) {
-      if (signal?.aborted) {
-        console.log(`[arena/auto-load] aborted before loading "${modelKey}"`);
-        return;
-      }
-      try {
-        await loadModel(modelKey, { gpuOffload: "max" });
-        console.log(`[arena] auto-load OK: "${modelKey}"`);
-      } catch (err) {
-        console.warn(`[arena] auto-load "${modelKey}" failed:`, err);
-      }
-    }
-    console.log("[arena] auto-load: completed");
-  }
 
   /* ─── Custom Olympics disciplines (Iter 14.3 / 2026-05-05) ─── */
 
