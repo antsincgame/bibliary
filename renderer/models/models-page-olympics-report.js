@@ -8,7 +8,7 @@
 
 import { el, clear } from "../dom.js";
 import { t } from "../i18n.js";
-import { ctx } from "./models-page-internals.js";
+import { ctx, PIPELINE_ROLES } from "./models-page-internals.js";
 import {
   disciplineHuman,
   roleHuman,
@@ -16,6 +16,11 @@ import {
   aggregateRoleTitle,
   aggregateApplyHint,
 } from "./models-page-olympics-labels.js";
+
+/** Фильтрует данные из сохранённого отчёта: отбрасывает роли, которых
+ *  больше нет в MVP (например, translator / lang_detector / vision_meta),
+ *  чтобы старый `olympics-report.json` не показывал мёртвые вкладки. */
+const VALID_ROLE_SET = new Set(PIPELINE_ROLES);
 
 export function renderOlympicsReport(report) {
   const root = ctx.pageRoot?.querySelector("#mp-olympics-results");
@@ -78,7 +83,7 @@ export function renderOlympicsReport(report) {
   }
 
   /* ── Результаты по дисциплинам ── */
-  const allDisciplines = report.disciplines ?? [];
+  const allDisciplines = (report.disciplines ?? []).filter((d) => VALID_ROLE_SET.has(d.role));
   const byRole = new Map();
   for (const d of allDisciplines) {
     if (!byRole.has(d.role)) byRole.set(d.role, []);
@@ -197,7 +202,7 @@ export function renderOlympicsReport(report) {
 
   /* ── Рекомендации (по ролям) ── */
   const recs = report.recommendations ?? {};
-  const aggregates = report.roleAggregates ?? [];
+  const aggregates = (report.roleAggregates ?? []).filter((a) => VALID_ROLE_SET.has(a.role));
   const recsKeys = Object.keys(recs);
 
   if (recsKeys.length === 0) {
@@ -217,7 +222,9 @@ export function renderOlympicsReport(report) {
   root.appendChild(recsHeader);
 
   /* ── EcoTune auto-tune suggestions ── */
-  const tuneSuggestions = Array.isArray(report.autoTuneSuggestions) ? report.autoTuneSuggestions : [];
+  const tuneSuggestions = Array.isArray(report.autoTuneSuggestions)
+    ? report.autoTuneSuggestions.filter((s) => VALID_ROLE_SET.has(s.role))
+    : [];
 
   if (tuneSuggestions.length > 0) {
     const tuneBox = el("details", { class: "mp-olympics-lightning-stats", open: "open" }, [
