@@ -29,6 +29,7 @@ import {
 import { buildOlympicsCard } from "./models-page-olympics-controls.js";
 import { renderOlympicsReport } from "./models-page-olympics-report.js";
 import { buildAdvancedPanel } from "./models-page-advanced.js";
+import { buildActionsLogPanel } from "./models-actions-log-panel.js";
 
 let refreshTimer = null;
 let preferencesUnsubscribe = null;
@@ -73,6 +74,9 @@ function buildLayout() {
       el("p", { class: "mp-card-sub" }, t("models.header.sub_simple")),
       el("div", { id: "mp-roles", class: "mp-roles-list mp-roles-list-compact" }, t("models.card.loading")),
       buildAdvancedPanel(),
+      /* v1.0.7: панель структурированного лога действий с LM Studio.
+         Позволяет пользователю увидеть КТО / КОГДА / ПОЧЕМУ грузил модели. */
+      buildActionsLogPanel(),
     ]),
   ]);
 }

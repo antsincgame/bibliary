@@ -45,6 +45,7 @@ import { isAbortError } from "../resilience/lm-request-policy.js";
 import { getImportScheduler } from "./import-task-scheduler.js";
 import { readPipelinePrefsOrNull } from "../preferences/store.js";
 import { withBookMdLock } from "./book-md-mutex.js";
+import { logModelAction } from "../llm/lmstudio-actions-log.js";
 import type { BookCatalogMeta } from "./types.js";
 import type { EvaluationResult } from "./types.js";
 
@@ -132,6 +133,21 @@ export interface EvaluatorStatus {
 const ee = new EventEmitter();
 const queue: string[] = [];
 const inQueue = new Set<string>();
+/**
+ * v1.0.7 (autonomous heresy fix): набор книг, которые имеют ПРАВО
+ * триггерить автозагрузку моделей с диска через `pickEvaluatorModel(...allowAutoLoad: true)`.
+ *
+ * Контракт:
+ *   - enqueueBook(id) без opts → НЕ добавляется в этот сет → cold-start
+ *     resume / bootstrap не грузит 35GB модель в фон.
+ *   - enqueueBook(id, { allowAutoLoad: true }) → добавляется → книга, которую
+ *     пользователь явно импортировал ИЛИ нажал «Оценить», получает право.
+ *   - При взятии книги слотом — флаг считывается и СРАЗУ удаляется (одноразовый).
+ *
+ * До v1.0.7 все enqueue получали `allowAutoLoad: true` навсегда — это и
+ * породило autonomous load при старте app (см. `bootstrapEvaluatorQueue`).
+ */
+const autoLoadAllowedBooks = new Set<string>();
 const paused = { value: false };
 let totalEvaluated = 0;
 let totalFailed = 0;
@@ -254,11 +270,33 @@ function isBookInProgress(bookId: string): boolean {
   return false;
 }
 
+/**
+ * Опции постановки книги в очередь.
+ *
+ * @property allowAutoLoad — v1.0.7: разрешить evaluator-у грузить
+ *   preferred-модель с диска в VRAM, если она не загружена. По умолчанию
+ *   `false` — для cold-start resume (`bootstrapEvaluatorQueue`) и любых
+ *   фоновых пере-enqueue. Caller обязан явно передать `true`, если он
+ *   действительно представляет user-intent (`POST library:import`,
+ *   manual "Re-evaluate", `resumeEvaluator()` от UI кнопки).
+ */
+export interface EnqueueBookOptions {
+  allowAutoLoad?: boolean;
+}
+
 /** Добавляет книгу в конец очереди. Идемпотентно: повтор не дублирует. */
-export function enqueueBook(bookId: string): void {
-  if (inQueue.has(bookId) || isBookInProgress(bookId)) return;
+export function enqueueBook(bookId: string, opts: EnqueueBookOptions = {}): void {
+  if (inQueue.has(bookId) || isBookInProgress(bookId)) {
+    /* Если книга уже в очереди, но новый caller разрешает autoLoad — апгрейдим
+       флаг (например: bootstrap поставил без autoLoad, потом пользователь
+       нажал "Re-evaluate" с правом). Понижение флага НЕ делаем — однажды
+       выданное разрешение действует до взятия слотом. */
+    if (opts.allowAutoLoad) autoLoadAllowedBooks.add(bookId);
+    return;
+  }
   queue.push(bookId);
   inQueue.add(bookId);
+  if (opts.allowAutoLoad) autoLoadAllowedBooks.add(bookId);
   emit({ type: "evaluator.queued", bookId, remaining: queue.length });
   scheduleAvailableSlots();
 }
@@ -268,8 +306,9 @@ export function enqueueBook(bookId: string): void {
  * остальных. Используется UI-flow «оценить эти первыми» (selected rows).
  * Идемпотентно: если книга уже в очереди — переносим её на 0-ю позицию.
  */
-export function enqueuePriority(bookId: string): void {
+export function enqueuePriority(bookId: string, opts: EnqueueBookOptions = {}): void {
   if (isBookInProgress(bookId)) return;
+  if (opts.allowAutoLoad) autoLoadAllowedBooks.add(bookId);
   if (inQueue.has(bookId)) {
     const idx = queue.indexOf(bookId);
     if (idx > 0) {
@@ -285,8 +324,8 @@ export function enqueuePriority(bookId: string): void {
 }
 
 /** Массовая постановка в очередь -- удобно после batch-импорта. */
-export function enqueueMany(bookIds: string[]): void {
-  for (const id of bookIds) enqueueBook(id);
+export function enqueueMany(bookIds: string[], opts: EnqueueBookOptions = {}): void {
+  for (const id of bookIds) enqueueBook(id, opts);
 }
 
 /** Будит все idle slots до slotCount. Идемпотентно: уже активные слоты не трогает. */
@@ -518,6 +557,12 @@ async function runSlot(idx: number): Promise<void> {
 }
 
 async function evaluateOneInSlot(bookId: string, slot: SlotState): Promise<void> {
+  /* Считываем + СРАЗУ удаляем разрешение на autoLoad (одноразовое).
+     Если книга вернётся в очередь через deferEvaluationRetry — она
+     попадёт уже без права грузить с диска (что и нужно для cold-start). */
+  const allowAutoLoadForThisBook = autoLoadAllowedBooks.has(bookId);
+  autoLoadAllowedBooks.delete(bookId);
+
   let meta = getBookById(bookId);
   if (!meta) {
     emit({ type: "evaluator.skipped", bookId, error: "book not in cache-db" });
@@ -575,24 +620,46 @@ async function evaluateOneInSlot(bookId: string, slot: SlotState): Promise<void>
             модели (makeRoom/eviction). Pool безопасно управляет VRAM.
          d) Чистый auto-pick — только если ни a, ни b, ни c не сработали. */
     const evaluatorPrefs = await deps.readEvaluatorPrefs();
-    /* Модель выбирается через pickEvaluatorModel с allowAutoLoad: true —
-       picker может загрузить preferred/fallback модель с диска через pool.acquire(),
-       pool безопасно управляет VRAM (makeRoom/eviction при нехватке).
+    /* Модель выбирается через pickEvaluatorModel.
+
+       v1.0.7 (autonomous heresy fix): `allowAutoLoad` берётся из per-book
+       флага `autoLoadAllowedBooks`. Книги, попавшие в очередь через
+       bootstrapEvaluatorQueue (cold-start resume), флага НЕ имеют —
+       evaluator работает только с loaded моделями, не грузит 35GB
+       qwen3.5 в фон. Книги от user-import / manual evaluate имеют флаг
+       и могут триггерить autoLoad через ModelPool.
 
        allowAnyLoadedFallback: если preferred задан → false: не подменяем на
-       произвольную LLM, а загружаем нужную. */
+       произвольную LLM, а загружаем нужную (если разрешено флагом). */
     const allowFallback = evaluatorPrefs.allowFallback;
     const allowAnyLoadedFallbackEffective = evaluatorPrefs.preferred ? false : allowFallback;
     const model = modelOverride ?? (await deps.pickEvaluatorModel({
       preferred: evaluatorPrefs.preferred,
       fallbacks: evaluatorPrefs.fallbacks,
-      allowAutoLoad: true,
+      allowAutoLoad: allowAutoLoadForThisBook,
       allowAnyLoadedFallback: allowAnyLoadedFallbackEffective,
     }));
     if (!model) {
       const reason = evaluatorPrefs.preferred
         ? `evaluator: preferred model "${evaluatorPrefs.preferred}" not loaded in LM Studio — load it or clear evaluatorModel in Settings → Models`
         : "evaluator: no LLM loaded in LM Studio";
+      if (!allowAutoLoadForThisBook) {
+        /* Cold-start resume: явно не грузим модель с диска. Логируем
+           для прозрачности — пользователь увидит в Models page → "Логи". */
+        logModelAction("EVALUATOR-DEFER-RESUME", {
+          role: "evaluator",
+          modelKey: evaluatorPrefs.preferred,
+          reason: "cold-start resume — autoLoad disabled to avoid autonomous VRAM grab",
+          meta: { bookId, title: slot.title ?? meta.title },
+        });
+      } else {
+        logModelAction("EVALUATOR-PICK-FAIL", {
+          role: "evaluator",
+          modelKey: evaluatorPrefs.preferred,
+          reason,
+          meta: { bookId },
+        });
+      }
       await deferEvaluationRetry(meta, md, reason, bookId, slot.title);
       return;
     }

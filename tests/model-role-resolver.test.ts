@@ -117,6 +117,72 @@ describe("[model-role-resolver] preference source", () => {
     assert.equal(r, null, "must return null when auto-load fails (no silent substitution)");
   });
 
+  test("v1.0.7 passive=true: does NOT trigger auto-load even if preferred model is not loaded", async () => {
+    let autoLoadCalls = 0;
+    _setResolverDepsForTests({
+      listLoaded: async () => [makeModel("qwen/something-else")],
+      getPrefs: async () => makePrefs({ extractorModel: "ghost/not-loaded" }),
+      autoLoad: async () => { autoLoadCalls += 1; return true; },
+    });
+    const r = await modelRoleResolver.resolve("crystallizer", { passive: true });
+    assert.equal(r, null, "passive resolve must return null instead of triggering load");
+    assert.equal(autoLoadCalls, 0, "passive resolve must NOT call autoLoad even once");
+  });
+
+  test("v1.0.7 passive=false (default): triggers auto-load as before", async () => {
+    let autoLoadCalls = 0;
+    _setResolverDepsForTests({
+      listLoaded: async () => [makeModel("qwen/something-else")],
+      getPrefs: async () => makePrefs({ extractorModel: "ghost/not-loaded" }),
+      autoLoad: async () => { autoLoadCalls += 1; return true; },
+    });
+    /* Default behavior: caller didn't pass {passive: true} → auto-load OK. */
+    const r = await modelRoleResolver.resolve("crystallizer");
+    assert.equal(autoLoadCalls, 1, "non-passive resolve must call autoLoad exactly once");
+    assert.ok(r !== null);
+    assert.equal(r!.modelKey, "ghost/not-loaded");
+  });
+
+  test("v1.0.7 passive=true: returns CSV fallback when one IS loaded (no autoLoad needed)", async () => {
+    let autoLoadCalls = 0;
+    _setResolverDepsForTests({
+      listLoaded: async () => [makeModel("fb/already-loaded")],
+      getPrefs: async () => makePrefs({
+        extractorModel: "ghost/not-loaded",
+        extractorModelFallbacks: "fb/already-loaded",
+      }),
+      autoLoad: async () => { autoLoadCalls += 1; return true; },
+    });
+    const r = await modelRoleResolver.resolve("crystallizer", { passive: true });
+    assert.equal(autoLoadCalls, 0, "CSV fallback hit means no autoLoad needed");
+    assert.ok(r !== null);
+    assert.equal(r!.modelKey, "fb/already-loaded");
+    assert.equal(r!.source, "fallback_list");
+  });
+
+  test("v1.0.7 passive=true: null cache is NOT poisoned — next non-passive call can still autoLoad", async () => {
+    let autoLoadCalls = 0;
+    _setResolverDepsForTests({
+      listLoaded: async () => [],
+      getPrefs: async () => makePrefs({
+        extractorModel: "ghost/not-loaded",
+        modelRoleCacheTtlMs: 60_000,
+      }),
+      autoLoad: async () => { autoLoadCalls += 1; return true; },
+    });
+    /* 1st call: passive — returns null without autoLoad, MUST NOT cache null. */
+    const r1 = await modelRoleResolver.resolve("crystallizer", { passive: true });
+    assert.equal(r1, null);
+    assert.equal(autoLoadCalls, 0);
+
+    /* 2nd call: active — should re-resolve and trigger autoLoad. If passive
+       null had been cached, this would also return null. */
+    const r2 = await modelRoleResolver.resolve("crystallizer");
+    assert.equal(autoLoadCalls, 1, "non-passive call must NOT see stale null from passive cache");
+    assert.ok(r2 !== null);
+    assert.equal(r2!.modelKey, "ghost/not-loaded");
+  });
+
   test("falls back to CSV fallback even when preferred not loaded", async () => {
     _setResolverDepsForTests({
       listLoaded: async () => [makeModel("fb/model")],

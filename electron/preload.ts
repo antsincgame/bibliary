@@ -215,6 +215,10 @@ contextBridge.exposeInMainWorld("api", {
       opts?: { contextLength?: number; ttlSec?: number; gpuOffload?: "max" | number }
     ): Promise<LoadedModelInfo> => ipcRenderer.invoke("lmstudio:load", modelKey, opts ?? {}),
     unload: (identifier: string): Promise<void> => ipcRenderer.invoke("lmstudio:unload", identifier),
+    /* v1.0.7: actions log для прозрачности — кто и когда грузит/выгружает модели. */
+    getActionsLog: (maxLines?: number): Promise<string> =>
+      ipcRenderer.invoke("lmstudio:get-actions-log", maxLines),
+    clearActionsLog: (): Promise<boolean> => ipcRenderer.invoke("lmstudio:clear-actions-log"),
   },
 
   resilience: {

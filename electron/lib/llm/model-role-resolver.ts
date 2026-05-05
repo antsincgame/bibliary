@@ -61,6 +61,7 @@
 import { listLoaded as _listLoaded, type LoadedModelInfo } from "../../lmstudio-client.js";
 import { getPreferencesStore, type Preferences } from "../preferences/store.js";
 import { getModelPool } from "./model-pool.js";
+import { logModelAction } from "./lmstudio-actions-log.js";
 
 export type ModelRole =
   | "crystallizer"
@@ -141,6 +142,8 @@ interface ResolverDeps {
 }
 
 async function defaultAutoLoad(modelKey: string, role: string): Promise<boolean> {
+  const startedAt = Date.now();
+  logModelAction("AUTO-LOAD-START", { modelKey, role, reason: "model-role-resolver.defaultAutoLoad" });
   try {
     const handle = await getModelPool().acquire(modelKey, {
       role,
@@ -148,9 +151,12 @@ async function defaultAutoLoad(modelKey: string, role: string): Promise<boolean>
       gpuOffload: "max",
     });
     handle.release();
+    logModelAction("AUTO-LOAD-OK", { modelKey, role, durationMs: Date.now() - startedAt });
     return true;
   } catch (e) {
-    console.warn(`[model-role-resolver] auto-load "${modelKey}" for role "${role}" failed: ${e instanceof Error ? e.message : e}`);
+    const errorMsg = e instanceof Error ? e.message : String(e);
+    logModelAction("AUTO-LOAD-FAIL", { modelKey, role, durationMs: Date.now() - startedAt, errorMsg });
+    console.warn(`[model-role-resolver] auto-load "${modelKey}" for role "${role}" failed: ${errorMsg}`);
     return false;
   }
 }
@@ -171,6 +177,27 @@ export function _resetResolverForTests(): void {
   deps = defaultDeps;
 }
 
+/**
+ * Опции вызова `resolve()`. С v1.0.7 (autonomous heresy fix) все caller'ы
+ * должны явно сообщить контекст вызова:
+ *
+ *   - `passive: true` — caller только смотрит ("какая модель резолвится для
+ *     этой роли"), НЕ имеет права триггерить autoLoad. Используется UI
+ *     snapshot'ами (model-roles:list для Models page), periodic refresh,
+ *     status indicators. Если preferred модель НЕ загружена — вернётся
+ *     null с записью RESOLVE-PASSIVE-SKIP в lmstudio-actions.log.
+ *
+ *   - `passive: false` (по умолчанию) — caller активно работает (импорт книги,
+ *     OCR, evaluation, manual chat). Имеет право вызвать autoLoad через
+ *     ModelPool, что грузит модель с диска в VRAM.
+ *
+ * Это закрывает баг v1.0.5+, когда открытие приложения автоматически
+ * запускало 2-3 модели в LM Studio из-за UI snapshot'а.
+ */
+export interface ResolveOptions {
+  passive?: boolean;
+}
+
 class ModelRoleResolverImpl {
   private readonly cache = new Map<ModelRole, CacheEntry>();
 
@@ -182,15 +209,18 @@ class ModelRoleResolverImpl {
     }
   }
 
-  async resolve(role: ModelRole): Promise<ResolvedModel | null> {
+  async resolve(role: ModelRole, opts: ResolveOptions = {}): Promise<ResolvedModel | null> {
     const cached = this.cache.get(role);
     const now = Date.now();
     if (cached && cached.expiresAt > now) return cached.resolved;
 
-    const resolved = await this.resolveUncached(role);
+    const resolved = await this.resolveUncached(role, opts);
 
+    /* В пассивном режиме НЕ кешируем null-ответ — иначе кэш продержит
+       "модель не загружена" 30 секунд даже после того, как пользователь
+       явно загрузил её через UI. Кешируем только успешные резолвы. */
     const ttl = await this.cacheTtlMs();
-    if (ttl > 0) {
+    if (ttl > 0 && (resolved !== null || !opts.passive)) {
       this.cache.set(role, { resolved, expiresAt: now + ttl });
     }
     return resolved;
@@ -205,7 +235,7 @@ class ModelRoleResolverImpl {
     }
   }
 
-  private async resolveUncached(role: ModelRole): Promise<ResolvedModel | null> {
+  private async resolveUncached(role: ModelRole, opts: ResolveOptions): Promise<ResolvedModel | null> {
     const prefs = await deps.getPrefs();
     const loaded = await deps.listLoaded();
     const eligible = filterByCaps(loaded, ROLE_REQUIRED_CAPS[role]);
@@ -238,9 +268,21 @@ class ModelRoleResolverImpl {
     /* 2.5. Если пользователь явно задал модель, но она не загружена и ни один
        CSV-fallback тоже — пробуем авто-загрузить через ModelPool. Pool сам
        управляет VRAM: eviction старых моделей, OOM recovery, makeRoom.
-       Если авто-загрузка не удалась — null (честный "модель недоступна"). */
+
+       v1.0.7 (passive guard): если caller передал passive=true — НЕ грузим.
+       Это режим "только посмотреть": UI snapshot, periodic refresh, status
+       indicators. Возвращаем null, чтобы UI показал честное "не загружено"
+       вместо тихого триггера загрузки гигабайтной модели. */
     if (hasExplicitPreference) {
       const wanted = prefVal!.trim();
+      if (opts.passive) {
+        logModelAction("RESOLVE-PASSIVE-SKIP", {
+          modelKey: wanted,
+          role,
+          reason: "passive caller would have triggered autoLoad — skipped per v1.0.7 guard",
+        });
+        return null;
+      }
       const loaded = await deps.autoLoad(wanted, role);
       if (loaded) {
         return { modelKey: wanted, source: "preference" };

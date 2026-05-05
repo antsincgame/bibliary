@@ -254,10 +254,12 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
           },
           /* Каждую новую книгу немедленно ставим в очередь оценки.
              Evaluator на паузе (autoPauseEvaluatorForImport) — книги
-             накопятся и будут обработаны после конца импорта. */
+             накопятся и будут обработаны после конца импорта.
+             v1.0.7: allowAutoLoad=true — пользователь явно нажал
+             «Импорт», для новых книг разрешаем грузить preferred модель. */
           onBookImported: (meta) => {
             importedCount += 1;
-            enqueueBook(meta.id);
+            enqueueBook(meta.id, { allowAutoLoad: true });
             void logger.write({
               importId, level: "info", category: "evaluator.queued",
               message: `Queued for evaluation: ${meta.titleEn || meta.title || meta.id}`,
@@ -400,10 +402,11 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
               aggregate.warnings.push(...r.warnings);
               /* Симметрия с folder-импортом: каждую новую книгу немедленно
                  ставим в evaluator-queue, чтобы LLM-оценка началась
-                 сразу, а не в конце большого batch. */
+                 сразу, а не в конце большого batch.
+                 v1.0.7: allowAutoLoad=true — пользователь нажал «Импорт». */
               if (r.outcome === "added" && r.bookId) {
                 importedCount += 1;
-                enqueueBook(r.bookId);
+                enqueueBook(r.bookId, { allowAutoLoad: true });
                 void logger.write({
                   importId, level: "info", category: "evaluator.queued",
                   message: `Queued for evaluation: ${r.meta?.titleEn || r.meta?.title || r.bookId}`,

@@ -33,7 +33,14 @@ export async function getRoleSnapshot(roles?: ModelRole[]): Promise<RoleSnapshot
   for (const meta of metas) {
     let resolved: ResolvedModel | null = null;
     try {
-      resolved = await modelRoleResolver.resolve(meta.role);
+      /* v1.0.7 (autonomous heresy fix): UI snapshot ВСЕГДА passive.
+         Models page открывается по умолчанию при старте приложения и
+         каждые 8 секунд дёргает refresh(). До v1.0.7 это триггерило
+         autoLoad для каждой роли с явным prefValue — три модели
+         автоматически грузились в LM Studio без команды пользователя.
+         Теперь UI получит null для незагруженных моделей и покажет
+         "не загружено" — пользователь сам нажмёт "Загрузить". */
+      resolved = await modelRoleResolver.resolve(meta.role, { passive: true });
     } catch {
       resolved = null;
     }

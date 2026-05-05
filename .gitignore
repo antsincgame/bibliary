@@ -82,5 +82,9 @@ data/e2e-reports/
 # Import audit logs
 data/logs/
 
+# v1.0.7: structured LM Studio actions log (in userData OR project root from tests)
+logs/
+data/lmstudio-actions.log
+
 # Olympics report — runtime artifact (не для VCS)
 data/olympics-report.json

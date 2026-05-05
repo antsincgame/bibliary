@@ -59,10 +59,12 @@ export function registerLibraryEvaluatorIpc(): void {
       if (!args || typeof args.bookId !== "string") return { ok: false, reason: "bookId required" };
       const meta = getBookById(args.bookId);
       if (!meta) return { ok: false, reason: "not-found" };
-      /* Reset status to imported -- evaluator подберёт. mdPath сохраняется. */
+      /* Reset status to imported -- evaluator подберёт. mdPath сохраняется.
+         v1.0.7: allowAutoLoad=true — это явная команда пользователя
+         "Re-evaluate", которая имеет право грузить preferred модель. */
       const reset: BookCatalogMeta = { ...meta, status: "imported" as BookStatus };
       upsertBook(reset, meta.mdPath);
-      enqueueBook(args.bookId);
+      enqueueBook(args.bookId, { allowAutoLoad: true });
       return { ok: true };
     }
   );
@@ -79,7 +81,8 @@ export function registerLibraryEvaluatorIpc(): void {
         if (meta.wordCount <= 0 || meta.chapterCount <= 0) continue;
         const reset: BookCatalogMeta = { ...meta, status: "imported" as BookStatus };
         upsertBook(reset, meta.mdPath);
-        enqueueBook(meta.id);
+        /* v1.0.7: явная команда «переоценить всё» — autoLoad разрешён. */
+        enqueueBook(meta.id, { allowAutoLoad: true });
         queued += 1;
       }
       if (!nextCursor) break;
@@ -105,7 +108,8 @@ export function registerLibraryEvaluatorIpc(): void {
       for (let i = args.bookIds.length - 1; i >= 0; i--) {
         const id = args.bookIds[i];
         if (typeof id === "string" && id.length > 0) {
-          enqueuePriority(id);
+          /* v1.0.7: явная команда «оценить эти первыми» — autoLoad разрешён. */
+          enqueuePriority(id, { allowAutoLoad: true });
           queued += 1;
         }
       }
@@ -191,7 +195,8 @@ export function registerLibraryEvaluatorIpc(): void {
         lastError: undefined,
       };
       upsertBook(updatedMeta, meta.mdPath);
-      enqueueBook(meta.id);
+      /* v1.0.7: после reparse это явная команда — autoLoad разрешён. */
+      enqueueBook(meta.id, { allowAutoLoad: true });
 
       return { ok: true, chapters: result.chapters.length };
     }

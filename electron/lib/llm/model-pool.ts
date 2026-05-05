@@ -64,6 +64,7 @@ import { classifyByVramMB, evictionPriority, type ModelWeight } from "./model-si
 import { getRoleLoadConfig } from "./role-load-config.js";
 import type { ModelRole } from "./model-role-resolver.js";
 import { KeyedAsyncMutex } from "./async-mutex.js";
+import { logModelAction } from "./lmstudio-actions-log.js";
 
 /** Известные ModelRole — синхронизировано с model-role-resolver.ts. */
 const KNOWN_MODEL_ROLES: ReadonlySet<ModelRole> = new Set<ModelRole>([
@@ -366,7 +367,33 @@ export class ModelPool {
         gpuOffload: opts.gpuOffload,
       });
 
-      const info = await this.loadWithOomRecovery(modelKey, vramMB, loadOpts);
+      /* v1.0.7: лог реальной загрузки модели — каждый раз когда pool физически
+         запускает llm.load в LM Studio. Это даёт пользователю полную видимость
+         "кто и когда грузил модели" в `lmstudio-actions.log`. */
+      const startedAt = this.now();
+      logModelAction("LOAD", {
+        modelKey,
+        role: opts.role,
+        reason: "model-pool acquireExclusive (cache miss)",
+        meta: { estimatedVramMB: vramMB },
+      });
+      let info: LoadedModelInfo;
+      try {
+        info = await this.loadWithOomRecovery(modelKey, vramMB, loadOpts);
+        logModelAction("ACQUIRE-OK", {
+          modelKey,
+          role: opts.role,
+          durationMs: this.now() - startedAt,
+        });
+      } catch (e) {
+        logModelAction("ACQUIRE-FAIL", {
+          modelKey,
+          role: opts.role,
+          durationMs: this.now() - startedAt,
+          errorMsg: e instanceof Error ? e.message : String(e),
+        });
+        throw e;
+      }
 
       const entry: PoolEntry = {
         modelKey: info.modelKey,

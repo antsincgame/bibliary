@@ -4,6 +4,131 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.7] — 2026-05-05
+
+**STOP-THE-CHAOS release.** Critical bug filed by user: simply launching
+Bibliary (no clicks, no import) caused LM Studio to start loading two heavy
+models -- a 35 GB `qwen3.5-35b-a3b` and a 2.5 GB `qwen2.5-vl` -- with the
+status bar showing both at the same time stuck in "LOADING". Diagnostic
+investigation (`/inquisitor` + `/sherlok` + `/om`) revealed three independent
+**autonomous load channels** silently introduced over v1.0.4 → v1.0.6:
+
+1. **Background evaluator queue** (`electron/lib/library/evaluator-queue.ts`)
+   -- `bootstrapLibrarySubsystem()` runs unconditionally at `app.whenReady()`;
+   `bootstrapEvaluatorQueue()` enqueues every book with `status='imported'`
+   from cache-db; `evaluateOneInSlot` calls `pickEvaluatorModel({allowAutoLoad: true})`
+   (introduced in v1.0.5); the picker scores all loaded **and downloaded**
+   models and triggers `pool.acquire()` on the top candidate -- typically the
+   biggest evaluator-class model on disk.
+2. **UI snapshot resolve** (`electron/ipc/model-roles.ipc.ts`) -- `models-page.js`
+   is the default route and immediately calls `modelRoles.list(['crystallizer',
+   'evaluator', 'vision_ocr', 'vision_illustration'])`. The IPC handler
+   walked through every role and called `modelRoleResolver.resolve(role)`,
+   which after v1.0.5 invoked `defaultAutoLoad → getModelPool().acquire()`
+   for every role with an explicit `prefValue`. UI only wanted to **display**
+   role status; instead it triggered loads.
+3. **Periodic refresh amplifier** -- `models-page.js setInterval(refresh, 8s)`
+   re-ran channel 2 every 8 seconds, repeatedly hammering autoLoad after the
+   30 s `modelRoleCacheTtlMs` cache expired.
+
+Users had no log file to inspect what was happening; the only visible signal
+was LM Studio's own status bar.
+
+### Fixed
+
+- **Channel B + C: passive resolve guard** -- `electron/lib/llm/model-role-resolver.ts`
+  `resolve()` now accepts `{passive?: boolean}`. When `passive: true`, the
+  resolver SKIPS step 2.5 (`defaultAutoLoad`) and returns `null` for an
+  explicit-but-unloaded preference -- with a structured `RESOLVE-PASSIVE-SKIP`
+  log entry. `electron/ipc/model-roles.ipc.ts` `getRoleSnapshot` always
+  passes `passive: true` because UI snapshots have no business loading
+  models. Active callers (impport-pipeline OCR, evaluator, vision-illustration
+  jobs) keep the previous behavior since they don't pass `passive`.
+- **Passive cache poisoning** -- the per-role TTL cache no longer stores
+  `null` answers from `passive: true` calls. Otherwise the next active
+  caller (e.g. user clicked "Re-evaluate") would inherit a stale "not loaded"
+  for 30 s and refuse to autoload its own model. Successful resolves still
+  cache normally.
+- **Channel A: per-book autoLoad opt-in** -- `enqueueBook(bookId, opts)` /
+  `enqueuePriority(bookId, opts)` / `enqueueMany(ids, opts)` gained an
+  `EnqueueBookOptions { allowAutoLoad?: boolean }` parameter (default `false`).
+  Books are tracked through a `Set<string>` `autoLoadAllowedBooks`; the slot
+  worker reads + clears the flag and passes it through to
+  `pickEvaluatorModel({allowAutoLoad})`. `bootstrapEvaluatorQueue()` re-enqueues
+  pending books WITHOUT the flag -- cold-start resume can no longer grab
+  35 GB of VRAM. Legitimate user-triggered enqueues (`library:evaluator-reevaluate`,
+  `library:reevaluate-all`, `library:evaluator-prioritize`, `library:reparse-book`,
+  and both folder/file import callbacks in `library-import-ipc.ts`) explicitly
+  pass `{allowAutoLoad: true}` because they represent real user intent.
+- **Dead invalidate** in `electron/ipc/lmstudio.ipc.ts` -- `modelRoleResolver.invalidate()`
+  was unreachable code after a `return` in the `lmstudio:load` handler's
+  `try` block. Moved before the return so the cache actually invalidates
+  when a user manually loads a model from UI.
+
+### Added
+
+- **`electron/lib/llm/lmstudio-actions-log.ts`** -- new structured journal of
+  every LM Studio action Bibliary takes. Format: JSONL, file path
+  `${BIBLIARY_DATA_DIR}/logs/lmstudio-actions.log`. `ModelActionKind` covers
+  `LOAD`, `UNLOAD`, `ACQUIRE`, `ACQUIRE-OK`, `ACQUIRE-FAIL`, `RELEASE`,
+  `EVICT`, `AUTO-LOAD-START/OK/FAIL`, `RESOLVE-PASSIVE-SKIP`,
+  `EVALUATOR-DEFER-RESUME`, `EVALUATOR-PICK-FAIL`. Writes are serialized
+  through a promise queue (avoids torn appendFile on NTFS). Caller is
+  fire-and-forget; never blocks.
+- **`electron/ipc/lmstudio.ipc.ts`** -- new IPC handlers `lmstudio:get-actions-log`
+  and `lmstudio:clear-actions-log` plus `LOAD`/`UNLOAD` log entries on the
+  user-driven `lmstudio:load` / `lmstudio:unload` paths so manual actions
+  appear in the journal alongside automatic ones.
+- **`electron/lib/llm/model-pool.ts`** -- the actual `client.llm.load()`
+  call inside `acquireExclusive` now logs `LOAD` (with reason "model-pool
+  acquireExclusive (cache miss)") and `ACQUIRE-OK` / `ACQUIRE-FAIL` with
+  duration. Full coverage: every physical load Bibliary triggers is logged.
+- **`renderer/models/models-actions-log-panel.js`** -- new collapsible panel
+  on the Models page ("📋 Логи действий с LM Studio") that reads the journal
+  via `window.api.lmstudio.getActionsLog(200)`, renders last 200 events in
+  human-readable format (timestamp + kind + model/role/reason/duration), and
+  offers Refresh / Clear buttons. Lazy-loads on first expand to avoid extra
+  IPC traffic on every Models page mount.
+- **i18n keys** -- 8 new `models.actionsLog.*` strings in both `ru.js` and `en.js`.
+
+### Changed
+
+- **Per-book enqueue contract** is now opt-in for autoLoad. All call-sites
+  audited and updated. Tests use the safe default (no autoLoad), so they
+  needed no changes -- 14 / 14 evaluator-queue tests still pass.
+
+### Verified
+
+- `tsc --noEmit -p tsconfig.electron.json` -- 0 errors
+- `npm run lint` -- 0 errors, 0 warnings
+- `tests/model-role-resolver.test.ts` -- 19 / 19 passing (4 new tests for `passive` opt)
+- `tests/lmstudio-actions-log.test.ts` -- 6 / 6 passing (new file: write/read/clear/concurrent)
+- `tests/evaluator-queue.test.ts` -- 14 / 14 passing (defer log entry visible)
+- `tests/evaluator-queue-slots.test.ts` -- 13 / 13 passing
+- `tests/custom-disciplines.test.ts` -- 25 / 25 passing
+- `tests/pipeline-bug-hunt.test.ts` -- 52 / 52 passing
+- Combined targeted regression: **191 / 191 tests, 0 failures**
+
+### Acceptance contract for the user
+
+The reported scenario MUST hold after this release: with no books in the
+catalog (or with all books at `status='evaluated'`), and with LM Studio
+empty, launching Bibliary cold MUST result in **zero** models being loaded
+within 2 minutes. Manual smoke recommended:
+
+```
+1. close Bibliary
+2. in LM Studio: unload all models (one click in LM Studio header)
+3. start Bibliary
+4. wait 2 minutes, do not click anything
+5. open Models page → "📋 Логи действий с LM Studio"
+6. verify: only RESOLVE-PASSIVE-SKIP entries (and maybe EVALUATOR-DEFER-RESUME
+   if you have pending imported books); zero LOAD or AUTO-LOAD-START entries
+```
+
+If LOAD entries appear without you clicking anything -- file an issue with
+the log attached, this contract is broken.
+
 ## [1.0.6] — 2026-05-05
 
 Diagonal code review release. After v1.0.3 → v1.0.5 shipped the role-resolver
