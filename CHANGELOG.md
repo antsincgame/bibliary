@@ -4,6 +4,44 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.12] — 2026-05-06
+
+**SOTA Олимпиада: hallucination calibration, diversity fixtures, hierarchical OCR scoring.**
+4 новые дисциплины + 3 bug-fix в scorer'ах + cleanup + 10 новых unit-тестов.
+
+### Added
+- **crystallizer-hallucination-calibration**: anti-hallucination тест (domain-mismatch:
+  текст о химии TiO₂, prompt просит извлечь биологию). Пустые массивы = 1.0,
+  каждая галлюцинация прогрессивно штрафуется. Требует ОБА поля (facts+entities)
+  для max score — malformed JSON даёт не более 0.70.
+- **crystallizer-ru-medicine-semmelweis**: diversity fixture — медицина 1847,
+  Земмельвейс, послеродовая горячка, хлорная известь, Пастер, Листер. 11 якорей.
+- **crystallizer-ru-physics-mendeleev**: diversity fixture — Менделеев 1869,
+  периодическая таблица, предсказания галлия/скандия/германия. 12 якорей.
+- **vision_ocr-ru-math-hierarchical**: hierarchical OCR scorer — char-recall (25%)
+  + structural (35%: math symbols ∪∩∈⊂×→, subscripts, function/set notation)
+  + semantic (40%: math-domain detection, context, авторы Березин/Кудрявцев/Федорюк).
+- 10 unit-тестов на новые дисциплины (`olympics-thinking-models-scoring.test.ts`):
+  hallucination (3 теста), medicine (1), physics (2 вкл. бор-regex), OCR (4).
+
+### Fixed
+- **Kolmogorov scorer**: v1.0.12 audit — для score 9-10 теперь требуется reasoning
+  ≥40 chars + ≥1 anchor (strength/limitation/fact). Без reasoning — "подозрительный"
+  branch (0.20). 4 unit-теста.
+- **бор-regex false positive**: `/бор/` → `/\bбор\b/` — слово "лаборатория" больше
+  не триггерит штраф -0.05 в `crystallizer-ru-physics-mendeleev`.
+- **hasFunctionNotation Cyrillic**: `\w` в JS не включает кириллицу →
+  заменён на `[a-zа-яA-ZА-Я0-9ℝℂℤ]` для корректного матча `f:Е₁→Е₂`.
+- **hallucination calibration edge case**: malformed JSON с одним пустым массивом
+  (напр. `{"facts":[]}` без entities) давал max score 1.0 → теперь 0.70.
+
+### Changed
+- 7 unit-тестов на PASSIVE_SKIP rate-limit (`model-role-resolver.test.ts`).
+  Тестовые хуки: `_shouldLogPassiveSkipForTesting`, `_PASSIVE_SKIP_RATE_LIMIT_MS_FOR_TESTING`.
+- Удалён мёртвый CSS (~200 строк): `.settings-custom-disciplines*`, `.scd-*`
+  (Custom Olympics editor удалён в v1.0.11).
+- Исправлены комментарии: UI refresh 3sec→8sec, discipline IDs, Zod .strict().
+
 ## [1.0.11] — 2026-05-06
 
 **Чистка UI/настроек + усиление Олимпиады для думающих моделей + борьба со
@@ -16,8 +54,10 @@ production-использование v1.0.10.
 сотен МБ из-за `RESOLVE-PASSIVE-SKIP` на каждый renderer→main snapshot tick.
 
 **Корень:** v1.0.7 ввёл `passive: true` для UI-снапшотов чтобы они НЕ грузили
-модели. Каждый skip логировался без rate-limit. Renderer запрашивает snapshot
-каждые ~3 сек × 4 роли = 80 записей/мин даже без действий пользователя.
+модели. Каждый skip логировался без rate-limit. Renderer (Models page)
+запрашивает snapshot каждые 8 сек (`REFRESH_MS = 8000` в
+`renderer/models/models-page-internals.js`) × 4 роли = ~30 записей/мин
+даже без действий пользователя.
 
 **Фикс** — `electron/lib/llm/model-role-resolver.ts`:
 - Добавлен `PASSIVE_SKIP_RATE_LIMIT_MS = 10 * 60 * 1000` (10 минут).
@@ -25,7 +65,11 @@ production-использование v1.0.10.
   ключу `role:modelKey`.
 - `shouldLogPassiveSkip(role, modelKey)` — true только если прошло ≥10 мин
   с последней записи по этому ключу.
-- Экспортирована `_resetPassiveSkipRateLimitForTesting` для unit-тестов.
+- Экспортирована `_resetPassiveSkipRateLimitForTesting` для тестов.
+- v1.0.12: добавлены unit-тесты на rate-limit
+  (`tests/model-role-resolver.test.ts`, 7 новых проверок) +
+  тестовые хуки `_shouldLogPassiveSkipForTesting` и
+  `_PASSIVE_SKIP_RATE_LIMIT_MS_FOR_TESTING`.
 
 Эффект: тот же сигнал диагностики (видно когда UI пытается загрузить
 выгруженную модель), но 1 запись в 10 мин на role+model вместо 80/мин.
@@ -55,8 +99,10 @@ Backend:
 
 Schema:
 - Поле `customOlympicsDisciplines` удалено из `electron/lib/preferences/store.ts`.
-  Старые сохранённые значения в `preferences.json` тихо игнорируются (Zod
-  `.strict()` не задействован, unknown ключи отбрасываются без ошибки).
+  Старые сохранённые значения в `preferences.json` тихо игнорируются:
+  `z.object({...})` по умолчанию **отбрасывает unknown-ключи** (вызвал бы
+  ошибку только с `.strict()`, который мы намеренно не используем — старые
+  поля не должны ломать парсинг).
 
 Registry:
 - `electron/lib/llm/arena/disciplines-registry.ts` упрощён: `readCustom`

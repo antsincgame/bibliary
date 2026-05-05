@@ -156,6 +156,17 @@ export function _resetPassiveSkipRateLimitForTesting(): void {
   passiveSkipLastLogged.clear();
 }
 
+/** Тестовый хук v1.0.12: проверить rate-limit логику без выполнения логирования.
+ * Возвращает true если лог должен быть записан (= "не undefined и не в окне"),
+ * false — если rate-limit заблокировал. Side-effect: обновляет timestamp.
+ * Используется ТОЛЬКО в unit-тестах. */
+export function _shouldLogPassiveSkipForTesting(role: ModelRole, modelKey: string): boolean {
+  return shouldLogPassiveSkip(role, modelKey);
+}
+
+/** Тестовый хук v1.0.12: получить интервал rate-limit (мс) для проверки в тестах. */
+export const _PASSIVE_SKIP_RATE_LIMIT_MS_FOR_TESTING = PASSIVE_SKIP_RATE_LIMIT_MS;
+
 interface CacheEntry {
   resolved: ResolvedModel | null;
   expiresAt: number;

@@ -349,3 +349,70 @@ describe("[model-role-resolver] TTL cache", () => {
     assert.equal(r2!.modelKey, "model/second", "after invalidate should re-resolve");
   });
 });
+
+/* ── v1.0.12 BUG-FIX: PASSIVE_SKIP rate-limit unit tests ────────────── */
+
+import {
+  _resetPassiveSkipRateLimitForTesting,
+  _shouldLogPassiveSkipForTesting,
+  _PASSIVE_SKIP_RATE_LIMIT_MS_FOR_TESTING,
+} from "../electron/lib/llm/model-role-resolver.ts";
+
+describe("[model-role-resolver] PASSIVE_SKIP rate-limit (v1.0.11)", () => {
+  beforeEach(() => {
+    _resetPassiveSkipRateLimitForTesting();
+  });
+
+  test("первый вызов для нового (role+model) → возвращает true (логируем)", () => {
+    const result = _shouldLogPassiveSkipForTesting("crystallizer", "qwen/test-model");
+    assert.equal(result, true, "первый вызов должен разрешить логирование");
+  });
+
+  test("повторный вызов в окне rate-limit → возвращает false (rate-limited)", () => {
+    _shouldLogPassiveSkipForTesting("crystallizer", "qwen/test-model"); /* первый — true */
+    const second = _shouldLogPassiveSkipForTesting("crystallizer", "qwen/test-model");
+    assert.equal(second, false, "повторный вызов в окне 10 минут должен быть rate-limited");
+  });
+
+  test("разные роли — независимые ключи (rate-limit per role+model)", () => {
+    _shouldLogPassiveSkipForTesting("crystallizer", "qwen/test-model"); /* лог 1 */
+    const otherRole = _shouldLogPassiveSkipForTesting("evaluator", "qwen/test-model");
+    assert.equal(otherRole, true, "другая роль = другой ключ → логируем");
+  });
+
+  test("разные модели — независимые ключи", () => {
+    _shouldLogPassiveSkipForTesting("crystallizer", "qwen/model-A");
+    const otherModel = _shouldLogPassiveSkipForTesting("crystallizer", "qwen/model-B");
+    assert.equal(otherModel, true, "другая модель = другой ключ → логируем");
+  });
+
+  test("100 быстрых вызовов подряд → только 1 разрешённый лог (защита от spam)", () => {
+    const SPAM_COUNT = 100;
+    let allowedCount = 0;
+    for (let i = 0; i < SPAM_COUNT; i++) {
+      if (_shouldLogPassiveSkipForTesting("crystallizer", "qwen/spammed-model")) {
+        allowedCount++;
+      }
+    }
+    assert.equal(
+      allowedCount,
+      1,
+      `из ${SPAM_COUNT} попыток rate-limit должен пропустить только 1 (фактически: ${allowedCount})`,
+    );
+  });
+
+  test("после reset — счётчик сбрасывается, новый вызов разрешён", () => {
+    _shouldLogPassiveSkipForTesting("crystallizer", "qwen/test-model");
+    _resetPassiveSkipRateLimitForTesting();
+    const afterReset = _shouldLogPassiveSkipForTesting("crystallizer", "qwen/test-model");
+    assert.equal(afterReset, true, "после reset тот же ключ снова разрешён");
+  });
+
+  test("rate-limit интервал = 10 минут (контракт API)", () => {
+    assert.equal(
+      _PASSIVE_SKIP_RATE_LIMIT_MS_FOR_TESTING,
+      10 * 60 * 1000,
+      "rate-limit окно должно быть 10 минут (контракт документирован в коде)",
+    );
+  });
+});

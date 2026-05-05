@@ -847,8 +847,8 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
    *     не reasoning; см. tests/olympics-thinking-policy.test.ts)
    *
    * Roles покрытия после добавления:
-   *   crystallizer: 3 → 4 дисциплины (rover, prod-delta, ru-mendeleev, +ru-thinking-deep)
-   *   evaluator:    3 → 4 дисциплины (clrs, mid, noise, +ru-thinking-classification)
+   *   crystallizer: 3 → 4 дисциплины (rover, prod-delta, ru-mendeleev, +ru-thinking-evolution)
+   *   evaluator:    3 → 4 дисциплины (clrs, mid, noise, +ru-thinking-kolmogorov)
    *   vision_illustration: 1 → 2 дисциплины (with-context, +zorich-textbook-context)
    *   vision_ocr:   5 (без изменений в v1.0.11) */
 
@@ -1111,38 +1111,418 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
       const parsed = tryParseJson(a) as { score?: number; reasoning?: string } | null;
       if (!parsed || typeof parsed.score !== "number") return 0;
 
+      /* v1.0.12 BUG-FIX: вычисляем reasoning-quality ДО score-band, чтобы
+       * 9-10 без обоснования не выдавал полные 0.45 балла (multi-criteria
+       * reasoning не был закреплён → быстрая модель могла угадать число и
+       * получить почти полный балл). См. Sherlok-аудит v1.0.11. */
+      const reasoning = typeof parsed.reasoning === "string" ? parsed.reasoning : "";
+      const r = reasoning.toLowerCase();
+
+      const hasStrength = /(foundational|основополагающ|axiom|аксиом|standard|стандарт|classic|классик|до\s*сих\s*пор|still|reference|эталон|established|установил|базов|fundamental)/.test(r);
+      const hasLimitation = /(narrow|узк|niche|outdated|устар|archaic|архаичн|только|only|specific|specialized|limited|ограничен|short|небольш|brief|русск|german|немецк|оригинал)/.test(r);
+      const hasFactAnchor = /колмогоров|kolmogorov|probability|вероятност|1933|193\d|grundbegriffe|measure\s*theory|теори[яи]\s*мер|σ-алгебр|sigma\s*algebra/.test(r);
+      const anchorCount = (hasStrength ? 1 : 0) + (hasLimitation ? 1 : 0) + (hasFactAnchor ? 1 : 0);
+
       let s = 0;
 
-      /* === SCORE: foundational classic — ожидаем 9-10, допускаем 8 === */
-      if (parsed.score >= 9 && parsed.score <= 10)      s += 0.45;
-      else if (parsed.score === 8)                       s += 0.30;
-      else if (parsed.score === 7)                       s += 0.15;
-      else if (parsed.score >= 5 && parsed.score <= 6)   s += 0.05; /* недооценка */
+      /* === SCORE: foundational classic — ожидаем 9-10, требуем reasoning ≥40 ===
+       * v1.0.12: без обоснования высокий балл — подозрителен (модель угадала
+       * число или поверила user-prompt дословно). */
+      if (parsed.score >= 9 && parsed.score <= 10) {
+        if (reasoning.length >= 40 && anchorCount >= 1)      s += 0.45; /* полный */
+        else if (reasoning.length >= 20 && anchorCount >= 1) s += 0.30; /* частичный */
+        else                                                  s += 0.20; /* подозрительный */
+      } else if (parsed.score === 8) {
+        s += 0.30;
+      } else if (parsed.score === 7) {
+        s += 0.15;
+      } else if (parsed.score >= 5 && parsed.score <= 6) {
+        s += 0.05; /* недооценка */
+      }
       /* < 5 или > 10 — крайности, 0 баллов */
 
-      /* === REASONING: должно содержать И силу, И ограничение === */
-      if (typeof parsed.reasoning === "string") {
-        const r = parsed.reasoning.toLowerCase();
-        if (r.length >= 40) s += 0.10;
-        if (r.length >= 100) s += 0.05;
+      /* === REASONING bonus (длина) === */
+      if (reasoning.length >= 40) s += 0.10;
+      if (reasoning.length >= 100) s += 0.05;
 
-        /* --- Анчор силы (foundational / axioms / classic) --- */
-        const hasStrength = /(foundational|основополагающ|axiom|аксиом|standard|стандарт|classic|классик|до\s*сих\s*пор|still|reference|эталон|established|установил|базов|fundamental)/.test(r);
+      /* === BALANCED REASONING (strength + limitation вместе) === */
+      if (hasStrength && hasLimitation)       s += 0.20; /* сбалансированное обоснование */
+      else if (hasStrength || hasLimitation)  s += 0.05;
 
-        /* --- Анчор ограничения (age / niche / archaic / language) --- */
-        const hasLimitation = /(narrow|узк|niche|outdated|устар|archaic|архаичн|только|only|specific|specialized|niche|specialized|limited|ограничен|short|небольш|brief|русск|german|немецк|оригинал)/.test(r);
-
-        if (hasStrength && hasLimitation)       s += 0.20; /* сбалансированное обоснование */
-        else if (hasStrength || hasLimitation)  s += 0.05;
-
-        /* --- Конкретные факты-якоря --- */
-        if (/колмогоров|kolmogorov/.test(r)) s += 0.05;
-        if (/probability|вероятност/.test(r)) s += 0.05;
-        if (/1933|193\d|grundbegriffe/.test(r)) s += 0.05;
-        if (/measure\s*theory|теори[яи]\s*мер|σ-алгебр|sigma\s*algebra/.test(r)) s += 0.05;
-      }
+      /* === Конкретные факты-якоря === */
+      if (/колмогоров|kolmogorov/.test(r)) s += 0.05;
+      if (/probability|вероятност/.test(r)) s += 0.05;
+      if (/1933|193\d|grundbegriffe/.test(r)) s += 0.05;
+      if (/measure\s*theory|теори[яи]\s*мер|σ-алгебр|sigma\s*algebra/.test(r)) s += 0.05;
 
       return Math.max(0, Math.min(1, s));
+    },
+  },
+
+  /* ═══════════════════════════════════════════════════════════════════════
+   * v1.0.12 SOTA дисциплины (по итогам Perplexity deep_research 2025-2026).
+   *
+   * Добавлены по рекомендациям:
+   *   - Hallucination calibration (domain-mismatch extraction)
+   *   - Multi-source crystallizer diversity (медицина, физика)
+   *   - Hierarchical OCR scoring (char→structural→semantic)
+   *   - Math formula scorer (formula-specific token weighting)
+   * ═══════════════════════════════════════════════════════════════════════ */
+
+  {
+    /* Шаг 5: Hallucination-calibration discipline.
+     * Дизайн по Perplexity reason: domain-mismatch extraction.
+     * Текст о ХИМИИ, prompt просит извлечь БИОЛОГИЮ.
+     * Хорошая модель вернёт пустые массивы, плохая — нагаллюцинирует.
+     *
+     * Scoring: пустые/минимальные arrays = высокий балл.
+     * За каждый hallucinated fact — прогрессивный штраф. */
+    id: "crystallizer-hallucination-calibration",
+    role: "crystallizer",
+    thinkingFriendly: true,
+    description:
+      "Anti-hallucination: текст о химии, extraction-prompt о биологии. Правильный ответ — пустые массивы.",
+    whyImportant:
+      "SOTA calibration test (Perplexity 2025-2026): domain-mismatch extraction. " +
+      "Модели-галлюцинаторы «видят» биологию в тексте о катализе TiO₂: " +
+      "«oxidation → oxidative phosphorylation», «molybdenum → molybdenum-dependent " +
+      "enzymes». Правильный ответ: пустые facts/entities. Без этого теста " +
+      "crystallizer-чемпион может быть модель которая хорошо выдёргивает всё " +
+      "из текста — включая то чего там нет.",
+    system:
+      "Извлеки ТОЛЬКО биологическую информацию из текста. Ответ ТОЛЬКО валидный JSON: " +
+      '{"facts":[string],"entities":[{"name":string,"type":string}]}. ' +
+      "Извлекай ТОЛЬКО: белки, ферменты, организмы, клеточные процессы, " +
+      "аминокислоты, митохондрии, мембранный транспорт. " +
+      "Если биологической информации в тексте НЕТ — верни пустые массивы.",
+    user:
+      "Извлеки биологические знания из фрагмента:\n\n" +
+      '"Исследование показало, что катализаторы на основе оксида титана (TiO₂) ' +
+      "значительно ускоряют процесс окисления органических соединений при " +
+      "температуре 180-220°C. Экспериментальные данные свидетельствуют о том, " +
+      "что добавление 2-5% молибдена к титану повышает активность катализатора " +
+      "на 47% без увеличения стоимости. Механизм реакции включает три этапа: " +
+      "адсорбция молекул на поверхности катализатора, разрыв химических связей " +
+      "и десорбция продуктов. Спектроскопический анализ показал, что оптимальное " +
+      "соотношение Ti:Mo составляет 10:1. Образцы хранились при комнатной " +
+      "температуре в инертной атмосфере азота. Выход целевого продукта " +
+      'достигал 91% при времени реакции 4-6 часов."',
+    maxTokens: 512,
+    score: (a) => {
+      const parsed = tryParseJson(a);
+      if (!parsed || typeof parsed !== "object") return 0.15;
+      const obj = parsed as { facts?: unknown[]; entities?: unknown[] };
+
+      const hasFacts = Array.isArray(obj.facts);
+      const hasEntities = Array.isArray(obj.entities);
+
+      if (!hasFacts && !hasEntities) return 0.10;
+
+      const factsCount = hasFacts ? obj.facts!.length : 0;
+      const entityCount = hasEntities ? obj.entities!.length : 0;
+      const totalHallucinated = factsCount + entityCount;
+
+      let s = 0;
+
+      /* Идеал: ОБА поля — массивы и оба пустые */
+      if (totalHallucinated === 0 && hasFacts && hasEntities) s = 1.0;
+      else if (totalHallucinated === 0)                       s = 0.70; /* одно поле отсутствует — неполный JSON */
+      else if (totalHallucinated === 1) s = 0.60;
+      else if (totalHallucinated === 2) s = 0.35;
+      else if (totalHallucinated === 3) s = 0.15;
+      else                              s = 0.05; /* 4+ = массовая галлюцинация */
+
+      /* Дополнительные штрафы за характерные domain-bridge ошибки */
+      const allText = JSON.stringify(parsed).toLowerCase();
+      if (/phosphorylat|фосфорилиров/.test(allText)) s -= 0.10;
+      if (/enzyme|фермент|oxidoreductase|оксидоредуктаз/.test(allText)) s -= 0.10;
+      if (/protein|белок|белки/.test(allText)) s -= 0.05;
+      if (/mitochondri|митохондри/.test(allText)) s -= 0.10;
+      if (/cell|клетк|мембран/.test(allText)) s -= 0.05;
+
+      /* Бонус за явное признание отсутствия биологии */
+      if (/нет\s+биологи|no\s+biolog|пуст|empty|отсутств|not\s+found/i.test(a)) s += 0.05;
+
+      if (a.includes("```")) s -= 0.10;
+
+      return Math.max(0, Math.min(1, s));
+    },
+  },
+
+  {
+    /* Шаг 6a: Crystallizer fixture — медицина (русский).
+     * Diverse source для anti-overfitting (Perplexity: multi-domain fixture diversity). */
+    id: "crystallizer-ru-medicine-semmelweis",
+    role: "crystallizer",
+    thinkingFriendly: true,
+    description:
+      "Extraction из русского медицинского текста (Земмельвейс, асептика, 5+ фактов).",
+    whyImportant:
+      "Diversity fixture (SOTA 2025-2026): crystallizer обучается не только на " +
+      "эволюции/Дарвине, но и на медицинской истории науки. Текст плотный, " +
+      "с датами, персоналиями, институтами, причинно-следственными цепочками. " +
+      "Разнообразие источников снижает риск overfitting на один жанр/домен.",
+    system:
+      "Извлеки структурированные знания из текста. Ответ ТОЛЬКО валидный JSON: " +
+      '{"facts":[string],"entities":[{"name":string,"type":string}],"relations":[{"subject":string,"predicate":string,"object":string}]}. ' +
+      "Каждый факт — отдельное самодостаточное утверждение. " +
+      "Извлекай ВСЁ что есть в тексте, не упускай даты, имена, географию.",
+    user:
+      "Извлеки знания из фрагмента:\n\n" +
+      '"В 1847 году венгерский врач Игнац Земмельвейс, работая в Первом акушерском ' +
+      "отделении Венской общей больницы, установил, что послеродовая горячка " +
+      "вызывается «трупными частицами» на руках врачей, переходивших из " +
+      "анатомического театра к роженицам. Введение обязательного мытья рук " +
+      "раствором хлорной извести снизило смертность с 18% до 1.3%. " +
+      "Несмотря на убедительные данные, медицинское сообщество отвергло " +
+      "идеи Земмельвейса: его коллега профессор Карл Браун называл " +
+      "гипотезу «абсурдной». Признание пришло только после работ " +
+      "Луи Пастера (1860-е) и Джозефа Листера, основавшего антисептическую " +
+      'хирургию в 1867 году."',
+    maxTokens: 1024,
+    score: (a) => {
+      const parsed = tryParseJson(a);
+      if (!parsed || typeof parsed !== "object") return 0;
+      const obj = parsed as { facts?: unknown[]; entities?: unknown[]; relations?: unknown[] };
+      if (!Array.isArray(obj.facts) || !Array.isArray(obj.entities)) return 0.10;
+
+      let s = 0.15;
+
+      const factCount = obj.facts.length;
+      if (factCount >= 5)      s += 0.20;
+      else if (factCount === 4) s += 0.16;
+      else if (factCount === 3) s += 0.12;
+      else if (factCount >= 2) s += 0.06;
+
+      const entCount = obj.entities.length;
+      if (entCount >= 6)      s += 0.15;
+      else if (entCount >= 4) s += 0.10;
+      else if (entCount >= 2) s += 0.05;
+
+      if (Array.isArray(obj.relations)) {
+        const rels = obj.relations as Array<Record<string, unknown>>;
+        const valid = rels.filter((r) =>
+          r && typeof r === "object" &&
+          typeof r.subject === "string" && typeof r.predicate === "string" &&
+          typeof r.object === "string" &&
+          !/^(is|was|are|were|has|have|быть|был|есть|являться)$/.test((r.predicate as string).trim().toLowerCase()),
+        );
+        if (valid.length >= 2) s += 0.10;
+        else if (valid.length >= 1) s += 0.05;
+      }
+
+      const allText = JSON.stringify(parsed).toLowerCase();
+      const anchors = [
+        /1847/,
+        /земмельвейс|semmelweis/,
+        /венск|vienna|wien/,
+        /послеродов|puerperal|childbed/,
+        /хлорн|chlorin/,
+        /18%|1\.3%|смертност|mortalit/,
+        /пастер|pasteur/,
+        /листер|lister/,
+        /1867/,
+        /антисепт|antisept/,
+        /браун|braun/,
+      ];
+      const hits = anchors.filter((rx) => rx.test(allText)).length;
+      s += Math.min(0.30, hits * 0.03);
+
+      if (/флеминг|fleming|пеницилл|penicillin/.test(allText)) s -= 0.05;
+      if (/кох|koch|tuberculosis/.test(allText)) s -= 0.05;
+      if (a.includes("```")) s -= 0.05;
+
+      const validEntities = obj.entities.filter((e: unknown) => {
+        if (!e || typeof e !== "object") return false;
+        const en = e as { name?: unknown; type?: unknown };
+        return typeof en.name === "string" && en.name.length >= 2 && typeof en.type === "string";
+      });
+      if (entCount > 0 && validEntities.length / entCount < 0.5) s -= 0.10;
+
+      return Math.max(0, Math.min(1, s));
+    },
+  },
+
+  {
+    /* Шаг 6b: Crystallizer fixture — физика (русский).
+     * Diversity: совсем другой домен для anti-overfitting. */
+    id: "crystallizer-ru-physics-mendeleev",
+    role: "crystallizer",
+    thinkingFriendly: true,
+    description:
+      "Extraction из русского текста по физике/химии (Менделеев, периодический закон, 5+ фактов).",
+    whyImportant:
+      "Ещё одна diversity-fixture: периодический закон Менделеева. " +
+      "Даты, предсказания, места, институты. Текст — история науки. " +
+      "Тестирует crystallizer на третьем жанре (эволюция, медицина, физика/химия). " +
+      "3 жанра — минимум для анти-overfitting (Perplexity SOTA 2025-2026).",
+    system:
+      "Извлеки структурированные знания из текста. Ответ ТОЛЬКО валидный JSON: " +
+      '{"facts":[string],"entities":[{"name":string,"type":string}],"relations":[{"subject":string,"predicate":string,"object":string}]}. ' +
+      "Каждый факт — отдельное самодостаточное утверждение. " +
+      "Извлекай ВСЁ что есть в тексте, не упускай даты, имена, географию.",
+    user:
+      "Извлеки знания из фрагмента:\n\n" +
+      '"В 1869 году профессор Санкт-Петербургского университета Дмитрий Иванович ' +
+      "Менделеев опубликовал периодическую таблицу химических элементов, " +
+      "систематизировав 63 известных на тот момент элемента по атомному весу " +
+      "и химическим свойствам. Ключевой принцип — периодический закон: свойства " +
+      "элементов являются периодической функцией их атомного веса. Менделеев " +
+      "оставил пустые клетки для ещё не открытых элементов и предсказал " +
+      "свойства трёх из них: экаалюминия (открыт в 1875 как галлий, " +
+      "Лекок де Буабодраном), экабора (скандий, Нильсон, 1879) и " +
+      "экасилиция (германий, Винклер, 1886). Независимо немецкий химик " +
+      "Лотар Мейер составил аналогичную классификацию, но не выдвигал " +
+      'предсказаний. Публикация Менделеева была подана 1 марта 1869 года."',
+    maxTokens: 1024,
+    score: (a) => {
+      const parsed = tryParseJson(a);
+      if (!parsed || typeof parsed !== "object") return 0;
+      const obj = parsed as { facts?: unknown[]; entities?: unknown[]; relations?: unknown[] };
+      if (!Array.isArray(obj.facts) || !Array.isArray(obj.entities)) return 0.10;
+
+      let s = 0.15;
+
+      const factCount = obj.facts.length;
+      if (factCount >= 6)      s += 0.20;
+      else if (factCount >= 4) s += 0.14;
+      else if (factCount >= 3) s += 0.10;
+      else if (factCount >= 2) s += 0.05;
+
+      const entCount = obj.entities.length;
+      if (entCount >= 7)      s += 0.15;
+      else if (entCount >= 5) s += 0.10;
+      else if (entCount >= 3) s += 0.06;
+
+      if (Array.isArray(obj.relations)) {
+        const rels = obj.relations as Array<Record<string, unknown>>;
+        const valid = rels.filter((r) =>
+          r && typeof r === "object" &&
+          typeof r.subject === "string" && typeof r.predicate === "string" &&
+          typeof r.object === "string" &&
+          !/^(is|was|are|were|has|have|быть|был|есть|являться)$/.test((r.predicate as string).trim().toLowerCase()),
+        );
+        if (valid.length >= 3)      s += 0.10;
+        else if (valid.length >= 1) s += 0.05;
+      }
+
+      const allText = JSON.stringify(parsed).toLowerCase();
+      const anchors = [
+        /1869/,
+        /менделеев|mendeleev/,
+        /петербург|petersburg/,
+        /периодическ|periodic/,
+        /галлий|gallium/,
+        /скандий|scandium/,
+        /германий|germanium/,
+        /1875/,
+        /1879/,
+        /1886/,
+        /мейер|meyer/,
+        /предсказ|predict/,
+      ];
+      const hits = anchors.filter((rx) => rx.test(allText)).length;
+      s += Math.min(0.30, hits * 0.03);
+
+      if (/кюри|curie|радий|radium/.test(allText)) s -= 0.05;
+      if (/\bбор\b|bohr|резерфорд|rutherford/.test(allText)) s -= 0.05;
+      if (a.includes("```")) s -= 0.05;
+
+      const validEntities = obj.entities.filter((e: unknown) => {
+        if (!e || typeof e !== "object") return false;
+        const en = e as { name?: unknown; type?: unknown };
+        return typeof en.name === "string" && en.name.length >= 2 && typeof en.type === "string";
+      });
+      if (entCount > 0 && validEntities.length / entCount < 0.5) s -= 0.10;
+
+      return Math.max(0, Math.min(1, s));
+    },
+  },
+
+  {
+    /* Шаг 7+8: Production OCR scoring с иерархическим scorer'ом.
+     * Hierarchical: char-recall (25%) + math-structural (35%) + semantic (40%).
+     * Формулы скорятся ОТДЕЛЬНО с повышенным весом.
+     *
+     * Используется та же картинка VISION_OCR_RU_MATH что и для основного OCR
+     * теста — но другой scorer: hierarchical вместо flat token-recall. */
+    id: "vision_ocr-ru-math-hierarchical",
+    role: "vision_ocr",
+    description:
+      "Hierarchical OCR scoring: char→structural→semantic. Формулы скорятся отдельно.",
+    whyImportant:
+      "SOTA OCR scoring (2025-2026, Perplexity research): flat token-recall не " +
+      "различает модели, которые распознают текст но теряют математическую структуру " +
+      "(∪→U, ⊂→C, f:E₁→E₂→«f E1 E2»). Hierarchical scorer: 25% char-recall, " +
+      "35% structural (set ops, arrows, function notation), 40% semantic " +
+      "(math-domain detection, context-preservation). Формулы скорятся с " +
+      "повышенным весом: математический символ ценнее обычного слова.",
+    system:
+      "Распознай весь видимый текст со скана страницы как plain text. " +
+      "Сохраняй кириллические символы, математические знаки (∪ ∩ ∈ ⊂ × →), " +
+      "тире и пунктуацию точно как в оригинале. Сохраняй переносы строк и абзацы. " +
+      "Если видишь формулы — распознай их максимально точно используя Unicode.",
+    user: "Распознай текст на изображении:",
+    imageUrl: asImageDataUrl(VISION_OCR_RU_MATH),
+    maxTokens: 512,
+    score: (a) => {
+      const raw = a.trim();
+      if (/^no[_\s]?text\.?$/i.test(raw)) return 0;
+      const lower = raw.toLowerCase();
+
+      /* === Level 1: Character recall (25%) — обычные текстовые токены === */
+      const textTokens = [
+        "понимания", "книги", "знакомство", "анализ", "курсов", "факультетах",
+        "математической", "программой", "линейной", "алгебры", "сведения",
+        "дифференциальных", "уравнениях", "обозначения",
+        "множеств", "объединение", "пересечение", "элемент",
+        "функция", "отображение", "значение", "аргумент",
+        "автор", "благодарен", "рецензирование", "рукописи",
+      ];
+      let textHits = 0;
+      const normalized = lower.replace(/[^a-zа-я0-9\s]/giu, " ").replace(/\s+/g, " ");
+      for (const tok of textTokens) {
+        if (normalized.includes(tok.toLowerCase())) textHits++;
+      }
+      const charRecall = textHits / textTokens.length;
+
+      /* === Level 2: Structural — math symbols & notation (35%) === */
+      const mathSymbols = ["∪", "∩", "∈", "⊂", "×", "→"];
+      let mathHits = 0;
+      for (const sym of mathSymbols) {
+        if (raw.includes(sym)) mathHits++;
+      }
+      const mathSymbolRecall = mathHits / mathSymbols.length;
+
+      const hasSubscripts = /[₁₂]|E_?1|E_?2|e₁|e₂/i.test(raw);
+      const hasFunctionNotation = /f\s*[:：]\s*[a-zа-яA-ZА-Я0-9ℝℂℤ].*?[→\->]|f\s*\(/i.test(raw);
+      const hasSetNotation = /A\s*[∪∩⊂]\s*B|множеств\w*\s+A/i.test(raw);
+
+      const structuralScore =
+        mathSymbolRecall * 0.50 +
+        (hasSubscripts ? 0.20 : 0) +
+        (hasFunctionNotation ? 0.15 : 0) +
+        (hasSetNotation ? 0.15 : 0);
+
+      /* === Level 3: Semantic — domain & context (40%) === */
+      let semanticScore = 0;
+      if (/math|анализ|матем|calculus/.test(lower)) semanticScore += 0.25;
+      if (/множеств|set\b/.test(lower)) semanticScore += 0.20;
+      if (/функци|function|отображени|mapping/.test(lower)) semanticScore += 0.20;
+      if (/теорем|определени|обозначени/.test(lower)) semanticScore += 0.15;
+      if (/березин|кудрявцев|федорюк/.test(lower)) semanticScore += 0.20;
+
+      semanticScore = Math.min(1, semanticScore);
+
+      /* Composite: 25% char + 35% structural + 40% semantic */
+      let composite = 0.25 * charRecall + 0.35 * structuralScore + 0.40 * semanticScore;
+
+      /* Format penalties */
+      if (a.includes("```")) composite *= 0.45;
+      if (/^\s*\{/.test(a)) composite *= 0.40;
+      if (/^(here\s+is|the\s+text|i\s+see)/i.test(raw)) composite *= 0.55;
+
+      return Math.max(0, Math.min(1, composite));
     },
   },
 
