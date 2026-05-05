@@ -207,9 +207,9 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
     probePoolSize: probePool.length,
   });
 
-  /* Iter 14.3 (2026-05-05): берём ВСЕ активные дисциплины — статические +
-     пользовательские (из preferences через registry). Custom компилятся через
-     compileCustomDiscipline + safe scoreFuzzy. См. disciplines-registry.ts. */
+  /* v1.0.11 (2026-05-06): берём активные дисциплины через registry.
+     Custom-disciplines feature удалена — registry возвращает только
+     статические OLYMPICS_DISCIPLINES. См. disciplines-registry.ts. */
   const allDisciplines = await getActiveDisciplines();
   let targetDisciplines = opts.disciplines
     ? allDisciplines.filter((d) => opts.disciplines!.includes(d.id) || opts.disciplines!.includes(d.role))

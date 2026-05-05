@@ -4,6 +4,159 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.11] — 2026-05-06
+
+**Чистка UI/настроек + усиление Олимпиады для думающих моделей + борьба со
+спамом в логах.** Три independent issues, каждый из которых блокировал
+production-использование v1.0.10.
+
+### Issue 1: log spam `RESOLVE-PASSIVE-SKIP` (1 запись на каждый passive call)
+
+**Симптом:** `~/.bibliary/logs/lmstudio-actions.log` за час раздувался до
+сотен МБ из-за `RESOLVE-PASSIVE-SKIP` на каждый renderer→main snapshot tick.
+
+**Корень:** v1.0.7 ввёл `passive: true` для UI-снапшотов чтобы они НЕ грузили
+модели. Каждый skip логировался без rate-limit. Renderer запрашивает snapshot
+каждые ~3 сек × 4 роли = 80 записей/мин даже без действий пользователя.
+
+**Фикс** — `electron/lib/llm/model-role-resolver.ts`:
+- Добавлен `PASSIVE_SKIP_RATE_LIMIT_MS = 10 * 60 * 1000` (10 минут).
+- `passiveSkipLastLogged: Map<string, number>` — last-logged timestamp по
+  ключу `role:modelKey`.
+- `shouldLogPassiveSkip(role, modelKey)` — true только если прошло ≥10 мин
+  с последней записи по этому ключу.
+- Экспортирована `_resetPassiveSkipRateLimitForTesting` для unit-тестов.
+
+Эффект: тот же сигнал диагностики (видно когда UI пытается загрузить
+выгруженную модель), но 1 запись в 10 мин на role+model вместо 80/мин.
+
+### Issue 2: Custom Olympics Disciplines — фича удалена
+
+**Симптом (запрос пользователя):** «В настройках удали создание своих
+олимпиадных тестов /mahakala /om /ui-tester» — раздел Settings перегружен
+и редактор кастомных тестов больше не нужен.
+
+**Удалено:**
+
+UI:
+- `renderer/settings/custom-disciplines-editor.js` — модальный редактор (~700 строк)
+- импорт `buildCustomDisciplinesEditor` из `renderer/settings.js`
+- 46 i18n-ключей `settings.customDisciplines.*` из `renderer/locales/{ru,en}.js`
+
+IPC и preload:
+- `electron/preload.ts`: API `customDisciplines.{list,save,delete,saveImage,getImage}`
+- `electron/ipc/arena.ipc.ts`: 5 `ipcMain.handle` для `arena:*-custom-discipline*`
+- импорты `CustomDisciplineSchema`, `saveDisciplineImage` etc.
+
+Backend:
+- `electron/lib/llm/arena/custom-disciplines.ts` (Zod schema + scoring)
+- `electron/lib/llm/arena/discipline-images.ts` (file persistence)
+- `tests/custom-disciplines.test.ts` (25 unit-тестов)
+
+Schema:
+- Поле `customOlympicsDisciplines` удалено из `electron/lib/preferences/store.ts`.
+  Старые сохранённые значения в `preferences.json` тихо игнорируются (Zod
+  `.strict()` не задействован, unknown ключи отбрасываются без ошибки).
+
+Registry:
+- `electron/lib/llm/arena/disciplines-registry.ts` упрощён: `readCustom`
+  всегда возвращает `[]`. Тестовый hook `_setRegistryDepsForTests`
+  сохранён для совместимости с существующими unit-тестами.
+
+### Issue 3: Олимпиада не запускалась + Pipeline-status widget
+
+**Симптом:** «Ты все сломал, олимпиада не запускается вообще» + красный блок
+на Models page.
+
+**Корень:** обе проблемы — в old build пользователя. В исходниках на момент
+v1.0.10:
+- Pipeline-status widget давно удалён (см. v1.0.9 CHANGELOG)
+- Olympics запускается нормально из `renderer/models/olympics-launcher.js`
+
+**Действие:** новый portable build (Шаг 5 ниже) включает все правки v1.0.11.
+
+### Issue 4: Усиление Олимпиады для thinking-моделей
+
+**Симптом:** калибровка под русско-украинскую библиотеку слабая. Все
+crystallizer/evaluator дисциплины кроме `crystallizer-ru-mendeleev` —
+англоязычные. Vision_illustration имел ровно 1 простую дисциплину.
+Чемпион → быстрая модель, провалит реальный production русский текст.
+
+**Добавлено 3 дисциплины** в `electron/lib/llm/arena/disciplines.ts`:
+
+1. **`vision_illustration-zorich-textbook-context`** (role: vision_illustration)
+   - Задача: описать страницу учебника В.А. Зорича «Математический анализ»
+     В КОНТЕКСТЕ главы (теория множеств, отображения f: E₁ → E₂)
+   - Производственная RAG-задача: описание индексируется в Qdrant для
+     тематического поиска
+   - Использует `VISION_OCR_RU_MATH` (image fixture уже в bundle)
+   - Scorer: 5 анчоров × 0.10-0.25 + штрафы за hallucination/JSON/markdown
+   - **НЕ thinkingFriendly** (vision = perception, политика проекта)
+
+2. **`crystallizer-ru-thinking-evolution`** (role: crystallizer)
+   - Задача: extraction из плотного русского текста про эволюцию
+     (Дарвин/Уоллес/Линнеевское общество/Современный синтез)
+   - 6 ключевых фактов + 7 сущностей + 12 фактов-якорей + причинно-следственные
+     relations (S-P-O без is/was)
+   - Scorer: rubric 4 секции (структура / facts / entities / relations) +
+     штрафы за галлюцинации (Ламарк, Докинз, неверные годы)
+   - **thinkingFriendly: true** — extraction из плотного prose = CoT win
+
+3. **`evaluator-ru-thinking-kolmogorov`** (role: evaluator)
+   - Задача: оценить русскую foundational монографию А.Н. Колмогорова
+     «Основные понятия теории вероятностей» (1933) — score 9-10
+   - Multi-criteria reasoning: взвесить foundational значение vs возраст
+     vs узкость vs язык оригинала
+   - Scorer: score-band + reasoning-rubric (нужны И сила И ограничение)
+     + 4 фактических якоря (Колмогоров / probability / 1933 / measure theory)
+   - **thinkingFriendly: true** — multi-criteria = CoT win
+
+**Покрытие после v1.0.11:**
+
+| Роль                | До v1.0.11 | После v1.0.11 |
+|---------------------|------------|---------------|
+| crystallizer        | 3          | 4 (+ ru-thinking-evolution)        |
+| evaluator           | 3          | 4 (+ ru-thinking-kolmogorov)       |
+| vision_ocr          | 5          | 5 (без изменений в v1.0.11)        |
+| vision_illustration | 1          | 2 (+ zorich-textbook-context)      |
+
+**Translator/lang_detector/ukrainian_specialist** — новые тесты НЕ
+добавлены: эти роли удалены из production pipeline (см. ModelRole в
+`electron/lib/llm/model-role-resolver.ts` v1.0.7).
+
+### Verification
+
+- `tsc --noEmit -p tsconfig.electron.json`: **clean** (0 errors)
+- `eslint`: 0 errors на затронутых файлах
+- `tests/model-role-resolver.test.ts`: pass
+- `tests/olympics-thinking-policy.test.ts`: pass (включая anti-regression
+  «vision НЕ должны быть thinkingFriendly»)
+- `tests/olympics-thinking-models-scoring.test.ts`: pass
+- `tests/olympics-weights.test.ts`: pass
+- Удалённые файлы физически отсутствуют (verified `Get-ChildItem`)
+
+### Файлы
+
+**Изменены:**
+- `electron/lib/llm/model-role-resolver.ts` (rate-limit log spam)
+- `electron/lib/llm/arena/disciplines.ts` (+3 дисциплины)
+- `electron/lib/llm/arena/disciplines-registry.ts` (упрощён readCustom)
+- `electron/lib/llm/arena/olympics.ts` (комментарий обновлён)
+- `electron/lib/preferences/store.ts` (удалено поле)
+- `electron/preload.ts` (удалён customDisciplines API)
+- `electron/ipc/arena.ipc.ts` (удалены 5 IPC handlers)
+- `renderer/settings.js` (удалён импорт editor)
+- `renderer/locales/ru.js`, `renderer/locales/en.js` (удалены i18n ключи)
+- `package.json` (version 1.0.10 → 1.0.11)
+
+**Удалены:**
+- `renderer/settings/custom-disciplines-editor.js`
+- `electron/lib/llm/arena/custom-disciplines.ts`
+- `electron/lib/llm/arena/discipline-images.ts`
+- `tests/custom-disciplines.test.ts`
+
+---
+
 ## [1.0.10] — 2026-05-06
 
 **КРИТИЧЕСКИЙ FIX скоринга Олимпиады: думающие модели больше не падают на 0.**

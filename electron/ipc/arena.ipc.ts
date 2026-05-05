@@ -19,15 +19,6 @@ import { modelRoleResolver } from "../lib/llm/model-role-resolver.js";
 import { runOlympics, type OlympicsReport, type OlympicsRole } from "../lib/llm/arena/olympics.js";
 import { refreshLmStudioClient } from "../lmstudio-client.js";
 import { getAppShutdownSignal } from "../lib/app-lifecycle.js";
-import {
-  CustomDisciplineSchema,
-  type CustomDiscipline,
-} from "../lib/llm/arena/custom-disciplines.js";
-import {
-  saveDisciplineImage,
-  loadDisciplineImageDataUrl,
-  deleteDisciplineImage,
-} from "../lib/llm/arena/discipline-images.js";
 import { logModelAction } from "../lib/llm/lmstudio-actions-log.js";
 
 function getOlympicsReportPath(): string {
@@ -283,119 +274,9 @@ export function registerArenaIpc(): void {
     return prefs;
   });
 
-  /* ─── Custom Olympics disciplines (Iter 14.3 / 2026-05-05) ─── */
-
-  /**
-   * Список пользовательских дисциплин — для Settings UI.
-   * Возвращает то, что лежит в preferences без compile (UI отображает
-   * сами поля без вычислений score). Невалидные записи отфильтровываются.
-   */
-  ipcMain.handle("arena:list-custom-disciplines", async (): Promise<CustomDiscipline[]> => {
-    const prefs = await getPreferencesStore().getAll();
-    const raw = prefs.customOlympicsDisciplines as unknown[];
-    if (!Array.isArray(raw)) return [];
-    const out: CustomDiscipline[] = [];
-    for (const item of raw) {
-      const parsed = CustomDisciplineSchema.safeParse(item);
-      if (parsed.success) out.push(parsed.data);
-    }
-    return out;
-  });
-
-  /**
-   * Создаёт или обновляет пользовательскую дисциплину. Картинка (для
-   * vision-ролей) передаётся отдельным IPC `arena:save-discipline-image`
-   * ДО save-custom-discipline, и uploaded imageRef кладётся в payload.
-   *
-   * Валидация:
-   *   - CustomDisciplineSchema (включая cross-field refine: vision требует
-   *     imageRef, текстовые роли — нет)
-   *   - id уникален в пределах пользовательских (статические дисциплины
-   *     получают приоритет в registry'е, но сохранение их id запрещено
-   *     отдельно — UI не должен такое предлагать).
-   */
-  ipcMain.handle("arena:save-custom-discipline", async (_e, payload: unknown): Promise<CustomDiscipline> => {
-    const parsed = CustomDisciplineSchema.safeParse(payload);
-    if (!parsed.success) {
-      throw new Error(`invalid CustomDiscipline payload: ${parsed.error.message}`);
-    }
-    const incoming = parsed.data;
-    const now = new Date().toISOString();
-    const existing = (await getPreferencesStore().getAll()).customOlympicsDisciplines as CustomDiscipline[] | undefined;
-    const list = Array.isArray(existing) ? [...existing] : [];
-    if (list.length >= 200 && !list.some((d) => d.id === incoming.id)) {
-      throw new Error("Достигнут лимит пользовательских дисциплин (200). Удалите ненужные перед созданием новых.");
-    }
-    const idx = list.findIndex((d) => d.id === incoming.id);
-    const previous = idx >= 0 ? list[idx]! : null;
-
-    /* Orphan-cleanup картинок при update:
-       1. role-switch (vision → text): старая картинка осталась orphan,
-          новый imageRef = undefined — нужно удалить файл.
-       2. замена картинки (другой imageRef, например смена расширения
-          .png → .jpg): старый файл нужно удалить, новый уже сохранён
-          через arena:save-discipline-image. */
-    if (previous?.imageRef && previous.imageRef !== incoming.imageRef) {
-      await deleteDisciplineImage(previous.imageRef);
-    }
-
-    const next: CustomDiscipline = {
-      ...incoming,
-      createdAt: previous ? (previous.createdAt ?? now) : now,
-      updatedAt: now,
-    };
-    if (idx >= 0) list[idx] = next;
-    else list.push(next);
-    await getPreferencesStore().set({ customOlympicsDisciplines: list });
-    return next;
-  });
-
-  /**
-   * Удаляет дисциплину по id и (best-effort) её картинку.
-   */
-  ipcMain.handle("arena:delete-custom-discipline", async (_e, payload: unknown): Promise<{ ok: boolean; deleted: boolean }> => {
-    const id = (payload && typeof payload === "object" ? (payload as { id?: unknown }).id : undefined);
-    if (typeof id !== "string" || id.length === 0) {
-      throw new Error("delete-custom-discipline: ожидается {id: string}");
-    }
-    const existing = (await getPreferencesStore().getAll()).customOlympicsDisciplines as CustomDiscipline[] | undefined;
-    if (!Array.isArray(existing)) return { ok: true, deleted: false };
-    const target = existing.find((d) => d.id === id);
-    if (!target) return { ok: true, deleted: false };
-    const next = existing.filter((d) => d.id !== id);
-    await getPreferencesStore().set({ customOlympicsDisciplines: next });
-    if (target.imageRef) await deleteDisciplineImage(target.imageRef);
-    return { ok: true, deleted: true };
-  });
-
-  /**
-   * Сохраняет картинку для дисциплины. UI вызывает ДО save-custom-discipline
-   * и кладёт возвращённый imageRef в payload.
-   *
-   * Принимает `{ disciplineId, base64, ext }` где base64 — без префикса
-   * `data:image/...;base64,`. Возвращает `{ imageRef }`.
-   */
-  ipcMain.handle("arena:save-discipline-image", async (_e, payload: unknown): Promise<{ imageRef: string }> => {
-    if (!payload || typeof payload !== "object") {
-      throw new Error("save-discipline-image: ожидается {disciplineId, base64, ext}");
-    }
-    const { disciplineId, base64, ext } = payload as { disciplineId?: unknown; base64?: unknown; ext?: unknown };
-    if (typeof disciplineId !== "string" || typeof base64 !== "string" || typeof ext !== "string") {
-      throw new Error("save-discipline-image: invalid types");
-    }
-    const imageRef = await saveDisciplineImage(disciplineId, base64, ext);
-    return { imageRef };
-  });
-
-  /**
-   * Загружает картинку как data-URL для preview в UI.
-   */
-  ipcMain.handle("arena:get-discipline-image", async (_e, payload: unknown): Promise<{ dataUrl: string | null }> => {
-    const imageRef = (payload && typeof payload === "object" ? (payload as { imageRef?: unknown }).imageRef : undefined);
-    if (typeof imageRef !== "string" || imageRef.length === 0) {
-      return { dataUrl: null };
-    }
-    const dataUrl = await loadDisciplineImageDataUrl(imageRef);
-    return { dataUrl };
-  });
+  /* v1.0.11 (2026-05-06, /imperor /mahakala): IPC handlers для custom Olympics
+     disciplines удалены целиком (5 каналов: list/save/delete/save-image/get-image).
+     Backend (custom-disciplines.ts, discipline-images.ts) тоже удалён.
+     Причина: feature не давала улучшения калибровки моделей сверх статических
+     дисциплин в disciplines.ts; UI Settings перегружен. См. CHANGELOG.md v1.0.11. */
 }

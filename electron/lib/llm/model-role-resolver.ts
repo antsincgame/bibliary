@@ -125,6 +125,37 @@ const ROLE_FALLBACKS_PREF_KEY: Record<ModelRole, string | null> = {
   evaluator: "evaluatorModelFallbacks",
 };
 
+/**
+ * Rate-limit для RESOLVE-PASSIVE-SKIP логов.
+ *
+ * v1.0.11 (2026-05-06): UI snapshot вызывает passive-resolve каждые 8 секунд
+ * для каждой из 4 ролей (crystallizer/vision_ocr/vision_illustration/evaluator).
+ * До v1.0.11 это давало ~30 записей/мин в lmstudio-actions.log → лог становился
+ * нечитаемым (события LOAD/UNLOAD/AUTO-LOAD тонули в шуме PASSIVE-SKIP).
+ *
+ * Теперь логируем PASSIVE-SKIP не чаще 1 раза в 10 минут на пару (role + modelKey).
+ * Этого достаточно чтобы зафиксировать факт «UI знает что модель не загружена»,
+ * без дублирования. При смене модели в prefs или unload — новый ключ → новый лог.
+ */
+const PASSIVE_SKIP_RATE_LIMIT_MS = 10 * 60 * 1000;
+const passiveSkipLastLogged = new Map<string, number>();
+
+function shouldLogPassiveSkip(role: ModelRole, modelKey: string): boolean {
+  const key = `${role}:${modelKey}`;
+  const now = Date.now();
+  const last = passiveSkipLastLogged.get(key);
+  if (last !== undefined && now - last < PASSIVE_SKIP_RATE_LIMIT_MS) {
+    return false;
+  }
+  passiveSkipLastLogged.set(key, now);
+  return true;
+}
+
+/** Тестовый хук: сбросить rate-limit. Использовать только в тестах. */
+export function _resetPassiveSkipRateLimitForTesting(): void {
+  passiveSkipLastLogged.clear();
+}
+
 interface CacheEntry {
   resolved: ResolvedModel | null;
   expiresAt: number;
@@ -276,11 +307,15 @@ class ModelRoleResolverImpl {
     if (hasExplicitPreference) {
       const wanted = prefVal!.trim();
       if (opts.passive) {
-        logModelAction("RESOLVE-PASSIVE-SKIP", {
-          modelKey: wanted,
-          role,
-          reason: "passive caller would have triggered autoLoad — skipped per v1.0.7 guard",
-        });
+        /* v1.0.11: rate-limit логов чтобы не засорять lmstudio-actions.log
+           периодическими refresh'ами UI (каждые 8 секунд). */
+        if (shouldLogPassiveSkip(role, wanted)) {
+          logModelAction("RESOLVE-PASSIVE-SKIP", {
+            modelKey: wanted,
+            role,
+            reason: "passive caller would have triggered autoLoad — skipped per v1.0.7 guard (rate-limited 1/10min per role+model)",
+          });
+        }
         return null;
       }
       const loaded = await deps.autoLoad(wanted, role);

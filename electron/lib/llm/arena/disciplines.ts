@@ -826,4 +826,324 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
     },
   },
 
+  /* ─── v1.0.11 (2026-05-06): мощные дисциплины для thinking моделей ──────
+   *
+   * Цель: дать reasoning-моделям (gpt-oss-20b, qwen3.5-35b-a3b, deepseek-r1
+   * и т.п.) задачи, в которых их CoT-преимущество реально проявляется.
+   * Без этих дисциплин оценщик/кристаллизатор калибровались на простых
+   * англо-фактах, и быстрая ministral-3b могла легко обогнать тяжёлую
+   * thinking-модель — что приводило к выбору слабого чемпиона для
+   * production русско-украинского текста (см. CHANGELOG.md v1.0.11).
+   *
+   * Все три дисциплины:
+   *   - русский язык / cyrillic-heavy
+   *   - требуют multi-step рассуждения (не one-shot lookup для cryst/eval)
+   *   - имеют 6+ якорей фактов с конкретным scoring
+   *
+   * thinkingFriendly:
+   *   - crystallizer-ru-thinking-evolution → true (extraction = CoT win)
+   *   - evaluator-ru-thinking-kolmogorov   → true (multi-criteria reasoning)
+   *   - vision_illustration-zorich         → false (vision = perception,
+   *     не reasoning; см. tests/olympics-thinking-policy.test.ts)
+   *
+   * Roles покрытия после добавления:
+   *   crystallizer: 3 → 4 дисциплины (rover, prod-delta, ru-mendeleev, +ru-thinking-deep)
+   *   evaluator:    3 → 4 дисциплины (clrs, mid, noise, +ru-thinking-classification)
+   *   vision_illustration: 1 → 2 дисциплины (with-context, +zorich-textbook-context)
+   *   vision_ocr:   5 (без изменений в v1.0.11) */
+
+  {
+    /* Vision_illustration на странице учебника Зорича (используем ту же
+     * картинку что и для vision_ocr-ru-math-textbook — экономия памяти,
+     * один base64 в bundled fixtures). Разница: vision_ocr просит ТЕКСТ,
+     * vision_illustration просит ОПИСАНИЕ С УЧЁТОМ КОНТЕКСТА главы.
+     *
+     * В production иллюстрации из книг отправляются с metadata:
+     *   { chapterTitle, surrounding paragraphs }
+     * → описание потом индексируется в Qdrant для тематического поиска.
+     * Если модель «видит» только пиксели и не учитывает контекст —
+     * описание бесполезно для RAG.
+     *
+     * Тест проверяет:
+     *   1) распознала ли модель что это страница книги (а не картинка/диаграмма)
+     *   2) использует ли контекст «учебник матанализа, теория множеств»
+     *   3) упоминает ли ключевые элементы страницы (определения, обозначения, примеры)
+     *   4) даёт ли связный prose, а не bullet list или JSON
+     *
+     * Scorer: rubric-based, 5 анчоров × 0.20. Полный балл = 1.0. */
+    id: "vision_illustration-zorich-textbook-context",
+    role: "vision_illustration",
+    /* Намеренно НЕ thinkingFriendly: vision = perception, не reasoning.
+     * См. tests/olympics-thinking-policy.test.ts и docs/audits/2026-04-29-olympics-role-arena-audit.md
+     * Дисциплина остаётся мощной (rubric 5 анчоров на сложной странице),
+     * но efficiency формула штрафует медленные модели — это правильно для production. */
+    description:
+      "Описать страницу учебника математики с учётом контекста главы — production-grade RAG-задача.",
+    whyImportant:
+      "Vision_illustration в production отвечает за описание иллюстраций для индексации " +
+      "в Qdrant. Тест берёт реальный скан учебника В.А. Зорича «Математический анализ» " +
+      "и просит модель описать страницу В КОНТЕКСТЕ главы (теория множеств, " +
+      "определения функций). Слабые модели описывают только визуальные элементы " +
+      "(«страница с текстом, есть формулы»), сильные — связывают со специальностью " +
+      "(«страница из вступительной главы матанализа: множества, функции f: E₁ → E₂, " +
+      "обозначения объединения и пересечения»). Без этого теста чемпион " +
+      "vision_illustration-роли — модель которая хорошо описывает простые блоки, " +
+      "но не справляется с реальной книжной страницей с плотным текстом и формулами.",
+    system:
+      "You describe pages from technical books for a knowledge-base index. " +
+      "Use the chapter context to identify the topic and key elements. " +
+      "Output 2-4 sentences of plain prose in Russian or English. " +
+      "Mention: page type (text/illustration/mixed), main topic, key visible elements " +
+      "(definitions, notations, examples). No JSON, no markdown, no bullet lists.",
+    user:
+      "**Контекст главы:** Учебник «Математический анализ» В.А. Зорича. " +
+      "Вступительная глава: основы теории множеств, функции и отображения, " +
+      "базовые обозначения для дальнейшего изложения курса.\n\n" +
+      "Опиши эту страницу учебника в контексте главы:",
+    imageUrl: asImageDataUrl(VISION_OCR_RU_MATH),
+    maxTokens: 384,
+    score: (a) => {
+      const lower = a.toLowerCase();
+      let s = 0;
+
+      /* === АНЧОР 1: распознал тип контента (text-heavy page) === */
+      if (/text|текст|page|страниц|paragraph|абзац/.test(lower)) s += 0.15;
+
+      /* === АНЧОР 2: использует контекст «математика / матанализ» === */
+      const usesMathContext = /math|анализ|calculus|теори|множеств|set\s*theory|function|функци|отображени|mapping|analysis/.test(lower);
+      if (usesMathContext) s += 0.25;
+
+      /* === АНЧОР 3: упомянул конкретные элементы страницы === */
+      const elementHits = [
+        /definition|определени|обозначени|notation/,
+        /symbol|символ|formula|формул/,
+        /example|пример|theorem|теорем/,
+        /author|автор|introduction|вступ|preface|предислов/,
+        /\bf\b|\bf\(|f\s*:|→|\bx\s*∈|x\s*ε|element/,  /* функциональная нотация */
+      ];
+      const hits = elementHits.filter((rx) => rx.test(lower)).length;
+      s += Math.min(0.25, hits * 0.06); /* до 4 хитов даёт +0.24, capped 0.25 */
+
+      /* === АНЧОР 4: связное prose (1-4 предложения) === */
+      const sentences = (a.match(/[.!?]+\s|[.!?]+$/g) || []).length;
+      if (sentences >= 1 && sentences <= 5) s += 0.15;
+      if (a.length >= 80 && a.length <= 700) s += 0.10;
+
+      /* === АНЧОР 5: упомянул что это книжный текст === */
+      if (/book|book\s*page|учебник|textbook|knig/.test(lower)) s += 0.10;
+
+      /* === ШТРАФЫ === */
+      if (a.includes("```")) s -= 0.20;
+      if (/^\s*\{/.test(a)) s -= 0.30; /* JSON вместо prose */
+      if (/^\s*[-•*]\s/m.test(a)) s -= 0.10; /* bullet list */
+      if (a.length < 50) s -= 0.20; /* слишком коротко */
+      if (a.length > 900) s -= 0.10; /* раздуто */
+      /* Hallucination: модель описывает то чего на странице явно нет. */
+      if (/diagram|chart|graph\s+with|illustration\s+of\s+a|photo|photograph/.test(lower)) s -= 0.10;
+
+      return Math.max(0, Math.min(1, s));
+    },
+  },
+
+  {
+    /* Crystallizer для thinking моделей на ПЛОТНОМ русском тексте. Источник —
+     * научно-популярный фрагмент про эволюцию (Дарвин/Уоллес), 6 фактов
+     * + 7 сущностей + причинно-следственные связи + даты + персоналии.
+     *
+     * Зачем именно thinking: extraction multi-факт из плотного prose-текста
+     * — задача где CoT даёт +12 пунктов quality (LiteCoST ICLR'26).
+     * Быстрая модель пропустит 2-3 факта, thinking — выдернет всё.
+     *
+     * scoring: рубрики facts/entities/anchors/relations + штрафы за галлюцинации. */
+    id: "crystallizer-ru-thinking-evolution",
+    role: "crystallizer",
+    thinkingFriendly: true,
+    description:
+      "Extraction из плотного русского текста (6+ фактов, 7+ сущностей, причинно-следственные связи).",
+    whyImportant:
+      "Тяжёлая extraction-задача на русском: фрагмент истории науки с 6 ключевыми " +
+      "фактами и 7 сущностями (персоналии, даты, концепты, географические имена). " +
+      "Быстрые модели пропускают 2-3 факта или путают даты, thinking-модели " +
+      "(qwen3.5-35b-a3b, gpt-oss-20b) выдёргивают всё. Без этого теста чемпион " +
+      "crystallizer-роли — модель которая хорошо выдёргивает из коротких " +
+      "англо-абзацев, но провалит реальный русский научный текст. " +
+      "Scoring: 4 рубрики (структура / facts ≥6 / entities ≥6 / якоря) с штрафом за галлюцинации.",
+    system:
+      "Извлеки структурированные знания из текста. Ответ ТОЛЬКО валидный JSON: " +
+      '{"facts":[string],"entities":[{"name":string,"type":string}],"relations":[{"subject":string,"predicate":string,"object":string}]}. ' +
+      "Каждый факт — отдельное самодостаточное утверждение. Каждая сущность — " +
+      "имя собственное / термин / концепт из текста. relations — связи S-P-O " +
+      "(subject-predicate-object), без is/was/has в predicate. " +
+      "Извлекай ВСЁ что есть в тексте, не упускай даты, имена, географию.",
+    user:
+      "Извлеки знания из фрагмента:\n\n" +
+      '"В 1859 году Чарлз Дарвин опубликовал труд «Происхождение видов», ' +
+      "представив теорию естественного отбора как механизм эволюции. " +
+      "Параллельно британский натуралист Альфред Рассел Уоллес независимо " +
+      "пришёл к схожим выводам, изучая фауну Малайского архипелага. " +
+      "Совместный доклад Дарвина и Уоллеса был зачитан в Лондонском Линнеевском " +
+      "обществе годом ранее, в июле 1858. Ключевая идея — выживание организмов, " +
+      "наиболее приспособленных к среде, — объясняла происхождение биологического " +
+      "разнообразия без обращения к телеологии. Современный эволюционный синтез " +
+      "(1930-1940-е) объединил дарвинизм с генетикой Менделя через работы " +
+      'Рональда Фишера, Дж. Б. С. Холдейна и Сьюэлла Райта."',
+    maxTokens: 1024,
+    score: (a) => {
+      const parsed = tryParseJson(a);
+      if (!parsed || typeof parsed !== "object") return 0;
+      const obj = parsed as { facts?: unknown[]; entities?: unknown[]; relations?: unknown[] };
+      if (!Array.isArray(obj.facts) || !Array.isArray(obj.entities)) return 0.10;
+
+      let s = 0.15;
+
+      /* === ПОЛНОТА FACTS (6 ключевых фактов в источнике): 0.20 === */
+      const factCount = obj.facts.length;
+      if (factCount >= 6)      s += 0.20;
+      else if (factCount === 5) s += 0.16;
+      else if (factCount === 4) s += 0.12;
+      else if (factCount === 3) s += 0.08;
+      else if (factCount === 2) s += 0.04;
+
+      /* === ПОЛНОТА ENTITIES (7 ожидаемых: Дарвин, Уоллес, Малайский, Линнеевское,
+             Фишер, Холдейн, Райт): 0.15 === */
+      const entCount = obj.entities.length;
+      if (entCount >= 7)      s += 0.15;
+      else if (entCount >= 5) s += 0.10;
+      else if (entCount >= 3) s += 0.06;
+      else if (entCount >= 2) s += 0.03;
+
+      /* === RELATIONS (S-P-O): 0.10 === */
+      if (Array.isArray(obj.relations)) {
+        const rels = obj.relations as Array<Record<string, unknown>>;
+        const valid = rels.filter((r) => {
+          if (!r || typeof r !== "object") return false;
+          if (typeof r.subject !== "string" || typeof r.predicate !== "string" || typeof r.object !== "string") return false;
+          const pred = (r.predicate as string).trim().toLowerCase();
+          return !/^(is|was|are|were|has|have|had|быть|был|есть|являться)$/.test(pred);
+        });
+        if (valid.length >= 3)      s += 0.10;
+        else if (valid.length >= 2) s += 0.07;
+        else if (valid.length >= 1) s += 0.04;
+      }
+
+      /* === ФАКТ-ЯКОРЯ из текста: 0.30 === */
+      const allText = JSON.stringify(parsed).toLowerCase();
+      const anchors = [
+        /1859|18\s*59/,                            /* год Происхождения */
+        /1858/,                                     /* год Линнеевского доклада */
+        /дарвин|darwin/,
+        /уоллес|wallace/,
+        /происхождени|origin\s*of/,
+        /естественн[оы]й\s*отбор|natural\s*selection/,
+        /малайск|malay/,
+        /линнеевск|linnean/,
+        /фишер|fisher/,
+        /холдейн|haldane/,
+        /райт|wright/,
+        /синтез|synthesis|менд[еэ]ль|mendel/,
+      ];
+      const hits = anchors.filter((rx) => rx.test(allText)).length;
+      s += Math.min(0.30, hits * 0.03); /* 12 якорей × 0.03 = ≤ 0.36 → cap 0.30 */
+
+      /* === ШТРАФЫ ЗА ГАЛЛЮЦИНАЦИИ === */
+      /* Распространённые ложные ассоциации: */
+      if (/ламарк|lamarck|geoffroy|жоффруа/.test(allText)) s -= 0.10;
+      if (/докинз|dawkins|gould|гулд|майр|mayr/.test(allText)) s -= 0.05; /* современники не упомянуты в тексте */
+      if (/\b(1850|1851|1855|1860|1862|1865|1900)\b/.test(allText)) s -= 0.05; /* неверные годы */
+      /* Markdown fences */
+      if (a.includes("```")) s -= 0.05;
+
+      /* === ВАЛИДНОСТЬ entities === */
+      const validEntities = obj.entities.filter((e: unknown) => {
+        if (!e || typeof e !== "object") return false;
+        const en = e as { name?: unknown; type?: unknown };
+        return typeof en.name === "string" && en.name.length >= 2 && typeof en.type === "string";
+      });
+      if (entCount > 0 && validEntities.length / entCount < 0.5) s -= 0.10;
+
+      return Math.max(0, Math.min(1, s));
+    },
+  },
+
+  {
+    /* Evaluator для thinking моделей на русском academic тексте. Задача —
+     * оценить русскоязычный научный труд (Колмогоров «Основные понятия теории
+     * вероятностей», 1933) с многокритериальным обоснованием. Ожидаемый
+     * score: 9-10 (foundational work, до сих пор в curriculum'е).
+     *
+     * Зачем thinking: оценка должна взвесить ИСТОРИЧЕСКОЕ значение
+     * (foundational), УЗКОСТЬ (только теория вероятностей), ВОЗРАСТ (1933),
+     * ЯЗЫК ОРИГИНАЛА (русский → ограничивает доступность для англо-аудитории),
+     * АКТУАЛЬНОСТЬ (нотация устарела, но axioms остались стандартом).
+     * Это multi-step reasoning, не one-shot lookup. */
+    id: "evaluator-ru-thinking-kolmogorov",
+    role: "evaluator",
+    thinkingFriendly: true,
+    description:
+      "Оценить русскоязычную foundational работу с multi-criteria обоснованием (классика, но узкая).",
+    whyImportant:
+      "Тяжёлая evaluator-задача: русскоязычная foundational монография " +
+      "(Колмогоров, 1933) — основа аксиоматической теории вероятностей. " +
+      "Тест проверяет: 1) score ∈ [9,10] (классика); 2) обоснование упоминает " +
+      "и силу (axioms / foundational), и ограничения (узкая область / возраст / " +
+      "русский оригинал); 3) распознаёт исторический контекст. Слабые модели " +
+      "ставят 6-7 («слишком старая»), thinking-модели правильно взвешивают " +
+      "историческое значение. Без теста evaluator-чемпион — модель которая хорошо " +
+      "оценивает английскую современную классику (CLRS), но недооценивает " +
+      "русскую советскую науку — это критично для русско-украинской библиотеки.",
+    system:
+      "Ты оцениваешь книги для технической базы знаний. Score 0-10 " +
+      "(10 = эталонная работа, до сих пор актуальная; 5 = полезная, но не foundational; " +
+      "1 = шум). Обоснуй балл указав сильные стороны И ограничения. " +
+      'Ответ ТОЛЬКО валидный JSON: {"score":number,"reasoning":string}.',
+    user:
+      'Книга: А.Н. Колмогоров, «Основные понятия теории вероятностей» (Grundbegriffe ' +
+      "der Wahrscheinlichkeitsrechnung). Год: 1933 (немецкий оригинал), русский " +
+      "перевод 1936. Объём: 80 страниц. Содержание: аксиоматическое построение " +
+      "теории вероятностей через теорию меры, σ-алгебры, условные вероятности. " +
+      "Установила стандартные аксиомы (неотрицательность, нормировка, σ-аддитивность), " +
+      "которые до сих пор в каждом учебнике мат.статистики и теории вероятностей. " +
+      "Узкая область (только foundations probability), нотация местами архаична, " +
+      "но axioms остались стандартом. Используется в graduate-курсах ведущих " +
+      "университетов. Полезна как историческое чтение и как краткий справочник аксиом.",
+    maxTokens: 384,
+    score: (a) => {
+      const parsed = tryParseJson(a) as { score?: number; reasoning?: string } | null;
+      if (!parsed || typeof parsed.score !== "number") return 0;
+
+      let s = 0;
+
+      /* === SCORE: foundational classic — ожидаем 9-10, допускаем 8 === */
+      if (parsed.score >= 9 && parsed.score <= 10)      s += 0.45;
+      else if (parsed.score === 8)                       s += 0.30;
+      else if (parsed.score === 7)                       s += 0.15;
+      else if (parsed.score >= 5 && parsed.score <= 6)   s += 0.05; /* недооценка */
+      /* < 5 или > 10 — крайности, 0 баллов */
+
+      /* === REASONING: должно содержать И силу, И ограничение === */
+      if (typeof parsed.reasoning === "string") {
+        const r = parsed.reasoning.toLowerCase();
+        if (r.length >= 40) s += 0.10;
+        if (r.length >= 100) s += 0.05;
+
+        /* --- Анчор силы (foundational / axioms / classic) --- */
+        const hasStrength = /(foundational|основополагающ|axiom|аксиом|standard|стандарт|classic|классик|до\s*сих\s*пор|still|reference|эталон|established|установил|базов|fundamental)/.test(r);
+
+        /* --- Анчор ограничения (age / niche / archaic / language) --- */
+        const hasLimitation = /(narrow|узк|niche|outdated|устар|archaic|архаичн|только|only|specific|specialized|niche|specialized|limited|ограничен|short|небольш|brief|русск|german|немецк|оригинал)/.test(r);
+
+        if (hasStrength && hasLimitation)       s += 0.20; /* сбалансированное обоснование */
+        else if (hasStrength || hasLimitation)  s += 0.05;
+
+        /* --- Конкретные факты-якоря --- */
+        if (/колмогоров|kolmogorov/.test(r)) s += 0.05;
+        if (/probability|вероятност/.test(r)) s += 0.05;
+        if (/1933|193\d|grundbegriffe/.test(r)) s += 0.05;
+        if (/measure\s*theory|теори[яи]\s*мер|σ-алгебр|sigma\s*algebra/.test(r)) s += 0.05;
+      }
+
+      return Math.max(0, Math.min(1, s));
+    },
+  },
+
 ];
