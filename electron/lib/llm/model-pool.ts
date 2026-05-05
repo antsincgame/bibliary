@@ -82,12 +82,21 @@ const KNOWN_MODEL_ROLES: ReadonlySet<ModelRole> = new Set<ModelRole>([
  * Только для ролей из KNOWN_MODEL_ROLES — сторонние строки role
  * (например "evaluator-prewarm", "ui-load", "test") не трогают opts.
  */
+/**
+ * Default TTL (30 min) для моделей загруженных через pool. Страховка: если
+ * Bibliary крэшнул/force-kill без graceful shutdown, LM Studio сам выгрузит
+ * модель через TTL вместо того чтобы держать её в VRAM бесконечно.
+ */
+const DEFAULT_POOL_TTL_SEC = 1800;
+
 function applyRoleDefaults(role: string | undefined, opts: LoadOptions): LoadOptions {
-  if (!role || !KNOWN_MODEL_ROLES.has(role as ModelRole)) return opts;
+  if (!role || !KNOWN_MODEL_ROLES.has(role as ModelRole)) {
+    return { ...opts, ttlSec: opts.ttlSec ?? DEFAULT_POOL_TTL_SEC };
+  }
   const cfg = getRoleLoadConfig(role as ModelRole);
   return {
     contextLength: opts.contextLength ?? cfg.contextLength,
-    ttlSec: opts.ttlSec,
+    ttlSec: opts.ttlSec ?? DEFAULT_POOL_TTL_SEC,
     gpuOffload: opts.gpuOffload ?? mapGpuRatio(cfg.gpu?.ratio),
   };
 }
@@ -450,6 +459,28 @@ export class ModelPool {
    */
   async evictAll(): Promise<number> {
     return this.runOnChain(async () => this.evictAllInternal());
+  }
+
+  /**
+   * Принудительно выгрузить ВСЕ модели — включая pinned (refCount > 0).
+   * Используется ТОЛЬКО при app shutdown: мы всё равно умираем, незачем
+   * оставлять модели висеть в LM Studio без хозяина.
+   */
+  async forceEvictAll(): Promise<number> {
+    return this.runOnChain(async () => {
+      const all = [...this.entries.values()];
+      let unloaded = 0;
+      for (const entry of all) {
+        try {
+          await this.unloadFn(entry.identifier);
+          unloaded += 1;
+        } catch (e) {
+          console.warn(`[model-pool] forceEvictAll: unload(${entry.modelKey}) failed`, e);
+        }
+        this.entries.delete(entry.modelKey);
+      }
+      return unloaded;
+    });
   }
 
   /**

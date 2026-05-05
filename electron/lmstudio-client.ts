@@ -201,6 +201,9 @@ export function refreshLmStudioClient(): void {
 }
 
 function dropClient(): void {
+  if (cachedClient) {
+    cachedClient[Symbol.asyncDispose]?.().catch(() => {});
+  }
   cachedClient = null;
 }
 

@@ -267,13 +267,13 @@ if (!gotLock) {
   async function disposeAllLmStudioResources(): Promise<void> {
     try {
       const evicted = await Promise.race([
-        getModelPool().evictAll(),
-        new Promise<number>((resolve) => setTimeout(() => resolve(-1), 1_500).unref()),
+        getModelPool().forceEvictAll(),
+        new Promise<number>((resolve) => setTimeout(() => resolve(-1), 2_000).unref()),
       ]);
-      if (evicted >= 0) console.log(`[main/shutdown] model-pool.evictAll: ${evicted} models unloaded`);
-      else console.warn("[main/shutdown] model-pool.evictAll: TIMEOUT (1.5s)");
+      if (evicted >= 0) console.log(`[main/shutdown] model-pool.forceEvictAll: ${evicted} models unloaded`);
+      else console.warn("[main/shutdown] model-pool.forceEvictAll: TIMEOUT (2s)");
     } catch (err) {
-      console.error("[main/shutdown] model-pool.evictAll Error:", err);
+      console.error("[main/shutdown] model-pool.forceEvictAll Error:", err);
     }
     try {
       const closedOk = await disposeClientAsync(1_500);
