@@ -197,6 +197,37 @@ export async function bootstrapLibrarySubsystem(getMainWindow: () => BrowserWind
   ensureImportLogBridge(getMainWindow);
   registerLibraryLlmLockProbes();
   void ensureEvaluatorBootstrap();
+
+  /* v1.0.2: one-shot startup purge of dead imports (incomplete-torrent files
+     that slipped through before file-validity guard existed). Runs in the
+     background after evaluator bootstrap; non-blocking, idempotent. Result
+     broadcast via `library:purge-progress` so UI can show a toast. */
+  void runStartupPurgeOnce(getMainWindow);
+}
+
+let startupPurgeRan = false;
+async function runStartupPurgeOnce(getMainWindow: () => BrowserWindow | null): Promise<void> {
+  if (startupPurgeRan) return;
+  startupPurgeRan = true;
+  try {
+    const { purgeDeadImports } = await import("../lib/library/dead-import-purger.js");
+    const t0 = Date.now();
+    const result = await purgeDeadImports({});
+    const elapsedMs = Date.now() - t0;
+    if (result.purged > 0 || result.missing > 0) {
+      console.warn(`[startup-purge] removed ${result.purged} dead imports, ${result.missing} missing-file rows, freed ${(result.freedBytes / 1024 / 1024).toFixed(1)} MB in ${elapsedMs}ms`);
+      const win = getMainWindow();
+      if (win && !win.isDestroyed()) {
+        try {
+          win.webContents.send("library:purge-progress", { phase: "done", ...result, elapsedMs });
+        } catch {
+          /* swallow */
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[startup-purge] failed (non-fatal):", (err as Error).message);
+  }
 }
 
 /**

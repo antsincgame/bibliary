@@ -598,7 +598,7 @@ function renderReader(root) {
      наличия обложки. Книги с failed-import часто не имеют ни обложки, ни
      нормального текста (только стаб "Import failed."). */
   if (!meaningful) {
-    readerContainer.appendChild(buildEmptyBodyBanner(currentBook.bookId, meta));
+    readerContainer.appendChild(buildEmptyBodyBanner(currentBook.bookId, meta, root));
   }
 
 }
@@ -625,23 +625,37 @@ function isMeaningfulMarkdown(html) {
 /**
  * @param {string} bookId
  * @param {any} [meta]
+ * @param {Element} [root]
  */
-function buildEmptyBodyBanner(bookId, meta) {
+function buildEmptyBodyBanner(bookId, meta, root) {
   const status = meta?.status;
+  const warnings = Array.isArray(meta?.warnings) ? meta.warnings : [];
   let reasonText = t("library.reader.empty.body");
   if (status === "unsupported") {
     reasonText = t("library.reader.empty.unsupported");
   } else if (status === "failed") {
-    const warn = Array.isArray(meta?.warnings) && meta.warnings.length > 0
-      ? meta.warnings[0]
-      : null;
+    const warn = warnings.length > 0 ? warnings[0] : null;
     reasonText = warn
       ? t("library.reader.empty.failed", { reason: warn })
       : t("library.reader.empty.failedGeneric");
   }
 
-  return el("div", { class: "lib-reader-empty-banner" }, [
-    el("div", { class: "lib-reader-empty-banner-text" }, reasonText),
+  /* v1.0.2: surface diagnostic so user knows WHY parsing failed (incomplete
+     torrent, missing DjVuLibre, DRM, etc.). Show top 3 warnings; full list
+     is in book.md frontmatter. */
+  const diagBlock = warnings.length > 0
+    ? el("details", { class: "lib-reader-empty-diagnostic" }, [
+        el("summary", {}, t("library.reader.empty.diagnosticSummary")),
+        el("ul", { class: "lib-reader-empty-diagnostic-list" },
+          warnings.slice(0, 5).map((w) => el("li", {}, String(w))),
+        ),
+      ])
+    : null;
+
+  const children = [el("div", { class: "lib-reader-empty-banner-text" }, reasonText)];
+  if (diagBlock) children.push(diagBlock);
+
+  const actions = el("div", { class: "lib-reader-empty-banner-actions" }, [
     el("button", {
       class: "lib-btn lib-btn-primary",
       type: "button",
@@ -653,7 +667,35 @@ function buildEmptyBodyBanner(bookId, meta) {
         }
       },
     }, t("library.reader.empty.openOriginal")),
+    el("button", {
+      class: "lib-btn lib-btn-ghost lib-reader-action-burn",
+      type: "button",
+      onclick: async () => {
+        const { showConfirm, showAlert } = await import("../components/ui-dialog.js");
+        const ok = await showConfirm(
+          t("library.reader.empty.deleteConfirm", { title: meta?.title || "" }),
+        );
+        if (!ok) return;
+        try {
+          const { STATE } = await import("./state.js");
+          const activeCollection = STATE.targetCollection || STATE.collection || undefined;
+          const result = await window.api.library.deleteBook(bookId, true, activeCollection);
+          if (result && result.ok !== false) {
+            if (root) closeReader(root);
+            const { renderCatalog } = await import("./catalog.js");
+            if (root) await renderCatalog(root);
+          } else {
+            await showAlert(t("library.reader.empty.deleteFailed", { reason: result?.reason || "" }));
+          }
+        } catch (e) {
+          await showAlert(t("library.reader.empty.deleteFailed", { reason: e instanceof Error ? e.message : String(e) }));
+        }
+      },
+    }, t("library.reader.empty.deleteFromCatalog")),
   ]);
+  children.push(actions);
+
+  return el("div", { class: "lib-reader-empty-banner" }, children);
 }
 
 /* ── Reader theme switcher ──────────────────────────────────────────── */

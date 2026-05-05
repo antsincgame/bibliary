@@ -601,6 +601,45 @@ export function buildCatalogBottomBar(root, deps) {
     }),
   }, t("library.catalog.btn.enrichIllustrations"));
 
+  /* v1.0.2: Sweep dead imports (incomplete-torrent files). Always visible
+     in advanced mode -- one-click cleanup of the catalog from corrupted
+     book entries that snuck in before file-validity guard existed. */
+  const purgeDeadBtn = el("button", {
+    type: "button", class: "lib-btn lib-btn-ghost",
+    "data-mode-min": "advanced",
+    title: t("library.catalog.action.purgeDead.tooltip"),
+    onclick: (ev) => void withButtonBusy(ev, async () => {
+      if (!(await showConfirm(t("library.catalog.action.purgeDead.confirm"), {
+        title: t("library.catalog.action.purgeDead"),
+        okText: t("library.catalog.action.purgeDead"),
+      }))) return;
+      try {
+        const r = /** @type {any} */ (await window.api.library.purgeDeadImports());
+        if (!r?.ok) {
+          await showAlert(t("library.catalog.action.purgeDead.failed", { reason: r?.reason || "" }));
+          return;
+        }
+        const purged = Number(r.purged ?? 0);
+        const skipped = Number(r.skipped ?? 0);
+        const freedMb = ((Number(r.freedBytes ?? 0)) / 1024 / 1024).toFixed(1);
+        if (purged === 0) {
+          setCatalogStatus(root, t("library.catalog.action.purgeDead.empty"));
+        } else {
+          setCatalogStatus(root, t("library.catalog.action.purgeDead.done", {
+            purged: String(purged),
+            mb: freedMb,
+            skipped: String(skipped),
+          }));
+        }
+        await renderCatalog(root);
+      } catch (e) {
+        await showAlert(t("library.catalog.action.purgeDead.failed", {
+          reason: e instanceof Error ? e.message : String(e),
+        }));
+      }
+    }),
+  }, t("library.catalog.action.purgeDead"));
+
   deleteBtn.dataset.modeMin = "pro";
 
   const reparseBtn = el("button", {
@@ -718,7 +757,7 @@ export function buildCatalogBottomBar(root, deps) {
   return el("div", { class: "lib-catalog-bottombar" }, [
     metaRow,
     el("div", { class: "lib-catalog-bottom-actions" }, [
-      selectAllBtn, clearBtn, reevaluateBtn, enrichIllustrationsBtn, reparseBtn, deleteBtn, burnAllBtn, chunksBtn, revertBtn, cancelBatchBtn,
+      selectAllBtn, clearBtn, reevaluateBtn, enrichIllustrationsBtn, reparseBtn, purgeDeadBtn, deleteBtn, burnAllBtn, chunksBtn, revertBtn, cancelBatchBtn,
     ]),
     batchSummary,
   ]);

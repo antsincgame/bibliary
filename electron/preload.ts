@@ -737,6 +737,23 @@ contextBridge.exposeInMainWorld("api", {
       smokeLibrary
         ? Promise.resolve({ ok: true, processed: 0, alreadyDone: 0, skipped: bookIds.length, errors: 0, bookCount: bookIds.length })
         : ipcRenderer.invoke("library:enrich-illustrations", bookIds),
+    /**
+     * v1.0.2: Sweep dead imports (incomplete-torrent files filled with 0xFF/0x00).
+     * Manually triggered from catalog UI. Returns summary for toast display.
+     */
+    purgeDeadImports: (): Promise<{
+      ok: boolean;
+      reason?: string;
+      scanned?: number;
+      purged?: number;
+      skipped?: number;
+      missing?: number;
+      freedBytes?: number;
+      purgedDetails?: Array<{ id: string; title: string; reason: string; bytes: number }>;
+    }> =>
+      smokeLibrary
+        ? Promise.resolve({ ok: true, scanned: 0, purged: 0, skipped: 0, missing: 0, freedBytes: 0, purgedDetails: [] })
+        : ipcRenderer.invoke("library:purge-dead-imports"),
     onImportProgress: (cb: (payload: {
       importId: string;
       phase: "discovered" | "file-start" | "processed" | "scan-complete";

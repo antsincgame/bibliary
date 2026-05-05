@@ -4,6 +4,44 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] — 2026-05-05
+
+Hotfix release after the v1.0.1 regression report: imported books appeared in the
+catalog as `@unsupported` with empty bodies and never received quality scores.
+Root cause was traced to byte-corrupt source files (sentinel `0xFF`, classic
+incomplete BitTorrent downloads). The pre-MVP `verifyMagic` guard had been
+removed for being too strict; this release reintroduces a **lenient,
+multi-sample integrity check** that catches only provably useless files, plus a
+one-shot startup purger for already-imported corpses.
+
+### Added
+
+- **`electron/lib/scanner/file-validity.ts`** -- new module `detectIncompleteFile()` that probes 4 disjoint 4 KB samples (offset 0 / 25% / 75% / end) of a candidate file. Rejects only when **all four** samples are uniform AND the dominant byte matches across them (signals: `0xFF` = incomplete torrent, `0x00` = sparse-allocated, anything else = uniform garbage). Lenient by design: any single entropic block keeps the file. Exports `classifyFileSamples()` for sync use & tests.
+- **`electron/lib/library/dead-import-purger.ts`** -- new `purgeDeadImports()`. Streams all `status: "unsupported"` books, resolves their original file path via `meta.json`, runs `detectIncompleteFile()`, and -- only when the file is *proven* corrupt -- deletes the original, the `.md`, the `.meta.json`, the illustrations sidecar, the now-empty book directory, and the catalog row. Reports total bytes freed.
+- **Startup auto-purge** (`library-ipc-state.ts`): runs once on app boot, after evaluator bootstrap, in the background. Broadcasts `library:purge-progress` events to the renderer. Per the v1.0.2 user mandate -- _"already-imported broken books should be deleted automatically"_.
+- **IPC channel `library:purge-dead-imports`** + preload method `window.api.library.purgeDeadImports()` for manual re-runs from the UI.
+- **Catalog toolbar button "Сжечь мёртвые импорты"** (`renderer/library/catalog.js`, `data-mode-min="advanced"`). Confirms, calls the new IPC, shows toast with bytes freed.
+- **Reader diagnostic banner** (`renderer/library/reader.js`): for `status: "unsupported"` books the empty-body banner now (a) shows the first 5 import warnings as a `<details>` block and (b) offers a "Удалить из каталога" button alongside "Открыть оригинал".
+- **i18n** keys for the new banner & button -- `library.reader.empty.{unsupported,diagnosticSummary,deleteFromCatalog,deleteConfirm,deleteFailed}` and `library.catalog.action.purgeDead.*` in both `ru.js` and `en.js`.
+- **Unit tests** (`tests/file-validity.test.ts`) -- 11 cases covering all-FF, all-00, single-byte garbage, synthetic valid PDF, mixed buffers, tiny files, missing files, and the sync `classifyFileSamples` path.
+
+### Changed
+
+- **`electron/lib/library/file-walker.ts`** -- new `WalkOptions.rejectIncomplete` flag (lenient `detectIncompleteFile()`) and `onIncompleteReject` callback. Runs **before** the legacy `verifyMagic` check.
+- **`electron/lib/library/import.ts`** -- enables `rejectIncomplete: true` and surfaces incomplete-guard skips as warnings + processed events with `outcome: "skipped"`.
+
+### Verified
+
+- `tsc --noEmit -p tsconfig.electron.json` -- 0 errors
+- `npm run lint` -- 0 errors, 0 warnings
+- `npm run test:fast` -- 931 passing (was 920 before file-validity tests added), 0 new regressions; the 55 pre-existing `ERR_DLOPEN_FAILED` failures from the v1.0.1 baseline remain (Windows native `better-sqlite3` binding), unaffected by this release.
+
+### User decisions captured (from `/imperor` AskQuestion 2026-05-05)
+
+- Q1 → **A**: smart guard checks first 32 bytes for ALL-`0xFF` / ALL-`0x00` (incomplete-torrent signature); does **not** require strict `%PDF`/`AT&T` magic. Implementation: 4-sample multi-probe (4 KB each) for stronger signal, same lenient policy.
+- Q2 → **A**: auto-delete every `unsupported` book whose original file fails the validity probe, on next startup. Implementation: `purgeDeadImports()` in `dead-import-purger.ts`, kicked off from `bootstrapLibrarySubsystem()`.
+- Q3 → **custom**: a corrupt file _shouldn't reach the catalog at all_; if one slips through, prove it's broken before blaming the parser. Implementation: reader banner now shows actual import warnings (parser diagnostics) + lets the user delete the entry, while the walker rejects the file upstream.
+
 ## [1.0.1] — 2026-05-05
 
 Pre-production polish after MVP v1.0 cutdown. No behavioral changes -- code review,

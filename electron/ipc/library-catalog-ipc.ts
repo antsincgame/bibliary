@@ -409,6 +409,36 @@ export function registerLibraryCatalogIpc(): void {
   );
 
   /**
+   * v1.0.2: Ручной запуск sweep'а битых импортов из UI.
+   *
+   * Сканирует unsupported-книги, проверяет original через file-validity
+   * (multi-sample byte check), удаляет те где original = incomplete-torrent
+   * или sparse-allocated. Возвращает summary {scanned, purged, missing,
+   * skipped, freedBytes}. Idempotent.
+   */
+  ipcMain.handle(
+    "library:purge-dead-imports",
+    async (): Promise<{
+      ok: boolean;
+      reason?: string;
+      scanned?: number;
+      purged?: number;
+      skipped?: number;
+      missing?: number;
+      freedBytes?: number;
+      purgedDetails?: Array<{ id: string; title: string; reason: string; bytes: number }>;
+    }> => {
+      try {
+        const { purgeDeadImports } = await import("../lib/library/dead-import-purger.js");
+        const result = await purgeDeadImports({});
+        return { ok: true, ...result };
+      } catch (e) {
+        return { ok: false, reason: e instanceof Error ? e.message : String(e) };
+      }
+    },
+  );
+
+  /**
    * Iter 13.2 (P6): "Сжечь библиотеку" — total reset для dev-режима.
    *
    * Удаляет:

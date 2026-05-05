@@ -21,6 +21,7 @@ import { detectExt, type SupportedExt } from "../scanner/parsers/index.js";
 import { isArchive } from "./archive-extractor.js";
 import { shouldIncludeImportCandidate } from "./import-candidate-filter.js";
 import { verifyExtMatchesContent } from "./import-magic-guard.js";
+import { detectIncompleteFile } from "../scanner/file-validity.js";
 
 export interface WalkOptions {
   /** Если true, архивы (zip/cbz/...) тоже yields для последующей распаковки. */
@@ -55,6 +56,16 @@ export interface WalkOptions {
   rejectPartialSiblings?: boolean;
   /** Callback when a file is rejected by partial-sibling guard. */
   onPartialReject?: (filePath: string, marker: string) => void;
+  /**
+   * If true, skip files that look like incomplete BitTorrent downloads or
+   * sparse-allocated garbage (uniform 0xFF/0x00 bytes across the whole file).
+   * Lenient — does NOT require %PDF/AT&T headers; only catches obviously
+   * useless files. Default `false`. Production `importFolderToLibrary` enables
+   * it explicitly. See `electron/lib/scanner/file-validity.ts`.
+   */
+  rejectIncomplete?: boolean;
+  /** Callback when a file is rejected by incomplete-guard. */
+  onIncompleteReject?: (filePath: string, reason: string) => void;
 }
 
 /**
@@ -238,6 +249,20 @@ export async function* walkSupportedFiles(
           if (opts.onPartialReject) {
             try {
               opts.onPartialReject(full, marker);
+            } catch {
+              /* swallow logger errors — they must never break the walker */
+            }
+          }
+          continue;
+        }
+      }
+
+      if (opts.rejectIncomplete === true && isBook) {
+        const verdict = await detectIncompleteFile(full);
+        if (!verdict.valid) {
+          if (opts.onIncompleteReject && verdict.reason) {
+            try {
+              opts.onIncompleteReject(full, verdict.reason);
             } catch {
               /* swallow logger errors — they must never break the walker */
             }
