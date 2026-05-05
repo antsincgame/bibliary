@@ -91,15 +91,27 @@ describe("[model-role-resolver] preference source", () => {
     }
   });
 
-  test("skips preference when preferred model is not in loaded list", async () => {
+  test("returns null when preferred model is not loaded (no silent substitution)", async () => {
     _setResolverDepsForTests({
       listLoaded: async () => [makeModel("qwen/available-model")],
       getPrefs: async () => makePrefs({ extractorModel: "ghost/not-loaded" }),
     });
     const r = await modelRoleResolver.resolve("crystallizer");
-    assert.ok(r !== null);
-    assert.notEqual(r!.source, "preference");
-    assert.equal(r!.usedFallback, true);
+    assert.equal(r, null, "must NOT silently substitute another loaded model when user chose a specific one");
+  });
+
+  test("falls back to CSV fallback even when preferred not loaded", async () => {
+    _setResolverDepsForTests({
+      listLoaded: async () => [makeModel("fb/model")],
+      getPrefs: async () => makePrefs({
+        extractorModel: "ghost/not-loaded",
+        extractorModelFallbacks: "also-ghost,fb/model",
+      }),
+    });
+    const r = await modelRoleResolver.resolve("crystallizer");
+    assert.ok(r !== null, "CSV fallback should still work");
+    assert.equal(r!.modelKey, "fb/model");
+    assert.equal(r!.source, "fallback_list");
   });
 });
 

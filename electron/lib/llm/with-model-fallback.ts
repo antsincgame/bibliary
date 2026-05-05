@@ -147,8 +147,15 @@ function filterOrderedCandidatesAgainstLoadedSync(
   };
   const filtered = orderedCandidates.filter(ok);
   if (filtered.length === 0) {
-    const auto = loaded.find((m) => requiredCaps.every((c) => c !== "vision" || m.vision));
-    if (auto) return [auto.modelKey];
+    /* Если пользователь задал конкретные кандидаты (preferred + CSV fallbacks),
+       но ни один не загружен — НЕ подставляем произвольную loaded LLM. Это
+       скрытая подмена: Qwen вместо Gemma → неверные результаты.
+       Auto-fallback допускается только если кандидатов не было вообще
+       (т.е. пользователь не выбирал модель для роли). */
+    if (orderedCandidates.length === 0) {
+      const auto = loaded.find((m) => requiredCaps.every((c) => c !== "vision" || m.vision));
+      if (auto) return [auto.modelKey];
+    }
   }
   return filtered;
 }

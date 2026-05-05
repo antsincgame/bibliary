@@ -194,8 +194,9 @@ class ModelRoleResolverImpl {
     /* 1. Явный выбор пользователя — сначала роль-специфичный pref. */
     const prefKey = ROLE_PREF_KEY[role];
     const prefVal = (prefs as Record<string, unknown>)[prefKey];
-    if (typeof prefVal === "string" && prefVal.trim()) {
-      const wanted = prefVal.trim();
+    const hasExplicitPreference = typeof prefVal === "string" && prefVal.trim().length > 0;
+    if (hasExplicitPreference) {
+      const wanted = prefVal!.trim();
       if (eligible.some((m) => m.modelKey === wanted)) {
         return { modelKey: wanted, source: "preference" };
       }
@@ -214,13 +215,22 @@ class ModelRoleResolverImpl {
         }
       }
     }
-    /* 3. Auto-detect по preferred capabilities */
+
+    /* 2.5. Если пользователь явно задал модель, но она не загружена и ни один
+       CSV-fallback тоже — НЕ подменяем на произвольную loaded LLM. Возвращаем
+       null, чтобы caller получил честный "модель не доступна" вместо тихой
+       подмены (Qwen вместо Gemma → ошибочные результаты). */
+    if (hasExplicitPreference) {
+      return null;
+    }
+
+    /* 3. Auto-detect по preferred capabilities (только если preference пуст) */
     const preferred = pickByPreferredCaps(eligible, ROLE_PREFERRED_CAPS[role]);
     if (preferred) {
       return { modelKey: preferred, source: "auto_detect", usedFallback: true };
     }
 
-    /* 4. Любая загруженная (не пройдёт capability filter если eligible пуст) */
+    /* 4. Любая загруженная (только если preference пуст) */
     if (eligible.length > 0) {
       return { modelKey: eligible[0]!.modelKey, source: "fallback_any", usedFallback: true };
     }
