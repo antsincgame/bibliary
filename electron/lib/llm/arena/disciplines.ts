@@ -54,7 +54,12 @@ import {
   VISION_OCR_TWO_LINES,
   VISION_OCR_NUMBERS,
   VISION_OCR_BLANK,
+  VISION_OCR_RU_MATH,
 } from "./fixtures/vision-ocr-fixtures.js";
+import {
+  findLastValidJsonObject,
+  stripProseReasoning,
+} from "../../library/reasoning-parser.js";
 
 /* ─── ДИСЦИПЛИНЫ ─────────────────────────────────────────────────────── */
 
@@ -109,15 +114,47 @@ export function stripThinkingBlock(raw: string): string {
   return stripped;
 }
 
-/* Helper: безопасный парсинг JSON с очисткой markdown-обёрток. */
+/* v1.0.10 (2026-05-06): Helper для безопасного парсинга JSON из ответа модели.
+ *
+ * История: до v1.0.10 этот хелпер использовал НАИВНЫЙ regex
+ * `^[^{[]*` — режет всё до первой `{`/`[`. На думающих моделях (gpt-oss-20b,
+ * qwen3.5-35b-a3b, qwen3.6-27b и т.п.) это давало score=0 для ВСЕХ дисциплин,
+ * потому что:
+ *   1. Модель пишет CoT prose типа "Thinking Process: 1. **Analyze...**"
+ *      где `**` или другие artifacts ловятся первой `{` → JSON.parse фейлит
+ *   2. Real JSON находится в КОНЦЕ ответа, не в начале
+ *   3. Markdown-обёртки ```json ... ``` не всегда срезаются до конца
+ *
+ * Новый алгоритм:
+ *   1. Снять markdown-fences ```json``` / ```
+ *   2. Снять <think>…</think> теги через splitThinkingBlock (handled in
+ *      stripThinkingBlock postProcess уже на уровне lmsChat — но дублируем
+ *      defensively на случай прямого вызова scorer'а)
+ *   3. Срезать prose-style CoT prefixes ("Thinking Process:", "First, I...")
+ *   4. Найти ПОСЛЕДНИЙ валидно-парсящийся top-level JSON-объект
+ *      (для prose-CoT финальный ответ в хвосте; для plain — первый и есть единственный).
+ *
+ * Использует единый источник истины — `findLastValidJsonObject` +
+ * `stripProseReasoning` из библиотечного reasoning-parser, который уже
+ * production-tested в evaluator-queue. */
 function tryParseJson(answer: string): unknown | null {
-  const cleaned = answer
+  if (typeof answer !== "string" || answer.length === 0) return null;
+  /* Снять markdown-обёртки. */
+  const noFences = answer
     .replace(/```(?:json)?\s*/gi, "")
     .replace(/```\s*$/g, "")
-    .replace(/^[^{[]*/, "")
-    .replace(/[^}\]]*$/, "");
+    .trim();
+  /* Снять prose-CoT prefix если присутствует — возвращает либо чистый JSON,
+   * либо исходную строку (если префикса нет, либо JSON не найден).
+   * stripProseReasoning возвращает "" если prefix есть но JSON нет — в этом
+   * случае пробуем выдрать что найдём через findLastValidJsonObject. */
+  const stripped = stripProseReasoning(noFences);
+  const candidate = stripped.length > 0 ? stripped : noFences;
+  /* Ищем последний валидный JSON (важно для CoT-prose). */
+  const objText = findLastValidJsonObject(candidate);
+  if (objText === null) return null;
   try {
-    return JSON.parse(cleaned);
+    return JSON.parse(objText);
   } catch {
     return null;
   }
@@ -680,6 +717,57 @@ export const OLYMPICS_DISCIPLINES: Discipline[] = [
 
       return Math.max(0, Math.min(1, s));
     },
+  },
+
+  {
+    /* v1.0.10 (2026-05-06): тяжёлый production-grade OCR тест.
+     *
+     * Источник: страница из учебника В.А. Зорича «Математический анализ»
+     * (введение / предисловие к матанализу). Реальный книжный скан 566×731
+     * с мелким шрифтом, формулами, кириллицей, типографскими знаками.
+     *
+     * Что проверяет:
+     *   1) Кириллица в плотном тексте (~7000 символов на странице).
+     *   2) Unicode-математические символы (∪ ∩ ∈ ⊂ × → = > <).
+     *   3) Типографика: тире "—", двоеточие, точки, скобки.
+     *   4) Имена собственные: Березину, Кудрявцеву, Федорюку.
+     *   5) Способность модели НЕ галлюцинировать (распознать только то что есть).
+     *
+     * Это ЭТАЛОН «боевого OCR» — намного сложнее чем print-simple/numbers.
+     * Слабые VLM (mistralai/ministral-3-3b, qwen2.5-vl-7b) обычно дают <30%
+     * recall на такой задаче. Топовые (Qwen2.5-VL-72B, gemma-4-26b vision) —
+     * 70-85%. Для production русско-украинских книг это критичная дисциплина.
+     *
+     * Scorer: scoreOcrRecall с UTF-кириллическими токенами (нормализация
+     * `[^a-zа-я0-9\s]/giu` уже handles cyrillic). Math symbols (∪ ∩ ∈ ⊂ × →)
+     * входят в expectedTokens — recall учтёт их по substring-match. */
+    id: "vision_ocr-ru-math-textbook",
+    role: "vision_ocr",
+    description:
+      "Реальный скан учебника матанализа (русский, мелкий шрифт, формулы) — production-grade OCR.",
+    whyImportant:
+      "Production бенчмарк OCR: страница из книги Зорича «Математический анализ». " +
+      "Кириллица + плотный мелкий текст + Unicode-математика (∪ ∩ ∈ ⊂ × →) + " +
+      "типографские тире и скобки. Это РЕАЛЬНЫЙ кейс для русско-украинских " +
+      "книжных сканов (диссертации, учебники, советская литература). " +
+      "Слабые VLM падают <30% recall, топовые vision-модели дают 70-85%. " +
+      "Без этого теста чемпион OCR-роли — модель которая хорошо читает " +
+      "«THE QUICK BROWN FOX», но провалит первую же страницу русского ПДФ.",
+    system:
+      "Распознай весь видимый текст со скана страницы как plain text. " +
+      "Сохраняй кириллические символы, математические знаки (∪ ∩ ∈ ⊂ × →), " +
+      "тире и пунктуацию точно как в оригинале. Сохраняй переносы строк и абзацы. " +
+      "Если текста нет — выведи литерал NO_TEXT. " +
+      "Без JSON, без markdown, без обёрток ```, без комментариев и кавычек.",
+    user: "Распознай текст на изображении:",
+    imageUrl: asImageDataUrl(VISION_OCR_RU_MATH),
+    /* maxTokens=512 — страница содержит ~7000 символов = ~2000 токенов
+     * для русского. Но scoreOcrRecall не штрафует за неполный recall, а
+     * считает hits/expected. 512 токенов даёт модели ~2-3 первых абзаца —
+     * достаточно для подсчёта recall на ключевых tokens. Reasoning-моделям
+     * effectiveMaxTokens × 4 = 2048 даст полное покрытие страницы. */
+    maxTokens: 512,
+    score: (a) => scoreOcrRecall(a, VISION_OCR_RU_MATH.expectedTokens),
   },
 
   {

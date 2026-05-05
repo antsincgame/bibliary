@@ -1,6 +1,6 @@
 {
   "name": "bibliary",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "type": "module",
   "main": "dist-electron/main.js",
   "description": "Local book library → structured Markdown → Qdrant vector collections → ChatML JSONL fine-tuning datasets",

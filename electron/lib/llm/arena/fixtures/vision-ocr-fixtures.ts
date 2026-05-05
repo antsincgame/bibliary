@@ -32,6 +32,23 @@ export const VISION_OCR_TWO_LINES = FIXTURES.ocr_two_lines;
 export const VISION_OCR_NUMBERS = FIXTURES.ocr_numbers_dense;
 /** Контрольный пустой PNG — модель должна сказать NO_TEXT. */
 export const VISION_OCR_BLANK = FIXTURES.ocr_blank_no_text;
+/**
+ * v1.0.10 (2026-05-06): scan страницы из учебника В.А. Зорича
+ * «Математический анализ» (мелкий русский шрифт + математические символы:
+ * ∪ ∩ ∈ ⊂ × → = > <). 566×731 px, ~294 KB.
+ *
+ * Используется в дисциплине `vision_ocr-ru-math-textbook` для тестирования
+ * VLM на:
+ *   1) кириллице (русский язык);
+ *   2) мелком плотном тексте (~30 строк / 7000 символов);
+ *   3) Unicode-математических символах (теории множеств + функций);
+ *   4) типографических знаках (—, :, ;, скобки).
+ *
+ * Эталонные токены покрывают ключевые понятия из текста + math operators.
+ * Это эталон «реального производственного OCR» — намного сложнее чем
+ * «THE QUICK BROWN FOX» fixtures выше.
+ */
+export const VISION_OCR_RU_MATH = FIXTURES.ocr_ru_math_textbook;
 
 export function asImageDataUrl(fixture: VisionOcrFixture): string {
   return `data:image/png;base64,${fixture.base64}`;

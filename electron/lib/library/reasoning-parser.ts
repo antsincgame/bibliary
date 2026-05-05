@@ -52,8 +52,14 @@ function splitThinkingBlock(raw: string, warnings: string[]): { reasoning: strin
  * Находит первый сбалансированный JSON-объект `{...}` в строке. Учитывает
  * вложенность фигурных скобок и игнорирует скобки внутри строковых литералов.
  * Возвращает текст объекта или null если не найден.
+ *
+ * v1.0.10 (2026-05-06): экспортируется для использования в Olympics scorer'ах
+ * (electron/lib/llm/arena/disciplines.ts). Раньше был локальным — это
+ * привело к появлению дублирующего парсера в арене с наивным regex
+ * `^[^{[]*`, который ломался на CoT-prose у думающих моделей (gpt-oss,
+ * qwen3.5-35b-a3b, qwen3.6-27b и т.п.) — см. CHANGELOG v1.0.10.
  */
-function findBalancedJsonObject(text: string): string | null {
+export function findBalancedJsonObject(text: string): string | null {
   const start = text.indexOf("{");
   if (start === -1) return null;
   let depth = 0;
@@ -81,6 +87,93 @@ function findBalancedJsonObject(text: string): string | null {
     }
   }
   return null;
+}
+
+/**
+ * v1.0.10 (2026-05-06): срезает PROSE-style "thinking" префиксы у моделей,
+ * которые НЕ используют `<think>` теги, но всё равно пишут CoT в `content`
+ * перед финальным JSON. Реальные кейсы из Olympics-логов:
+ *
+ *   - "Thinking Process: 1. **Analyze the Request:** ..." (gpt-oss-20b)
+ *   - "Here's a thinking process: 1. ..." (qwen/qwen3.6-27b)
+ *   - "First, I need to extract ..." (qwen3-4b-qwen3.6-plus-reasoning-distilled)
+ *   - "Okay, let's see. The user is asking ..." (qwen3-0.6b)
+ *   - "Let me analyze this passage ..." (qwen3-4b-qwen3.6)
+ *
+ * Стратегия: ищем ПОСЛЕДНИЙ сбалансированный `{...}` в строке. Если найден —
+ * возвращаем хвост от него. Если префикс — известный prose-маркер CoT, но
+ * JSON отсутствует — возвращаем пустую строку (модель не дописала ответ).
+ *
+ * НЕ путать со `<think>` тегами — те обрабатываются `parseReasoningResponse`.
+ * Эта функция дополняет splitThinkingBlock для моделей БЕЗ тегов.
+ */
+const PROSE_REASONING_PREFIXES = [
+  /^thinking process:/i,
+  /^here'?s? a? thinking process:/i,
+  /^first,?\s+i\s+(need|will|should|have)\s+to/i,
+  /^first,?\s+let\s+(me|us|'?s)/i,
+  /^okay,?\s+(let'?s|so)/i,
+  /^let\s+me\s+(analyze|think|extract|evaluate|consider|look)/i,
+  /^let'?s\s+(analyze|think|extract|evaluate|consider|look)/i,
+  /^хорошо,?\s+(давайте|мне\s+нужно|нужно)/i,
+  /^analysis:/i,
+  /^step\s*1[:.]/i,
+];
+
+export function stripProseReasoning(raw: string): string {
+  if (typeof raw !== "string" || raw.length === 0) return raw;
+  const trimmed = raw.trim();
+  if (!PROSE_REASONING_PREFIXES.some((rx) => rx.test(trimmed))) return raw;
+  /* Для prose-CoT модели final JSON всегда в КОНЦЕ ответа. Сканируем все
+   * top-level `{` и берём ПОСЛЕДНИЙ, который парсится валидно. */
+  return findLastValidJsonObject(trimmed) ?? "";
+}
+
+/**
+ * Сканирует все позиции `{` в строке (top-level, вне строковых литералов)
+ * и возвращает текст ПОСЛЕДНЕГО сбалансированного объекта, который
+ * успешно парсится через `JSON.parse`. Если ни один не парсится —
+ * возвращает первый сбалансированный (даже если invalid JSON.parse — пусть
+ * caller разбирается). null если `{` вообще нет.
+ *
+ * Используется для CoT-prose сценариев, где модель пишет "пример: {...}"
+ * в начале и реальный JSON-ответ в конце.
+ */
+export function findLastValidJsonObject(text: string): string | null {
+  if (typeof text !== "string" || text.length === 0) return null;
+  /* Собираем все top-level позиции `{` (вне строковых литералов). */
+  const positions: number[] = [];
+  let inString = false;
+  let escape = false;
+  let depth = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) { escape = false; continue; }
+    if (ch === "\\") { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === "{") {
+      if (depth === 0) positions.push(i);
+      depth += 1;
+    } else if (ch === "}") {
+      depth = Math.max(0, depth - 1);
+    }
+  }
+  if (positions.length === 0) return null;
+  /* Идём с конца — у prose-CoT финальный JSON в хвосте. */
+  let firstBalanced: string | null = null;
+  for (let k = positions.length - 1; k >= 0; k--) {
+    const candidate = findBalancedJsonObject(text.slice(positions[k]));
+    if (!candidate) continue;
+    if (firstBalanced === null) firstBalanced = candidate;
+    try {
+      JSON.parse(candidate);
+      return candidate;
+    } catch {
+      /* пробуем следующий слева */
+    }
+  }
+  return firstBalanced;
 }
 
 /**

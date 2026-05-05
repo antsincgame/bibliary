@@ -4,6 +4,131 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.10] — 2026-05-06
+
+**КРИТИЧЕСКИЙ FIX скоринга Олимпиады: думающие модели больше не падают на 0.**
+Реальные production-grade reasoning-модели (`gpt-oss-20b`, `qwen3.5-35b-a3b`,
+`qwen3.6-27b`, `qwen3-4b-qwen3.6-plus-reasoning-distilled`, `qwen3-0.6b`)
+получали `score=0` ВО ВСЕХ дисциплинах Олимпиады, даже когда выдавали
+**валидный JSON в конце ответа**. Чемпионами становились мелкие 1.5B-3B модели
+без thinking — это противоположно желаемому: для Кристаллизатора и Оценщика
+reasoning = выше качество.
+
+### Корень бага (5 почему)
+
+1. → `tryParseJson` в `electron/lib/llm/arena/disciplines.ts:113-124` использовал
+   наивный regex `^[^{[]*` — резал всё до **первой** `{`/`[`
+2. → Reasoning модели пишут CoT prose **БЕЗ** `<think>` тегов (gpt-oss harmony
+   format, qwen3.5 distilled): "Thinking Process: 1. **Analyze...**", "Here's a
+   thinking process:...", "First, I need to...", "Okay, let's see..."
+3. → Внутри prose часто появляются artefactous `{` (markdown bold скобки,
+   примеры структур). Парсер хватал их → `JSON.parse` валился → `null` → 0
+4. → `stripThinkingBlock` имеет ранний выход `if (!raw.includes("<think"))` —
+   НЕ чистил prose-style thinking без тегов
+5. → **Архитектурный просчёт**: в проекте ДВА парсера JSON.
+   `electron/lib/library/reasoning-parser.ts` имеет правильный
+   `findBalancedJsonObject` и используется в production evaluator-queue.
+   Арена изобрела свой дефектный — нет единого источника истины.
+
+### Реальные кейсы из v1.0.9 Olympics-лога
+
+- `qwen/qwen3.5-35b-a3b` на crystallizer-ru-mendeleev: content =
+  `'{ "facts": [...] }'` (валидный JSON, 376 chars) → **score=0**
+- `gpt-oss-20b` на evaluator-clrs: content =
+  `'{"score":9,"reasoning":"The 4th edition..."}'` (валидный JSON) → **score=0**
+- `qwen/qwen3.6-27b` на 6 дисциплинах подряд → **все score=0** из-за
+  "Here's a thinking process:" prefix перед финальным JSON
+
+### Решение (CHAIN-DEEP, выбрано B по A* эвристике)
+
+`electron/lib/library/reasoning-parser.ts`:
+- Экспортирована `findBalancedJsonObject` (была private). Используется как
+  единый источник истины для парсинга JSON из ответов LLM.
+- Добавлена `stripProseReasoning(raw)` — режет 10 PROSE-prefix паттернов
+  (`Thinking Process:`, `Here's a thinking process:`, `First, I need to`,
+  `Okay, let's`, `Let me analyze`, `Хорошо давайте`, `Analysis:`, `Step 1:`).
+- Добавлена `findLastValidJsonObject(text)` — сканирует ВСЕ top-level `{`
+  позиции и возвращает ПОСЛЕДНИЙ, который успешно парсится через `JSON.parse`.
+  Это критично для prose-CoT: финальный JSON всегда в **хвосте** ответа,
+  ранние `{` — артефакты.
+
+`electron/lib/llm/arena/disciplines.ts`:
+- `tryParseJson` переключён на `findLastValidJsonObject` + `stripProseReasoning`.
+- Удалён локальный `^[^{[]*` regex.
+- `stripThinkingBlock` НЕ изменён (избегаем regression на vision_illustration
+  scorer, который ожидает prose).
+
+### Новая дисциплина: `vision_ocr-ru-math-textbook`
+
+Production-grade OCR тест: реальный скан страницы из учебника В.А. Зорича
+«Математический анализ» (566×731 px, 294 KB). Кириллица + плотный мелкий
+шрифт + Unicode-математические символы (∪ ∩ ∈ ⊂ × → = > <) + типографика.
+40 эталонных токенов: ключевые слова, имена (Березину, Кудрявцеву, Федорюку),
+math operators.
+
+Это эталон **боевого OCR**, для русско-украинских книжных сканов:
+- Слабые VLM (mistralai/ministral-3-3b, qwen2.5-vl-7b) дают <30% recall
+- Топовые (Qwen2.5-VL-72B, gemma-4-26b) — 70-85%
+- Победитель этой дисциплины — реальный кандидат для production OCR
+
+Без неё чемпион OCR-роли = модель которая хорошо читает «THE QUICK BROWN FOX»,
+но провалит первую страницу русского PDF.
+
+`electron/lib/llm/arena/fixtures/`:
+- `vision-ocr-ru-math-textbook.png` — оригинальный scan
+- `vision-ocr-fixtures.json` — добавлен ключ `ocr_ru_math_textbook` (b64 + tokens)
+- `vision-ocr-fixtures.ts` — экспорт `VISION_OCR_RU_MATH`
+
+`electron/lib/llm/arena/disciplines.ts`:
+- Новая дисциплина `vision_ocr-ru-math-textbook` после `vision_ocr-blank-control`
+- maxTokens: 512 (для думающих моделей × 4 = 2048, достаточно для всей страницы)
+- Промпт на русском с инструкцией сохранять кириллицу + math symbols + тире
+
+### Анти-регрессионный контракт
+
+Новый файл `tests/olympics-thinking-models-scoring.test.ts` (16 тестов):
+
+- **6 тестов** на реальные content-сэмплы из v1.0.9 Olympics-лога — обязаны
+  давать `score > 0` для всех 4 evaluator-дисциплин и обоих crystallizer-теста
+- **3 теста** на отсутствие регрессий: plain JSON (мелкие модели), пустой
+  ответ → 0, обрезанный prose без JSON → 0
+- **4 теста** на новую дисциплину: регистрация, идеальный recall, NO_TEXT
+  penalty, частичный recall
+
+### Verification
+
+- `tsc --noEmit -p tsconfig.electron.json`: **clean**
+- ReadLints (3 затронутых файла): **0 ошибок**
+- Targeted regression: **128/128 passed**
+  - olympics-thinking-models-scoring (новый): 16/16
+  - olympics-load-config-integration: 8/8
+  - olympics-lifecycle: 11/11
+  - olympics-vision-aggregation: 9/9
+  - olympics-weights: 4/4
+  - olympics-thinking-policy: 1/1
+  - auto-load-max-models (анти-регрессия v1.0.8): 6/6
+  - lmstudio-actions-log: 6/6
+  - model-role-resolver: 33/33
+  - with-model-fallback: 19/19
+  - custom-disciplines: 25/25
+  - reasoning-parser (расширенный): без регрессий
+
+### Acceptance contract для пользователя
+
+После запуска `Bibliary 1.0.10.exe` → Olympics:
+
+1. Запусти турнир со всеми 32 моделями.
+2. **Думающие модели** (`qwen/qwen3.5-35b-a3b`, `gpt-oss-20b`, `qwen/qwen3.6-27b`,
+   `qwen3.5-9b-uncensored-hauhaucs-aggressive`) теперь должны давать
+   **высокие баллы** в Crystallizer и Evaluator дисциплинах (раньше = 0).
+3. Чемпионами Crystallizer / Evaluator должны стать **более крупные модели**
+   с reasoning, а не qwen2.5-1.5b-instruct.
+4. Появится **новая дисциплина** в результатах: «OCR: учебник матанализа
+   (русский, формулы)». Победителем станет модель с настоящим production-grade
+   OCR на кириллице + math symbols.
+5. В «Протоколе игр» предупреждения «score=0 при ok=true» для thinking-моделей
+   с финальным JSON исчезнут.
+
 ## [1.0.9] — 2026-05-06
 
 **Удалён блок ручного управления моделями LM Studio.** Пользователь указал на
