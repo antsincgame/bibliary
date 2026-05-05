@@ -60,6 +60,7 @@
 
 import { listLoaded as _listLoaded, type LoadedModelInfo } from "../../lmstudio-client.js";
 import { getPreferencesStore, type Preferences } from "../preferences/store.js";
+import { getModelPool } from "./model-pool.js";
 
 export type ModelRole =
   | "crystallizer"
@@ -135,11 +136,29 @@ interface CacheEntry {
 interface ResolverDeps {
   listLoaded: () => Promise<LoadedModelInfo[]>;
   getPrefs: () => Promise<Preferences>;
+  /** Авто-загрузка модели через pool (с VRAM management). Тесты подменяют на no-op. */
+  autoLoad: (modelKey: string, role: string) => Promise<boolean>;
+}
+
+async function defaultAutoLoad(modelKey: string, role: string): Promise<boolean> {
+  try {
+    const handle = await getModelPool().acquire(modelKey, {
+      role,
+      ttlSec: 1800,
+      gpuOffload: "max",
+    });
+    handle.release();
+    return true;
+  } catch (e) {
+    console.warn(`[model-role-resolver] auto-load "${modelKey}" for role "${role}" failed: ${e instanceof Error ? e.message : e}`);
+    return false;
+  }
 }
 
 const defaultDeps: ResolverDeps = {
   listLoaded: _listLoaded,
   getPrefs: async () => getPreferencesStore().getAll(),
+  autoLoad: defaultAutoLoad,
 };
 
 let deps: ResolverDeps = defaultDeps;
@@ -217,10 +236,15 @@ class ModelRoleResolverImpl {
     }
 
     /* 2.5. Если пользователь явно задал модель, но она не загружена и ни один
-       CSV-fallback тоже — НЕ подменяем на произвольную loaded LLM. Возвращаем
-       null, чтобы caller получил честный "модель не доступна" вместо тихой
-       подмены (Qwen вместо Gemma → ошибочные результаты). */
+       CSV-fallback тоже — пробуем авто-загрузить через ModelPool. Pool сам
+       управляет VRAM: eviction старых моделей, OOM recovery, makeRoom.
+       Если авто-загрузка не удалась — null (честный "модель недоступна"). */
     if (hasExplicitPreference) {
+      const wanted = prefVal!.trim();
+      const loaded = await deps.autoLoad(wanted, role);
+      if (loaded) {
+        return { modelKey: wanted, source: "preference" };
+      }
       return null;
     }
 

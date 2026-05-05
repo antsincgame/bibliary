@@ -91,13 +91,30 @@ describe("[model-role-resolver] preference source", () => {
     }
   });
 
-  test("returns null when preferred model is not loaded (no silent substitution)", async () => {
+  test("auto-loads preferred model via pool when not in loaded list", async () => {
+    let autoLoadCalled = false;
+    let autoLoadedKey = "";
     _setResolverDepsForTests({
       listLoaded: async () => [makeModel("qwen/available-model")],
       getPrefs: async () => makePrefs({ extractorModel: "ghost/not-loaded" }),
+      autoLoad: async (key) => { autoLoadCalled = true; autoLoadedKey = key; return true; },
     });
     const r = await modelRoleResolver.resolve("crystallizer");
-    assert.equal(r, null, "must NOT silently substitute another loaded model when user chose a specific one");
+    assert.ok(autoLoadCalled, "autoLoad must be called when preferred not in loaded");
+    assert.equal(autoLoadedKey, "ghost/not-loaded");
+    assert.ok(r !== null, "should resolve after successful auto-load");
+    assert.equal(r!.modelKey, "ghost/not-loaded");
+    assert.equal(r!.source, "preference");
+  });
+
+  test("returns null when preferred not loaded and auto-load fails", async () => {
+    _setResolverDepsForTests({
+      listLoaded: async () => [makeModel("qwen/available-model")],
+      getPrefs: async () => makePrefs({ extractorModel: "ghost/not-loaded" }),
+      autoLoad: async () => false,
+    });
+    const r = await modelRoleResolver.resolve("crystallizer");
+    assert.equal(r, null, "must return null when auto-load fails (no silent substitution)");
   });
 
   test("falls back to CSV fallback even when preferred not loaded", async () => {

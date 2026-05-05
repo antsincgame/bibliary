@@ -569,33 +569,24 @@ async function evaluateOneInSlot(bookId: string, slot: SlotState): Promise<void>
          a) `modelOverride` (выставленный через `setEvaluatorModel`) — явный
             runtime override из IPC.
          b) `prefs.evaluatorModel` + CSV fallbacks из Settings → Models —
-            то, что выбрал пользователь в UI. До 2026-04 этот выбор
-            игнорировался и `pickEvaluatorModel` шёл в эвристический
-            скоринг + автозагрузку — что приводило к выбору «самой мощной»
-            модели и попытке догрузить её поверх занятой VRAM
-            (вплоть до freeze ОС).
-         c) Чистый auto-pick — только если ни a, ни b не сработали и
-            хотя бы одна loaded LLM есть.
-       `allowAutoLoad: false` запрещает скрытую загрузку моделей с диска. */
+            то, что выбрал пользователь в UI.
+         c) Авто-загрузка через ModelPool (pool.acquire): если preferred/fallback
+            модель не в VRAM — pool загрузит её, предварительно выгрузив ненужные
+            модели (makeRoom/eviction). Pool безопасно управляет VRAM.
+         d) Чистый auto-pick — только если ни a, ни b, ни c не сработали. */
     const evaluatorPrefs = await deps.readEvaluatorPrefs();
-    /* Модель выбирается через pickEvaluatorModel с allowAutoLoad: false —
-       picker НЕ загружает ничего с диска, а выбирает среди уже loaded LLM.
+    /* Модель выбирается через pickEvaluatorModel с allowAutoLoad: true —
+       picker может загрузить preferred/fallback модель с диска через pool.acquire(),
+       pool безопасно управляет VRAM (makeRoom/eviction при нехватке).
 
-       allowAnyLoadedFallback (критическая логика):
-       - Если preferred НЕ задан (пустой evaluatorModel) → всегда auto-detect
-         из загруженных: это ожидаемый режим "пусть система сама выберет".
-       - Если preferred задан → НЕ берём произвольную loaded LLM как тихий
-         fallback, даже если evaluatorAllowFallback=true. Иначе: пользователь
-         настроил конкретную модель, а система молча подставляет другую — и
-         книга получает оценку от неподходящей модели (например OCR-Qwen вместо
-         Gemma-evaluator), с ошибками JSON и неверными scores. Вместо этого
-         defer + пауза оценщика с внятным сообщением. */
+       allowAnyLoadedFallback: если preferred задан → false: не подменяем на
+       произвольную LLM, а загружаем нужную. */
     const allowFallback = evaluatorPrefs.allowFallback;
     const allowAnyLoadedFallbackEffective = evaluatorPrefs.preferred ? false : allowFallback;
     const model = modelOverride ?? (await deps.pickEvaluatorModel({
       preferred: evaluatorPrefs.preferred,
       fallbacks: evaluatorPrefs.fallbacks,
-      allowAutoLoad: false,
+      allowAutoLoad: true,
       allowAnyLoadedFallback: allowAnyLoadedFallbackEffective,
     }));
     if (!model) {
