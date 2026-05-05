@@ -37,7 +37,6 @@ import {
 import * as path from "path";
 import { unregisterFromNearDup, resetNearDupCache } from "../lib/library/near-dup-detector.js";
 import { resetRevisionDedupCache } from "../lib/library/revision-dedup.js";
-import { applyLayout, shouldRenderMath, LAYOUT_VERSION } from "../lib/library/layout-pipeline.js";
 import { parseFrontmatter } from "../lib/library/md-converter.js";
 import type { BookCatalogMeta } from "../lib/library/types.js";
 
@@ -125,24 +124,8 @@ async function countTreeEntries(
  * показывается просто копией без вёрстки» — Versator применялся только в
  * момент импорта, существующие 470+ книг оставались без научной вёрстки.
  */
-function ensureVersatorUpgrade(markdown: string, language?: string): string {
-  if (!markdown) return markdown;
-  const fm = parseFrontmatter(markdown);
-  const lv = (fm?.layoutVersion as number | undefined) ?? 0;
-  if (lv >= LAYOUT_VERSION) return markdown;
-
-  const fmMatch = markdown.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
-  if (!fmMatch) return markdown;
-
-  const fmText = fmMatch[0];
-  const body = markdown.slice(fmText.length);
-
-  const lang: "ru" | "en" = language === "en" ? "en" : "ru";
-  const result = applyLayout(body, {
-    lang,
-    renderMath: shouldRenderMath(body),
-  });
-  return fmText + result.md;
+function ensureVersatorUpgrade(markdown: string, _language?: string): string {
+  return markdown;
 }
 
 export function registerLibraryCatalogIpc(): void {

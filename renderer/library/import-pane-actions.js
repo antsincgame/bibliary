@@ -13,7 +13,6 @@ import { t } from "../i18n.js";
 import { IMPORT_STATE, STATE } from "./state.js";
 import { refreshCollectionViews } from "./collection-views.js";
 import { showLibraryToast } from "./toast.js";
-import { showAlert } from "../components/ui-dialog.js";
 import { rerenderBooksPanel, resetBooksState } from "./import-pane-books.js";
 import { rerenderStatusBar } from "./import-pane-statusbar.js";
 

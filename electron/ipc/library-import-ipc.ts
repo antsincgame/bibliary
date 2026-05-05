@@ -32,12 +32,8 @@ import {
   cancelCurrentEvaluation,
   clearQueue as clearEvaluatorQueue,
   getEvaluatorStatus,
+  subscribeEvaluator,
 } from "../lib/library/evaluator-queue.js";
-import {
-  enqueueLayoutBook,
-  cancelCurrentLayoutAssistant,
-  clearLayoutAssistantQueue,
-} from "../lib/library/layout-assistant-queue.js";
 import { readPipelinePrefsOrNull } from "../lib/preferences/store.js";
 import {
   getImportLogger,
@@ -56,6 +52,87 @@ import {
   broadcastImportProgress,
 } from "./library-ipc-state.js";
 import { beginImport as beginAdaptive, endImport as endAdaptive } from "../lib/library/adaptive-bootstrap.js";
+import { detectRoleCollisions } from "../lib/llm/role-collision-detector.js";
+
+/**
+ * Auto-pause evaluator во время импорта (v0.11.13, 2026-05-04).
+ *
+ * Контракт:
+ *   - При старте импорта: ставим evaluator на паузу (если он не был уже paused
+ *     пользователем). Запоминаем флаг autoPaused для finally.
+ *   - В finally: если автопауза — снимаем паузу. Если был user-pause до импорта —
+ *     не трогаем (preserves user intent).
+ *
+ * Зачем: vision-meta + vision-illustration + evaluator (chat) = 3 параллельных
+ * клиента LM Studio. На больших импортах это перегружает GPU/VRAM, модель
+ * крашится с "Context size has been exceeded" / "model has crashed". Auto-pause
+ * освобождает chat-слот для vision-этапов импорта; после импорта evaluator
+ * подберёт ВСЕ накопленные книги и оценит их без конкуренции.
+ *
+ * Раньше пауза включалась только после AUTO_PAUSE_THRESHOLD=100 книг — но при
+ * 50-книжных импортах LM Studio уже падала. Теперь pause = default.
+ */
+function autoPauseEvaluatorForImport(): { wasUserPaused: boolean; autoPaused: boolean } {
+  const wasUserPaused = getEvaluatorStatus().paused;
+  if (wasUserPaused) return { wasUserPaused: true, autoPaused: false };
+  pauseEvaluator();
+  return { wasUserPaused: false, autoPaused: true };
+}
+
+function resumeEvaluatorAfterImport(state: { wasUserPaused: boolean; autoPaused: boolean }): void {
+  if (state.autoPaused) resumeEvaluator();
+}
+
+/**
+ * Прокси evaluator-событий в Import Logger. Категория `evaluator.queued`
+ * существовала и раньше, но started/done/failed уходили только через
+ * subscribeEvaluator → renderer и НЕ попадали в JSONL-лог. Пользователь не
+ * мог понять «работает evaluator или нет» по логу — отсюда жалобы вида
+ * «оценщик сломан». Теперь все события видны в Import Logger.
+ *
+ * Подписка живёт всё время сессии импорта; при unsubscribe в finally —
+ * никаких утечек. Если importId не нужен (события эвалюатора могут
+ * приходить и после конца импорта), пишем под текущим importId — это даёт
+ * пользователю единый «таймлайн» обработки конкретного batch'а.
+ */
+function attachEvaluatorLogger(importId: string, logger: ReturnType<typeof getImportLogger>): () => void {
+  const unsubscribe = subscribeEvaluator((evt) => {
+    /* Пропускаем queued — он уже логируется в onBookImported callback (с file path
+       и format). Двойное логирование одного и того же события мусорит JSONL. */
+    if (evt.type === "evaluator.queued") return;
+    const lvl: "info" | "warn" = evt.type === "evaluator.failed" ? "warn" : "info";
+    void logger.write({
+      importId,
+      level: lvl,
+      category: "evaluator.queued" /* единая категория для evaluator-событий в logger */,
+      message: evaluatorEventMessage(evt),
+      details: {
+        eventType: evt.type,
+        bookId: evt.bookId,
+        title: evt.title,
+        qualityScore: evt.qualityScore,
+        isFictionOrWater: evt.isFictionOrWater,
+        warnings: evt.warnings,
+        error: evt.error,
+        remaining: evt.remaining,
+      },
+    });
+  });
+  return unsubscribe;
+}
+
+function evaluatorEventMessage(evt: { type: string; title?: string; qualityScore?: number; error?: string }): string {
+  switch (evt.type) {
+    case "evaluator.started": return `Evaluating: ${evt.title ?? "<unknown>"}`;
+    case "evaluator.done": return `Evaluated: ${evt.title ?? "<unknown>"} — score ${evt.qualityScore ?? "?"}`;
+    case "evaluator.failed": return `Evaluation failed: ${evt.title ?? "<unknown>"} — ${evt.error ?? "no reason"}`;
+    case "evaluator.skipped": return `Evaluation skipped: ${evt.title ?? "<unknown>"}${evt.error ? ` — ${evt.error}` : ""}`;
+    case "evaluator.paused": return "Evaluator paused";
+    case "evaluator.resumed": return "Evaluator resumed";
+    case "evaluator.idle": return "Evaluator idle (queue drained)";
+    default: return `Evaluator event: ${evt.type}`;
+  }
+}
 
 export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | null): void {
   ipcMain.handle("library:pick-folder", async (): Promise<string | null> => {
@@ -115,6 +192,12 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
       const logger = getImportLogger();
       const logFile = await logger.startSession(importId);
       const prefs = await readImportPrefs();
+      const pipelinePrefs = await readPipelinePrefsOrNull().catch(() => null);
+      const roleSnapshot = detectRoleCollisions({
+        evaluatorModel: pipelinePrefs?.evaluatorModel,
+        visionModelKey: prefs.visionModelKey,
+        extractorModel: pipelinePrefs?.extractorModel,
+      });
       await logger.write({
         importId, level: "info", category: "import.start",
         message: `Importing folder ${folder}`,
@@ -122,23 +205,25 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
           folder, scanArchives: args.scanArchives === true, ocrEnabled: args.ocrEnabled === true, maxDepth: args.maxDepth, logFile,
           djvuOcrProvider: prefs.djvuOcrProvider, ocrLanguages: prefs.ocrLanguages,
           visionMetaEnabled: prefs.visionMetaEnabled, visionModelKey: prefs.visionModelKey,
+          modelRoles: roleSnapshot.roles,
+          collisions: roleSnapshot.collisions,
         },
       });
+      if (roleSnapshot.warning) {
+        await logger.write({
+          importId, level: "warn", category: "model.collision",
+          message: roleSnapshot.warning,
+          details: { collisions: roleSnapshot.collisions },
+        });
+      }
       let endStatus: "ok" | "failed" | "cancelled" = "ok";
-      /* Auto-pause evaluator при больших импортах. Audit 2026-04-30:
-         параллельная работа evaluator (slotCount=2 chat) + import (4 vision-meta)
-         + illustration semaphore (2×4 vision) при 100+ книгах перегружает
-         LM Studio. Стратегия: первые 100 книг идут в очередь evaluator
-         немедленно (low load), при 101-й книге — auto-pause; resume в finally.
-         Если evaluator уже был на паузе пользователем — оставляем как есть. */
+      /* v0.11.13: Auto-pause evaluator на ВЕСЬ импорт (не после N книг).
+         Раньше evaluator конкурировал с vision-meta/vision-illustration за
+         LM Studio с первой же книги — это валило chat-модель ("Context size
+         exceeded", "model has crashed") посреди batch'а. */
+      const evaluatorPauseState = autoPauseEvaluatorForImport();
       let importedCount = 0;
-      let autoPaused = false;
-      const AUTO_PAUSE_THRESHOLD = 100;
-      /* B9: cache layoutAssistantEnabled один раз на импорт. Прочитать prefs
-         в onBookImported callback'е дорого (async + IPC мост). null значит
-         «store не инициализирован» — фича OFF в этом случае. */
-      const layoutPrefs = await readPipelinePrefsOrNull().catch(() => null);
-      const layoutAssistantEnabledCached = layoutPrefs?.layoutAssistantEnabled === true;
+      const detachEvaluatorLogger = attachEvaluatorLogger(importId, logger);
       try {
         const opts: ImportFolderOptions = {
           scanArchives: args.scanArchives === true,
@@ -167,37 +252,18 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
               details: e.meta ? { meta: e.meta } : undefined,
             });
           },
-          /* Каждую новую книгу немедленно ставим в очередь оценки --
-             не ждём конца импорта, чтобы LLM начала работать сразу. */
+          /* Каждую новую книгу немедленно ставим в очередь оценки.
+             Evaluator на паузе (autoPauseEvaluatorForImport) — книги
+             накопятся и будут обработаны после конца импорта. */
           onBookImported: (meta) => {
             importedCount += 1;
             enqueueBook(meta.id);
-            /* Layout Assistant: opt-in пост-обработка book.md (B9). Очередь
-               запустится только если prefs.layoutAssistantEnabled === true.
-               Чтение prefs кэшировано в layoutAssistantEnabledCached на старте
-               импорта чтобы не дёргать store на каждую книгу. */
-            if (layoutAssistantEnabledCached) {
-              enqueueLayoutBook(meta.id);
-            }
             void logger.write({
               importId, level: "info", category: "evaluator.queued",
               message: `Queued for evaluation: ${meta.titleEn || meta.title || meta.id}`,
               file: meta.originalFile,
               details: { bookId: meta.id, format: meta.originalFormat, words: meta.wordCount },
             });
-            if (importedCount === AUTO_PAUSE_THRESHOLD && !autoPaused && !getEvaluatorStatus().paused) {
-              autoPaused = true;
-              pauseEvaluator();
-              void logger.write({
-                importId, level: "info", category: "evaluator.queued",
-                message: `Auto-paused evaluator at ${AUTO_PAUSE_THRESHOLD} imports — will resume after import completes`,
-              });
-            } else if (importedCount === AUTO_PAUSE_THRESHOLD && getEvaluatorStatus().paused) {
-              void logger.write({
-                importId, level: "info", category: "evaluator.queued",
-                message: `Evaluator was already paused at ${AUTO_PAUSE_THRESHOLD} imports — preserving user pause`,
-              });
-            }
           },
           signal: ctrl.signal,
         };
@@ -221,13 +287,14 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
         throw err;
       } finally {
         activeImports.delete(importId);
-        if (autoPaused) {
-          resumeEvaluator();
+        resumeEvaluatorAfterImport(evaluatorPauseState);
+        if (evaluatorPauseState.autoPaused) {
           await logger.write({
             importId, level: "info", category: "evaluator.queued",
             message: `Resumed evaluator after import (${importedCount} books queued)`,
           });
         }
+        detachEvaluatorLogger();
         await logger.endSession({ status: endStatus });
       }
     }
@@ -264,6 +331,12 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
       const logger = getImportLogger();
       const logFile = await logger.startSession(importId);
       const prefs = await readImportPrefs();
+      const pipelinePrefs = await readPipelinePrefsOrNull().catch(() => null);
+      const roleSnapshot = detectRoleCollisions({
+        evaluatorModel: pipelinePrefs?.evaluatorModel,
+        visionModelKey: prefs.visionModelKey,
+        extractorModel: pipelinePrefs?.extractorModel,
+      });
       await logger.write({
         importId, level: "info", category: "import.start",
         message: `Importing ${paths.length} files`,
@@ -271,8 +344,17 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
           fileCount: paths.length, scanArchives: args.scanArchives === true, ocrEnabled: args.ocrEnabled === true, logFile,
           djvuOcrProvider: prefs.djvuOcrProvider, ocrLanguages: prefs.ocrLanguages,
           visionMetaEnabled: prefs.visionMetaEnabled, visionModelKey: prefs.visionModelKey,
+          modelRoles: roleSnapshot.roles,
+          collisions: roleSnapshot.collisions,
         },
       });
+      if (roleSnapshot.warning) {
+        await logger.write({
+          importId, level: "warn", category: "model.collision",
+          message: roleSnapshot.warning,
+          details: { collisions: roleSnapshot.collisions },
+        });
+      }
       const onVisionMetaEvent = (e: { phase: "start" | "success" | "failed"; bookFile: string; message?: string; durationMs?: number; meta?: unknown }) => {
         const cat = e.phase === "start" ? "vision.start" : e.phase === "success" ? "vision.success" : "vision.failed";
         const lvl = e.phase === "failed" ? "warn" : "info";
@@ -286,9 +368,11 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
       };
       let endStatus: "ok" | "failed" | "cancelled" = "ok";
       let adaptiveStarted = false;
-      /* B9: тот же кэш что и для folder-import. */
-      const layoutPrefs = await readPipelinePrefsOrNull().catch(() => null);
-      const layoutAssistantEnabledCached = layoutPrefs?.layoutAssistantEnabled === true;
+      /* v0.11.13: симметрия с library:import-folder — auto-pause evaluator
+         на ВЕСЬ импорт + логирование evaluator-событий в Import Logger. */
+      const evaluatorPauseState = autoPauseEvaluatorForImport();
+      const detachEvaluatorLogger = attachEvaluatorLogger(importId, logger);
+      let importedCount = 0;
       try {
         try { await beginAdaptive(); adaptiveStarted = true; } catch { /* не блокируем импорт */ }
         const aggregate = { total: 0, added: 0, duplicate: 0, skipped: 0, failed: 0, warnings: [] as string[] };
@@ -318,10 +402,8 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
                  ставим в evaluator-queue, чтобы LLM-оценка началась
                  сразу, а не в конце большого batch. */
               if (r.outcome === "added" && r.bookId) {
+                importedCount += 1;
                 enqueueBook(r.bookId);
-                if (layoutAssistantEnabledCached) {
-                  enqueueLayoutBook(r.bookId);
-                }
                 void logger.write({
                   importId, level: "info", category: "evaluator.queued",
                   message: `Queued for evaluation: ${r.meta?.titleEn || r.meta?.title || r.bookId}`,
@@ -388,6 +470,14 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
       } finally {
         if (adaptiveStarted) endAdaptive();
         activeImports.delete(importId);
+        resumeEvaluatorAfterImport(evaluatorPauseState);
+        if (evaluatorPauseState.autoPaused) {
+          await logger.write({
+            importId, level: "info", category: "evaluator.queued",
+            message: `Resumed evaluator after import (${importedCount} books queued)`,
+          });
+        }
+        detachEvaluatorLogger();
         await logger.endSession({ status: endStatus });
       }
     }
@@ -412,16 +502,8 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
        Удаление делает finally в import-folder/import-files handler после
        реального завершения. */
 
-    /* Iter 14.3 (2026-05-04, /omnissiah audit) — КРИТИЧЕСКИЙ FIX утечки.
-       Раньше cancel импорта только abort'ил signal текущей сессии импорта,
-       но НЕ останавливал post-import LLM-очереди:
-         • evaluator-queue (book-evaluator → LM Studio chatWithPolicy)
-         • layout-assistant-queue (layout fix → LM Studio)
-       Каждый успешный импорт вызывает enqueueBook() + enqueueLayoutBook(),
-       у этих очередей СВОИ AbortController'ы, не связанные с импортным.
-       Поэтому пользователь видел: «остановил импорт» → но LM Studio
-       продолжает обрабатывать накопленные книги. Симптом: «vision/чат
-       продолжается после Cancel».
+    /* Cancel also stops the evaluator queue to avoid orphaned LLM work after
+       import abort.
 
        Лечение: чистим pending очередь + прерываем in-flight задачу.
        Сами очереди остаются АКТИВНЫМИ (не paused) — это важно: при
@@ -432,12 +514,10 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
        import). */
     clearEvaluatorQueue();
     cancelCurrentEvaluation("import-cancelled");
-    clearLayoutAssistantQueue();
-    cancelCurrentLayoutAssistant("import-cancelled");
 
     await getImportLogger().write({
       importId, level: "warn", category: "import.cancel",
-      message: "Import cancelled by user — stopped pending evaluator + layout-assistant queues and aborted in-flight LLM calls",
+      message: "Import cancelled by user — stopped pending evaluator queue and aborted in-flight LLM calls",
     });
     return true;
   });

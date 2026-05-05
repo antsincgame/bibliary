@@ -2,16 +2,16 @@
 /**
  * Library page — thin coordinator.
  *
- * All domain logic lives in renderer/library/ modules:
- *   state.js        — shared mutable state objects
- *   browse.js       — file picker, queue, preview, drag-drop, history
- *   catalog.js      — catalog table, toolbar, bottom-bar
- *   import-pane.js  — import from folder/files, live progress
- *   evaluator.js    — evaluator panel UI
- *   batch-actions.js— crystallization + synthesis
- *   search.js       — BookHunter online search + download
- *   format.js       — formatting helpers (pre-existing)
- *   catalog-filter.js — filter/quality helpers (pre-existing)
+ * Domain modules in renderer/library/:
+ *   state.js          — shared mutable state objects
+ *   browse.js         — pref loader (loadPrefs)
+ *   catalog.js        — catalog table, toolbar, bottom-bar
+ *   import-pane.js    — import from folder/files, live progress
+ *   evaluator.js      — evaluator panel UI
+ *   batch-actions.js  — crystallization + synthesis
+ *   format.js         — formatting helpers
+ *   catalog-filter.js — filter/quality helpers
+ *   reader.js         — debug reader (markdown + images)
  */
 import { el, clear } from "./dom.js";
 import { t } from "./i18n.js";
@@ -23,7 +23,6 @@ import { buildImportPane, renderImport, pushImportPaneLog } from "./library/impo
 import { mountCollectionViews } from "./library/collection-views.js";
 import { refreshEvaluatorState } from "./library/evaluator.js";
 import { applyBatchEvent } from "./library/batch-actions.js";
-import { renderSearch, subscribeDownloadProgress } from "./library/search.js";
 import { closeReader, isReaderOpen, openBook } from "./library/reader.js";
 
 function switchTab(tab, root) {
@@ -37,9 +36,7 @@ function switchTab(tab, root) {
   });
   root.querySelector(".lib-pane-catalog")?.classList.toggle("lib-pane-active", tab === "catalog");
   root.querySelector(".lib-pane-import")?.classList.toggle("lib-pane-active", tab === "import");
-  root.querySelector(".lib-pane-search")?.classList.toggle("lib-pane-active", tab === "search");
   root.querySelector(".lib-pane-collections")?.classList.toggle("lib-pane-active", tab === "collections");
-  if (tab === "search") renderSearch(root);
   if (tab === "catalog") void renderCatalog(root);
   if (tab === "import") renderImport(root);
   if (tab === "collections") activateCollectionsPane(root);
@@ -65,9 +62,6 @@ function buildLibraryTabs(root) {
     el("button", { class: "lib-tab", type: "button", "data-tab": "collections",
       title: t("library.tab.collections.tooltip"),
       onclick: () => switchTab("collections", root) }, t("library.tab.collections")),
-    el("button", { class: "lib-tab", type: "button", "data-tab": "search",
-      title: t("library.tab.hunt.tooltip"),
-      onclick: () => switchTab("search", root) }, t("library.tab.hunt")),
   ]);
 }
 
@@ -103,17 +97,14 @@ export async function mountLibrary(root) {
   importPane.classList.add("lib-pane-active");
   STATE.tab = "import";
 
-  const searchPane = el("div", { class: "lib-pane lib-pane-search" }, [el("div", { class: "lib-search" })]);
   const collectionsPane = el("div", { class: "lib-pane lib-pane-collections" });
 
-  const layout = el("div", { class: "lib-page-layout" }, [tabs, importPane, catalogPane, searchPane, collectionsPane]);
+  const layout = el("div", { class: "lib-page-layout" }, [tabs, importPane, catalogPane, collectionsPane]);
   root.append(layout);
 
   if (typeof CATALOG.unsubEvaluator === "function") CATALOG.unsubEvaluator();
   if (typeof CATALOG.unsubBatch === "function") CATALOG.unsubBatch();
-  if (typeof CATALOG._unsubDownload === "function") CATALOG._unsubDownload();
 
-  CATALOG._unsubDownload = subscribeDownloadProgress(root);
   installWindowDropGuards(root);
 
   CATALOG.unsubEvaluator = window.api.library.onEvaluatorEvent((ev) => {

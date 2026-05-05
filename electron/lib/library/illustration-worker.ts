@@ -20,7 +20,6 @@
 
 import { promises as fs } from "fs";
 import * as path from "path";
-import { pickVisionModels } from "../llm/vision-meta.js";
 import { modelRoleResolver } from "../llm/model-role-resolver.js";
 import { readPipelinePrefsOrNull } from "../preferences/store.js";
 import { getModelPool } from "../llm/model-pool.js";
@@ -32,21 +31,30 @@ import {
 } from "../llm/schemas/index.js";
 import { validateImageBuffer } from "../llm/image-preflight.js";
 import * as telemetry from "../resilience/telemetry.js";
+import { runExclusiveOnModel } from "../llm/model-inference-lock.js";
 
 /** Minimum score (exclusive) for a semantic illustration to be kept in CAS. */
 const SEMANTIC_SCORE_THRESHOLD = 5;
+
+/**
+ * Audit I7 (Wave2): причина пропуска. `null` означает "не пропущено".
+ * - "no-sha"       — entry без sha256 (corruption / extraction failure)
+ * - "blob-missing" — sha указан, но файл блоба не найден (CAS повреждён)
+ * - "low-score"    — vision модель присвоила score ≤ SEMANTIC_SCORE_THRESHOLD
+ */
+export type IllustrationSkipReason = "no-sha" | "blob-missing" | "low-score" | null;
 
 export interface IllustrationEntry {
   id: string;
   sha256: string | null;
   mimeType: string;
   bytes: number;
-  /** Informational value 0-10 from Semantic Triage LLM. null = not analysed yet. */
   score: number | null;
-  /** Human-readable description produced by Vision LLM. Used for vector search. */
   description: string | null;
   /** true = score ≤ threshold; blob NOT stored in CAS to save disk space. */
   skipped: boolean;
+  /** Audit I7: подробная причина пропуска для дебага «почему vision не описала эту картинку». */
+  skippedReason?: IllustrationSkipReason;
   caption: string | null;
   sourcePage?: number;
 }
@@ -182,12 +190,18 @@ async function analyzeImageWithVision(
 
       let resp: Response;
       try {
-        resp = await fetch(`${baseUrl}/v1/chat/completions`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-          signal: timeoutCtl.signal,
-        });
+        /* Per-modelKey serialization (см. model-inference-lock.ts).
+           Vision-illustration исторически жёг параллельные запросы
+           на ту же модель что vision-meta — каскадные empty responses
+           были корнем "no JSON in response: ''" в логе 2026-05-04. */
+        resp = await runExclusiveOnModel(candidate, () =>
+          fetch(`${baseUrl}/v1/chat/completions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+            signal: timeoutCtl.signal,
+          }),
+        );
       } finally {
         clearTimeout(timer);
         signal?.removeEventListener("abort", onExternalAbort);
@@ -293,7 +307,7 @@ export async function processIllustrations(
   signal?: AbortSignal,
   onProgress?: (msg: string) => void,
   exactPaths?: { mdPath?: string; illustrationsPath?: string; bookTitle?: string; bookId?: string },
-): Promise<{ processed: number; skipped: number; errors: number }> {
+): Promise<{ processed: number; alreadyDone: number; skipped: number; errors: number }> {
   const illustrationsPath = exactPaths?.illustrationsPath ?? path.join(bookDir, "illustrations.json");
   const mdPath = exactPaths?.mdPath ?? await findBookMdFile(bookDir);
   let entries: IllustrationEntry[];
@@ -302,58 +316,41 @@ export async function processIllustrations(
     const raw = await fs.readFile(illustrationsPath, "utf-8");
     entries = JSON.parse(raw);
   } catch {
-    return { processed: 0, skipped: 0, errors: 0 };
+    return { processed: 0, alreadyDone: 0, skipped: 0, errors: 0 };
   }
 
-  if (entries.length === 0) return { processed: 0, skipped: 0, errors: 0 };
+  if (entries.length === 0) return { processed: 0, alreadyDone: 0, skipped: 0, errors: 0 };
 
-  /* Resolve vision_illustration role (с фолбэком на legacy visionModelKey
-   * через model-role-resolver). Если ничего не нашлось — fallback на
-   * pickVisionModels() для backward-compat. */
   let modelKey: string | null = null;
   let fallbackModelKeys: string[] = [];
   const prefsResolve = await readPipelinePrefsOrNull();
   try {
     const resolved = await modelRoleResolver.resolve("vision_illustration");
     if (resolved) modelKey = resolved.modelKey;
-    /* Дополнительные кандидаты из CSV-fallback prefs (для retry в worker). */
     const fbCsv = prefsResolve?.visionModelFallbacks?.trim() || "";
     if (fbCsv) {
       fallbackModelKeys = fbCsv.split(",").map((s: string) => s.trim()).filter((k: string) => k && k !== modelKey);
     }
-  } catch {
-    /* resolver упал — попробуем legacy путь */
-  }
+  } catch { /* resolver not ready */ }
   if (!modelKey) {
-    const models = await pickVisionModels();
-    if (models.length === 0) {
-      /* Lazy-load через pool. Раньше прямой client.llm.load обходил все
-       * сериализаторы, и при импорте 2+ книг параллельные illustration-worker'ы
-       * могли дёрнуть load одной vision-модели одновременно → OOM на тяжёлых
-       * Qwen-VL. Pool.acquire дедуплицирует через runOnChain. Immediate release
-       * безопасен — withModel ниже снова возьмёт refCount. */
-      const prefVision = prefsResolve?.visionModelKey?.trim() || "";
-      if (prefVision) {
-        try {
-          onProgress?.(`Loading vision model "${prefVision}" from prefs...`);
-          const handle = await getModelPool().acquire(prefVision, {
-            role: "vision_illustration",
-            ttlSec: 1800,
-            gpuOffload: "max",
-          });
-          handle.release();
-          modelKey = prefVision;
-        } catch (loadErr) {
-          onProgress?.(`Failed to auto-load vision model "${prefVision}": ${loadErr instanceof Error ? loadErr.message : String(loadErr)}`);
-        }
+    const prefVision = prefsResolve?.visionModelKey?.trim() || "";
+    if (prefVision) {
+      try {
+        onProgress?.(`Loading vision model "${prefVision}" from prefs...`);
+        const handle = await getModelPool().acquire(prefVision, {
+          role: "vision_illustration",
+          ttlSec: 1800,
+          gpuOffload: "max",
+        });
+        handle.release();
+        modelKey = prefVision;
+      } catch (loadErr) {
+        onProgress?.(`Failed to auto-load vision model "${prefVision}": ${loadErr instanceof Error ? loadErr.message : String(loadErr)}`);
       }
-      if (!modelKey) {
-        onProgress?.("No vision models loaded — skipping illustration analysis");
-        return { processed: 0, skipped: 0, errors: 0 };
-      }
-    } else {
-      modelKey = models[0]!.modelKey;
-      fallbackModelKeys = models.slice(1).map((m) => m.modelKey);
+    }
+    if (!modelKey) {
+      onProgress?.("No vision_illustration model configured — skipping illustration analysis");
+      return { processed: 0, alreadyDone: 0, skipped: 0, errors: 0 };
     }
   }
 
@@ -363,6 +360,7 @@ export async function processIllustrations(
   const bookTitle = exactPaths?.bookTitle ?? inferBookTitleFromDir(bookDir);
 
   let processed = 0;
+  let alreadyDone = 0;
   let skipped = 0;
   let errors = 0;
 
@@ -378,12 +376,20 @@ export async function processIllustrations(
 
   let mdModified = false;
 
-  /* Параллельный pool — vision-LLM запросы к LM Studio могут идти 3-5
-   * одновременно (ограничено GPU/CPU memory pressure, но не CPU-bound).
-   * Без pool: 100 картинок × 6 сек = 10 минут. С pool=4: ≈2.5 мин.
+  /* Параллельный pool — vision-LLM запросы к LM Studio.
    *
-   * Иt 8Б: размер pool читается из prefs.illustrationParallelism (default 4).
-   * До 8Б был hardcoded VISION_PARALLELISM = 4. Settings — single source of truth.
+   * v0.12.0 (2026-05-05): default снижен с 4 до 1.
+   *   Логи импорта 2026-05-04 показали 280 каскадных
+   *   "no JSON in response: ''" за 12 минут — vision-illustration
+   *   параллельно бил по той же модели что vision-meta + evaluator.
+   *   LM Studio под нагрузкой возвращал пустые ответы. Параллелизм
+   *   внутри одной модели даёт МЕНЬШЕ throughput чем sequential —
+   *   GPU и так serialized. Per-modelKey mutex (см. model-inference-lock)
+   *   на уровне HTTP делает default=1 здесь почти эквивалентным
+   *   default=4 по latency, но без deadlock'ов и empty responses.
+   *   Пользователь может выкрутить prefs.illustrationParallelism
+   *   обратно если у него ДРУГАЯ модель для illustration (тогда
+   *   mutex не помешает разным моделям идти параллельно).
    *
    * Защита: locking bookMd / mdModified / counters через async ticks
    * (single-threaded JS — race-free для счётчиков, но enrichMarkdownAltText
@@ -392,7 +398,7 @@ export async function processIllustrations(
   const prefs = await readPipelinePrefsOrNull();
   const visionParallelism = (typeof prefs?.illustrationParallelism === "number" && prefs.illustrationParallelism >= 1)
     ? prefs.illustrationParallelism
-    : 4;
+    : 1;
 
   /* Сериализуем только md-патчинг — остальные шаги (vision call, qdrant index)
    * полностью независимые по entries. */
@@ -407,21 +413,23 @@ export async function processIllustrations(
 
   async function processOneEntry(entry: typeof entries[number]): Promise<void> {
     if (signal?.aborted) return;
-    // Skip already-analysed entries
+    // Skip already-analysed entries (audit I6 — отделяем от свежих, чтобы метрика не врала при re-run).
     if (entry.score !== null && entry.score !== undefined) {
-      processed++;
+      alreadyDone++;
       return;
     }
 
-    // sha256 must be present (blob must exist) unless entry is already skipped
     if (!entry.sha256) {
       entry.skipped = true;
+      entry.skippedReason = "no-sha";
       skipped++;
       return;
     }
 
     const blobPath = await findBlobFile(blobsRoot, entry.sha256);
     if (!blobPath) {
+      entry.skipped = true;
+      entry.skippedReason = "blob-missing";
       errors++;
       return;
     }
@@ -460,13 +468,13 @@ export async function processIllustrations(
       const isCover = entry.id === "img-cover";
 
       if (!isCover && triage.score <= SEMANTIC_SCORE_THRESHOLD) {
-        // Step C: score too low — mark as skipped, don't update markdown
         entry.skipped = true;
+        entry.skippedReason = "low-score";
         skipped++;
         onProgress?.(`[Semantic Triage] ${entry.id} score=${triage.score} ≤ ${SEMANTIC_SCORE_THRESHOLD} — skipped`);
       } else {
-        // Step C: Markdown Enrichment — inject LLM_DESC alt-text into book.md
         entry.skipped = false;
+        entry.skippedReason = null;
         processed++;
         onProgress?.(`[Semantic Triage] ${entry.id} score=${triage.score} — enriching markdown`);
 
@@ -550,7 +558,7 @@ export async function processIllustrations(
     }
   }
 
-  return { processed, skipped, errors };
+  return { processed, alreadyDone, skipped, errors };
 }
 
 /**
@@ -560,12 +568,25 @@ export async function processIllustrations(
  * or  ![Illustration 1][img-001] → ![LLM_DESC: ...][img-001]
  */
 function enrichMarkdownAltText(markdown: string, imgId: string, description: string): string {
-  // Sanitise description for markdown alt: no brackets, max 200 chars
   const safeDesc = description.replace(/[\[\]]/g, "").slice(0, 200).trim();
   const newAlt = `LLM_DESC: ${safeDesc}`;
-  // Replace any existing alt for this image id: ![anything][imgId]
   const re = new RegExp(`!\\[[^\\]]*\\]\\[${escapeRegex(imgId)}\\]`, "g");
-  return markdown.replace(re, `![${newAlt}][${imgId}]`);
+  /* Iter Wave2 (audit I5): простая state-machine для пропуска fenced code blocks
+     (``` ... ```). CommonMark говорит что внутри fenced code markdown не парсится,
+     поэтому замена ![alt][id] в книгах про markdown/typography ломала примеры в коде. */
+  const lines = markdown.split("\n");
+  let inFence = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (!inFence) {
+      lines[i] = line.replace(re, `![${newAlt}][${imgId}]`);
+    }
+  }
+  return lines.join("\n");
 }
 
 function escapeRegex(s: string): string {
@@ -595,15 +616,17 @@ function inferBookTitleFromDir(bookDir: string): string | null {
   return base.replace(/\s+\d{4}\s*$/, "").trim() || base;
 }
 
+const BLOB_EXTS = ["jpg", "png", "gif", "webp", "svg", "tiff", "bmp", "pdf", "bin"];
+
 async function findBlobFile(blobsRoot: string, sha256: string): Promise<string | null> {
   const sub = sha256.slice(0, 2);
   const dir = path.join(blobsRoot, sub);
-  try {
-    const entries = await fs.readdir(dir);
-    const match = entries.find((e) => e.startsWith(sha256));
-    if (match) return path.join(dir, match);
-  } catch {
-    // dir doesn't exist
+  for (const ext of BLOB_EXTS) {
+    const candidate = path.join(dir, `${sha256}.${ext}`);
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch { /* next ext */ }
   }
   return null;
 }

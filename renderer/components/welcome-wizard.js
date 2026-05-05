@@ -387,7 +387,7 @@ export function openWelcomeWizard(opts) {
     const actions = [
       { route: "library", primary: true, key: "library" },
       { route: "models", key: "models" },
-      { route: "docs", key: "docs" },
+      { route: "settings", key: "settings" },
     ];
     const grid = el("div", { class: "ww-done-actions" });
     for (const a of actions) {

@@ -26,16 +26,16 @@ export async function writeTextAtomic(filePath: string, content: string): Promis
   const suffix = randomBytes(6).toString("hex");
   const tmpPath = `${filePath}.${suffix}.tmp`;
 
-  let written = false;
+  let opened = false;
   try {
     /* C4 fix: open + write + datasync + close — гарантирует что content
      * физически на диске ДО rename. fs.writeFile(tmpPath, content) не
      * вызывает fsync; на Windows write-back cache может удерживать данные
      * минуты. */
     const fh = await fs.open(tmpPath, "w");
+    opened = true;
     try {
       await fh.writeFile(content, "utf8");
-      written = true;
       /* fdatasync быстрее fsync (не сбрасывает metadata) и достаточен для
        * атомарности контента перед rename. На Windows маппится на
        * FlushFileBuffers. Если ОС не поддерживает — не критично, downgrade
@@ -53,8 +53,8 @@ export async function writeTextAtomic(filePath: string, content: string): Promis
     }
     await fs.rename(tmpPath, filePath);
   } catch (err) {
-    if (written) {
-      await fs.unlink(tmpPath).catch((err) => console.error("[atomic-write] unlink tmp Error:", err));
+    if (opened) {
+      await fs.unlink(tmpPath).catch((e) => console.error("[atomic-write] unlink tmp Error:", e));
     }
     throw err;
   }

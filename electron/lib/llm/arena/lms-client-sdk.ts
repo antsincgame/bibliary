@@ -24,6 +24,58 @@ import type {
  *  Required for unload — SDK needs the full handle, not just an id string. */
 const _sdkHandles = new Map<string, OlympicsLLMHandle>();
 
+/**
+ * Graceful dispose Olympics SDK singleton при shutdown приложения
+ * (v0.11.14, 2026-05-05).
+ *
+ * Зомби-баг: до этого фикса `_cachedSdkClient` НИКОГДА не закрывался при quit.
+ * `lms-client-sdk.ts` создаёт ОТДЕЛЬНЫЙ от основного `lmstudio-client.ts`
+ * singleton. Основной закрывается через `disposeClientAsync()` в before-quit,
+ * Olympics — нет. WebSocket к LM Studio оставался висеть от мёртвого процесса.
+ *
+ * Контракт:
+ *   1. Все handles в `_sdkHandles` пытаются `unload()` — best-effort, не критично
+ *      если LM Studio уже отключён.
+ *   2. У клиента вызывается `Symbol.asyncDispose` (если поддерживается SDK) —
+ *      это закрывает WebSocket / HTTP/2 streams.
+ *   3. Кэш handles + клиент сбрасываются.
+ *
+ * Timeout: best-effort, чтобы не задерживать quit на >1с (force-exit = 4с).
+ */
+export async function disposeOlympicsSdkClientAsync(timeoutMs = 1_000): Promise<boolean> {
+  const client = _cachedSdkClient;
+  const handles = [..._sdkHandles.values()];
+  /* Сбрасываем кэш сразу — новый getClient() создаст свежий клиент. */
+  _sdkHandles.clear();
+  _cachedSdkClient = null;
+  if (!client && handles.length === 0) return true;
+
+  const work = (async (): Promise<void> => {
+    for (const h of handles) {
+      try { await h.unload(); } catch { /* tolerate — LM Studio мог уже отключиться */ }
+    }
+    /* @lmstudio/sdk LMStudioClient реализует Symbol.asyncDispose, но контракт
+       OlympicsLMStudioClient в типах его не объявляет (минимальный API surface). */
+    const dispose = client ? (client as { [Symbol.asyncDispose]?: () => Promise<void> })[Symbol.asyncDispose] : undefined;
+    if (dispose) {
+      try { await dispose.call(client); } catch { /* tolerate — websocket мог уже умереть */ }
+    }
+  })();
+
+  try {
+    await Promise.race([
+      work,
+      new Promise<never>((_resolve, reject) =>
+        setTimeout(() => reject(new Error(`disposeOlympicsSdkClientAsync timeout ${timeoutMs}ms`)), timeoutMs).unref(),
+      ),
+    ]);
+    return true;
+  } catch (err) {
+    console.error("[lms-client-sdk/disposeAsync] Error (websocket may leak):", err);
+    return false;
+  }
+}
+
 /** Test override — bypass real `@lmstudio/sdk` import. */
 let _sdkClientOverride: OlympicsLMStudioClient | null = null;
 export function _setOlympicsSdkClientForTests(client: OlympicsLMStudioClient | null): void {

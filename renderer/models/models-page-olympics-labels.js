@@ -12,23 +12,13 @@
 /**
  * Роли для чекбоксов «какие роли тестировать в Олимпиаде».
  * **Должно совпадать с `PIPELINE_ROLES`** (`models-page-internals.js`).
- * Legacy `vision` намеренно убрана: новые vision_meta/vision_ocr/vision_illustration
- * покрывают её полностью.
- *
- * `judge` удалена 2026-05-01 (Иt 8А library-fortress): не имела ни одного
- * production-вызова; delta-extractor заменил отдельный judge-шаг ещё в
- * Apr 2026, prefs/role-load-config были рудиментом.
+ * MVP v1.0: 4 роли (crystallizer, evaluator, vision_ocr, vision_illustration).
  */
 export const ALL_ROLES = [
   { role: "crystallizer",         label: "💎 Кристаллизатор" },
   { role: "evaluator",            label: "📚 Оценщик" },
-  { role: "translator",           label: "🌐 Переводчик" },
-  { role: "ukrainian_specialist", label: "🇺🇦 Укр." },
-  { role: "lang_detector",        label: "🔤 Язык" },
-  { role: "vision_meta",          label: "📖 Vision: обложки" },
   { role: "vision_ocr",           label: "🖨️ Vision: OCR страниц" },
   { role: "vision_illustration",  label: "🖼️ Vision: иллюстрации" },
-  { role: "layout_assistant",     label: "📐 Верстальщик" },
 ];
 
 /**
@@ -38,13 +28,8 @@ export const ALL_ROLES = [
 export const ROLE_HUMAN_LABEL = {
   crystallizer:         { icon: "💎", title: "Кристаллизатор знаний", subtitle: "извлечение фактов и связей" },
   evaluator:            { icon: "📚", title: "Литературный критик", subtitle: "оценка качества книги" },
-  translator:           { icon: "🌐", title: "Переводчик",          subtitle: "межъязыковая адаптация" },
-  lang_detector:        { icon: "🔤", title: "Лингвист-детектор",   subtitle: "определение языка" },
-  ukrainian_specialist: { icon: "🇺🇦", title: "Знаток украинского", subtitle: "генерация на укр." },
-  vision_meta:          { icon: "📖", title: "Хранитель обложек",   subtitle: "метаданные книги" },
   vision_ocr:           { icon: "🖨️", title: "Распознаватель текста", subtitle: "OCR сканированных страниц" },
   vision_illustration:  { icon: "🖼️", title: "Иллюстратор",         subtitle: "описание картинок" },
-  layout_assistant:     { icon: "📐", title: "Верстальщик-ассистент", subtitle: "разметка глав и очистка OCR" },
 };
 
 /**
@@ -63,20 +48,11 @@ export const DISCIPLINE_HUMAN = {
   "evaluator-clrs":                  { short: "CLRS",              long: "Оценка эталона CLRS — должна быть высокой (8-10)" },
   "evaluator-noise":                 { short: "Шум",               long: "Оценка мусорного фрагмента — должна быть низкой (0-2)" },
 
-  /* — Переводчик — */
-  "translator-en-ru":                { short: "Англ → Рус",        long: "Перевод английского технического текста на русский (главный путь импорта)" },
-
-  /* — Знаток украинского — */
-  "ukrainian-uk-write":              { short: "Письмо",            long: "Создание связного текста на украинском с правильной орфографией" },
-
-  /* — Детектор языка — */
-  "lang-detect-uk":                  { short: "Современный укр.",  long: "Распознавание современного украинского технического текста" },
-  "lang-detect-en":                  { short: "Английский",        long: "Контрольная проверка распознавания английского" },
-
   /* — Зрение — */
-  "vision_meta-strict-json":         { short: "Строгий JSON",      long: "Дисциплина формата: vision-модель возвращает чистый JSON без prose" },
-  "vision_meta-cover-en":            { short: "Обложка EN",        long: "JSON-метаданные обложки английской книги" },
-  "vision_ocr-plain-text":           { short: "Plain text",        long: "Дисциплина формата: OCR должен дать чистый текст без markdown/JSON" },
+  "vision_ocr-print-simple":         { short: "Строка текста",     long: "Распознавание одной строки чёткого печатного текста" },
+  "vision_ocr-print-two-lines":      { short: "Две строки",        long: "Распознавание двух строк печатного текста" },
+  "vision_ocr-print-numbers":        { short: "Числа",             long: "Распознавание строки с числами и символами" },
+  "vision_ocr-blank-control":        { short: "Пустой контроль",   long: "Контрольная проверка: пустая картинка → NO_TEXT" },
   "vision_illustration-with-context":{ short: "С контекстом",      long: "Описание иллюстрации с привязкой к теме главы (для RAG-индекса)" },
 };
 
@@ -93,10 +69,7 @@ export function prefKeyLabel(k) {
   const MAP = {
     extractorModel:           "Кристаллизатор",
     evaluatorModel:           "Оценщик книг",
-    translatorModel:          "Переводчик",
-    langDetectorModel:        "Определитель языка",
-    ukrainianSpecialistModel: "Украинская модель",
-    visionModelKey:           "Vision (обложки / OCR / иллюстрации)",
+    visionModelKey:           "Vision (OCR / иллюстрации)",
   };
   return MAP[k] ?? k;
 }
@@ -106,9 +79,6 @@ export function roleIcon(prefKey) {
   const MAP = {
     extractorModel:           "💎",
     evaluatorModel:           "📚",
-    translatorModel:          "🌐",
-    langDetectorModel:        "🔤",
-    ukrainianSpecialistModel: "🇺🇦",
     visionModelKey:           "👁️",
   };
   return MAP[prefKey] ?? "🤖";
@@ -123,11 +93,11 @@ export function aggregateRoleTitle(role) {
   return roleHuman(role).title;
 }
 
-/** Sub-label "Применится к: <prefKey>" — объясняет что vision-роли мапятся в одну
+/** Sub-label "Применится к: <prefKey>" -- объясняет что vision-роли мапятся в одну
  *  pref `visionModelKey` (видеть это нужно в карточках рекомендаций). */
 export function aggregateApplyHint(prefKey) {
   if (prefKey === "visionModelKey") {
-    return "→ visionModelKey (общая для трёх vision-задач)";
+    return "→ visionModelKey (общая для vision_ocr и vision_illustration)";
   }
   return `→ ${prefKey}`;
 }

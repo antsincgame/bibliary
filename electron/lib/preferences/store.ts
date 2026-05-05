@@ -77,11 +77,12 @@ export const PreferencesSchema = z.object({
    */
   ocrEnabled: z.boolean().default(true),
   /**
-   * Языки распознавания. Default: en, ru, uk. Первый — primary для Windows OCR
-   * (Windows.Media.Ocr берёт только первый язык). Остальные — для vision-LLM
-   * пути и для Tesseract где он используется.
+   * Языки распознавания. Default: ru, uk, en. Первый — primary для Windows OCR
+   * (Windows.Media.Ocr берёт только первый язык). Порядок: Cyrillic-first,
+   * потому что Bibliary — в первую очередь Русскоязычная/Украиноязычная библиотека.
+   * Остальные — для vision-LLM пути и для Tesseract где он используется.
    */
-  ocrLanguages: z.array(z.string().min(2).max(10)).max(8).default(["en", "ru", "uk"]),
+  ocrLanguages: z.array(z.string().min(2).max(10)).max(8).default(["ru", "uk", "en"]),
   ocrAccuracy: z.enum(["fast", "accurate"]).default("accurate"),
   /**
    * DPI растеризации страниц PDF перед OCR. Default 400 — высокое качество

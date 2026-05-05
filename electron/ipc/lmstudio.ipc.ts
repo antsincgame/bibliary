@@ -7,6 +7,7 @@ import {
   type LoadedModelInfo,
 } from "../lmstudio-client.js";
 import { getModelPool } from "../lib/llm/model-pool.js";
+import { modelRoleResolver } from "../lib/llm/model-role-resolver.js";
 
 export function registerLmstudioIpc(): void {
   ipcMain.handle("lmstudio:status", async () => getServerStatus());
@@ -41,12 +42,12 @@ export function registerLmstudioIpc(): void {
       } finally {
         handle.release();
       }
+      modelRoleResolver.invalidate();
     },
   );
   ipcMain.handle("lmstudio:unload", async (_e, identifier: string) => {
     await unloadModel(identifier);
-    /* Подтянуть в Pool учёт изменения от user-driven unload, чтобы entry не
-       висла как «загружена». */
     await getModelPool().refresh();
+    modelRoleResolver.invalidate();
   });
 }

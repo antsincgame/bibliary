@@ -21,6 +21,7 @@ import {
   pickResponseFormat,
 } from "../llm/schemas/index.js";
 import * as telemetry from "../resilience/telemetry.js";
+import { runExclusiveOnModel } from "../llm/model-inference-lock.js";
 
 export interface TextMeta {
   title?: string;
@@ -119,27 +120,34 @@ export async function extractTextMetaFromBookText(
         modelKey,
         strategy,
       });
-      const resp = await fetch(`${baseUrl}/v1/chat/completions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: modelKey,
-          temperature: TEXT_META_CONFIG.inference.temperature,
-          max_tokens: TEXT_META_CONFIG.inference.maxTokens,
-          response_format: responseFormat,
-          chat_template_kwargs: { enable_thinking: false },
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: userText },
-          ],
-        }),
-        signal: ctrl.signal,
+      /* Per-modelKey serialization (см. model-inference-lock.ts).
+         Crystallizer часто шарит модель с evaluator/translator. */
+      const data = await runExclusiveOnModel(modelKey, async () => {
+        const resp = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: modelKey,
+            temperature: TEXT_META_CONFIG.inference.temperature,
+            max_tokens: TEXT_META_CONFIG.inference.maxTokens,
+            response_format: responseFormat,
+            chat_template_kwargs: { enable_thinking: false },
+            messages: [
+              { role: "system", content: SYSTEM_PROMPT },
+              { role: "user", content: userText },
+            ],
+          }),
+          signal: ctrl.signal,
+        });
+        if (!resp.ok) {
+          const errText = await resp.text().catch(() => "");
+          return { httpError: `LM Studio HTTP ${resp.status}: ${errText.slice(0, 200)}` };
+        }
+        return (await resp.json()) as { choices?: Array<{ message?: { content?: string } }>; httpError?: string };
       });
-      if (!resp.ok) {
-        const errText = await resp.text().catch(() => "");
-        return { ok: false, error: `LM Studio HTTP ${resp.status}: ${errText.slice(0, 200)}`, warnings, model: modelKey };
+      if ("httpError" in data && data.httpError) {
+        return { ok: false, error: data.httpError, warnings, model: modelKey };
       }
-      const data = (await resp.json()) as { choices?: Array<{ message?: { content?: string } }> };
       const content = (data.choices?.[0]?.message?.content ?? "").trim();
       if (!content) return { ok: false, error: "empty response from LLM", warnings, model: modelKey };
 

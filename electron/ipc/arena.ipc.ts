@@ -226,12 +226,11 @@ export function registerArenaIpc(): void {
     const recs = (payload as { recommendations?: Record<string, string> }).recommendations;
     if (!recs || typeof recs !== "object") throw new Error("recommendations отсутствуют");
 
-    /* Whitelist: только эти ключи разрешено применять. */
+    /* Whitelist: только эти ключи разрешено применять (MVP v1.0 -- 4 роли). */
     const ALLOWED = new Set([
-      "extractorModel", "evaluatorModel", "translatorModel",
+      "extractorModel",
+      "evaluatorModel",
       "visionModelKey",
-      "langDetectorModel", "ukrainianSpecialistModel",
-      "layoutAssistantModel",
     ]);
     const filtered: Partial<Preferences> = {};
     for (const [k, v] of Object.entries(recs)) {

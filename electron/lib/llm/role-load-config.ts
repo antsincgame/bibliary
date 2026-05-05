@@ -61,89 +61,32 @@ export interface LMSLoadConfig {
  *     загружен). Если RAM/VRAM критичен — оставить unset (LM Studio сам подберёт)
  */
 export const ROLE_LOAD_CONFIG: Record<ModelRole, LMSLoadConfig> = {
-  /* CRYSTALLIZER: главный путь delta-extractor — длинные главы (overlap +
-   * thesis + chunk text), reasoning thinking-block, structured JSON. */
   crystallizer: {
     contextLength: 32_768,
     gpu: { ratio: "max" },
-    flashAttention: true,        /* >8K → обязательно */
-    keepModelInMemory: true,     /* часто вызывается */
+    flashAttention: true,
+    keepModelInMemory: true,
     tryMmap: true,
   },
-
-  /* EVALUATOR: короткое описание книги (≤500 chars), score 0-10 + reasoning.
-   * Не нужен длинный контекст. */
   evaluator: {
-    contextLength: 4_096,
-    gpu: { ratio: "max" },
-    flashAttention: false,       /* короткий context — gain незаметен */
-    keepModelInMemory: true,     /* много быстрых вызовов */
-    tryMmap: true,
-  },
-
-  /* TRANSLATOR: страница текста (до 4K input + 4K output). FA полезен. */
-  translator: {
-    contextLength: 8_192,
-    gpu: { ratio: "max" },
-    flashAttention: true,
-    keepModelInMemory: false,    /* редко вызывается, не страшно если swap */
-    tryMmap: true,
-  },
-
-  /* LANG_DETECTOR: один токен на выходе. Минимум всего. */
-  lang_detector: {
-    contextLength: 1_024,
-    gpu: { ratio: 0.5 },         /* мелкая модель, GPU не нужен полностью */
-    flashAttention: false,
-    keepModelInMemory: false,
-    tryMmap: true,
-  },
-
-  /* UKRAINIAN_SPECIALIST: генерация связного текста на укр. */
-  ukrainian_specialist: {
-    contextLength: 4_096,
-    gpu: { ratio: "max" },
-    flashAttention: false,
-    keepModelInMemory: false,
-    tryMmap: true,
-  },
-
-  /* VISION_META: одна картинка (обложка) → strict JSON. Короткий output. */
-  vision_meta: {
-    contextLength: 2_048,
-    gpu: { ratio: "max" },
-    flashAttention: false,
-    keepModelInMemory: true,     /* batch import — много обложек подряд */
-    tryMmap: true,
-  },
-
-  /* VISION_OCR: страница → plain text (может быть длинный). FA важен. */
-  vision_ocr: {
-    contextLength: 8_192,
-    gpu: { ratio: "max" },
-    flashAttention: true,
-    keepModelInMemory: true,     /* OCR partially batches */
-    tryMmap: true,
-  },
-
-  /* VISION_ILLUSTRATION: картинка + контекст главы → 1-3 предложения описания. */
-  vision_illustration: {
     contextLength: 4_096,
     gpu: { ratio: "max" },
     flashAttention: false,
     keepModelInMemory: true,
     tryMmap: true,
   },
-
-  /* LAYOUT_ASSISTANT: аннотирует .md книги (заголовки, junk, ToC) через JSON.
-   * Чанк ~7K символов = ~3K токенов input, output ~1K токенов JSON.
-   * Целевая модель — Qwen2.5-1.5B-Instruct Q4_K_M (CPU 16GB RAM).
-   * Не keepInMemory: запускается асинхронно после импорта, не критично. */
-  layout_assistant: {
+  vision_ocr: {
     contextLength: 8_192,
     gpu: { ratio: "max" },
-    flashAttention: true,        /* >8K — обязательно */
-    keepModelInMemory: false,    /* запуск редкий, opt-in */
+    flashAttention: true,
+    keepModelInMemory: true,
+    tryMmap: true,
+  },
+  vision_illustration: {
+    contextLength: 4_096,
+    gpu: { ratio: "max" },
+    flashAttention: false,
+    keepModelInMemory: true,
     tryMmap: true,
   },
 };
@@ -179,34 +122,10 @@ export interface InferenceDefaults {
 }
 
 export const ROLE_INFERENCE_DEFAULTS: Record<ModelRole, InferenceDefaults> = {
-  /* Crystallizer: structured JSON, нужен детерминизм + достаточно для длинных
-   * списков фактов и relations. */
   crystallizer:         { temperature: 0.1, topP: 0.9, maxTokens: 2048 },
-
-  /* Evaluator: короткий JSON {score, reasoning}. */
   evaluator:            { temperature: 0.2, topP: 0.9, maxTokens: 512 },
-
-  /* Translator: prose. Низкая температура — точность. */
-  translator:           { temperature: 0.2, topP: 0.9, maxTokens: 4096 },
-
-  /* Lang detector: один токен. Идеальный детерминизм. */
-  lang_detector:        { temperature: 0.0, topP: 0.5, maxTokens: 8 },
-
-  /* Ukrainian specialist: текст. Чуть выше для естественности. */
-  ukrainian_specialist: { temperature: 0.4, topP: 0.95, maxTokens: 1024 },
-
-  /* Vision_meta: strict JSON. Минимум температуры. */
-  vision_meta:          { temperature: 0.0, topP: 0.7, maxTokens: 256 },
-
-  /* Vision_ocr: plain text — нужна точность транскрипции. */
   vision_ocr:           { temperature: 0.0, topP: 0.7, maxTokens: 1024 },
-
-  /* Vision_illustration: prose 1-3 предложения с контекстом. */
   vision_illustration:  { temperature: 0.3, topP: 0.9, maxTokens: 384 },
-
-  /* Layout_assistant: structured JSON, нужен максимальный детерминизм
-   * для малых моделей (1.5B). max_tokens 1024 = ~30 заголовков + ToC. */
-  layout_assistant:     { temperature: 0.1, topP: 0.9, maxTokens: 1024 },
 };
 
 export function getRoleInferenceDefaults(role: ModelRole): InferenceDefaults {

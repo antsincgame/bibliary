@@ -91,7 +91,13 @@ export async function putBlob(
    * но мы можем писать ИДЕНТИЧНУЮ обложку из двух книг одновременно). */
   const tmpPath = `${absPath}.tmp.${process.pid}.${Date.now()}.${randomBytes(8).toString("hex")}`;
   try {
-    await fs.writeFile(tmpPath, buffer);
+    const fh = await fs.open(tmpPath, "w");
+    try {
+      await fh.write(buffer);
+      try { await fh.datasync(); } catch { /* non-critical on some FS */ }
+    } finally {
+      await fh.close();
+    }
     await fs.rename(tmpPath, absPath);
   } catch (err) {
     try { await fs.unlink(tmpPath); } catch { /* ignore */ }
@@ -110,6 +116,8 @@ export async function putFile(
   return putBlob(libraryRoot, buffer, mimeType);
 }
 
+const KNOWN_BLOB_EXTS = Object.values(MIME_TO_EXT);
+
 export async function resolveBlobFromUrl(
   libraryRoot: string,
   assetUrl: string,
@@ -123,16 +131,13 @@ export async function resolveBlobFromUrl(
   const sub = blobSubdir(sha);
   const dir = path.join(blobsBase, sub);
 
-  try {
-    const entries = await fs.readdir(dir);
-    const match = entries.find((e) => e.startsWith(sha));
-    if (match) {
-      const resolved = path.resolve(path.join(dir, match));
-      if (!resolved.startsWith(blobsBase)) return null;
-      return resolved;
-    }
-  } catch {
-    // dir doesn't exist
+  for (const ext of KNOWN_BLOB_EXTS) {
+    const candidate = path.resolve(path.join(dir, `${sha}.${ext}`));
+    if (!candidate.startsWith(blobsBase)) continue;
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch { /* next ext */ }
   }
   return null;
 }

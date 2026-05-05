@@ -83,8 +83,6 @@ async function defaultReadEvaluatorPrefs(): Promise<EvaluatorPrefs> {
     const prefs = await readPipelinePrefsOrNull();
     if (!prefs) return { allowFallback: true };
     const preferred = prefs.evaluatorModel?.trim() || undefined;
-    /* Разделитель ` /[\s,;]+/ ` — такой же как в evaluator-readiness.ts,
-       чтобы preflight и очередь видели одинаковый список fallback-ключей. */
     const fallbacks = (prefs.evaluatorModelFallbacks ?? "")
       .split(/[\s,;]+/)
       .map((s) => s.trim())
@@ -305,10 +303,13 @@ export function pauseEvaluator(): void {
 }
 
 export function resumeEvaluator(): void {
-  if (!paused.value) return;
+  if (!paused.value) {
+    void enqueuePendingImportedBooks().then(() => scheduleAvailableSlots());
+    return;
+  }
   paused.value = false;
   emit({ type: "evaluator.resumed" });
-  scheduleAvailableSlots();
+  void enqueuePendingImportedBooks().then(() => scheduleAvailableSlots());
 }
 
 /**
@@ -360,12 +361,12 @@ export function ensureEvaluatorBootstrap(): Promise<void> {
 
 /**
  * Bootstrap при запуске приложения:
- *   1. Читает books WHERE status IN ('imported', 'evaluating') страницами
+ *   1. Читает books WHERE status IN ('imported', 'evaluating', 'failed') страницами
  *      по {@link BOOTSTRAP_PAGE_SIZE} -- никаких hardcoded limit'ов на
  *      масштабе 50k.
  *   2. `evaluating` строки сбрасывает в `imported` (значит "процесс упал
  *      во время оценки").
- *   3. Все `imported` ставит в очередь — slots сами разберут.
+ *   3. Все `imported` + старые evaluatable `failed` ставит в очередь — slots сами разберут.
  *
  * Идемпотентно: повторный вызов не задублирует (enqueueBook проверяет
  * `inQueue` set). Не вызывай напрямую — используй {@link ensureEvaluatorBootstrap}.
@@ -394,18 +395,86 @@ export async function bootstrapEvaluatorQueue(): Promise<void> {
     stuckCursor = nextCursor;
   }
 
-  /* Stage 2: enqueue ВСЕ `imported` через cursor-стриминг. Race-safe —
+  /* Stage 2: enqueue ВСЕ `imported` и старые evaluatable `failed` через cursor-стриминг. Race-safe —
      даже если slot выхватит книгу X и переведёт её в `evaluating` пока
      мы ещё пагинируем, мы её уже взяли в текущем батче. Cursor по `id`
-     гарантирует, что на следующей странице мы не пропустим/не дубликатим. */
+     гарантирует, что на следующей странице мы не пропустим/не дубликатим.
+     `failed` фильтруем по word/chapter count: это rescue для прежних
+     transient LM Studio failures, а не попытка оценивать пустой parser-fail. */
   let importedCursor: string | null = null;
   while (true) {
-    const { ids, nextCursor } = streamBookIdsByStatus(["imported"], BOOTSTRAP_PAGE_SIZE, importedCursor);
+    const { ids, nextCursor } = streamBookIdsByStatus(["imported", "failed"], BOOTSTRAP_PAGE_SIZE, importedCursor);
     if (ids.length === 0) break;
-    enqueueMany(ids);
+    const rows = getBooksByIds(ids);
+    await enqueueEvaluatableRows(rows);
     if (!nextCursor) break;
     importedCursor = nextCursor;
   }
+}
+
+async function enqueueEvaluatableRows(rows: Array<BookCatalogMeta & { mdPath: string }>): Promise<void> {
+  for (const meta of rows) {
+    if (meta.status === "imported") {
+      enqueueBook(meta.id);
+      continue;
+    }
+    if (meta.status !== "failed" || meta.wordCount <= 0 || meta.chapterCount <= 0) continue;
+
+    const reset: BookCatalogMeta = { ...meta, status: "imported", lastError: undefined };
+    upsertBook(reset, meta.mdPath);
+    try {
+      const md = await deps.readFile(meta.mdPath);
+      await deps.writeFile(meta.mdPath, replaceFrontmatter(md, reset));
+    } catch {
+      /* tolerate: DB is enough to enqueue; rebuild can repair later */
+    }
+    enqueueBook(meta.id);
+  }
+}
+
+async function enqueuePendingImportedBooks(): Promise<number> {
+  let cursor: string | null = null;
+  let queued = 0;
+  while (true) {
+    const { ids, nextCursor } = streamBookIdsByStatus(["imported", "failed"], BOOTSTRAP_PAGE_SIZE, cursor);
+    if (ids.length === 0) break;
+    const rows = getBooksByIds(ids);
+    const before = queue.length;
+    await enqueueEvaluatableRows(rows);
+    queued += Math.max(0, queue.length - before);
+    if (!nextCursor) break;
+    cursor = nextCursor;
+  }
+  return queued;
+}
+
+function appendWarning(meta: BookCatalogMeta, warning: string): string[] {
+  const existing = meta.warnings ?? [];
+  return existing.includes(warning) ? existing : [...existing, warning];
+}
+
+function isRetryableEvaluatorIssue(message: string): boolean {
+  return /no LLM loaded|preferred model .* not loaded|Circuit "lmstudio" is OPEN|service degraded|ECONNREFUSED|fetch failed|timeout|LM Studio call failed|empty response|no JSON/i.test(message);
+}
+
+async function deferEvaluationRetry(
+  meta: BookCatalogMeta & { mdPath: string },
+  md: string,
+  reason: string,
+  bookId: string,
+  title: string | null,
+): Promise<void> {
+  const warning = `evaluator deferred: ${reason}`;
+  const deferred: BookCatalogMeta = {
+    ...meta,
+    status: "imported",
+    lastError: warning,
+    warnings: appendWarning(meta, warning),
+  };
+  upsertBook(deferred, meta.mdPath);
+  await persistFrontmatter(deferred, meta.mdPath, md);
+  pauseEvaluator();
+  emit({ type: "evaluator.skipped", bookId, title: title ?? meta.title, error: warning });
 }
 
 /**
@@ -473,7 +542,13 @@ async function evaluateOneInSlot(bookId: string, slot: SlotState): Promise<void>
     const md = await deps.readFile(meta.mdPath);
     const chapters = parseBookMarkdownChapters(md);
     if (chapters.length === 0) {
-      const failed: BookCatalogMeta = { ...meta, status: "failed", warnings: [...(meta.warnings ?? []), "evaluator: no chapters parsed from book.md"] };
+      const reason = "evaluator: no chapters parsed from book.md";
+      const failed: BookCatalogMeta = {
+        ...meta,
+        status: "failed",
+        lastError: reason,
+        warnings: appendWarning(meta, reason),
+      };
       upsertBook(failed, meta.mdPath);
       await persistFrontmatter(failed, meta.mdPath, md);
       totalFailed += 1;
@@ -520,11 +595,7 @@ async function evaluateOneInSlot(bookId: string, slot: SlotState): Promise<void>
             ? `evaluator: preferred model "${evaluatorPrefs.preferred}" not loaded AND no other LLM loaded in LM Studio`
             : `evaluator: preferred model "${evaluatorPrefs.preferred}" not loaded in LM Studio (smart-fallback disabled in Settings)`)
         : "evaluator: no LLM loaded in LM Studio";
-      const failed: BookCatalogMeta = { ...meta, status: "failed", warnings: [...(meta.warnings ?? []), reason] };
-      upsertBook(failed, meta.mdPath);
-      await persistFrontmatter(failed, meta.mdPath, md);
-      totalFailed += 1;
-      emit({ type: "evaluator.failed", bookId, title: slot.title, error: reason });
+      await deferEvaluationRetry(meta, md, reason, bookId, slot.title);
       return;
     }
     /* Если picker подменил preferred на любую loaded LLM — добавим в warnings
@@ -551,9 +622,15 @@ async function evaluateOneInSlot(bookId: string, slot: SlotState): Promise<void>
       deps.evaluateBook(surrogateWithHints, { model, signal: slotSignal }),
     );
     if (!result.evaluation) {
+      const reason = result.warnings.join("; ") || "evaluation returned null";
+      if (isRetryableEvaluatorIssue(reason)) {
+        await deferEvaluationRetry(meta, md, reason, bookId, slot.title);
+        return;
+      }
       const failed: BookCatalogMeta = {
         ...meta,
         status: "failed",
+        lastError: reason,
         evaluatorModel: result.model || model,
         evaluatorReasoning: result.reasoning ?? undefined,
         evaluatedAt: new Date().toISOString(),
@@ -611,7 +688,30 @@ async function evaluateOneInSlot(bookId: string, slot: SlotState): Promise<void>
       upsertBook({ ...meta, status: "imported" }, meta.mdPath);
       emit({ type: "evaluator.skipped", bookId, title: slot.title, error: "aborted" });
     } else {
-      const failed: BookCatalogMeta = { ...meta, status: "failed", warnings: [...(meta.warnings ?? []), `evaluator: ${msg}`] };
+      if (isRetryableEvaluatorIssue(msg)) {
+        try {
+          const md = await deps.readFile(meta.mdPath);
+          await deferEvaluationRetry(meta, md, msg, bookId, slot.title);
+        } catch {
+          const warning = `evaluator deferred: ${msg}`;
+          upsertBook({
+            ...meta,
+            status: "imported",
+            lastError: warning,
+            warnings: appendWarning(meta, warning),
+          }, meta.mdPath);
+          pauseEvaluator();
+          emit({ type: "evaluator.skipped", bookId, title: slot.title, error: warning });
+        }
+        return;
+      }
+      const reason = `evaluator: ${msg}`;
+      const failed: BookCatalogMeta = {
+        ...meta,
+        status: "failed",
+        lastError: reason,
+        warnings: appendWarning(meta, reason),
+      };
       upsertBook(failed, meta.mdPath);
       try {
         const md = await deps.readFile(meta.mdPath);
@@ -650,9 +750,10 @@ export function _resetEvaluatorForTests(): void {
   totalEvaluated = 0;
   totalFailed = 0;
   modelOverride = null;
-  /* Сбрасываем bootstrap single-flight — иначе следующий runSlot получит
-     старый resolved Promise и не перезапустит bootstrap в новом тесте. */
-  _bootstrapOnce = null;
+  /* Unit tests enqueue synthetic ids without a real catalog. Disable lazy
+     bootstrap after reset; tests that need DB bootstrap call bootstrapEvaluatorQueue()
+     explicitly. Production never calls this helper. */
+  _bootstrapOnce = Promise.resolve();
   /* Сбрасываем slots: cancel текущие, очищаем массив, восстанавливаем дефолт. */
   for (const s of slots) {
     if (s.controller) s.controller.abort("test-reset");

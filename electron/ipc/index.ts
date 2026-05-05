@@ -10,7 +10,6 @@ import { registerSystemIpc } from "./system.ipc.js";
 import { registerScannerIpc, abortAllIngests } from "./scanner.ipc.js";
 import { registerDatasetV2Ipc, abortAllDatasetV2 } from "./dataset-v2.ipc.js";
 import { registerDatasetsIpc } from "./datasets.ipc.js";
-import { registerBookhunterIpc, abortAllBookhunter } from "./bookhunter.ipc.js";
 import { registerPreferencesIpc } from "./preferences.ipc.js";
 import { registerModelRolesIpc } from "./model-roles.ipc.js";
 import { registerArenaIpc } from "./arena.ipc.js";
@@ -25,7 +24,6 @@ import {
 export {
   abortAllIngests,
   abortAllDatasetV2,
-  abortAllBookhunter,
   abortAllLibrary,
   activeLibraryImportCount,
   flushLibraryImports,
@@ -60,7 +58,6 @@ export function registerAllIpcHandlers(getMainWindow: () => BrowserWindow | null
   safeRegister("scanner", () => registerScannerIpc(getMainWindow));
   safeRegister("dataset-v2", () => registerDatasetV2Ipc(getMainWindow));
   safeRegister("datasets", () => registerDatasetsIpc(getMainWindow));
-  safeRegister("bookhunter", () => registerBookhunterIpc(getMainWindow));
   safeRegister("preferences", () => registerPreferencesIpc());
   safeRegister("model-roles", () => registerModelRolesIpc());
   safeRegister("arena", () => registerArenaIpc());

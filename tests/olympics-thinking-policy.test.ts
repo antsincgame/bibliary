@@ -6,17 +6,12 @@
  *
  *   crystallizer (delta-extractor) → ДА критично  (extraction = CoT даёт +8-12%)
  *   evaluator                       → ДА          (взвешивание факторов)
- *   lang_detector                   → НЕТ         (тривиальная классификация)
- *   translator                      → ЧАСТИЧНО   (для технических — да; не enforced)
- *   ukrainian_specialist            → НЕТ         (генерация, не reasoning)
- *   vision (любая)                  → НЕТ         (perception, не reasoning)
+ *   vision_ocr                      → НЕТ         (perception, не reasoning)
+ *   vision_illustration             → НЕТ         (perception, не reasoning)
  *
- * Иt 8А (library-fortress, 2026-05-01): роль `judge` удалена из ModelRole /
- * OlympicsRole; раньше она была в FORBID_THINKING.
- *
- * Тест ловит регрессии: например, кто-то добавил новую crystallizer-дисциплину
- * и забыл `thinkingFriendly: true` → efficiency её пенализит за «медленный ответ»,
- * хотя там модель должна думать.
+ * MVP v1.0: 4 роли (crystallizer, evaluator, vision_ocr, vision_illustration).
+ * Удалены: translator, lang_detector, ukrainian_specialist, vision_meta,
+ * layout_assistant.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -30,10 +25,6 @@ const ROLES_REQUIRE_THINKING = new Set([
 
 /** Роли, для которых thinking ЗАПРЕЩЁН (overthink, лишние расходы). */
 const ROLES_FORBID_THINKING = new Set([
-  "lang_detector",
-  "ukrainian_specialist",
-  "vision",
-  "vision_meta",
   "vision_ocr",
   "vision_illustration",
 ]);
@@ -62,7 +53,7 @@ test("thinking-policy: каждая дисциплина crystallizer/evaluator 
   );
 });
 
-test("thinking-policy: lang_detector/ukrainian/vision НЕ должны быть thinkingFriendly", () => {
+test("thinking-policy: vision-роли НЕ должны быть thinkingFriendly", () => {
   const violators: string[] = [];
   for (const d of OLYMPICS_DISCIPLINES) {
     if (!ROLES_FORBID_THINKING.has(d.role)) continue;
@@ -80,13 +71,9 @@ test("thinking-policy: lang_detector/ukrainian/vision НЕ должны быть
 
 test("thinking-policy: каждая роль имеет хотя бы одну дисциплину", () => {
   const rolesPresent = new Set(OLYMPICS_DISCIPLINES.map((d) => d.role));
-  /* judge удалён из ModelRole / OlympicsRole в Иt 8А (library-fortress,
-   * 2026-05-01) — больше не в списке требуемых ролей. delta-extractor уже
-   * давно заменил отдельный judge-шаг. */
   const requiredRoles = [
-    "crystallizer", "evaluator", "translator",
-    "lang_detector", "ukrainian_specialist",
-    "vision_meta", "vision_ocr", "vision_illustration",
+    "crystallizer", "evaluator",
+    "vision_ocr", "vision_illustration",
   ];
   for (const role of requiredRoles) {
     assert.ok(
@@ -120,7 +107,7 @@ test("thinking-policy: каждая дисциплина имеет description 
 });
 
 test("thinking-policy: vision-дисциплины имеют imageUrl", () => {
-  const visionRoles = new Set(["vision", "vision_meta", "vision_ocr", "vision_illustration"]);
+  const visionRoles = new Set(["vision_ocr", "vision_illustration"]);
   const broken: string[] = [];
   for (const d of OLYMPICS_DISCIPLINES) {
     if (!visionRoles.has(d.role)) continue;

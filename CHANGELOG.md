@@ -4,7 +4,306 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] — 2026-05-05
+
+Pre-production polish after MVP v1.0 cutdown. No behavioral changes -- code review,
+dead code elimination, UI alignment with the new 4-role world, plus the on-demand AI
+illustration enrichment that was promised in the v1.0 plan.
+
+### Added
+
+- **AI Enrich Illustrations** (on-demand) -- new catalog toolbar button "AI: описать иллюстрации". Runs the `vision_illustration` model on selected books' `illustrations.json` files (writes descriptions and quality scores). Backed by new IPC channel `library:enrich-illustrations` and preload method `enrichIllustrations(bookIds[])`. Replaces the auto-trigger that was removed during import in v1.0.
+
+### Removed
+
+- Hunt/BookHunter library tab (button + pane shell that did nothing after v1.0 cleanup)
+- Help/Docs sidebar nav (unmounted route since v1.0)
+- Orphan backend files: `electron/lib/llm/arena/role-prompts.ts`, `electron/lib/library/evaluator-readiness.ts`
+- Stale tests: `tests/llm-schemas.test.ts`, `tests/layout-pipeline.test.ts`, `tests/olympics-scorers.test.ts` (all imported deleted modules)
+- `scripts/test-bookhunter.ts` + the `npm run test:bookhunter` script
+- Dead i18n keys (~230 strings across `renderer/locales/en.js` and `ru.js`) for: docs/help, BookHunter, Layout Assistant, Preflight, removed roles (vision_meta, translator, lang_detector, ukrainian_specialist, layout_assistant), removed settings
+- Dead CSS rules (~250 lines): `.lib-preflight-*` (overlay + modal), `.lib-pane-search`, `.lib-reader-action-layout`
+- Mostly-dead `renderer/library/browse.js` (700+ lines pruned to a single `loadPrefs` helper; preview/queue/dropzone helpers were unreachable after v1.0)
+- Orphan state buckets `SEARCH_STATE`, `DOWNLOAD_STATE`, `DOWNLOAD_BY_ID` from `renderer/library/state.js`
+- 5 deprecated model keys from `arena.ipc.ts` whitelist (translatorModel, langDetectorModel, ukrainianSpecialistModel, layoutAssistantModel)
+
+### Changed
+
+- Updated test suite to assert the 4-role world (model-role-resolver, role-load-config, olympics-thinking-policy, olympics-vision-aggregation)
+- `models.olympics.sub` copy now says "11 disciplines / 4 pipeline roles" (was "29 disciplines / 10 roles")
+- Welcome wizard's "go to docs" action now goes to settings
+- Olympics labels file: removed misleading comment about `vision_meta`
+
+### Verified
+
+- `tsc --noEmit` -- 0 errors (electron + renderer)
+- `npm run lint` -- 0 errors, 0 warnings
+- `npm run test:fast` -- 975 pass, 0 fail, 1 skip
+- `npm run test:smoke` -- 4/4 pass (electron bootstrap + import flow + revision dedup + corrupt-file resilience)
+
+## [1.0.0] — 2026-05-05
+
+MVP release: focused scientific text extraction and chunking tool.
+
+### Removed
+
+- **BookHunter** — online book search/download (9 files, ~2,500 lines)
+- **Layout Assistant** — LLM-based markdown annotation (4 files + 2 test files + prompt)
+- **Versator/Typography pipeline** — typograf, callouts, definitions, dropcaps, sidenotes, KaTeX layout, code protection (8 files)
+- **Preflight scanner** — pre-import file analysis UI (5 files + 1 test)
+- **Docs page** — built-in documentation viewer
+- **Legacy scanner UI** — queue.js, preview.js ingest pipeline
+- **vision-meta.ts** — LLM-based cover metadata extraction (role removed)
+- **translator.ts** — LLM-based book translation (role removed)
+- **5 model roles** — vision_meta, layout_assistant, translator, ukrainian_specialist, lang_detector (9 → 4 roles: crystallizer, evaluator, vision_ocr, vision_illustration)
+- **7 Olympics disciplines** — translator-en-ru, ukrainian-uk-write, lang-detect-uk, lang-detect-en, vision_meta-strict-json, vision_meta-cover-en, layout_assistant-chapter-detection
+- Auto illustration enrichment during import (now on-demand from catalog)
+
+### Changed
+
+- **ModelRole** simplified from 9 to 4: crystallizer, vision_ocr, vision_illustration, evaluator
+- **Olympics probe** changed from lang-detect-en to crystallizer-rover
+- **OlympicsRole** type trimmed to match 4 kept roles
+- **md-converter** no longer calls vision-meta, layout-pipeline, or auto processIllustrations
+- **import-book.ts** no longer auto-triggers illustration AI enrichment
+- **vision-ocr.ts** uses role resolver directly instead of pickVisionModels fallback
+- **illustration-worker.ts** uses role resolver directly; triggered on-demand only
+
+### Kept (Core MVP)
+
+- All parsers: PDF, DjVu, EPUB, FB2, DOCX, TXT
+- Full OCR pipeline: Tier 0 (text layer), Tier 1 (system), Tier 2 (vision LLM)
+- Encoding repair: CP1251, KOI8-R, double-UTF8 detection and repair
+- Deterministic image extraction (covers + illustrations into CAS)
+- Semantic chunking (dataset-v2) with LLM crystallizer + Qdrant
+- Book evaluator (quality scoring)
+- Debug reader (markdown + images)
+- Olympics (11 disciplines for 4 roles)
+- Evaluator fields nullable in DB schema (safe for books without scores)
+
 ## [Unreleased]
+
+### Fixed
+
+- **Evaluator no longer burns books into permanent `failed` on transient LM Studio failures.**
+  Missing model, `Circuit "lmstudio" is OPEN`, empty response, or no JSON now defer the
+  book back to `imported`, store a diagnostic `lastError`, and pause the evaluator
+  instead of marking hundreds of books as unrecoverable.
+- **Evaluator recovery for old failed-but-readable books.** Bootstrap/resume can requeue
+  old `failed` books that still have real text (`wordCount > 0`, `chapterCount > 0`);
+  empty parser failures remain untouched and require reparse/OCR.
+- **Mojibake repair for converted text.** CP1251-as-Latin1 lines like `Íîâûå ñëîæíûå`
+  are repaired during conversion/reparse, composite HTML now uses the shared encoding
+  detector, and severe PDF glyph garbage triggers OCR retry when OCR is enabled.
+
+## [0.12.2] — 2026-05-05 — Wave 2: resilience, archives, illustrations
+
+### Fixed
+
+- **A5 run7z timeout.** `extractWith7z` мог висеть бесконечно на повреждённых
+  архивах. Теперь `RUN_7Z_DEFAULT_TIMEOUT_MS = 180_000` с `setTimeout` + kill
+  child process.
+- **A8 parse7zList UTF-8.** Non-ASCII имена файлов из 7z ломались. Добавлен
+  флаг `-mcu=on` в `7z l` и `7z x`.
+- **R3 model-role-resolver determinism.** При равных capability-scores модель
+  выбиралась недетерминированно. Добавлен `localeCompare(b.m.modelKey)` tie-breaker.
+- **D4 ukLangScore false positives.** `raw.includes("укра")` давало ложное 0.85
+  для русских слов "украшение"/"украл". Добавлена explicit-reject regex для
+  false-positive ru-слов. NB: `\b` word boundary не работает с кириллицей в JS.
+- **A10 orphaned archive temp dirs.** При crash/kill оставались
+  `bibliary-archive-*` папки в `os.tmpdir()`. Добавлен startup-cleanup.
+
+### Improved
+
+- **I5 alt-text skip code blocks.** `enrichMarkdownAltText` теперь использует
+  state-machine для пропуска fenced code blocks при замене alt-text.
+- **I6 illustration processed vs alreadyDone.** `processIllustrations` теперь
+  возвращает раздельные счётчики `processed` и `alreadyDone`.
+- **I7 IllustrationEntry.skippedReason.** Новое поле `skippedReason` с union-type
+  ("no-sha" | "blob-missing" | "low-score") для диагностики пропусков.
+- **#17 PDF ISBN: Identifier.** Добавлены ключи `"Identifier"` / `"identifier"`
+  в поиск ISBN в PDF metadata.
+
+## [0.12.1] — 2026-05-05 — Audit-driven bug purge (12 fixes)
+
+### Fixed
+
+- **#1 PERFORMANCE — SHA-256 dedup O(N) full-table scan per book.**
+  `getKnownSha256s()` загружал ВСЮ таблицу `books` в Map на каждую
+  импортируемую книгу. При каталоге 50k книг = 50M строк за 1000 импортов.
+  Заменён на `findBookIdBySha256(sha)` — prepared statement `SELECT id
+  FROM books WHERE sha256 = ? LIMIT 1`. O(1) вместо O(N).
+- **#2 DURABILITY — CAS blob без fsync.** `putBlob` использовал
+  `fs.writeFile + fs.rename` без `fdatasync`, в отличие от `atomic-write.ts`.
+  Power-loss мог дать пустые обложки. Теперь `open → write → datasync → close
+  → rename` как в preferences.
+- **#3+I1 PERFORMANCE — readdir на каждый blob-доступ.** `resolveBlobFromUrl`
+  и `findBlobFile` (illustration-worker) делали `fs.readdir()` на каждый запрос
+  к обложке/иллюстрации. Заменены на `fs.access` по известным расширениям
+  (max 9 stat-calls вместо O(N) readdir).
+- **#4 OCR auto-retry с идентичными параметрами.** Первый и второй вызовы
+  `parseBook` использовали одинаковый `ocrEnabled: true`. Теперь первый
+  вызов — без OCR (быстрый текстовый парсинг), второй — с OCR (только если
+  0 секций).
+- **#5 YAML unquoteYaml — wrong replace order.** `\\n` в title (backslash + n)
+  превращалось в newline из-за неправильного порядка `.replace()`. Исправлено
+  через placeholder technique (NUL-маркер).
+- **#6 ISBN-10 из метаданных — игнорировался.** Условие `metaIsbn.length === 13`
+  отбрасывало ISBN-10 из PDF Info / EPUB OPF. Добавлено `|| length === 10`.
+- **#9 atomic-write .tmp утечка.** Если `writeFile` бросал ошибку, `written=false`
+  пропускал `unlink` .tmp файла. Теперь `opened=true` сразу после `fs.open()`.
+- **#12 Только первый автор сохранялся.** `isbnMeta.authors?.[0]` → `join(", ")`.
+  Учебники, сборники теперь сохраняют всех авторов.
+- **A1 tar/gz/bz2/xz не роутились к 7z.** `ARCHIVE_EXTS` обещал поддержку,
+  `extractArchive` отдавал "unsupported". Теперь tar/gz/tgz/bz2/tbz2/xz/txz
+  идут через `extractWith7z`.
+- **A3 zip-bomb bypass при estimatedTotal=0.** Если JSZip не смог получить
+  `_data.uncompressedSize` ни от одного entry, compression-ratio check
+  пропускался. Теперь refuse при `estimatedTotal=0` с entries > 0.
+- **A7 run7z stdout O(N^2).** String concatenation `stdout += chunk` заменена
+  на `chunks.push() → join("")`.
+- **R2 modelRoleResolver кэш не инвалидировался на load/unload.**
+  `modelRoleResolver.invalidate()` теперь вызывается в `lmstudio:load` и
+  `lmstudio:unload` IPC handlers.
+
+## [0.12.0] — 2026-05-05 — Per-model inference lock + role collision detection
+
+### Fixed
+
+- **КРИТИЧЕСКИЙ — LLM role model не работал при одной загруженной модели.**
+  Симптом: evaluator показывал 205 `queued` / 0 `started`, vision-illustration
+  получал 280 пустых ответов `""`, per-file timeout 240s.
+  Корневая причина: все роли (evaluator, vision-meta, vision-illustration,
+  crystallizer) резолвились в одну и ту же модель `qwen/qwen3.5-35b-a3b`,
+  а `illustration-worker` параллелил 4 запроса — LM Studio захлёбывался
+  конкурентными inference-запросами и возвращал пустые ответы.
+- **`illustrationParallelism` по умолчанию снижен с 4 до 1.** Предотвращает
+  каскадное переполнение единственной модели при дефолтных настройках.
+
+### Added
+
+- **`model-inference-lock.ts`** — `KeyedAsyncMutex` для сериализации всех
+  inference-запросов к LM Studio на уровне `modelKey`. Разные модели
+  работают параллельно; одна модель — строго последовательно. Обёртка
+  `runExclusiveOnModel(modelKey, fn)` интегрирована во все точки вызова:
+  - `lmstudio-client.ts` (`chat()`, `chatWithTools()`)
+  - `vision-meta.ts` (`defaultLmStudioVisionFetcher`)
+  - `vision-ocr.ts` (OCR через vision LLM)
+  - `illustration-worker.ts` (`analyzeImageWithVision`)
+  - `text-meta-extractor.ts` (crystallizer fallback)
+- **`role-collision-detector.ts`** — при старте импорта анализирует настройки
+  ролей моделей и если несколько ролей используют одну физическую модель,
+  пишет `model.collision` warning в лог импорта с указанием конкретных
+  коллизий.
+- **Расширены категории import-логов:** `evaluator.started`, `evaluator.done`,
+  `evaluator.failed`, `evaluator.skipped`, `evaluator.paused`,
+  `evaluator.resumed`, `evaluator.idle`, `model.collision`.
+
+## [0.11.14] — 2026-05-05 — LM Studio zombie-process fix (graceful shutdown)
+
+### Fixed
+
+- **🚨 КРИТИЧЕСКИЙ — зомби-WebSocket к LM Studio после quit Bibliary.**
+  Симптом: после закрытия Bibliary в LM Studio оставались висячие соединения
+  (WebSocket / HTTP/2), модели не освобождались, при повторном запуске
+  Bibliary конкурировал сам с собой за GPU/VRAM.
+  Корневая причина: в проекте ДВА контура `@lmstudio/sdk` SDK:
+  - основной `electron/lmstudio-client.ts` → закрывался через
+    `disposeClientAsync(1500)` в `before-quit` ✅
+  - Olympics `electron/lib/llm/arena/lms-client-sdk.ts` → singleton
+    `_cachedSdkClient` НЕ ЗАКРЫВАЛСЯ НИКОГДА ❌
+- **Модели в `ModelPool` не выгружались при quit.** `getModelPool().evictAll()`
+  существовал, но не вызывался в `teardownSubsystems` — loaded модели
+  оставались в памяти LM Studio с `refCount=0` без `unload()`.
+- **`SIGINT` / `SIGTERM` не запускали graceful shutdown.** Ctrl+C из терминала
+  или `taskkill` извне → процесс убивался жёстко, минуя `before-quit` →
+  любые ресурсы (WebSocket, file handles, child processes 7-Zip)
+  оставались утечкой.
+
+### Changed
+
+- **`disposeOlympicsSdkClientAsync(timeoutMs)`** — новая функция в
+  `lms-client-sdk.ts`. Best-effort выгружает все handles из `_sdkHandles`,
+  вызывает `Symbol.asyncDispose` на клиенте, сбрасывает кэш. Timeout 1с
+  (быстрее force-exit timer = 4с в `main.ts`).
+- **`disposeAllLmStudioResources()`** — новый helper в `main.ts`, единая
+  shutdown-точка для ВСЕХ LM Studio ресурсов:
+  1. `getModelPool().evictAll()` (best-effort, max 1.5с) — освобождает VRAM.
+  2. `disposeClientAsync(1500)` — закрывает основной WebSocket.
+  3. `disposeOlympicsSdkClientAsync(1000)` — закрывает Olympics WebSocket.
+  Вызывается во всех трёх ветках `before-quit` (idle / flush-imports / flush-batches).
+- **Process signals** — `process.on('SIGINT')` и `process.on('SIGTERM')`
+  теперь маршрутизируют завершение в стандартный `app.quit()` flow,
+  который проходит через `disposeAllLmStudioResources`.
+
+### Architecture notes
+
+- Old code: `disposeClientAsync(1_500)` дублировался в трёх местах
+  `before-quit`. New code: единый `disposeAllLmStudioResources()` — DRY +
+  не забудешь обновить одну из веток.
+- Все шаги best-effort с локальным timeout — ни один шаг не может
+  заблокировать quit дольше своего лимита.
+- Олимпийский SDK singleton по-прежнему сбрасывается через
+  `_setOlympicsSdkClientForTests(null)` в тестах — backward compat сохранён.
+
+### Tests
+
+- 34/34 sdk + lifecycle + model-pool тестов проходят (контракт сохранён).
+
+## [0.11.13] — 2026-05-05 — Magic guard OFF + Evaluator pause-on-import
+
+### Removed
+
+- **Magic-guard выключен в основном импорте** (`electron/lib/library/import.ts`).
+  Причина: на реальных торрент-дампах (`E:\Bibliarifull`, 1000+ книг) magic-guard
+  ложно резал сотни валидных PDF/DJVU с `magic: not a PDF (missing %PDF)` /
+  `magic: not a DJVU (missing AT&T)`. Это ломало главный use-case приложения.
+  Парсеры (`pdf-inspector`, `djvu-iff-probe`) сами умеют корректно отказываться
+  от битых файлов с понятными warnings, дублирующая проверка в file-walker
+  была строже, чем нужно. Защита от exe.pdf / virus.pdf **сохранена** внутри
+  `archive-extractor.ts` (там paranoia оправдана — внутри zip-дампа реально
+  бывает мусор).
+  - Изменения: убраны `verifyMagic: true` и `onMagicReject` из `walkOpts`.
+  - Тесты `tests/import-magic-guard.test.ts` и
+    `tests/file-walker-magic.test.ts` остаются — guard-функции используются
+    в `archive-extractor.ts` и доступны для будущих слоёв защиты.
+
+### Changed
+
+- **Auto-pause evaluator на ВЕСЬ импорт по умолчанию** (`library-import-ipc.ts`).
+  Раньше пауза включалась только после `AUTO_PAUSE_THRESHOLD = 100` книг —
+  но vision-meta + vision-illustration + evaluator (chat) = 3 параллельных
+  клиента LM Studio с первой же книги. На больших импортах модель крашилась
+  с `Context size has been exceeded` / `model has crashed`. Теперь:
+  - При старте импорта: `pauseEvaluator()` (если он не был уже paused
+    пользователем — preserves user intent).
+  - В `finally`: `resumeEvaluator()` — все накопленные книги обрабатываются
+    после конца импорта без конкуренции за GPU.
+  - Симметрия: `library:import-files` получил ту же логику (раньше отсутствовала).
+- **Evaluator events видны в Import Logger.** Раньше `evaluator.queued` логировался,
+  но `evaluator.started/done/failed/skipped` уходили только в renderer через
+  `subscribeEvaluator` и НЕ попадали в JSONL-лог. Пользователь не мог понять
+  «работает evaluator или нет» — отсюда жалобы вида «оценщик сломан».
+  Новый helper `attachEvaluatorLogger(importId, logger)` подписывается на
+  `subscribeEvaluator` на время сессии импорта и пишет все события под
+  текущим `importId` (единый таймлайн обработки batch'а).
+
+### Fixed
+
+- **Главный use-case восстановлен.** Импорт `E:\Bibliarifull` (1000+ DjVu/PDF)
+  больше не теряет 200+ файлов на ровном месте.
+- **Evaluator не «зависает» во время импорта.** Конкуренция за LM Studio
+  устранена; модель не крашится.
+- **Прозрачность evaluator-pipeline** — пользователь видит в логе
+  `Evaluating: <title>` → `Evaluated: <title> — score N` или `Evaluation failed`.
+
+### Architecture notes
+
+- Helpers `autoPauseEvaluatorForImport()` / `resumeEvaluatorAfterImport()` /
+  `attachEvaluatorLogger()` — DRY между `library:import-folder` и
+  `library:import-files`. Состояние паузы передаётся через объект
+  `{ wasUserPaused, autoPaused }`, что закрывает риск «system case ломает
+  user-explicit pause».
 
 ## [0.11.12] — 2026-05-05 — Remove preflight from import flow
 

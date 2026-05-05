@@ -207,24 +207,21 @@ export async function importFolderToLibrary(folderPath: string, opts: ImportFold
   };
 
   /* Stage 1: streaming scanner. Архивы (если scanArchives=true) yield'ятся
-     наравне с обычными книгами — раскрытие происходит в Stage 1.5. */
+     наравне с обычными книгами — раскрытие происходит в Stage 1.5.
+
+     v0.11.13: verifyMagic ВЫКЛЮЧЕН (Приказ Императора 2026-05-04).
+     Причина: на реальных торрент-дампах (E:\Bibliarifull, 1000+ книг)
+     magic-guard срабатывал ложно — рубил сотни валидных PDF/DJVU с reason
+     "missing %PDF" / "missing AT&T". Это ломало главный use-case
+     приложения. Парсеры (pdf-inspector, djvu-iff-probe) сами умеют
+     корректно отказываться от битых файлов на этапе обработки и пишут
+     понятные warnings. Magic guard в file-walker дублировал эту работу
+     и ошибался строже, чем следует. Защита от exe.pdf / virus.pdf
+     осталась внутри archive-extractor (там paranoia оправдана). */
   const walkOpts: Parameters<typeof walkSupportedFiles>[2] = {
     includeArchives: opts.scanArchives === true,
     signal: opts.signal,
     detectCompositeHtml: true,
-    verifyMagic: true,
-    onMagicReject: (filePath, reason) => {
-      result.warnings.push(`magic-guard: skipped ${path.basename(filePath)} — ${reason}`);
-      counters.discovered += 1;
-      counters.processed += 1;
-      result.skipped += 1;
-      emit("discovered");
-      emit("processed", {
-        currentFile: filePath,
-        outcome: "skipped",
-        errorMessage: reason,
-      });
-    },
     rejectPartialSiblings: true,
     onPartialReject: (filePath, marker) => {
       const reason = `partial-sibling: ${marker} (incomplete torrent download)`;

@@ -46,6 +46,14 @@ export type ImportLogCategory =
   | "vision.failed"
   | "vision.illustration" /* Прогресс/ошибки worker'а иллюстраций (Semantic Triage). */
   | "evaluator.queued"
+  | "evaluator.started"
+  | "evaluator.done"
+  | "evaluator.failed"
+  | "evaluator.skipped"
+  | "evaluator.paused"
+  | "evaluator.resumed"
+  | "evaluator.idle"
+  | "model.collision" /* Diagnostic: одна модель LM Studio шарится несколькими ролями. */
   | "system.info"
   | "system.warn"
   | "system.error";

@@ -26,14 +26,6 @@ import {
   subscribeEvaluator,
   activeSlotCount as evaluatorActiveSlotCount,
 } from "../lib/library/evaluator-queue.js";
-import {
-  subscribeLayoutAssistant,
-  bootstrapLayoutAssistantQueue,
-  pauseLayoutAssistant,
-  cancelCurrentLayoutAssistant,
-  clearLayoutAssistantQueue,
-  getLayoutAssistantStatus,
-} from "../lib/library/layout-assistant-queue.js";
 import { globalLlmLock } from "../lib/llm/global-llm-lock.js";
 import {
   getImportLogger,
@@ -80,7 +72,7 @@ export async function readImportPrefs(): Promise<{
   } catch {
     return {
       djvuOcrProvider: "auto",
-      ocrLanguages: ["en", "ru", "uk"],
+      ocrLanguages: ["ru", "uk", "en"],
       ocrEnabled: true,
       ocrAccuracy: "accurate",
       ocrPdfDpi: 400,
@@ -116,9 +108,6 @@ export function abortAllLibrary(reason: string): void {
   pauseEvaluator();
   clearQueue();
   cancelCurrentEvaluation(reason);
-  pauseLayoutAssistant();
-  clearLayoutAssistantQueue();
-  cancelCurrentLayoutAssistant(reason);
 }
 
 /** Сколько импортов сейчас в работе. Используется в `before-quit` чтобы не закрывать app посреди работы. */
@@ -204,29 +193,10 @@ export async function bootstrapLibrarySubsystem(getMainWindow: () => BrowserWind
         }
       }
     });
-    /* Layout Assistant queue использует ту же event-bridge модель.
-       Канал "library:layout-assistant-event" — слушает renderer/library/reader
-       и settings UI для статус-бейджа. */
-    subscribeLayoutAssistant((evt) => {
-      const win = getMainWindow();
-      if (win && !win.isDestroyed()) {
-        try {
-          win.webContents.send("library:layout-assistant-event", evt);
-        } catch (err) {
-          console.error("[library-ipc-state] layout-assistant-event send failed:", err);
-        }
-      }
-    });
   }
   ensureImportLogBridge(getMainWindow);
   registerLibraryLlmLockProbes();
-  /* Bootstrap запускается лениво: первый вызов enqueueBook или runSlot
-     запустит ensureEvaluatorBootstrap автоматически. Здесь kick-off чтобы
-     bootstrap начался сразу при старте. Не await'им — не блокируем startup. */
   void ensureEvaluatorBootstrap();
-  /* Layout assistant bootstrap: добавляет imported книги в очередь, если
-     prefs.layoutAssistantEnabled. No-op если фича выключена. */
-  void bootstrapLayoutAssistantQueue();
 }
 
 /**
@@ -250,12 +220,6 @@ function registerLibraryLlmLockProbes(): void {
     return n === 0
       ? { busy: false }
       : { busy: true, reason: `${n} evaluator slot(s) running` };
-  });
-  globalLlmLock.registerProbe("layout-assistant-queue", () => {
-    const s = getLayoutAssistantStatus();
-    return s.running && !s.paused
-      ? { busy: true, reason: "layout assistant slot running" }
-      : { busy: false };
   });
 }
 

@@ -148,17 +148,5 @@ describe("applyRoleDefaults — unknown roles не подмешивают", () =
   });
 });
 
-describe("applyRoleDefaults — gpuOffload mapping", () => {
-  let fake: CaptureFake;
-
-  beforeEach(() => {
-    fake = new CaptureFake();
-    fake.setDownloaded([{ modelKey: "test-model", sizeBytes: 4_000_000_000 }]);
-  });
-
-  it("role=lang_detector с gpu.ratio=0.5 → mapped к gpuOffload=0.5", async () => {
-    const pool = makePool(fake);
-    await pool.acquire("test-model", { role: "lang_detector" });
-    expect(fake.capturedLoads[0]?.opts.gpuOffload).toBe(0.5);
-  });
-});
+/* MVP v1.0.1: removed gpu mapping test that referenced deleted lang_detector role.
+   Vision roles already cover the gpuOffload="max" code path above. */

@@ -1,12 +1,12 @@
 import { promises as fs } from "fs";
 import * as path from "path";
 import { cleanParagraph, looksLikeHeading, type BookParser, type ParseOptions, type ParseResult, type BookSection } from "./types.js";
-import { isOcrSupported, recognizeImageBuffer } from "../ocr/index.js";
+import { isOcrSupported, recognizeImageBuffer, reorderLanguagesForCyrillic } from "../ocr/index.js";
 import { recognizeWithVisionLlm } from "../../llm/vision-ocr.js";
 import { getDjvuInstallHint, getDjvuPageCount, runDdjvu, runDjvutxt, runDjvutxtPage } from "./djvu-cli.js";
 import { imageBufferToPng } from "../../native/sharp-loader.js";
 import { pickBestBookTitle } from "../../library/title-heuristics.js";
-import { isQualityText } from "../extractors/quality-heuristic.js";
+import { isQualityText, detectLatinCyrillicConfusion } from "../extractors/quality-heuristic.js";
 import { convertDjvu } from "../converters/djvu.js";
 
 /* Re-export для backward-compat: tests/djvu-quality-heuristic.test.ts импортирует
@@ -218,20 +218,36 @@ async function ocrDjvuPages(
 
     /* Tier 0 per-page: пробуем встроенный текстовый слой страницы. Дешёво
        (один djvutxt --page=N вызов, обычно <100ms). Если на странице есть
-       ≥ PER_PAGE_TEXT_THRESHOLD chars — пропускаем OCR. */
+       ≥ PER_PAGE_TEXT_THRESHOLD chars И текст не является OCR-кашей
+       (Latin-Cyrillic confusion, digit substitutions) — пропускаем OCR. */
     const pageText = await runDjvutxtPage(filePath, page, opts.signal);
+    let confusedTextLayer = false;
     if (pageText.length >= PER_PAGE_TEXT_THRESHOLD) {
-      const blocks = pageText
-        .split(/\n{2,}/)
-        .map((line) => cleanParagraph(line))
-        .filter((line) => line.length > 0);
-      for (const block of blocks) {
-        paragraphs.push({ page: page + 1, text: block });
-        totalChars += block.length;
+      const confusion = detectLatinCyrillicConfusion(pageText);
+      if (!confusion.isConfused) {
+        const blocks = pageText
+          .split(/\n{2,}/)
+          .map((line) => cleanParagraph(line))
+          .filter((line) => line.length > 0);
+        for (const block of blocks) {
+          paragraphs.push({ page: page + 1, text: block });
+          totalChars += block.length;
+        }
+        textLayerPages++;
+        continue;
       }
-      textLayerPages++;
-      continue;
+      /* Text layer exists but is confused (Latin homoglyphs / digit subs) —
+         fall through to OCR. Force Cyrillic-first language order so the OS OCR
+         engine doesn't repeat the same English-only mistake. */
+      confusedTextLayer = true;
     }
+
+    /* When the text layer was identified as confused, use Cyrillic-first lang order.
+       On Windows, @napi-rs/system-ocr uses ONLY the first language, so putting
+       "ru" first is critical for correct Cyrillic recognition. */
+    const effectiveLangs = confusedTextLayer
+      ? reorderLanguagesForCyrillic(opts.ocrLanguages ?? [])
+      : (opts.ocrLanguages ?? []);
 
     /* Tier 1/2 per-page: страница без встроенного текста — рендерим и OCR'им. */
     try {
@@ -239,7 +255,7 @@ async function ocrDjvuPages(
       const pngBuffer = await imageBufferToPng(imageBuffer);
       const result = provider === "vision-llm"
         ? await recognizeWithVisionLlm(pngBuffer, {
-          languages: opts.ocrLanguages ?? [],
+          languages: effectiveLangs,
           signal: opts.signal,
           mimeType: "image/png",
           modelKey: opts.visionModelKey,
@@ -247,7 +263,7 @@ async function ocrDjvuPages(
         : await recognizeImageBuffer(
           new Uint8Array(pngBuffer.buffer, pngBuffer.byteOffset, pngBuffer.byteLength),
           page,
-          opts.ocrLanguages ?? [],
+          effectiveLangs,
           opts.ocrAccuracy ?? "accurate",
           opts.signal,
         );

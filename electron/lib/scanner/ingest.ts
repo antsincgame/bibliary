@@ -4,35 +4,13 @@ import { chunkBook, type BookChunk, type ChunkerOptions } from "./chunker.js";
 import { ScannerStateStore } from "./state.js";
 import { DEFAULT_EMBED_MODEL, EMBEDDING_DIM, EMBED_MAX_INPUT_CHARS } from "./embedding.js";
 import { embedPassage } from "../embedder/shared.js";
-import { translateBookSections } from "../llm/translator.js";
 import { ensureQdrantCollection } from "../qdrant/collection-config.js";
 
-const NON_RUSSIAN_BUT_TRANSLATABLE = /^(uk|be|kk|ky|tg)/i;
-
 async function maybeTranslateNonRussian(
-  parsed: ParseResult,
-  signal: AbortSignal | undefined,
+  _parsed: ParseResult,
+  _signal: AbortSignal | undefined,
 ): Promise<void> {
-  const lang = parsed.metadata.language?.trim() ?? "";
-  if (!lang || !NON_RUSSIAN_BUT_TRANSLATABLE.test(lang)) return;
-
-  try {
-    const r = await translateBookSections(parsed.sections, {
-      sourceLang: lang.slice(0, 2),
-      targetLang: "ru",
-      signal,
-    });
-    parsed.metadata.warnings.push(
-      `translated to ru: ${r.totalParagraphs} paragraphs, ${r.llmCalls} llm-calls, model=${r.modelKey}` +
-      (r.fallbackUsed > 0 ? `, fallback=${r.fallbackUsed}` : ""),
-    );
-    parsed.metadata.language = "ru";
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    parsed.metadata.warnings.push(
-      `translation skipped (${lang} → ru): ${msg}. Original text used; configure translator role for full coverage.`,
-    );
-  }
+  /* Translator role removed in MVP v1.0 -- no-op. */
 }
 
 /**

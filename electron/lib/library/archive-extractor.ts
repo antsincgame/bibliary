@@ -11,6 +11,7 @@
  */
 
 import { promises as fs, existsSync } from "fs";
+import type { FileHandle } from "fs/promises";
 import * as path from "path";
 import * as os from "os";
 import { spawn } from "child_process";
@@ -25,9 +26,13 @@ import { killChildTree } from "../resilience/kill-tree.js";
 /* Phase A+B Iter 9.4 (rev. 2): расширение для торрент-дампов IT-архивов 2000-х.
    tar/gz/bz2/xz — 7zip handle их одинаково через `7z x`. Двойные .tar.gz / .tar.bz2
    распознаются через basename match ниже. */
+/* Phase Iter 10.1: поддержка образов дисков.
+   ISO/IMG — 7-Zip извлекает нативно (ISO9660 + UDF).
+   NRG (Nero Burning ROM) — стриппинг Nero-footer → сырой ISO → передаём 7z. */
 const ARCHIVE_EXTS = new Set([
   ".zip", ".cbz", ".rar", ".cbr", ".7z",
   ".tar", ".gz", ".tgz", ".bz2", ".tbz2", ".xz", ".txz",
+  ".iso", ".img", ".nrg",
 ]);
 
 /**
@@ -118,6 +123,36 @@ export async function cleanupExtractedDir(tempDir: string): Promise<void> {
   await fs.rm(tempDir, { recursive: true, force: true }).catch((err) => console.error("[archive-extractor/cleanup] rm Error:", err));
 }
 
+/**
+ * Audit A10 (Wave2): scan os.tmpdir() для orphan'ов `bibliary-archive-*`,
+ * созданных предыдущими crash-сессиями. Best-effort — на любой ошибке
+ * молчит. Удаляет ТОЛЬКО директории, имя которых начинается с маркера
+ * + старше cutoffMs (default 6 часов = текущая сессия не удаляется).
+ *
+ * Вызывается из main.ts на startup (не блокирующий).
+ */
+export async function cleanupOrphanedArchiveTempDirs(cutoffMs = 6 * 60 * 60 * 1000): Promise<{ removed: number; errors: number }> {
+  const tmpRoot = os.tmpdir();
+  const now = Date.now();
+  let removed = 0;
+  let errors = 0;
+  let entries: string[];
+  try {
+    entries = await fs.readdir(tmpRoot);
+  } catch { return { removed, errors }; }
+  for (const name of entries) {
+    if (!name.startsWith("bibliary-archive-")) continue;
+    const full = path.join(tmpRoot, name);
+    try {
+      const stat = await fs.stat(full);
+      if (now - stat.mtimeMs < cutoffMs) continue;
+      await fs.rm(full, { recursive: true, force: true });
+      removed++;
+    } catch { errors++; }
+  }
+  return { removed, errors };
+}
+
 /** Безопасное имя файла для temp -- никаких path traversal из архива. */
 function sanitizeEntryName(entryName: string): string {
   const base = path.basename(entryName);
@@ -171,39 +206,66 @@ function resolve7zBinary(): string | null {
   return process.platform === "win32" ? null : "7z";
 }
 
-function run7z(args: string[], signal?: AbortSignal): Promise<{ stdout: string; stderr: string }> {
+/**
+ * Hard timeout для 7z процесса. Реальные кейсы:
+ * - битый RAR5 с corrupted dictionary → 7z висит навсегда
+ * - DJVU/ISO с broken table-of-contents → 7z в бесконечном loop
+ * Per-file timeout 4 минуты в import.ts не пробрасывается сюда.
+ */
+const RUN_7Z_DEFAULT_TIMEOUT_MS = 180_000;
+
+function run7z(
+  args: string[],
+  signal?: AbortSignal,
+  opts: { timeoutMs?: number } = {},
+): Promise<{ stdout: string; stderr: string }> {
   const binary = resolve7zBinary();
   if (!binary) {
     return Promise.reject(new Error("7-Zip binary not found. Set BIBLIARY_7Z_PATH or install bundled 7z-bin binaries."));
   }
+  const timeoutMs = opts.timeoutMs ?? RUN_7Z_DEFAULT_TIMEOUT_MS;
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(new Error("aborted"));
       return;
     }
     const child = spawn(binary, args, { windowsHide: true });
-    let stdout = "";
-    let stderr = "";
+    const stdoutChunks: string[] = [];
+    const stderrChunks: string[] = [];
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killChildTree(child, { gracefulMs: 500 });
+    }, timeoutMs);
     const onAbort = (): void => {
       /* Iter 14.3: на Windows `child.kill()` посылает SIGTERM, который
          завершает только сам 7z.exe; его поддочерние процессы (если 7z
          запустит worker'ов) могут пережить kill и стать orphans. Tree-kill
          через `taskkill /T /F` гарантированно убирает всё поддерево.
          См. `electron/lib/resilience/kill-tree.ts`. */
+      clearTimeout(timer);
       killChildTree(child, { gracefulMs: 500 });
       reject(new Error("aborted"));
     };
     signal?.addEventListener("abort", onAbort, { once: true });
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { stdout += String(chunk); });
-    child.stderr.on("data", (chunk) => { stderr += String(chunk); });
+    child.stdout.on("data", (chunk) => { stdoutChunks.push(String(chunk)); });
+    child.stderr.on("data", (chunk) => { stderrChunks.push(String(chunk)); });
     child.on("error", (err) => {
+      clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
       reject(err);
     });
     child.on("close", (code) => {
+      clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
+      const stdout = stdoutChunks.join("");
+      const stderr = stderrChunks.join("");
+      if (timedOut) {
+        reject(new Error(`7z timeout after ${timeoutMs}ms: ${(stderr || stdout).slice(0, 200)}`));
+        return;
+      }
       if (code === 0) resolve({ stdout, stderr });
       else reject(new Error(`7z exited ${code}: ${(stderr || stdout).slice(0, 500)}`));
     });
@@ -276,8 +338,6 @@ async function extractZipLike(absPath: string, tempDir: string, warnings: string
     );
     return [];
   }
-  /* compression ratio имеет смысл только когда compressedBytes > 0 и мы
-     знаем суммарный uncompressed. */
   if (compressedBytes > 0 && estimatedTotal > 0) {
     const ratio = estimatedTotal / compressedBytes;
     if (ratio > limits.maxCompressionRatio) {
@@ -286,6 +346,11 @@ async function extractZipLike(absPath: string, tempDir: string, warnings: string
       );
       return [];
     }
+  } else if (compressedBytes > 0 && estimatedTotal === 0 && fileEntries.length > 0) {
+    warnings.push(
+      `archive-extractor: ${sourceArchive} — unable to determine uncompressed size for ${fileEntries.length} entries (JSZip API may have changed); refusing as safety measure`,
+    );
+    return [];
   }
 
   const out: ExtractedBook[] = [];
@@ -345,12 +410,100 @@ async function extractZipLike(absPath: string, tempDir: string, warnings: string
   return out;
 }
 
-async function extractWith7z(absPath: string, tempDir: string, warnings: string[]): Promise<ExtractedBook[]> {
+/**
+ * Nero Burning ROM image stripper.
+ *
+ * Reads the NRG footer (last ≤12 bytes) to locate where the track data ends,
+ * then stream-copies that portion to `destIsoPath` as a raw ISO 9660 image.
+ *
+ * Supports:
+ *   NER5 (v2) — 64-bit footer offset at EOF-12, magic "NER5" at EOF-4
+ *   NERO (v1) — 32-bit footer offset at EOF-8,  magic "NERO" at EOF-4
+ *
+ * Uses 4 MB chunks to handle 700 MB CD images without loading them into memory.
+ */
+async function nrgStripToIso(
+  nrgPath: string,
+  destIsoPath: string,
+  warnings: string[],
+): Promise<boolean> {
+  const NRG_CHUNK = 4 * 1024 * 1024;
+  let src: FileHandle | null = null;
+  let dst: FileHandle | null = null;
+  try {
+    src = await fs.open(nrgPath, "r");
+    const { size } = await src.stat();
+    if (size < 16) {
+      warnings.push(`archive-extractor: NRG too small to be valid: ${path.basename(nrgPath)}`);
+      return false;
+    }
+
+    /* Read last 16 bytes to detect magic + footer offset.
+       tail layout (bytes relative to EOF):
+         tail[12..15] = magic ("NERO" or "NER5")
+         tail[8..11]  = NERO 32-bit offset  |  NER5 low 32-bits of 64-bit offset
+         tail[4..7]   = NER5 high 32-bits (v2 only)                             */
+    const tail = Buffer.allocUnsafe(16);
+    await src.read(tail, 0, 16, size - 16);
+    const magic = tail.slice(12, 16).toString("ascii");
+    let dataEnd: number;
+
+    if (magic === "NER5") {
+      const hi = tail.readUInt32BE(4);
+      const lo = tail.readUInt32BE(8);
+      dataEnd = hi * 0x1_0000_0000 + lo;
+    } else if (magic === "NERO") {
+      dataEnd = tail.readUInt32BE(8);
+    } else {
+      warnings.push(
+        `archive-extractor: not a valid NRG (magic "${magic}"): ${path.basename(nrgPath)}`,
+      );
+      return false;
+    }
+
+    if (dataEnd <= 0 || dataEnd > size) {
+      warnings.push(
+        `archive-extractor: NRG footer offset ${dataEnd} out of range (size=${size}): ${path.basename(nrgPath)}`,
+      );
+      return false;
+    }
+
+    dst = await fs.open(destIsoPath, "w");
+    const chunk = Buffer.allocUnsafe(NRG_CHUNK);
+    let copied = 0;
+    while (copied < dataEnd) {
+      const toRead = Math.min(NRG_CHUNK, dataEnd - copied);
+      const { bytesRead } = await src.read(chunk, 0, toRead, copied);
+      if (bytesRead === 0) break;
+      await dst.write(chunk, 0, bytesRead);
+      copied += bytesRead;
+    }
+    return copied > 0;
+  } catch (err) {
+    warnings.push(
+      `archive-extractor: NRG strip error for ${path.basename(nrgPath)}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return false;
+  } finally {
+    await src?.close().catch(() => {});
+    await dst?.close().catch(() => {});
+  }
+}
+
+async function extractWith7z(
+  absPath: string,
+  tempDir: string,
+  warnings: string[],
+  opts: { sourceLabel?: string } = {},
+): Promise<ExtractedBook[]> {
   const limits = resolveLimits();
-  const sourceArchive = path.basename(absPath);
+  const sourceArchive = opts.sourceLabel ?? path.basename(absPath);
   let listed;
   try {
-    listed = await run7z(["l", "-slt", "-ba", absPath]);
+    /* -mcu=on: force UTF-8 для file-name output. Старые архивы из Флибусты
+       (RAR/ZIP созданные русским WinRAR'ом) могут возвращать имена в CP866/CP1251,
+       что при -setEncoding("utf8") даёт `\uFFFD` и теряет файлы. */
+    listed = await run7z(["l", "-slt", "-ba", "-mcu=on", absPath]);
   } catch (err) {
     warnings.push(`archive-extractor: 7z list failed for ${sourceArchive}: ${err instanceof Error ? err.message : String(err)}`);
     return [];
@@ -382,7 +535,7 @@ async function extractWith7z(absPath: string, tempDir: string, warnings: string[
   }
 
   try {
-    await run7z(["x", "-y", `-o${tempDir}`, absPath]);
+    await run7z(["x", "-y", "-mcu=on", `-o${tempDir}`, absPath]);
   } catch (err) {
     warnings.push(`archive-extractor: 7z extract failed for ${sourceArchive}: ${err instanceof Error ? err.message : String(err)}`);
     return [];
@@ -507,10 +660,45 @@ export async function extractArchive(absPath: string): Promise<ExtractResult> {
     return { books, tempDir, warnings };
   }
 
-  if (ext === ".rar" || ext === ".cbr" || ext === ".7z") {
+  const EXTS_VIA_7Z = new Set([".rar", ".cbr", ".7z", ".tar", ".gz", ".tgz", ".bz2", ".tbz2", ".xz", ".txz"]);
+  if (EXTS_VIA_7Z.has(ext)) {
     const books = await extractWith7z(absPath, tempDir, warnings);
     if (books.length === 0 && warnings.length === 0) {
       warnings.push(`archive-extractor: ${ext.slice(1).toUpperCase()} archive contains no supported book files (${path.basename(absPath)})`);
+    }
+    return { books, tempDir, warnings };
+  }
+
+  /* Phase Iter 10.1 — disk image support.
+     ISO/IMG: 7-Zip handles ISO9660 + UDF natively.
+     NRG: strip the Nero footer to recover the raw ISO9660 track, then feed to 7z. */
+  if (ext === ".iso" || ext === ".img") {
+    const books = await extractWith7z(absPath, tempDir, warnings);
+    if (books.length === 0 && warnings.length === 0) {
+      warnings.push(
+        `archive-extractor: ${ext.slice(1).toUpperCase()} image contains no supported book files (${path.basename(absPath)})`,
+      );
+    }
+    return { books, tempDir, warnings };
+  }
+
+  if (ext === ".nrg") {
+    const baseName = path.basename(absPath, ".nrg");
+    const tempIsoPath = path.join(tempDir, sanitizeEntryName(baseName + "__nrg.iso"));
+    const stripped = await nrgStripToIso(absPath, tempIsoPath, warnings);
+    if (!stripped) {
+      warnings.push(
+        `archive-extractor: NRG image could not be converted — no books extracted (${path.basename(absPath)})`,
+      );
+      return { books: [], tempDir, warnings };
+    }
+    const books = await extractWith7z(tempIsoPath, tempDir, warnings, {
+      sourceLabel: path.basename(absPath),
+    });
+    if (books.length === 0 && warnings.length === 0) {
+      warnings.push(
+        `archive-extractor: NRG image contains no supported book files (${path.basename(absPath)})`,
+      );
     }
     return { books, tempDir, warnings };
   }

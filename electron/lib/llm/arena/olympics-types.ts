@@ -26,15 +26,8 @@ export type WeightClass = "xs" | "s" | "m" | "l" | "xl" | "unknown";
 export type OlympicsRole =
   | "crystallizer"
   | "evaluator"
-  | "translator"
-  | "lang_detector"
-  | "ukrainian_specialist"
-  /** @deprecated — used only by `vision-describe-shapes`; новые роли: vision_meta / vision_ocr / vision_illustration */
-  | "vision"
-  | "vision_meta"
   | "vision_ocr"
-  | "vision_illustration"
-  | "layout_assistant";
+  | "vision_illustration";
 
 export interface OlympicsOptions {
   /** Адрес LM Studio. По умолчанию http://localhost:1234. */

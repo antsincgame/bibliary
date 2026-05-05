@@ -1,6 +1,6 @@
 {
   "name": "bibliary",
-  "version": "0.11.12",
+  "version": "1.0.1",
   "type": "module",
   "main": "dist-electron/main.js",
   "description": "Local book library → structured Markdown → Qdrant vector collections → ChatML JSONL fine-tuning datasets",
@@ -27,7 +27,6 @@
     "test:dataset-v2": "tsx scripts/test-dataset-v2.ts",
     "test:e2e:library-delta": "tsx scripts/e2e-library-delta.ts",
     "test:model-select": "tsx scripts/test-model-select.ts",
-    "test:bookhunter": "tsx scripts/test-bookhunter.ts",
     "test:dataset-v2-live": "tsx scripts/test-dataset-v2-live.ts",
     "test:e2e:mvp": "tsx scripts/test-dataset-v2-live.ts",
     "test:e2e:quality": "tsx scripts/test-dataset-v2-live.ts",

@@ -27,13 +27,8 @@ export const TOAST_TTL_MS = 5000;
 export const PIPELINE_ROLES = [
   "crystallizer",
   "evaluator",
-  "translator",
-  "ukrainian_specialist",
-  "lang_detector",
-  "vision_meta",
   "vision_ocr",
   "vision_illustration",
-  "layout_assistant",
 ];
 
 /**

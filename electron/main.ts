@@ -4,13 +4,14 @@ import {
   registerAllIpcHandlers,
   abortAllIngests,
   abortAllDatasetV2,
-  abortAllBookhunter,
   abortAllLibrary,
   activeLibraryImportCount,
   flushLibraryImports,
   bootstrapLibrarySubsystem,
 } from "./ipc";
 import { disposeClientAsync } from "./lmstudio-client";
+import { disposeOlympicsSdkClientAsync } from "./lib/llm/arena/lms-client-sdk.js";
+import { getModelPool } from "./lib/llm/model-pool.js";
 import { triggerAppShutdown } from "./lib/app-lifecycle.js";
 import {
   initResilienceLayer,
@@ -197,6 +198,13 @@ if (!gotLock) {
     startModelPoolSnapshotBroadcaster(() => mainWindow);
     registerAllIpcHandlers(() => mainWindow);
     void bootstrapLibrarySubsystem(() => mainWindow);
+    /* Audit A10 (Wave2): best-effort cleanup orphan'ов bibliary-archive-* в %TEMP%
+       от предыдущих crash-сессий. Не блокирующий, не валится при ошибках. */
+    void import("./lib/library/archive-extractor.js").then(({ cleanupOrphanedArchiveTempDirs }) =>
+      cleanupOrphanedArchiveTempDirs().then((res) => {
+        if (res.removed > 0) console.log(`[startup] archive temp cleanup: removed ${res.removed} orphan dirs (errors: ${res.errors})`);
+      }).catch(() => { /* best-effort */ }),
+    );
     createWindow();
   }).catch((err) => {
     console.error("[main] fatal startup error — createWindow was never called:", err);
@@ -223,7 +231,6 @@ if (!gotLock) {
       ["abortAllIngests", () => abortAllIngests("app-quit")],
       ["abortAllDatasetV2", () => abortAllDatasetV2("app-quit")],
       ["killAllSynthChildren", killAllSynthChildren],
-      ["abortAllBookhunter", () => abortAllBookhunter("app-quit")],
       ["abortAllLibrary", () => abortAllLibrary("app-quit")],
       ["closeCacheDb", closeCacheDb],
     ];
@@ -239,6 +246,47 @@ if (!gotLock) {
   function hardExit(code = 0): void {
     try { app.exit(code); } catch { /* ignore */ }
     setTimeout(() => { process.exit(code); }, 300).unref();
+  }
+
+  /**
+   * Закрытие всех LM Studio ресурсов — ОБА контура SDK + eviction моделей пула.
+   * v0.11.14: фикс зомби-процесса. До этого:
+   *   - `_cachedSdkClient` (Olympics) НЕ закрывался → WebSocket к LM Studio
+   *     висел от мёртвого процесса (зомби-соединение).
+   *   - `getModelPool().evictAll()` НЕ вызывался → loaded модели в LM Studio
+   *     оставались с refCount=0 в нашем учёте без unload.
+   *
+   * Контракт:
+   *   1. evictAll моделей пула (best-effort, max 1.5с) → освобождает VRAM
+   *      на стороне LM Studio.
+   *   2. dispose основного клиента (already existing) → закрывает основной WebSocket.
+   *   3. dispose Olympics SDK клиента → закрывает второй WebSocket + handles.
+   *
+   * Все шаги best-effort с timeout — quit не должен зависать дольше 4с (force-exit).
+   */
+  async function disposeAllLmStudioResources(): Promise<void> {
+    try {
+      const evicted = await Promise.race([
+        getModelPool().evictAll(),
+        new Promise<number>((resolve) => setTimeout(() => resolve(-1), 1_500).unref()),
+      ]);
+      if (evicted >= 0) console.log(`[main/shutdown] model-pool.evictAll: ${evicted} models unloaded`);
+      else console.warn("[main/shutdown] model-pool.evictAll: TIMEOUT (1.5s)");
+    } catch (err) {
+      console.error("[main/shutdown] model-pool.evictAll Error:", err);
+    }
+    try {
+      const closedOk = await disposeClientAsync(1_500);
+      console.log(`[main/shutdown] LM Studio main client dispose: ${closedOk ? "OK" : "TIMEOUT/ERROR"}`);
+    } catch (err) {
+      console.error("[main/shutdown] disposeClientAsync Error:", err);
+    }
+    try {
+      const closedOk = await disposeOlympicsSdkClientAsync(1_000);
+      console.log(`[main/shutdown] LM Studio Olympics SDK dispose: ${closedOk ? "OK" : "TIMEOUT/ERROR"}`);
+    } catch (err) {
+      console.error("[main/shutdown] disposeOlympicsSdkClientAsync Error:", err);
+    }
   }
 
   let isQuitting = false;
@@ -261,8 +309,7 @@ if (!gotLock) {
       void (async () => {
         try {
           teardownSubsystems();
-          const closedOk = await disposeClientAsync(1_500);
-          console.log(`[main/shutdown] LM Studio dispose: ${closedOk ? "OK" : "TIMEOUT/ERROR"}`);
+          await disposeAllLmStudioResources();
           await telemetry.flush().catch((err) => console.error("[main/shutdown] telemetry.flush Error:", err));
           console.log("[main/shutdown] idle path — clean exit");
         } catch (e) {
@@ -285,8 +332,7 @@ if (!gotLock) {
           const ok = await flushLibraryImports(SHUTDOWN_FLUSH_TIMEOUT_MS, "app-quit");
           console.log(`[main/shutdown] library import flush ${ok ? "OK" : "TIMEOUT"} in ${Date.now() - startedAt}ms`);
           teardownSubsystems();
-          const closedOk = await disposeClientAsync(1_500);
-          console.log(`[main/shutdown] LM Studio dispose: ${closedOk ? "OK" : "TIMEOUT/ERROR"}`);
+          await disposeAllLmStudioResources();
           await telemetry.flush().catch((err) => console.error("[main/shutdown] telemetry.flush Error:", err));
         } catch (e) {
           console.error("[main/shutdown] flush-imports path error:", e);
@@ -324,8 +370,7 @@ if (!gotLock) {
         });
       } finally {
         teardownSubsystems();
-        const closedOk = await disposeClientAsync(1_500);
-        console.log(`[main/shutdown] LM Studio dispose: ${closedOk ? "OK" : "TIMEOUT/ERROR"}`);
+        await disposeAllLmStudioResources();
         await telemetry.flush().catch((err) => console.error("[main/shutdown] telemetry.flush Error:", err));
         console.log("[main/shutdown] exiting with code", exitCode);
         clearTimeout(forceTimer);
@@ -333,4 +378,16 @@ if (!gotLock) {
       }
     })();
   });
+
+  /* v0.11.14: SIGINT (Ctrl+C) / SIGTERM (kill, taskkill) → graceful shutdown.
+     Раньше внешнее завершение процесса НЕ запускало `before-quit` хендлер —
+     LM Studio оставался с висячим WebSocket. Теперь сигналы маршрутизируются
+     в стандартный quit-flow, который проходит через disposeAllLmStudioResources. */
+  const SHUTDOWN_SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
+  for (const sig of SHUTDOWN_SIGNALS) {
+    process.on(sig, () => {
+      console.log(`[main] received ${sig} — initiating graceful shutdown`);
+      try { app.quit(); } catch { hardExit(0); }
+    });
+  }
 }

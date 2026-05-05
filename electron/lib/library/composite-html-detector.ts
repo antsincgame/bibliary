@@ -25,6 +25,7 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import type { ParseResult, BookSection } from "../scanner/parsers/types.js";
 import { cleanParagraph } from "../scanner/parsers/types.js";
+import { decodeBuffer } from "../scanner/encoding-detector.js";
 
 /** Minimum number of HTML files to treat as a composite book (not a single doc). */
 const MIN_HTML_FILES_FOR_COMPOSITE = 10;
@@ -192,15 +193,7 @@ async function orderByEntryPoint(entryPath: string, allFiles: string[]): Promise
 }
 
 function decodeHtmlBuffer(buf: Buffer): string {
-  let text = buf.toString("utf8");
-  const charsetMatch = text.match(/<meta[^>]+charset=["']?([^"';\s>]+)/i);
-  if (charsetMatch) {
-    const cs = charsetMatch[1].toLowerCase();
-    if (cs === "windows-1251" || cs === "cp1251") {
-      text = buf.toString("latin1");
-    }
-  }
-  return text;
+  return decodeBuffer(buf, { parseHtmlMeta: true }).text;
 }
 
 function extractSectionsFromHtml(text: string, filePath: string): BookSection[] {

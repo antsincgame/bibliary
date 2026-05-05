@@ -19,7 +19,7 @@ import JSZip from "jszip";
 import { XMLParser } from "fast-xml-parser";
 import type { ImageRef } from "./types.js";
 import { getDjvuPageCount, runDdjvu } from "../scanner/parsers/djvu-cli.js";
-import { getPdfjsStandardFontDataUrl } from "../scanner/pdfjs-node.js";
+import { getPdfjsStandardFontDataUrl, getPdfjsCMapUrl } from "../scanner/pdfjs-node.js";
 import { imageBufferToPng } from "../native/sharp-loader.js";
 import { isMarkerAvailable, runMarkerOnPdf, runMarkerOnDjvu } from "./marker-sidecar.js";
 
@@ -380,6 +380,8 @@ async function extractPdfImagesLegacy(
       disableFontFace: true,
       useSystemFonts: false,
       standardFontDataUrl: getPdfjsStandardFontDataUrl(),
+      cMapUrl: getPdfjsCMapUrl(),
+      cMapPacked: true,
       verbosity: pdfjs.VerbosityLevel.ERRORS,
     });
     try {

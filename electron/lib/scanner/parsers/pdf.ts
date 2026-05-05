@@ -3,7 +3,7 @@ import * as path from "path";
 import { cleanParagraph, looksLikeHeading, type BookParser, type ParseOptions, type ParseResult, type BookSection } from "./types.js";
 import { isOcrSupported, rasterisePdfPages } from "../ocr/index.js";
 import { parsePdfInWorker, isWorkerPdfEnabled } from "./pdf-worker-host.js";
-import { getPdfjsStandardFontDataUrl } from "../pdfjs-node.js";
+import { getPdfjsStandardFontDataUrl, getPdfjsCMapUrl } from "../pdfjs-node.js";
 import { isLowValueBookTitle, pickBestBookTitle } from "../../library/title-heuristics.js";
 import { tryParsePdfWithInspector } from "./pdf-inspector-parser.js";
 import { tryParsePdfWithEdgeParse } from "./edgeparse-parser.js";
@@ -233,6 +233,8 @@ export async function parsePdfMain(filePath: string, opts: ParseOptions = {}): P
     disableFontFace: true,
     useSystemFonts: false,
     standardFontDataUrl: getPdfjsStandardFontDataUrl(),
+    cMapUrl: getPdfjsCMapUrl(),
+    cMapPacked: true,
     verbosity: pdfjs.VerbosityLevel.ERRORS,
   });
 
@@ -280,7 +282,7 @@ export async function parsePdfMain(filePath: string, opts: ParseOptions = {}): P
   })();
 
   const identifier = (() => {
-    for (const key of ["ISBN", "isbn", "Subject", "Keywords"]) {
+    for (const key of ["ISBN", "isbn", "Identifier", "identifier", "Subject", "Keywords"]) {
       const raw = info[key];
       if (typeof raw === "string") {
         const m = raw.match(/((?:978|979)[\d-]{10,})/);

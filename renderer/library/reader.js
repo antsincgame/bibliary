@@ -26,24 +26,6 @@ let navInterceptor = null;
 /** @type {HTMLElement | null} */
 let activeReaderRoot = null;
 
-/**
- * Reference to the "AI Layout" button in the reader toolbar.
- * Kept at module level so queue-events can update it from outside openBook().
- * @type {HTMLButtonElement | null}
- */
-let layoutAssistantBtn = null;
-
-/**
- * Unsubscribe function for `onLayoutAssistantEvent`. Cleaned up in closeReader().
- * @type {(() => void) | null}
- */
-let unsubscribeLayoutEvents = null;
-
-/**
- * True when the layout-assistant queue is actively processing the current book.
- * Used by the dual-purpose AI Layout button to switch between Run/Cancel modes.
- */
-let layoutIsProcessing = false;
 
 /**
  * Strip YAML frontmatter (--- ... ---) from markdown text.
@@ -443,13 +425,6 @@ export function closeReader(root) {
   document.body.classList.remove("lib-reader-active");
   activeReaderRoot = null;
   uninstallNavInterceptor();
-  /* Unsubscribe layout-assistant events (renderer badge cleanup). */
-  if (unsubscribeLayoutEvents) {
-    unsubscribeLayoutEvents();
-    unsubscribeLayoutEvents = null;
-  }
-  layoutAssistantBtn = null;
-  layoutIsProcessing = false;
   if (catalogBody) {
     catalogBody.style.display = "";
     catalogBody = null;
@@ -545,67 +520,6 @@ function renderReader(root) {
       title: t("library.reader.action.saveCover.tooltip"),
       onclick: () => downloadCover(coverDataUrl, shownTitle),
     }, t("library.reader.action.saveCover")) : null,
-    /* Layout Assistant (LLM): прогон через локальную модель для разметки
-       заголовков, удаления OCR-junk. Полностью opt-in.
-       Кнопка — двурежимная: обычный режим запускает обработку,
-       режим Cancel (когда queue активен на этой книге) отменяет её.
-       Переключением управляет `layoutIsProcessing` + `onLayoutAssistantEvent`. */
-    (() => {
-      /** @type {HTMLButtonElement} */
-      const btn = /** @type {HTMLButtonElement} */ (el("button", {
-        class: "lib-btn lib-btn-ghost lib-reader-action lib-reader-action-layout",
-        type: "button",
-        title: t("library.reader.action.layoutAssistant.tooltip"),
-        onclick: async (ev) => {
-          const b = ev.currentTarget instanceof HTMLButtonElement ? ev.currentTarget : null;
-          /* Cancel mode: queue is actively processing this book. */
-          if (layoutIsProcessing) {
-            if (typeof window.api.library.layoutAssistantCancelCurrent === "function") {
-              await window.api.library.layoutAssistantCancelCurrent();
-            }
-            return;
-          }
-          /* Run mode: manually trigger layout-assistant on this book. */
-          const { showAlert } = await import("../components/ui-dialog.js");
-          if (b) {
-            b.disabled = true;
-            b.dataset.originalLabel = b.textContent || "";
-            b.textContent = t("library.reader.action.layoutAssistant.running");
-          }
-          try {
-            const r = await window.api.library.layoutAssistantRunBook(currentBook.bookId);
-            if (!r || r.ok === false) {
-              await showAlert(t("library.reader.action.layoutAssistant.failed", { reason: r?.reason || "" }));
-              return;
-            }
-            if (r.applied) {
-              await showAlert(t("library.reader.action.layoutAssistant.applied", {
-                chunksOk: String(r.chunksOk ?? 0),
-                chunksFailed: String(r.chunksFailed ?? 0),
-                model: r.model || "?",
-              }));
-              /* Reload book content to show updates. */
-              const { renderCatalog } = await import("./catalog.js");
-              await renderCatalog(root);
-            } else {
-              await showAlert(t("library.reader.action.layoutAssistant.noop", { reason: r.reason || "" }));
-            }
-          } catch (e) {
-            await showAlert(t("library.reader.action.layoutAssistant.failed", {
-              reason: e instanceof Error ? e.message : String(e),
-            }));
-          } finally {
-            if (b) {
-              b.disabled = false;
-              b.textContent = b.dataset.originalLabel || t("library.reader.action.layoutAssistant");
-            }
-          }
-        },
-      }, t("library.reader.action.layoutAssistant")));
-      /* Save ref so queue events can update button state without re-render. */
-      layoutAssistantBtn = btn;
-      return btn;
-    })(),
     /* P6 (2026-05-03, user feedback "Кнопки Сжечь — нету"): destructive
        action рядом с обычными — visually distinct (danger styling), guarded
        by confirm dialog. IPC уже есть: window.api.library.deleteBook. */
@@ -687,44 +601,6 @@ function renderReader(root) {
     readerContainer.appendChild(buildEmptyBodyBanner(currentBook.bookId, meta));
   }
 
-  /* Reader badge: подписываемся на queue-события layout-assistant для обновления
-     кнопки «AI Layout» в toolbar. Unsubscribe происходит в closeReader(). */
-  if (
-    typeof window.api.library.onLayoutAssistantEvent === "function" &&
-    currentBook
-  ) {
-    const trackedBookId = currentBook.bookId;
-    /* Очищаем предыдущую подписку если была (defensive). */
-    if (unsubscribeLayoutEvents) {
-      unsubscribeLayoutEvents();
-      unsubscribeLayoutEvents = null;
-    }
-    unsubscribeLayoutEvents = window.api.library.onLayoutAssistantEvent((evt) => {
-      /* Реагируем только на события текущей книги. */
-      if (evt.bookId !== trackedBookId) return;
-      if (!layoutAssistantBtn) return;
-      if (evt.type === "layout.started") {
-        /* Switch to Cancel mode: keep button enabled so user can abort. */
-        layoutIsProcessing = true;
-        layoutAssistantBtn.disabled = false;
-        layoutAssistantBtn.dataset.originalLabel = layoutAssistantBtn.dataset.originalLabel
-          || t("library.reader.action.layoutAssistant");
-        layoutAssistantBtn.textContent = t("library.reader.action.layoutAssistant.cancel");
-        layoutAssistantBtn.title = t("library.reader.action.layoutAssistant.cancelTooltip");
-      } else if (
-        evt.type === "layout.done" ||
-        evt.type === "layout.skipped" ||
-        evt.type === "layout.failed"
-      ) {
-        /* Restore Run mode. */
-        layoutIsProcessing = false;
-        layoutAssistantBtn.disabled = false;
-        layoutAssistantBtn.textContent = layoutAssistantBtn.dataset.originalLabel
-          || t("library.reader.action.layoutAssistant");
-        layoutAssistantBtn.title = t("library.reader.action.layoutAssistant.tooltip");
-      }
-    });
-  }
 }
 
 /**

@@ -20,11 +20,11 @@
  */
 
 import { getLmStudioUrl } from "../endpoints/index.js";
-import { pickVisionModels } from "./vision-meta.js";
 import { modelRoleResolver } from "./model-role-resolver.js";
 import { getHeavyLaneRateLimiter } from "./heavy-lane-rate-limiter.js";
 import { getModelPool } from "./model-pool.js";
 import { getImportScheduler } from "../library/import-task-scheduler.js";
+import { runExclusiveOnModel } from "./model-inference-lock.js";
 
 const VISION_OCR_INFERENCE = {
   temperature: 0,
@@ -47,27 +47,21 @@ export async function recognizeWithVisionLlm(
     modelKey?: string;
   } = {},
 ): Promise<VisionOcrResult> {
-  /* 1. Явный override модели от caller (preferences.visionModelKey). */
-  let preferred = opts.modelKey?.trim() || undefined;
-  /* 2. Если override не задан — спросить role resolver (vision_ocr роль). */
-  if (!preferred) {
+  let modelKey = opts.modelKey?.trim() || undefined;
+  if (!modelKey) {
     try {
       const resolved = await modelRoleResolver.resolve("vision_ocr");
-      if (resolved?.modelKey) preferred = resolved.modelKey;
-    } catch {
-      /* graceful: упадём на pickVisionModels ниже */
-    }
+      if (resolved?.modelKey) modelKey = resolved.modelKey;
+    } catch { /* resolver not ready */ }
   }
-  /* 3. Финальный pick (с fallback на любую загруженную vision-модель). */
-  const models = await pickVisionModels({ preferredModelKey: preferred });
-
-  if (models.length === 0) {
+  if (!modelKey) {
     return {
       text: "",
       confidence: 0,
-      error: "No vision models loaded in LM Studio. Load a vision model (qwen-vl, llava, pixtral, gemma-3, etc.) and assign it to role 'vision_ocr' in Models page.",
+      error: "No vision_ocr model configured. Assign a vision model to the 'vision_ocr' role in Models page.",
     };
   }
+  const models = [{ modelKey }];
 
   const mimeType = opts.mimeType || "image/png";
   const languages = (opts.languages || []).filter(Boolean).join(", ");
@@ -129,23 +123,28 @@ export async function recognizeWithVisionLlm(
             ],
           };
 
-          const resp = await fetch(`${baseUrl}/v1/chat/completions`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-            signal: opts.signal,
+          /* Per-modelKey serialization (см. model-inference-lock.ts).
+             Защита от каскадных empty-responses при параллельных
+             vision-OCR + vision-meta запросах на одну модель. */
+          return await runExclusiveOnModel(modelKey, async () => {
+            const resp = await fetch(`${baseUrl}/v1/chat/completions`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+              signal: opts.signal,
+            });
+
+            if (!resp.ok) {
+              const errText = await resp.text().catch(() => "");
+              return { ok: false as const, error: `LM Studio ${resp.status}: ${errText.slice(0, 200)}` };
+            }
+
+            const json = (await resp.json()) as {
+              choices?: Array<{ message?: { content?: string } }>;
+            };
+            const text = (json.choices?.[0]?.message?.content || "").trim();
+            return { ok: true as const, text };
           });
-
-          if (!resp.ok) {
-            const errText = await resp.text().catch(() => "");
-            return { ok: false as const, error: `LM Studio ${resp.status}: ${errText.slice(0, 200)}` };
-          }
-
-          const json = (await resp.json()) as {
-            choices?: Array<{ message?: { content?: string } }>;
-          };
-          const text = (json.choices?.[0]?.message?.content || "").trim();
-          return { ok: true as const, text };
         },
       ));
 

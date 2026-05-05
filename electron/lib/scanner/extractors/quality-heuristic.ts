@@ -7,6 +7,8 @@
  *
  * isQualityText — boolean быстрая проверка (порог 0.5 эквивалентно).
  * scoreTextQuality — числовая оценка 0..1 для tie-break и сохранения в кеш.
+ * detectLatinCyrillicConfusion — detects OCR garble where Latin homoglyphs or
+ *   digit substitutions corrupt Cyrillic text (safe for Ukrainian і/ї characters).
  *
  * Эвристики основаны на 4 сигналах:
  *   1. Минимальная длина 200 символов (короткий текст ничего не доказывает)
@@ -16,6 +18,96 @@
  *
  * Покрытие unit-тестами: tests/quality-heuristic.test.ts (16 кейсов).
  */
+
+// ─── Latin-Cyrillic confusion detection ──────────────────────────────────────
+
+/**
+ * Result of OCR confusion analysis.
+ *
+ * "Confusion" means the OCR engine produced a mix of Latin homoglyphs and
+ * Cyrillic characters within the same words, or used digits as letter
+ * substitutes — a classic DjVu text-layer artefact from FineReader/ABBYY
+ * running without a Cyrillic language model.
+ */
+export interface ConfusionResult {
+  /** True when confusion is detected at or above the configured threshold. */
+  isConfused: boolean;
+  /** Number of tokens (words) with embedded Latin homoglyphs in Cyrillic context. */
+  homoglyphTokens: number;
+  /** Number of patterns where digits substitute Cyrillic/Latin letters (e.g. 06pa3y). */
+  digitSubstitutions: number;
+  /** Total tokens examined. */
+  sampleTokens: number;
+}
+
+/**
+ * Latin characters that are visual homoglyphs of Cyrillic letters and therefore
+ * cause real confusion in OCR output.  `i` (U+0069) and `ï` (U+00EF) are
+ * intentionally ABSENT: Ukrainian OCR commonly produces them for і (U+0456) and
+ * ї (U+0457) without creating confusion.
+ *
+ * Lowercase: p→р, c→с, o→о, a→а, e→е, x→х, y→у
+ * Uppercase: P→Р, C→С, O→О, A→А, E→Е, X→Х, B→В, H→Н, M→М, T→Т, K→К
+ */
+const LATIN_HOMOGLYPHS = new Set<string>([
+  "p", "c", "o", "a", "e", "x", "y",
+  "P", "C", "O", "A", "E", "X", "B", "H", "M", "T", "K",
+]);
+
+/**
+ * Detects Latin-Cyrillic OCR confusion in a text sample.
+ *
+ * Two signals are measured:
+ *
+ * 1. **Homoglyph tokens** — words that contain both Cyrillic letters (≥ 3) AND
+ *    at least one Latin homoglyph from LATIN_HOMOGLYPHS. `i`/`ï` are whitelisted
+ *    so valid Ukrainian text is not flagged.
+ *
+ * 2. **Digit substitutions** — tokens where a digit appears in between
+ *    Cyrillic/Latin letters in a way that implies letter-for-digit swap
+ *    (e.g. `06pa3y`, `cт6oл`, `зa6op`). Pattern: Cyrillic char, then digit(s),
+ *    then a letter, within the same "word" (no spaces).
+ *
+ * Confusion is declared when the combined rate exceeds the threshold:
+ *   (homoglyphTokens + digitSubstitutions * 2) / max(sampleTokens, 1) > 0.03
+ * OR when the absolute count is >= 5 (catches short pages with dense garble).
+ */
+export function detectLatinCyrillicConfusion(text: string): ConfusionResult {
+  const tokens = text.split(/\s+/).filter((t) => t.length >= 3);
+  const sampleTokens = tokens.length;
+
+  let homoglyphTokens = 0;
+  let digitSubstitutions = 0;
+
+  // Regex for digit-substitution: a Cyrillic char adjacent to a digit adjacent to a letter
+  const DIGIT_SUB_RE = /[\u0400-\u04ff][0-9]+[a-zA-Z\u0400-\u04ff]|[a-zA-Z\u0400-\u04ff][0-9]+[\u0400-\u04ff]/u;
+
+  for (const token of tokens) {
+    // Count Cyrillic chars (excluding digits, Latin, punctuation)
+    let cyrillicCount = 0;
+    let suspiciousLatinCount = 0;
+    for (const ch of token) {
+      const code = ch.charCodeAt(0);
+      if (code >= 0x0400 && code <= 0x04ff) cyrillicCount++;
+      else if (LATIN_HOMOGLYPHS.has(ch)) suspiciousLatinCount++;
+    }
+
+    if (cyrillicCount >= 3 && suspiciousLatinCount >= 1) {
+      homoglyphTokens++;
+    }
+
+    if (DIGIT_SUB_RE.test(token)) {
+      digitSubstitutions++;
+    }
+  }
+
+  const weightedCount = homoglyphTokens + digitSubstitutions * 2;
+  const isConfused = weightedCount >= 5 || (sampleTokens > 0 && weightedCount / sampleTokens > 0.03);
+
+  return { isConfused, homoglyphTokens, digitSubstitutions, sampleTokens };
+}
+
+// ─── Text quality scoring ─────────────────────────────────────────────────────
 
 const MIN_TEXT_LENGTH = 200;
 const MIN_LETTER_RATIO = 0.5;

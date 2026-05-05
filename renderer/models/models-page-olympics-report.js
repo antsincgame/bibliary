@@ -259,7 +259,7 @@ export function renderOlympicsReport(report) {
      что фактически применённый visionModelKey пришёл из объединённой
      агрегации трёх vision-ролей, а не per-role optimum (см. 8Д.1 fix). */
   const visionInfo = report.visionAggregateInfo;
-  const VISION_ROLE_NAMES = new Set(["vision_meta", "vision_ocr", "vision_illustration"]);
+  const VISION_ROLE_NAMES = new Set(["vision_ocr", "vision_illustration"]);
 
   /* ── Горизонтальные вкладки по ролям ── */
   let activeRoleTab = aggregates.length > 0 ? aggregates[0].role : null;

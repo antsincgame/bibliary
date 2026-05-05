@@ -17,9 +17,41 @@
 
 import { promises as fs } from "fs";
 import * as os from "os";
-import { getPdfjsStandardFontDataUrl } from "../pdfjs-node.js";
+import { getPdfjsStandardFontDataUrl, getPdfjsCMapUrl } from "../pdfjs-node.js";
 
 export type OcrAccuracy = "fast" | "accurate";
+
+/**
+ * Reorders an OCR language list so that a Cyrillic language comes first.
+ *
+ * Critical for Windows: `@napi-rs/system-ocr` (Windows.Media.Ocr) uses ONLY
+ * the FIRST language in the array. If the list starts with "en" (default pref),
+ * the engine uses English mode and produces Latin letters for Cyrillic glyphs.
+ *
+ * Rules:
+ *   1. If the list already starts with "ru" or "uk" → return as-is (no change).
+ *   2. Otherwise move "ru" to front (preferred for Russian), or "uk" if "ru" absent.
+ *   3. If neither is present → return as-is (caller knows best).
+ *
+ * This is called unconditionally when OCR confusion is detected in a DjVu text
+ * layer, so the re-OCR attempt uses the correct primary language.
+ */
+export function reorderLanguagesForCyrillic(languages: string[]): string[] {
+  if (languages.length === 0) return ["ru", "uk", "en"];
+  if (languages[0] === "ru" || languages[0] === "uk") return languages;
+
+  const ruIndex = languages.indexOf("ru");
+  if (ruIndex > 0) {
+    return ["ru", ...languages.slice(0, ruIndex), ...languages.slice(ruIndex + 1)];
+  }
+
+  const ukIndex = languages.indexOf("uk");
+  if (ukIndex > 0) {
+    return ["uk", ...languages.slice(0, ukIndex), ...languages.slice(ukIndex + 1)];
+  }
+
+  return languages;
+}
 
 export interface OcrPageResult {
   pageIndex: number;
@@ -145,6 +177,8 @@ export async function* rasterisePdfPages(
     disableFontFace: true,
     useSystemFonts: false,
     standardFontDataUrl: getPdfjsStandardFontDataUrl(),
+    cMapUrl: getPdfjsCMapUrl(),
+    cMapPacked: true,
     verbosity: pdfjs.VerbosityLevel.ERRORS,
   });
   const doc = await loadingTask.promise;

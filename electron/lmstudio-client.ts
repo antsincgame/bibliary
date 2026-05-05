@@ -3,6 +3,7 @@ import { registerModelContext, unregisterModelContext } from "./lib/token/overfl
 import { withPolicy, buildRequestPolicy, type RequestPolicy, type PolicyContext } from "./lib/resilience/lm-request-policy";
 import { getPreferencesStore } from "./lib/preferences/store";
 import { getLmStudioUrl, getLmStudioUrlSync } from "./lib/endpoints/index.js";
+import { runExclusiveOnModel } from "./lib/llm/model-inference-lock.js";
 
 /**
  * Resolve LM Studio URL on every call. Allows the user to change it in
@@ -245,19 +246,26 @@ export async function chat(request: ChatRequest): Promise<ChatResponse> {
   if (request.chatTemplateKwargs) payload.chat_template_kwargs = request.chatTemplateKwargs;
 
   const baseUrl = await getLmStudioUrl();
-  const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    signal: request.signal,
+  /* Per-modelKey serialization (см. model-inference-lock.ts).
+     Защита от каскадных empty-responses при параллельных запросах
+     evaluator / vision-meta / vision-illustration / text-meta на одну
+     физическую модель. Между разными моделями параллелизм сохранён. */
+  const data = await runExclusiveOnModel(request.model, async () => {
+    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: request.signal,
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`LM Studio HTTP ${response.status}: ${response.statusText}${text ? ` — ${text.slice(0, 200)}` : ""}`);
+    }
+
+    return (await response.json()) as OpenAiChatResponse;
   });
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`LM Studio HTTP ${response.status}: ${response.statusText}${text ? ` — ${text.slice(0, 200)}` : ""}`);
-  }
-
-  const data = (await response.json()) as OpenAiChatResponse;
   const choice = data.choices[0];
   if (!choice) {
     throw new Error("LM Studio returned no completion choice");
@@ -395,19 +403,23 @@ export async function chatWithTools(request: ChatWithToolsRequest): Promise<Chat
   if (request.chatTemplateKwargs) payload.chat_template_kwargs = request.chatTemplateKwargs;
 
   const baseUrl = await getLmStudioUrl();
-  const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    signal: request.signal,
+  /* Per-modelKey serialization (см. model-inference-lock.ts). */
+  const data = await runExclusiveOnModel(request.model, async () => {
+    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: request.signal,
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`LM Studio HTTP ${response.status}: ${response.statusText}${text ? ` — ${text.slice(0, 200)}` : ""}`);
+    }
+
+    return (await response.json()) as OpenAiChatWithToolsResponse;
   });
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`LM Studio HTTP ${response.status}: ${response.statusText}${text ? ` — ${text.slice(0, 200)}` : ""}`);
-  }
-
-  const data = (await response.json()) as OpenAiChatWithToolsResponse;
   const choice = data.choices[0];
   if (!choice) throw new Error("LM Studio returned no completion choice");
 

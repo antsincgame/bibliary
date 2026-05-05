@@ -32,10 +32,8 @@
  * @property {string[]} [tagsRu]
  */
 
-/** @typedef {{ downloadId: string, downloaded: number, total: number | null, status: "downloading"|"ingesting"|"done"|"error"|"cancelled", message?: string }} DownloadState */
-
 export const STATE = {
-  /** @type {"catalog"|"import"|"browse"|"history"|"search"} */
+  /** @type {"catalog"|"import"|"collections"} */
   tab: "catalog",
   targetCollection: "",
   /** @type {BookFile[]} */
@@ -150,10 +148,3 @@ export const IMPORT_STATE = {
   },
 };
 
-/** @type {{ query: string, results: Array<any>, searching: boolean, error: string }} */
-export const SEARCH_STATE = { query: "", results: [], searching: false, error: "" };
-
-/** @type {Map<string, DownloadState>} */
-export const DOWNLOAD_STATE = new Map();
-/** @type {Map<string, string>} */
-export const DOWNLOAD_BY_ID = new Map();

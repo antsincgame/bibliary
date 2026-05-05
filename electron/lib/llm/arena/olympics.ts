@@ -289,7 +289,7 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
   }
 
   /* ── Probe phase (Arena-Lite EMNLP 2025 / Active Evaluation ICML 2025) ──
-   * Быстрый pre-selection probe: один запрос `lang-detect-en` (16 tokens) на
+   * Быстрый pre-selection probe: один запрос `crystallizer-rover` на
    * каждую модель. Модели со score < PROBE_CUTOFF исключаются из полного
    * прогона — экономит 30–50% времени при наличии "сломанных" моделей.
    *
@@ -297,7 +297,7 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
    * cap'а — то есть НА РАСШИРЕННОМ пуле (probePool, см. выше), который
    * специально не закаплен. После probe survivors отдаются в picker как
    * `explicit`-list для финальной фильтрации (family-dedup + cap). */
-  const probeDiscipline = OLYMPICS_DISCIPLINES.find((d) => d.id === "lang-detect-en");
+  const probeDiscipline = OLYMPICS_DISCIPLINES.find((d) => d.id === "crystallizer-rover");
   const PROBE_CUTOFF = 0.4;
   const probeScores = new Map<string, number>();
 
@@ -392,11 +392,8 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
     const rolesForModel = new Set<ModelRole>();
     for (const d of disciplines) {
       const role = d.role as ModelRole;
-      const isVisionDisc = role === "vision_meta" || role === "vision_ocr"
-        || role === "vision_illustration" || (d.role === "vision");
+      const isVisionDisc = role === "vision_ocr" || role === "vision_illustration";
       if (isVisionDisc && !isVision) continue;
-      /* Skip legacy "vision" — not in ModelRole type. */
-      if (d.role === "vision") continue;
       rolesForModel.add(role);
     }
     rolesByModel.set(info.key, [...rolesForModel]);
@@ -440,8 +437,7 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
          * `vision_ocr`/`vision_illustration`) с image_url требуют
          * мультимодальную модель. Текстовая модель на image_url отдаст
          * пустой/ошибочный ответ. Фильтруем все 4 роли. */
-        const isVisionRole = d.role === "vision" || d.role === "vision_meta"
-          || d.role === "vision_ocr" || d.role === "vision_illustration";
+        const isVisionRole = d.role === "vision_ocr" || d.role === "vision_illustration";
         const isVisionDiscipline = isVisionRole && !!d.imageUrl;
         if (isVisionDiscipline && !visionCapableKeys.has(modelKey)) continue;
 
@@ -484,7 +480,7 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
          * Otherwise legacy: temp=0.6 для reasoning crystallizer, 0.2 иначе. */
         let temperature: number;
         let topP: number | undefined;
-        if (roleLoadConfigEnabled && d.role !== "vision") {
+        if (roleLoadConfigEnabled) {
           const inf = getRoleInferenceDefaults(d.role as ModelRole);
           temperature = useReasoning ? Math.max(inf.temperature, 0.6) : inf.temperature;
           topP = inf.topP;
@@ -634,7 +630,7 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
      порядку Map-iteration). Решение: один раз вызвать aggregateVisionRoles
      (стратегия best_avg), пропустить vision-роли в основном цикле. */
   const visionAggregate = aggregateVisionRoles(roleAggregates);
-  const VISION_ROLES_SET = new Set(["vision_meta", "vision_ocr", "vision_illustration"]);
+  const VISION_ROLES_SET = new Set(["vision_ocr", "vision_illustration"]);
 
   const recommendations: Record<string, string> = {};
   const recommendationsByScore: Record<string, string> = {};

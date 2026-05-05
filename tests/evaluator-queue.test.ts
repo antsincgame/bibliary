@@ -301,7 +301,7 @@ test("evaluator-queue marks book as 'failed' when there are no chapters", async 
   assert.equal(getEvaluatorStatus().totalFailed, 1);
 });
 
-test("evaluator-queue handles 'no LLM loaded' gracefully", async (t) => {
+test("evaluator-queue defers 'no LLM loaded' without permanently failing the book", async (t) => {
   const env = await setupTestEnv();
   t.after(env.cleanup);
 
@@ -323,12 +323,47 @@ test("evaluator-queue handles 'no LLM loaded' gracefully", async (t) => {
   await waitForIdle();
 
   assert.equal(llmCalled, false, "no LLM call when no model available");
-  const failed = events.find((e) => e.type === "evaluator.failed");
-  /* После 2026-04 фикса error приходит с префиксом `evaluator:` для
-     консистентности с warning-ами в md-frontmatter. */
-  assert.equal(failed?.error, "evaluator: no LLM loaded in LM Studio");
+  const skipped = events.find((e) => e.type === "evaluator.skipped");
+  assert.equal(
+    skipped?.error,
+    "evaluator deferred: evaluator: no LLM loaded in LM Studio",
+  );
+  assert.ok(events.some((e) => e.type === "evaluator.paused"));
   const cached = getBookById(book.meta.id);
-  assert.equal(cached?.status, "failed");
+  assert.equal(cached?.status, "imported");
+  assert.equal(cached?.lastError, "evaluator deferred: evaluator: no LLM loaded in LM Studio");
+  assert.equal(getEvaluatorStatus().totalFailed, 0);
+});
+
+test("evaluator-queue defers transient LM Studio circuit failures", async (t) => {
+  const env = await setupTestEnv();
+  t.after(env.cleanup);
+
+  const book = makeBookFile(env.libraryRoot, "abababababababab", "Book Circuit");
+  await writeBookMarkdown(env.libraryRoot, book.meta, book.mdPath);
+  upsertBook(book.meta, book.mdPath);
+
+  _setEvaluatorDepsForTests({
+    pickEvaluatorModel: async () => "fake-model",
+    evaluateBook: async () => ({
+      evaluation: null,
+      reasoning: null,
+      raw: "",
+      model: "fake-model",
+      warnings: ['evaluator: LM Studio call failed: Circuit "lmstudio" is OPEN'],
+    }),
+  });
+
+  const { events } = collectEvents();
+  enqueueBook(book.meta.id);
+  await waitForIdle();
+
+  const cached = getBookById(book.meta.id);
+  assert.equal(cached?.status, "imported");
+  assert.match(cached?.lastError ?? "", /Circuit "lmstudio" is OPEN/);
+  assert.ok(events.some((e) => e.type === "evaluator.skipped" && e.bookId === book.meta.id));
+  assert.ok(events.some((e) => e.type === "evaluator.paused"));
+  assert.equal(getEvaluatorStatus().totalFailed, 0);
 });
 
 test("evaluator-queue handles throw from pickEvaluatorModel without crashing the queue", async (t) => {
@@ -541,10 +576,7 @@ test("evaluator-queue passes prefs.evaluatorModel into pickEvaluatorModel (no si
   assert.equal(usedModel, "user-selected-model", "evaluateBook получил выбранную в Settings модель");
 });
 
-test("evaluator-queue marks book failed with descriptive reason when preferred model not loaded", async (t) => {
-  /* Cache-db не персистит warnings (только md-frontmatter), поэтому reason
-     проверяем через event evaluator.failed.error и через содержимое
-     book.md, в который evaluator-queue записывает frontmatter. */
+test("evaluator-queue defers preferred-model-missing with descriptive reason", async (t) => {
   const env = await setupTestEnv();
   t.after(env.cleanup);
 
@@ -565,12 +597,13 @@ test("evaluator-queue marks book failed with descriptive reason when preferred m
   await waitForIdle();
 
   const cached = getBookById(book.meta.id);
-  assert.equal(cached?.status, "failed");
+  assert.equal(cached?.status, "imported");
+  assert.match(cached?.lastError ?? "", /ghost-model/);
 
-  const failed = events.find((e) => e.type === "evaluator.failed");
-  assert.ok(failed, "evaluator.failed event present");
-  assert.match(failed!.error ?? "", /ghost-model/, "error упоминает выбранную пользователем модель");
-  assert.match(failed!.error ?? "", /not loaded/i);
+  const skipped = events.find((e) => e.type === "evaluator.skipped");
+  assert.ok(skipped, "evaluator.skipped event present");
+  assert.match(skipped!.error ?? "", /ghost-model/, "error упоминает выбранную пользователем модель");
+  assert.match(skipped!.error ?? "", /not loaded/i);
 
   /* Frontmatter book.md тоже должен содержать warning с моделью. */
   const md = await readFile(book.mdPath, "utf-8");

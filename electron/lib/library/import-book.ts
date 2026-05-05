@@ -3,14 +3,12 @@ import * as path from "path";
 import { detectExt } from "../scanner/parsers/index.js";
 import { convertBookToMarkdown, replaceFrontmatter, injectCasImageRefs } from "./md-converter.js";
 import { getLibraryRoot } from "./paths.js";
-import { upsertBook, getBookById, getKnownSha256s } from "./cache-db.js";
+import { upsertBook, getBookById, findBookIdBySha256 } from "./cache-db.js";
 import { SUPPORTED_BOOK_EXTS, type BookCatalogMeta, type SupportedBookFormat } from "./types.js";
 import { resolveHumanBookPaths } from "./storage-contract.js";
 import { computeFileSha256, bookIdFromSha } from "./sha-stream.js";
 import { putBlob, getBlobsRoot } from "./library-store.js";
 import { extractSphereFromImportPath } from "./path-sanitizer.js";
-import { processIllustrations } from "./illustration-worker.js";
-import { runIllustrationJob } from "./illustration-semaphore.js";
 import { findNearDuplicate, registerForNearDup } from "./near-dup-detector.js";
 import { getImportScheduler } from "./import-task-scheduler.js";
 import {
@@ -68,8 +66,7 @@ export async function importBookFromFile(
      в логе уже несут duplicateReason+existingBookTitle, дополнительный
      `file.warning` создаёт две одинаковые строки на каждую дублирующуюся
      книгу (см. UI-баг #4 от 2026-05-03). */
-  const known = getKnownSha256s();
-  const dupId = known.get(sha256);
+  const dupId = findBookIdBySha256(sha256);
   if (dupId) {
     const existing = getBookById(dupId);
     return {
@@ -323,66 +320,7 @@ export async function importBookFromFile(
 
   if (convResult.images.length > 0) {
     const blobsRoot = getBlobsRoot(root);
-    const { getAppShutdownSignal } = await import("../app-lifecycle.js");
-    const appSignal = getAppShutdownSignal();
-    const combinedAbort = new AbortController();
-    const abortCombined = () => combinedAbort.abort("shutdown");
-    if (opts.signal) opts.signal.addEventListener("abort", abortCombined, { once: true });
-    appSignal.addEventListener("abort", abortCombined, { once: true });
-    /* Прогресс иллюстраций пробрасываем в централизованный import-logger,
-       чтобы пользователь видел в UI лог: «обрабатываю img-001, score=8»
-       и т.д. Без onProgress всё это уходило только в console main-процесса. */
-    const illustrationProgress = (msg: string): void => {
-      void (async () => {
-        try {
-          const { getImportLogger } = await import("./import-logger.js");
-          /* Уровень info для нормальных событий, warn для known-failures
-             в формате «X failed (non-fatal): ...» из illustration-worker. */
-          const level: "info" | "warn" = /failed|error/i.test(msg) ? "warn" : "info";
-          await getImportLogger().write({
-            importId: "post-import",
-            level,
-            category: "vision.illustration",
-            message: msg,
-            file: absPath,
-            details: { bookId: finalMeta.id, stage: "illustrations" },
-          });
-        } catch { /* logger недоступен — продолжаем тихо */ }
-      })();
-    };
-    /* Семафор: max N книг одновременно в illustration pipeline (default 2).
-       Без него импорт 100 книг создавал ~100 fire-and-forget jobs × 4
-       параллельных vision-чата = до 400 одновременных HTTP к LM Studio,
-       что вызывало OOM/таймауты. */
-    void runIllustrationJob(() =>
-      processIllustrations(bookDir, blobsRoot, combinedAbort.signal, illustrationProgress, {
-        mdPath,
-        illustrationsPath: stored.illustrationsPath,
-        bookTitle: finalMeta.title,
-        bookId: finalMeta.id,
-      }),
-    ).catch(async (err) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error("[import] illustration processing failed:", msg);
-      /* Иллюстрации обрабатываются асинхронно (post-return), поэтому ошибка
-         не может попасть в `warnings` исходной задачи. Логируем напрямую в
-         centralised import logger — без этого пользователь никогда не узнает
-         о провале (раньше ошибка терялась в console main-процесса). */
-      try {
-        const { getImportLogger } = await import("./import-logger.js");
-        await getImportLogger().write({
-          importId: "post-import",
-          level: "error",
-          category: "vision.illustration",
-          message: `illustration processing failed for ${finalMeta.titleEn || finalMeta.title || finalMeta.id}: ${msg}`,
-          file: absPath,
-          details: { bookId: finalMeta.id, stage: "illustrations" },
-        });
-      } catch { /* logger недоступен — продолжаем тихо */ }
-    }).finally(() => {
-      if (opts.signal) opts.signal.removeEventListener("abort", abortCombined);
-      appSignal.removeEventListener("abort", abortCombined);
-    });
+    /* AI illustration enrichment is now on-demand (triggered by user from catalog). */
   }
 
   return { outcome: "added", bookId: finalMeta.id, meta: finalMeta, warnings, sourceArchive: opts.sourceArchive };

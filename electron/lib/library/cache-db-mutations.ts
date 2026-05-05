@@ -132,6 +132,16 @@ export function getKnownSha256s(): Map<string, string> {
   return out;
 }
 
+/**
+ * O(1) lookup вместо O(N) full-table scan. Используется в hot-path
+ * импорта для дедупликации по SHA-256 до парсинга.
+ */
+export function findBookIdBySha256(sha256: string): string | null {
+  const db = openCacheDb();
+  const row = db.prepare("SELECT id FROM books WHERE sha256 = ? LIMIT 1").get(sha256) as { id: string } | undefined;
+  return row?.id ?? null;
+}
+
 export function deleteBook(id: string): void {
   const db = openCacheDb();
   const txn = db.transaction(() => {

@@ -14,16 +14,13 @@
  */
 
 import * as path from "path";
-import { applyLayout, shouldRenderMath } from "./layout-pipeline.js";
 import { parseBook, detectExt } from "../scanner/parsers/index.js";
 import { isOcrSupported } from "../scanner/ocr/index.js";
+import { repairParseResultAllStrategies } from "../scanner/text-mojibake-repair.js";
 import { extractBookImages } from "./image-extractors.js";
 import { computeFileSha256, bookIdFromSha } from "./sha-stream.js";
-import { extractMetadataFromCover } from "../llm/vision-meta.js";
 import { pickBestBookTitle } from "./title-heuristics.js";
 import { extractIsbnsFromSections } from "./isbn-extractor.js";
-import { lookupIsbnOpenLibrary } from "../bookhunter/sources/openlibrary.js";
-import { lookupIsbnGoogleBooks } from "../bookhunter/sources/google-books-meta.js";
 import { detectLanguageByRegex } from "../llm/lang-detector.js";
 import { extractTextMetaFromBookText, type TextMeta } from "./text-meta-extractor.js";
 import {
@@ -46,14 +43,10 @@ const META_FALLBACK_CONFIG = {
   textMetaSampleChars: 3000,
   /** Минимальная длина title чтобы НЕ считать его weak. */
   titleMinChars: 3,
-  /** Минимальный confidence vision-meta, чтобы использовать результат. */
-  visionMetaMinConfidence: 0.5,
   /** Сколько глав берём для language detection. */
   langDetectChapters: 3,
   /** Максимум символов для language detection sample. */
   langDetectSampleChars: 4096,
-  /** ISBN online lookup hard timeout, мс. */
-  isbnLookupTimeoutMs: 8_000,
 } as const;
 
 function countWords(text: string): number {
@@ -196,7 +189,11 @@ export function parseFrontmatter(markdown: string): Partial<BookCatalogMeta> | n
 
 function unquoteYaml(value: string): string {
   if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
-    return value.slice(1, -1).replace(/\\"/g, '"').replace(/\\n/g, "\n").replace(/\\\\/g, "\\");
+    return value.slice(1, -1)
+      .replace(/\\\\/g, "\u0000")
+      .replace(/\\"/g, '"')
+      .replace(/\\n/g, "\n")
+      .replace(/\u0000/g, "\\");
   }
   return value;
 }
@@ -481,8 +478,12 @@ export async function convertBookToMarkdown(
   const ocrAccuracy = opts.ocrAccuracy ?? "accurate";
   const ocrPdfDpi = opts.ocrPdfDpi ?? 400;
   const djvuRenderDpi = opts.djvuRenderDpi ?? 400;
+  const canOcr = opts.ocrEnabled === true;
+  const ocrPathAvailable = isOcrSupported() || (opts.djvuOcrProvider !== "system" && opts.djvuOcrProvider !== "none");
+  const ocrRetriable = canOcr && ocrPathAvailable && (format === "pdf" || format === "djvu");
+
   let parsed = await parseBook(absFilePath, {
-    ocrEnabled: opts.ocrEnabled === true,
+    ocrEnabled: ocrRetriable ? false : canOcr,
     ocrAccuracy,
     ocrPdfDpi,
     djvuRenderDpi,
@@ -491,12 +492,20 @@ export async function convertBookToMarkdown(
     visionModelKey: opts.visionModelKey,
     signal: opts.signal,
   });
-  /* OCR fallback: если парсер вернул 0 секций, пробуем OCR только когда пользователь
-     явно включил OCR. Vision-LLM путь (через role resolver) работает на любой ОС;
-     system OCR — только Win/macOS. */
+  let allRepairs = repairParseResultAllStrategies(parsed);
+  parsed = allRepairs.parsed;
+
   let ocrAutoRetried = false;
-  const ocrPathAvailable = isOcrSupported() || (opts.djvuOcrProvider !== "system" && opts.djvuOcrProvider !== "none");
-  if (opts.ocrEnabled === true && parsed.sections.length === 0 && ocrPathAvailable && (format === "pdf" || format === "djvu")) {
+  // Only retry with OCR when:
+  //   a) text layer is empty (no sections), OR
+  //   b) classifyTextProblem returned "ocr_confusion" (PDF glyph garble that
+  //      encoding repairs could not fix).
+  // "encoding_garble" is intentionally excluded: encoding repairs already fixed it,
+  // so an OCR retry would produce the same broken result as the original (same font map).
+  const shouldRetryOcr = ocrRetriable
+    && (parsed.sections.length === 0 || allRepairs.problem === "ocr_confusion");
+
+  if (shouldRetryOcr) {
     ocrAutoRetried = true;
     parsed = await parseBook(absFilePath, {
       ocrEnabled: true,
@@ -508,15 +517,19 @@ export async function convertBookToMarkdown(
       visionModelKey: opts.visionModelKey,
       signal: opts.signal,
     });
-    /* Явно фиксируем причину второго прохода — без этого пользователь видит
-       только время «парсинг занял Х минут» без понимания почему было так
-       долго. Сообщение попадает в book.md frontmatter и в import-log. */
+    allRepairs = repairParseResultAllStrategies(parsed);
+    parsed = allRepairs.parsed;
+    /* Record the reason for the second pass so the user sees it in import logs. */
     if (!parsed.metadata.warnings) parsed.metadata.warnings = [];
-    parsed.metadata.warnings.push(
-      parsed.sections.length > 0
-        ? `parser: text layer empty, OCR auto-retry produced ${parsed.sections.length} sections`
-        : `parser: text layer empty, OCR auto-retry also returned 0 sections`,
-    );
+    let retryWarning: string;
+    if (allRepairs.problem === "ocr_confusion") {
+      retryWarning = `parser: text layer had OCR/glyph garble, OCR auto-retry produced ${parsed.sections.length} sections`;
+    } else if (parsed.sections.length > 0) {
+      retryWarning = `parser: text layer empty, OCR auto-retry produced ${parsed.sections.length} sections`;
+    } else {
+      retryWarning = `parser: text layer empty, OCR auto-retry also returned 0 sections`;
+    }
+    parsed.metadata.warnings.push(retryWarning);
   }
   void ocrAutoRetried;
 
@@ -538,69 +551,23 @@ export async function convertBookToMarkdown(
   const allWarnings = [...(parsed.metadata.warnings ?? []), ...imgWarnings];
   const cover = images.find((i) => i.id === "img-cover") ?? null;
 
-  /* Stage 2.5 — ISBN extraction + Online metadata lookup + AI fallback.
-     Порядок: ISBN из текста → Open Library → Google Books → AI text fallback.
-     Не throws никогда — сетевые ошибки логируются в warnings.
-     metadataOnlineLookup === false полностью отключает онлайн-источники, но
-     AI fallback по тексту всё равно работает (он локальный, не требует интернета). */
-  let isbnMeta: { title?: string; authors?: string[]; year?: number; publisher?: string; language?: string; isbn13?: string } | null = null;
+  /* Stage 2.5 — ISBN extraction (local only). */
   let extractedIsbn: string | undefined;
-  let onlineLookupTried = false;
-  let onlineLookupHadResult = false;
-  if (opts.metadataOnlineLookup !== false && !opts.signal?.aborted) {
-    /* Extract ISBNs from parsed text (first 5 + last 3 pages equivalent). */
+  {
     const isbns = extractIsbnsFromSections(parsed.sections);
-    /* Also check if parser already found an ISBN in metadata. */
     const metaIsbn = typeof parsed.metadata.identifier === "string" ? parsed.metadata.identifier.replace(/[^\dX]/gi, "") : undefined;
-    const candidateIsbn = isbns[0] ?? (metaIsbn && metaIsbn.length === 13 ? metaIsbn : undefined);
-    if (candidateIsbn) {
-      extractedIsbn = candidateIsbn;
-      onlineLookupTried = true;
-      /* Hard timeout per lookup: enrichment should never block import for long.
-         8 секунд достаточно при наличии интернета; при offline возвращает null
-         мгновенно (fetch fails fast), не висит. См. META_FALLBACK_CONFIG. */
-      const withTimeout = <T>(p: Promise<T | null>): Promise<T | null> => {
-        const timer = new Promise<null>((res) => setTimeout(() => res(null), META_FALLBACK_CONFIG.isbnLookupTimeoutMs));
-        return Promise.race([p, timer]).catch(() => null);
-      };
-      /* Try Open Library first (free, no key needed, good for ru/uk books).
-         Iter 13.2 (2026-05-03): success-сообщения "isbn-meta: Open Library
-         (ISBN xxx)" и "isbn-meta: Google Books (ISBN xxx)" больше НЕ
-         пушатся в warnings — это успех lookup'а, а не warning. Метаданные
-         уже отражены в title/author/year книги. Лог должен показывать
-         только реальные warnings (failure-случай ниже сохранён). */
-      const olResult = await withTimeout(lookupIsbnOpenLibrary(candidateIsbn, opts.signal));
-      if (olResult && (olResult.title || olResult.authors?.length)) {
-        isbnMeta = olResult;
-        onlineLookupHadResult = true;
-      } else {
-        /* Fallback: Google Books. */
-        const gbResult = await withTimeout(lookupIsbnGoogleBooks(candidateIsbn, opts.signal));
-        if (gbResult && (gbResult.title || gbResult.authors?.length)) {
-          isbnMeta = gbResult;
-          onlineLookupHadResult = true;
-        } else {
-          /* Оба источника промолчали — например при offline или unknown ISBN.
-             Это реальный warning — пользователь должен знать что online
-             lookup не сработал (могут быть дубликаты, missing meta). */
-          allWarnings.push(`isbn-meta: online lookup failed (ISBN ${candidateIsbn}, no internet or both catalogs returned empty)`);
-        }
-      }
-    }
+    extractedIsbn = isbns[0] ?? (metaIsbn && (metaIsbn.length === 13 || metaIsbn.length === 10) ? metaIsbn : undefined);
   }
 
   /* Stage 2.55 — AI text fallback метаданных.
-     Когда срабатывает: parsed metadata НЕ содержит title (или title = filename),
-     а online lookup НЕ дал результата (offline / book not in catalog / no ISBN).
+     Когда: parsed metadata слабые (нет title / title = filename).
      Использует роль "crystallizer" из настроек "Модели" (полностью локально). */
   let aiTextMeta: TextMeta | null = null;
   const parsedTitleForFallback = parsed.metadata.title?.trim();
   const parsedTitleIsWeak = !parsedTitleForFallback
     || parsedTitleForFallback.length < META_FALLBACK_CONFIG.titleMinChars
     || parsedTitleForFallback === path.parse(originalFile).name;
-  const isbnDataIsWeak = !isbnMeta || (!isbnMeta.title && !isbnMeta.authors?.length);
   const needsAiFallback = parsedTitleIsWeak
-    && isbnDataIsWeak
     && !opts.signal?.aborted
     && parsed.sections.length > 0;
   if (needsAiFallback) {
@@ -614,85 +581,41 @@ export async function convertBookToMarkdown(
     if (aiResult.ok && aiResult.meta) {
       aiTextMeta = aiResult.meta;
       const fields = Object.keys(aiResult.meta).join(",");
-      allWarnings.push(`ai-text-meta: extracted from book text (${fields}) via ${aiResult.model ?? "?"}${onlineLookupTried && !onlineLookupHadResult ? " — used as offline fallback" : ""}`);
+      allWarnings.push(`ai-text-meta: extracted from book text (${fields}) via ${aiResult.model ?? "?"}`);
     } else if (aiResult.error) {
       allWarnings.push(`ai-text-meta: skipped (${aiResult.error})`);
     }
   }
 
-  /* Stage 2.6 — Vision-meta enrichment через ЛОКАЛЬНУЮ LM Studio vision-модель.
-     Default: visionMetaEnabled: TRUE (preferences/store.ts:114) — срабатывает на
-     каждый импорт с обложкой когда загружена vision-модель. Значительно уточняет
-     метаданные для книг со слабым PDF/EPUB header. Никогда не throw — на любой
-     ошибке degrade gracefully. Уровень приоритета в итоговых метаданных: 3-й из 5
-     (структурный parse > ISBN online > vision-meta > ai-text-meta > filename). */
-  let visionMeta: import("../llm/vision-meta.js").VisionMeta | null = null;
-  if (opts.visionMetaEnabled === true && cover && cover.buffer.length > 0) {
-    const t0 = Date.now();
-    opts.onVisionMetaEvent?.({ phase: "start", message: `Extracting metadata from cover (${cover.buffer.length} bytes, ${cover.mimeType})` });
-    const result = await extractMetadataFromCover(cover.buffer, {
-      modelKey: opts.visionModelKey,
-      mimeType: cover.mimeType,
-      signal: opts.signal,
-    });
-    if (result.ok && result.meta) {
-      visionMeta = result.meta;
-      allWarnings.push(...(result.warnings ?? []));
-      opts.onVisionMetaEvent?.({
-        phase: "success",
-        durationMs: Date.now() - t0,
-        meta: visionMeta,
-      });
-    } else {
-      const msg = `vision-meta failed: ${result.error ?? "unknown"}`;
-      allWarnings.push(msg);
-      opts.onVisionMetaEvent?.({ phase: "failed", message: msg, durationMs: Date.now() - t0 });
-    }
-  }
-
-  /* Resolve финальный title/author/year/publisher.
-     Приоритет (индустриальный стандарт — детерминированные источники первее LLM):
-       1. parsed metadata (PDF Info/XMP, EPUB OPF, FB2 title-info) — структурное, надёжно.
-       2. isbn-meta (Open Library / Google Books по ISBN) — верифицировано библиографически.
-       3. vision-meta (LM Studio multimodal обложки, opt-in) — высокая точность когда есть.
-       4. ai-text-meta (LM Studio crystallizer по тексту первых страниц) — последний AI fallback.
-       5. filename — финальный non-AI fallback. */
+  /* Resolve final title/author/year/publisher.
+     Priority (local sources only):
+       1. parsed metadata (PDF Info/XMP, EPUB OPF, FB2 title-info).
+       2. ai-text-meta (LM Studio crystallizer from first pages).
+       3. filename -- final non-AI fallback. */
   const parsedTitle = parsed.metadata.title?.trim();
   const filenameTitle = path.parse(originalFile).name;
 
-  const useVision = visionMeta !== null && visionMeta.confidence >= META_FALLBACK_CONFIG.visionMetaMinConfidence;
-  const useIsbn = isbnMeta !== null;
   const useAiText = aiTextMeta !== null;
 
   const finalTitle = pickBestBookTitle(
     parsedTitle,
-    useIsbn ? isbnMeta!.title : undefined,
-    useVision ? visionMeta!.title : undefined,
+    undefined,
+    undefined,
     useAiText ? aiTextMeta!.title : undefined,
     filenameTitle,
   ) ?? filenameTitle;
 
   const finalAuthor =
     parsed.metadata.author
-    ?? (useIsbn ? isbnMeta!.authors?.[0] : undefined)
-    ?? (useVision ? visionMeta!.author ?? undefined : undefined)
     ?? (useAiText ? aiTextMeta!.author : undefined);
 
   const finalYear =
     parsed.metadata.year
-    ?? (useIsbn ? isbnMeta!.year : undefined)
-    ?? (useVision ? visionMeta!.year ?? undefined : undefined)
     ?? (useAiText ? aiTextMeta!.year : undefined);
 
   const finalPublisher =
     parsed.metadata.publisher
-    ?? (useIsbn ? isbnMeta!.publisher : undefined)
-    ?? (useVision ? visionMeta!.publisher ?? undefined : undefined)
     ?? (useAiText ? aiTextMeta!.publisher : undefined);
-
-  if (opts.visionMetaEnabled === true && cover && visionMeta && !useVision) {
-    allWarnings.push(`vision-meta incomplete/low-confidence (${visionMeta.confidence}); structured metadata retained where stronger`);
-  }
 
   const status: BookStatus = chapters.length === 0 ? "unsupported" : "imported";
 
@@ -720,20 +643,6 @@ export async function convertBookToMarkdown(
 
   const rawBody = buildBody(chapters, images);
 
-  /* Versator (build-time scientific layout):
-     - typograf: «ёлочки», em-dashes, NBSP;
-     - callouts: «Внимание:» → стилизованные блоки;
-     - definitions: «X — это Y» → <dfn>;
-     - sidenotes: footnotes → Tufte-style margin notes;
-     - drop caps: первая буква каждой главы;
-     - math: $...$ через KaTeX (auto, если в тексте есть формулы).
-     Pure-JS, без LLM, без сетевых вызовов. См. layout-pipeline.ts. */
-  const layoutLang: "ru" | "en" = detectedLanguage === "en" ? "en" : "ru";
-  const layoutResult = applyLayout(rawBody, {
-    lang: layoutLang,
-    renderMath: shouldRenderMath(rawBody),
-  });
-
   const meta: BookCatalogMeta = {
     id: bookIdFromSha(sha256),
     sha256,
@@ -743,17 +652,16 @@ export async function convertBookToMarkdown(
     author: finalAuthor,
     year: finalYear,
     language: detectedLanguage,
-    isbn: parsed.metadata.identifier ?? extractedIsbn ?? isbnMeta?.isbn13,
+    isbn: parsed.metadata.identifier ?? extractedIsbn,
     publisher: finalPublisher,
     wordCount: totalWords,
     chapterCount: chapters.length,
     status,
     warnings: allWarnings.length > 0 ? allWarnings : undefined,
-    layoutVersion: layoutResult.version,
   };
 
   const refs = buildImageRefs(images);
-  const markdown = `${buildFrontmatter(meta)}\n\n# ${meta.title}\n\n${layoutResult.md}${refs}`;
+  const markdown = `${buildFrontmatter(meta)}\n\n${rawBody}${refs}`;
 
   return { meta, chapters, images, markdown };
 }

@@ -139,27 +139,7 @@ async function describeOne(
 /* ─── Default LLM hooks ──────────────────────────────────────────────── */
 
 async function defaultDescribeImage(absPath: string): Promise<string | null> {
-  try {
-    const { extractMetadataFromCover } = await import("../../llm/vision-meta.js");
-    const buf = await fs.readFile(absPath);
-    /* Передаём prefs.visionModelKey как preferred — иначе vision-meta
-     * lazy-load не сработает (проверяет только opts.modelKey, не prefs).
-     * Решает gap, найденный Шерлоком v0.4.6: sidecars описывали "no vision
-     * model loaded", даже когда юзер выбрал её в Settings. */
-    const prefs = await readPipelinePrefsOrNull();
-    const result = await extractMetadataFromCover(buf, {
-      modelKey: prefs?.visionModelKey?.trim() || undefined,
-    });
-    if (!result.ok || !result.meta) return null;
-    /* extractMetadataFromCover возвращает structured meta — соберём
-       одно-предложенческое описание из неё. */
-    const m = result.meta as { title?: string; subtitle?: string; description?: string };
-    const parts = [m.title, m.subtitle, m.description].filter((s): s is string => typeof s === "string" && s.trim().length > 0);
-    if (parts.length === 0) return `Illustration: ${path.basename(absPath)}`;
-    return parts.join(". ").slice(0, 240);
-  } catch {
-    return null;
-  }
+  return `Illustration: ${path.basename(absPath)}`;
 }
 
 async function defaultDescribeText(text: string, kind: "code" | "html-site"): Promise<string | null> {

@@ -457,60 +457,6 @@ contextBridge.exposeInMainWorld("api", {
     },
   },
 
-  bookhunter: {
-    search: (args: {
-      query: string;
-      sources?: Array<"gutendex" | "archive" | "openlibrary" | "arxiv">;
-      language?: string;
-      perSourceLimit?: number;
-    }): Promise<
-      Array<{
-        id: string;
-        sourceTag: "gutendex" | "archive" | "openlibrary" | "arxiv";
-        title: string;
-        authors: string[];
-        language?: string;
-        year?: number;
-        formats: Array<{ format: string; url: string; sizeBytes?: number }>;
-        license: string;
-        webPageUrl?: string;
-        description?: string;
-      }>
-    > => ipcRenderer.invoke("bookhunter:search", args),
-    cancelDownload: (downloadId: string): Promise<boolean> =>
-      ipcRenderer.invoke("bookhunter:cancel-download", downloadId),
-    downloadAndIngest: (args: {
-      candidate: unknown;
-      collection: string;
-      preferredFormat?: string;
-      downloadId?: string;
-    }): Promise<{ downloadId: string; destPath: string; bookTitle: string; embedded: number; upserted: number }> =>
-      ipcRenderer.invoke("bookhunter:download-and-ingest", args),
-    onDownloadProgress: (cb: (payload: { downloadId: string; downloaded: number; total: number | null }) => void): (() => void) => {
-      const l = (_e: unknown, p: { downloadId: string; downloaded: number; total: number | null }) => cb(p);
-      ipcRenderer.on("bookhunter:download-progress", l);
-      return () => ipcRenderer.removeListener("bookhunter:download-progress", l);
-    },
-    onSearchProgress: (
-      cb: (payload: {
-        phase: "start" | "source-done" | "done";
-        source?: string;
-        count?: number;
-        error?: string;
-        total?: number;
-      }) => void,
-    ): (() => void) => {
-      const l = (_e: unknown, p: {
-        phase: "start" | "source-done" | "done";
-        source?: string;
-        count?: number;
-        error?: string;
-        total?: number;
-      }) => cb(p);
-      ipcRenderer.on("bookhunter:search-progress", l);
-      return () => ipcRenderer.removeListener("bookhunter:search-progress", l);
-    },
-  },
 
   datasetV2: {
     /* startExtraction (single-book) удалён из preload (Iter 8А) — UI всегда
@@ -774,88 +720,23 @@ contextBridge.exposeInMainWorld("api", {
       smokeLibrary ? Promise.resolve({ queued: smokeLibrary.rows.length }) : ipcRenderer.invoke("library:reevaluate-all"),
     reparseBook: (bookId: string): Promise<{ ok: boolean; chapters?: number; reason?: string }> =>
       smokeLibrary ? Promise.resolve({ ok: true, chapters: 1 }) : ipcRenderer.invoke("library:reparse-book", bookId),
-    layoutAssistantStatus: (): Promise<{
-      enabled: boolean;
-      modelKey: string;
-      modelFallbacks: string;
-      queue: {
-        running: boolean;
-        paused: boolean;
-        currentBookId: string | null;
-        queueLength: number;
-        totalProcessed: number;
-        totalSkipped: number;
-        totalFailed: number;
-      };
-    }> =>
-      smokeLibrary
-        ? Promise.resolve({
-            enabled: false,
-            modelKey: "",
-            modelFallbacks: "",
-            queue: {
-              running: false,
-              paused: false,
-              currentBookId: null,
-              queueLength: 0,
-              totalProcessed: 0,
-              totalSkipped: 0,
-              totalFailed: 0,
-            },
-          })
-        : ipcRenderer.invoke("library:layout-assistant-status"),
-    layoutAssistantRunBook: (
-      bookId: string,
-      opts?: { force?: boolean },
-    ): Promise<{
+    /**
+     * On-demand AI illustration enrichment (MVP v1.0.1). User-triggered from
+     * catalog -- runs `vision_illustration` model on selected books'
+     * illustrations.json files, writing back descriptions and scores.
+     */
+    enrichIllustrations: (bookIds: string[]): Promise<{
       ok: boolean;
-      applied: boolean;
+      processed: number;
+      alreadyDone: number;
+      skipped: number;
+      errors: number;
+      bookCount: number;
       reason?: string;
-      warnings?: string[];
-      chunksOk?: number;
-      chunksFailed?: number;
-      model?: string;
     }> =>
       smokeLibrary
-        ? Promise.resolve({ ok: true, applied: false, reason: "smoke mode" })
-        : ipcRenderer.invoke("library:layout-assistant-run-book", { bookId, force: opts?.force === true }),
-    layoutAssistantEnqueue: (bookId: string): Promise<{ ok: boolean; reason?: string }> =>
-      smokeLibrary
-        ? Promise.resolve({ ok: true })
-        : ipcRenderer.invoke("library:layout-assistant-enqueue", { bookId }),
-    layoutAssistantPause: (): Promise<boolean> =>
-      smokeLibrary ? Promise.resolve(true) : ipcRenderer.invoke("library:layout-assistant-pause"),
-    layoutAssistantResume: (): Promise<boolean> =>
-      smokeLibrary ? Promise.resolve(true) : ipcRenderer.invoke("library:layout-assistant-resume"),
-    layoutAssistantCancelCurrent: (): Promise<boolean> =>
-      smokeLibrary ? Promise.resolve(true) : ipcRenderer.invoke("library:layout-assistant-cancel-current"),
-    /** Subscribe to layout-assistant queue events (badge/progress in reader and settings). */
-    onLayoutAssistantEvent: (cb: (payload: {
-      type: string;
-      bookId?: string;
-      title?: string;
-      applied?: boolean;
-      chunksOk?: number;
-      chunksFailed?: number;
-      warnings?: string[];
-      error?: string;
-      remaining?: number;
-    }) => void): (() => void) => {
-      if (smokeLibrary) return () => undefined;
-      const l = (_e: unknown, p: {
-        type: string;
-        bookId?: string;
-        title?: string;
-        applied?: boolean;
-        chunksOk?: number;
-        chunksFailed?: number;
-        warnings?: string[];
-        error?: string;
-        remaining?: number;
-      }) => cb(p);
-      ipcRenderer.on("library:layout-assistant-event", l);
-      return () => ipcRenderer.removeListener("library:layout-assistant-event", l);
-    },
+        ? Promise.resolve({ ok: true, processed: 0, alreadyDone: 0, skipped: bookIds.length, errors: 0, bookCount: bookIds.length })
+        : ipcRenderer.invoke("library:enrich-illustrations", bookIds),
     onImportProgress: (cb: (payload: {
       importId: string;
       phase: "discovered" | "file-start" | "processed" | "scan-complete";
@@ -998,48 +879,5 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.on("library:scan-report", l);
       return () => ipcRenderer.removeListener("library:scan-report", l);
     },
-    /* Preflight: лёгкая проверка папки/файлов до старта импорта.
-       Возвращает разбивку файлов на text-bearing vs image-only сканы +
-       готовность OCR-движков. UI на основании этого показывает summary
-       block с действиями [Continue all] [Skip image-only] [Configure OCR]. */
-    preflightFolder: (folder: string, opts?: { recursive?: boolean }): Promise<unknown> =>
-      smokeLibrary
-        ? Promise.resolve({ totalFiles: 0, okFiles: 0, imageOnlyFiles: 0, unknownFiles: 0, invalidFiles: 0, skippedFiles: 0, ocr: { systemOcr: { available: false, platform: "smoke", languages: [] }, visionLlm: { available: false }, anyAvailable: false }, entries: [], elapsedMs: 0 })
-        : ipcRenderer.invoke("library:preflight-folder", { folder, recursive: opts?.recursive ?? true }),
-    onPreflightProgress: (cb: (evt: {
-      sessionId: string;
-      phase: "walking" | "ocr" | "evaluator" | "probing" | "complete";
-      current?: number;
-      total?: number;
-      currentPath?: string;
-      status?: "ok" | "skipped" | "timeout" | "failed";
-      message?: string;
-    }) => void): (() => void) => {
-      const l = (_e: unknown, payload: {
-        sessionId: string;
-        phase: "walking" | "ocr" | "evaluator" | "probing" | "complete";
-        current?: number;
-        total?: number;
-        currentPath?: string;
-        status?: "ok" | "skipped" | "timeout" | "failed";
-        message?: string;
-      }) => cb(payload);
-      ipcRenderer.on("library:preflight-progress", l);
-      return () => ipcRenderer.removeListener("library:preflight-progress", l);
-    },
-    cancelPreflight: (): Promise<number> => smokeLibrary
-      ? Promise.resolve(0)
-      : ipcRenderer.invoke("library:cancel-preflight"),
-    peekFolder: (folder: string, opts?: { recursive?: boolean }): Promise<{
-      totalFiles: number;
-      sampleNames: string[];
-      truncated: boolean;
-    }> => smokeLibrary
-      ? Promise.resolve({ totalFiles: 0, sampleNames: [], truncated: false })
-      : ipcRenderer.invoke("library:peek-folder", { folder, recursive: opts?.recursive ?? true }),
-    preflightFiles: (paths: string[]): Promise<unknown> =>
-      smokeLibrary
-        ? Promise.resolve({ totalFiles: paths.length, okFiles: 0, imageOnlyFiles: 0, unknownFiles: 0, invalidFiles: 0, skippedFiles: paths.length, ocr: { systemOcr: { available: false, platform: "smoke", languages: [] }, visionLlm: { available: false }, anyAvailable: false }, entries: [], elapsedMs: 0 })
-        : ipcRenderer.invoke("library:preflight-files", { paths }),
   },
 });

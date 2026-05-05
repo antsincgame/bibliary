@@ -565,6 +565,42 @@ export function buildCatalogBottomBar(root, deps) {
     }),
   }, t("library.catalog.btn.reevaluate"));
 
+  const enrichIllustrationsBtn = el("button", {
+    type: "button", class: "lib-btn lib-btn-ghost",
+    "data-mode-min": "advanced",
+    title: t("library.catalog.tooltip.enrichIllustrations"),
+    onclick: (ev) => void withButtonBusy(ev, async () => {
+      if (CATALOG.selected.size === 0) {
+        setCatalogStatus(root, t("library.catalog.toast.nothingSelected"));
+        return;
+      }
+      if (!(await showConfirm(t("library.catalog.confirm.enrichIllustrations", {
+        n: String(CATALOG.selected.size),
+      }), {
+        title: t("library.catalog.confirm.enrichIllustrationsTitle"),
+        okText: t("library.catalog.btn.enrichIllustrations"),
+      }))) return;
+      const ids = Array.from(CATALOG.selected);
+      try {
+        const r = /** @type {any} */ (await window.api.library.enrichIllustrations(ids));
+        if (r?.ok) {
+          setCatalogStatus(root, t("library.catalog.toast.enrichDone", {
+            processed: String(r.processed ?? 0),
+            already: String(r.alreadyDone ?? 0),
+            skipped: String(r.skipped ?? 0),
+            errors: String(r.errors ?? 0),
+          }));
+        } else {
+          await showAlert(t("library.catalog.enrichIllustrations.failed", { reason: r?.reason || "" }));
+        }
+      } catch (e) {
+        await showAlert(t("library.catalog.enrichIllustrations.failed", {
+          reason: e instanceof Error ? e.message : String(e),
+        }));
+      }
+    }),
+  }, t("library.catalog.btn.enrichIllustrations"));
+
   deleteBtn.dataset.modeMin = "pro";
 
   const reparseBtn = el("button", {
@@ -682,7 +718,7 @@ export function buildCatalogBottomBar(root, deps) {
   return el("div", { class: "lib-catalog-bottombar" }, [
     metaRow,
     el("div", { class: "lib-catalog-bottom-actions" }, [
-      selectAllBtn, clearBtn, reevaluateBtn, reparseBtn, deleteBtn, burnAllBtn, chunksBtn, revertBtn, cancelBatchBtn,
+      selectAllBtn, clearBtn, reevaluateBtn, enrichIllustrationsBtn, reparseBtn, deleteBtn, burnAllBtn, chunksBtn, revertBtn, cancelBatchBtn,
     ]),
     batchSummary,
   ]);

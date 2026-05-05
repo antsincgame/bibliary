@@ -35,7 +35,7 @@ export interface OcrCapabilities {
 export async function getOcrCapabilities(): Promise<OcrCapabilities> {
   const support: OcrSupportInfo = getOcrSupport();
   const prefs = await readPipelinePrefsOrNull();
-  const langs = prefs?.ocrLanguages ?? ["en", "ru", "uk"];
+  const langs = prefs?.ocrLanguages ?? ["ru", "uk", "en"];
 
   const systemOcr: OcrCapabilities["systemOcr"] = {
     available: support.supported,

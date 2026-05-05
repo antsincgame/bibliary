@@ -1,7 +1,7 @@
 import { promises as fs } from "fs";
 import * as path from "path";
 import { getLibraryRoot } from "./paths.js";
-import { upsertBook, getBookById, getKnownSha256s } from "./cache-db.js";
+import { upsertBook, getBookById, findBookIdBySha256 } from "./cache-db.js";
 import type { BookCatalogMeta, SupportedBookFormat } from "./types.js";
 import { resolveHumanBookPaths } from "./storage-contract.js";
 import { bookIdFromSha } from "./sha-stream.js";
@@ -48,9 +48,8 @@ export async function importCompositeHtmlBook(
   const bookId = bookIdFromSha(syntheticSha);
 
   // Check SHA dedup
-  const known = getKnownSha256s();
-  if (known.has(syntheticSha)) {
-    const dupId = known.get(syntheticSha)!;
+  const dupId = findBookIdBySha256(syntheticSha);
+  if (dupId) {
     const existing = getBookById(dupId);
     return {
       outcome: "duplicate",

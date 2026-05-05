@@ -60,15 +60,9 @@ import type {
 function roleToPrefKey(role: OlympicsRole): string | null {
   switch (role) {
     case "crystallizer":         return "extractorModel";
-    case "vision_meta":          return "visionModelKey";
     case "vision_ocr":           return "visionModelKey";
     case "vision_illustration":  return "visionModelKey";
     case "evaluator":            return "evaluatorModel";
-    case "translator":           return "translatorModel";
-    case "lang_detector":        return "langDetectorModel";
-    case "ukrainian_specialist": return "ukrainianSpecialistModel";
-    case "vision":               return "visionModelKey";
-    case "layout_assistant":     return "layoutAssistantModel";
     default:                      return null;
   }
 }
@@ -256,7 +250,6 @@ export function bradleyTerryMLE(
  * @internal Используется в `aggregateVisionRoles` и `olympics.ts`.
  */
 const VISION_ROLES: ReadonlyArray<OlympicsRole> = [
-  "vision_meta",
   "vision_ocr",
   "vision_illustration",
 ];

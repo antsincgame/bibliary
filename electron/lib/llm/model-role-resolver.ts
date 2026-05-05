@@ -63,14 +63,9 @@ import { getPreferencesStore, type Preferences } from "../preferences/store.js";
 
 export type ModelRole =
   | "crystallizer"
-  | "vision_meta"
   | "vision_ocr"
   | "vision_illustration"
-  | "evaluator"
-  | "ukrainian_specialist"
-  | "lang_detector"
-  | "translator"
-  | "layout_assistant";
+  | "evaluator";
 
 export type Capability = "vision";
 
@@ -93,14 +88,9 @@ export interface ResolvedModel {
  */
 const ROLE_REQUIRED_CAPS: Record<ModelRole, Capability[]> = {
   crystallizer: [],
-  vision_meta: ["vision"],
   vision_ocr: ["vision"],
   vision_illustration: ["vision"],
   evaluator: [],
-  ukrainian_specialist: [],
-  lang_detector: [],
-  translator: [],
-  layout_assistant: [],
 };
 
 /**
@@ -109,14 +99,9 @@ const ROLE_REQUIRED_CAPS: Record<ModelRole, Capability[]> = {
  */
 const ROLE_PREFERRED_CAPS: Record<ModelRole, Capability[]> = {
   crystallizer: [],
-  vision_meta: ["vision"],
   vision_ocr: ["vision"],
   vision_illustration: ["vision"],
   evaluator: [],
-  ukrainian_specialist: [],
-  lang_detector: [],
-  translator: [],
-  layout_assistant: [],
 };
 
 /**
@@ -125,27 +110,17 @@ const ROLE_PREFERRED_CAPS: Record<ModelRole, Capability[]> = {
  */
 const ROLE_PREF_KEY: Record<ModelRole, string> = {
   crystallizer: "extractorModel",
-  vision_meta: "visionModelKey",
   vision_ocr: "visionModelKey",
   vision_illustration: "visionModelKey",
   evaluator: "evaluatorModel",
-  ukrainian_specialist: "ukrainianSpecialistModel",
-  lang_detector: "langDetectorModel",
-  translator: "translatorModel",
-  layout_assistant: "layoutAssistantModel",
 };
 
 /** CSV ключ для fallback chain. null = нет fallback chain. */
 const ROLE_FALLBACKS_PREF_KEY: Record<ModelRole, string | null> = {
   crystallizer: "extractorModelFallbacks",
-  vision_meta: "visionModelFallbacks",
   vision_ocr: "visionModelFallbacks",
   vision_illustration: "visionModelFallbacks",
   evaluator: "evaluatorModelFallbacks",
-  ukrainian_specialist: "ukrainianSpecialistModelFallbacks",
-  lang_detector: "langDetectorModelFallbacks",
-  translator: "translatorModelFallbacks",
-  layout_assistant: "layoutAssistantModelFallbacks",
 };
 
 interface CacheEntry {
@@ -274,7 +249,13 @@ function pickByPreferredCaps(loaded: LoadedModelInfo[], preferred: Capability[])
     }
     return { m, score };
   });
-  scored.sort((a, b) => b.score - a.score);
+  /* Tie-breaker: при равном score сортируем лексикографически по modelKey,
+     чтобы выбор был детерминирован (LM Studio listLoaded() не гарантирует
+     stable order между запросами — пользователь видел "сегодня Qwen, завтра Gemma"). */
+  scored.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.m.modelKey.localeCompare(b.m.modelKey);
+  });
   return scored[0]!.m.modelKey;
 }
 
@@ -310,14 +291,9 @@ export interface RoleMeta {
 export function listAllRoles(): RoleMeta[] {
   const roles: ModelRole[] = [
     "crystallizer",
-    "vision_meta",
     "vision_ocr",
     "vision_illustration",
     "evaluator",
-    "ukrainian_specialist",
-    "lang_detector",
-    "translator",
-    "layout_assistant",
   ];
   return roles.map((r) => ({
     role: r,
