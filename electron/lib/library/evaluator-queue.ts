@@ -580,20 +580,27 @@ async function evaluateOneInSlot(bookId: string, slot: SlotState): Promise<void>
     const evaluatorPrefs = await deps.readEvaluatorPrefs();
     /* Модель выбирается через pickEvaluatorModel с allowAutoLoad: false —
        picker НЕ загружает ничего с диска, а выбирает среди уже loaded LLM.
-       Если preferred не загружена — picker либо берёт fallback/auto-pick
-       (когда allowAnyLoadedFallback=true), либо возвращает null (honest fail). */
+
+       allowAnyLoadedFallback (критическая логика):
+       - Если preferred НЕ задан (пустой evaluatorModel) → всегда auto-detect
+         из загруженных: это ожидаемый режим "пусть система сама выберет".
+       - Если preferred задан → НЕ берём произвольную loaded LLM как тихий
+         fallback, даже если evaluatorAllowFallback=true. Иначе: пользователь
+         настроил конкретную модель, а система молча подставляет другую — и
+         книга получает оценку от неподходящей модели (например OCR-Qwen вместо
+         Gemma-evaluator), с ошибками JSON и неверными scores. Вместо этого
+         defer + пауза оценщика с внятным сообщением. */
     const allowFallback = evaluatorPrefs.allowFallback;
+    const allowAnyLoadedFallbackEffective = evaluatorPrefs.preferred ? false : allowFallback;
     const model = modelOverride ?? (await deps.pickEvaluatorModel({
       preferred: evaluatorPrefs.preferred,
       fallbacks: evaluatorPrefs.fallbacks,
       allowAutoLoad: false,
-      allowAnyLoadedFallback: allowFallback,
+      allowAnyLoadedFallback: allowAnyLoadedFallbackEffective,
     }));
     if (!model) {
       const reason = evaluatorPrefs.preferred
-        ? (allowFallback
-            ? `evaluator: preferred model "${evaluatorPrefs.preferred}" not loaded AND no other LLM loaded in LM Studio`
-            : `evaluator: preferred model "${evaluatorPrefs.preferred}" not loaded in LM Studio (smart-fallback disabled in Settings)`)
+        ? `evaluator: preferred model "${evaluatorPrefs.preferred}" not loaded in LM Studio — load it or clear evaluatorModel in Settings → Models`
         : "evaluator: no LLM loaded in LM Studio";
       await deferEvaluationRetry(meta, md, reason, bookId, slot.title);
       return;

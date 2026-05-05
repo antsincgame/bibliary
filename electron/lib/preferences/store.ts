@@ -152,9 +152,10 @@ export const PreferencesSchema = z.object({
    * Smart-fallback для evaluator: если preferred модель не загружена в LM Studio
    * И CSV fallbacks тоже не подходят — picker возьмёт ЛЮБУЮ загруженную LLM
    * (с скорингом по эвристикам), вместо того чтобы помечать книгу `failed`.
-   * Default: true. Off для строгого режима где юзер хочет конкретную модель.
+   * Default: false — строгий режим, уважает явный выбор модели пользователем.
+   * Включать только если хочешь "оценивать любой загруженной LLM когда preferred недоступна".
    */
-  evaluatorAllowFallback: z.boolean().default(true),
+  evaluatorAllowFallback: z.boolean().default(false),
   // -- Per-role fallback chains (CSV modelKey1,modelKey2,...) --
   extractorModelFallbacks: z.string().default(""),
   evaluatorModelFallbacks: z.string().default(""),
