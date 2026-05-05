@@ -36,6 +36,7 @@ import {
   OLYMPICS_DISCIPLINES,
   stripThinkingBlock,
 } from "./disciplines.js";
+import { getActiveDisciplines } from "./disciplines-registry.js";
 import {
   classifyWeight,
   pickModelsForOlympics,
@@ -206,9 +207,13 @@ export async function runOlympics(opts: OlympicsOptions = {}): Promise<OlympicsR
     probePoolSize: probePool.length,
   });
 
+  /* Iter 14.3 (2026-05-05): берём ВСЕ активные дисциплины — статические +
+     пользовательские (из preferences через registry). Custom компилятся через
+     compileCustomDiscipline + safe scoreFuzzy. См. disciplines-registry.ts. */
+  const allDisciplines = await getActiveDisciplines();
   let targetDisciplines = opts.disciplines
-    ? OLYMPICS_DISCIPLINES.filter((d) => opts.disciplines!.includes(d.id) || opts.disciplines!.includes(d.role))
-    : OLYMPICS_DISCIPLINES;
+    ? allDisciplines.filter((d) => opts.disciplines!.includes(d.id) || opts.disciplines!.includes(d.role))
+    : allDisciplines;
   if (opts.roles) {
     const wantRoles = new Set(opts.roles);
     targetDisciplines = targetDisciplines.filter((d) => wantRoles.has(d.role));

@@ -391,6 +391,17 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.on("arena:olympics-progress", listener);
       return () => ipcRenderer.off("arena:olympics-progress", listener);
     },
+    /* Custom Olympics disciplines (Iter 14.3 / 2026-05-05). */
+    customDisciplines: {
+      list: (): Promise<unknown[]> => ipcRenderer.invoke("arena:list-custom-disciplines"),
+      save: (payload: unknown): Promise<unknown> => ipcRenderer.invoke("arena:save-custom-discipline", payload),
+      delete: (id: string): Promise<{ ok: boolean; deleted: boolean }> =>
+        ipcRenderer.invoke("arena:delete-custom-discipline", { id }),
+      saveImage: (payload: { disciplineId: string; base64: string; ext: string }): Promise<{ imageRef: string }> =>
+        ipcRenderer.invoke("arena:save-discipline-image", payload),
+      getImage: (imageRef: string): Promise<{ dataUrl: string | null }> =>
+        ipcRenderer.invoke("arena:get-discipline-image", { imageRef }),
+    },
   },
 
   scanner: {

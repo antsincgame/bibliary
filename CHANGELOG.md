@@ -4,6 +4,112 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.6] — 2026-05-05
+
+Diagonal code review release. After v1.0.3 → v1.0.5 shipped the role-resolver
+hardening, auto-load, Welcome Wizard refactor and the custom Olympics test
+editor, an `/inquisitor` + `/sherlok` pass found four resource leaks and three
+modal UX violations against the project's own user rules. This release fixes
+them without expanding feature surface.
+
+### Fixed
+
+- **Orphan custom-discipline images** -- `electron/ipc/arena.ipc.ts` `arena:save-custom-discipline` now compares the previous `imageRef` with the incoming one and deletes the old file when (a) the role switches from `vision_*` to a text role (image becomes irrelevant), or (b) the user uploads a replacement with a different extension (e.g. `.png` → `.jpg`). Previously the orphans accumulated forever in `userData/custom-disciplines/`.
+- **Modal listener leak** -- `renderer/settings/custom-disciplines-editor.js` centralised modal close into a single `closeModal()` helper. Every exit path (Cancel, backdrop click, Escape, successful Save, stale-modal pre-empt by next `openEditor()`) now calls it. Before, three of the four paths called `overlay.remove()` directly and left the document `keydown` listener on `document` permanently. With heavy editor usage this leaked one listener per opened modal.
+- **Modal user-rule compliance** -- the same modal now follows the project's "Modal" user rules: traps focus inside the modal (Tab / Shift+Tab loop the focusable set), prevents body scroll while open (`document.body.style.overflow = "hidden"`, restored on close), returns focus to the source button on close, and sets initial focus on the first interactive element. WCAG keyboard-navigation parity reached.
+- **Silent broken-image upload** -- the editor's `<input type="file">` `onchange` now (a) explicitly rejects extensions outside `png/jpg/jpeg/webp` (the regex on the backend already did, but the UI used to silently accept and crash later), (b) surfaces `FileReader.onerror` via toast, and (c) refuses to set `pendingBase64` to an empty string when the data URL has no `base64,` payload (which would otherwise pass UI validation and crash on the backend with `Buffer.from("", "base64").length === 0`).
+- **Unbounded `customOlympicsDisciplines` growth** -- `electron/lib/preferences/store.ts` schema gained `.max(200)` and `arena:save-custom-discipline` rejects creates beyond the cap (updates of existing IDs always pass). Defends against `preferences.json` ballooning on long-running profiles.
+
+### Added
+
+- **i18n keys** for the two new image-upload error toasts -- `settings.customDisciplines.image.unsupportedExt` and `settings.customDisciplines.image.readFailed` in both `ru.js` and `en.js`.
+
+### Verified
+
+- `tsc --noEmit -p tsconfig.electron.json` -- 0 errors
+- `npm run lint` -- 0 errors, 0 warnings
+- `tests/custom-disciplines.test.ts` -- 25 / 25 passing (no regressions)
+- Olympics regression battery (`olympics-thinking-policy`, `olympics-vision-aggregation`, `olympics-weights`, `olympics-lifecycle`, `settings-roundtrip`, `c5-prefs-corruption`) -- 49 / 49 passing
+- Combined: **74 / 74 tests, 0 failures, 0 new regressions**
+
+### Not verified by tooling (manual UI pass recommended)
+
+- Modal focus-trap behavior across Russian/English IME input modes
+- Orphan-image cleanup in production with real `userData` paths (covered by code path, not by integration test)
+
+## [1.0.5] — 2026-05-05
+
+Auto-load release. After v1.0.4 stopped the silent role-substitution bug, users
+correctly noted that the **import pipeline still required manual model loading
+in LM Studio** -- a workflow the Olympics arena had already automated. This
+release lifts that automation into the role-resolver so every import role
+(`crystallizer`, `evaluator`, `vision_ocr`, `vision_illustration`) loads its
+preferred model on demand into VRAM and unloads it under memory pressure.
+
+### Changed
+
+- **`electron/lib/llm/model-role-resolver.ts`** -- `ResolverDeps` gains an `autoLoad` callback wired to `getModelPool().acquire()` in production. When the preferred model and all explicit fallbacks are not currently loaded but exist on the filesystem, the resolver now triggers an `acquire` instead of returning `null`. Failures fall through to the existing "no auto_detect substitution" guard from v1.0.4.
+- **`electron/lib/library/evaluator-queue.ts`** -- the `pickEvaluatorModel()` call site flips `allowAutoLoad: true`. Same change shape will follow for `extractor` / `vision` queues if user reports the analogous symptom.
+
+### Verified
+
+- `tests/model-role-resolver.test.ts` -- updated with autoLoad success / failure cases, 14 / 14 passing
+- `tsc --noEmit -p tsconfig.electron.json` -- 0 errors
+- `npm run lint` -- 0 errors, 0 warnings
+
+## [1.0.4] — 2026-05-05
+
+Hotfix for the systemic "everything resolves to Qwen" symptom reported after
+v1.0.3 shipped. v1.0.3 closed the **evaluator** branch but the broader
+resolver still treated empty/missing preferences as a license to auto-detect
+the largest loaded model -- which on most user setups is Qwen 3.5 Coder. With
+roles authored for Russian Cyrillic content, this silently degraded quality
+across all four roles.
+
+### Fixed
+
+- **`electron/lib/llm/model-role-resolver.ts`** -- when an explicit role
+  preference exists in `preferences.json` (`evaluatorModel`, `extractorModel`,
+  `visionModelKey`, etc.) and neither the preferred model nor any explicit
+  fallback is loaded, the resolver returns `null` instead of falling back to
+  `auto_detect` / `fallback_any`. Callers must surface the "model not loaded"
+  state to the UI rather than substituting an arbitrary model.
+- **`electron/lib/llm/with-model-fallback.ts`** -- the "auto" placeholder is
+  only consulted when the caller passed **no** candidates. With explicit
+  candidates, an unloaded primary fails fast instead of silently picking
+  whichever model happens to be loaded.
+
+### Verified
+
+- `tests/model-role-resolver.test.ts` and `tests/with-model-fallback.test.ts`
+  updated, all green
+- `tsc --noEmit` -- 0 errors
+- `npm run lint` -- 0 errors
+
+## [1.0.3] — 2026-05-05
+
+Critical bugfix for the "books evaluated by the wrong model" report. The
+evaluator queue was silently substituting an unrelated loaded model when the
+user's configured `evaluatorModel` was unavailable. The default `allowFallback`
+was overly permissive, so models with poor Russian-Cyrillic quality (e.g.
+Qwen-Coder) were scoring books they had no business scoring.
+
+### Fixed
+
+- **`electron/lib/preferences/store.ts`** -- `evaluatorAllowFallback` now
+  defaults to `false`. Users who actually want any-model fallback must opt in
+  explicitly.
+- **`electron/lib/library/evaluator-queue.ts`** -- the queue refuses to
+  substitute an arbitrary model when the explicitly configured evaluator is
+  not loaded. Books are deferred with a clear "evaluator not ready" status
+  instead of being scored by the wrong model.
+
+### Verified
+
+- `tests/evaluator-queue.test.ts` -- new cases for the fallback policy,
+  14 / 14 passing
+- `tsc --noEmit` -- 0 errors
+
 ## [1.0.2] — 2026-05-05
 
 Hotfix release after the v1.0.1 regression report: imported books appeared in the

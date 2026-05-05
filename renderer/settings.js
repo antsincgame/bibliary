@@ -5,6 +5,7 @@ import { buildNeonHero, neonDivider } from "./components/neon-helpers.js";
 import { openWelcomeWizard, resetWelcomeWizard } from "./components/welcome-wizard.js";
 import { showAlert, showConfirm } from "./components/ui-dialog.js";
 import { SECTIONS } from "./settings/sections.js";
+import { buildCustomDisciplinesEditor } from "./settings/custom-disciplines-editor.js";
 
 /** @returns {any} */
 function api() { return /** @type {any} */ (window).api; }
@@ -227,6 +228,11 @@ function render(root) {
   root.appendChild(neonDivider());
 
   root.appendChild(renderPanelContent(root));
+
+  /* Iter 14.3 (2026-05-05): редактор пользовательских дисциплин Олимпиады.
+     Collapsible по умолчанию закрыт — продвинутая возможность, не должна
+     перегружать основной экран. См. settings/custom-disciplines-editor.js. */
+  root.appendChild(buildCustomDisciplinesEditor());
 
   const actions = el("div", { class: "settings-actions" }, [
     el("span", { id: "settings-unsaved-count", class: "settings-unsaved-count" }, ""),

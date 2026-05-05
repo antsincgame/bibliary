@@ -279,6 +279,31 @@ export const PreferencesSchema = z.object({
   /** Версия пройденного wizard. Позволяет показать wizard повторно при major update. */
   onboardingVersion: z.number().int().min(0).max(1000).default(0),
 
+  // -- Custom Olympics disciplines (Iter 14.3, 2026-05-05) --
+  /**
+   * Пользовательские дисциплины Олимпиады. Метаданные (промпты, ожидаемый
+   * ответ) хранятся здесь; картинки для vision-ролей — отдельные файлы в
+   * `userData/custom-disciplines/{imageRef}` (см. discipline-images.ts).
+   *
+   * Полная Zod-схема с refine — `CustomDisciplineSchema` в
+   * electron/lib/llm/arena/custom-disciplines.ts. Здесь — упрощённая
+   * сериализационная схема (без cross-field refine) чтобы не создавать
+   * dep-cycle preferences ↔ llm. Валидация при save через IPC хендлер.
+   */
+  customOlympicsDisciplines: z.array(z.object({
+    id: z.string(),
+    role: z.enum(["crystallizer", "evaluator", "vision_ocr", "vision_illustration"]),
+    name: z.string(),
+    description: z.string().default(""),
+    system: z.string(),
+    user: z.string(),
+    expectedAnswer: z.string(),
+    maxTokens: z.number().int().min(64).max(8000).default(800),
+    thinkingFriendly: z.boolean().default(false),
+    imageRef: z.string().optional(),
+    createdAt: z.string().optional(),
+    updatedAt: z.string().optional(),
+  })).max(200, "max 200 custom disciplines (защита от раздувания preferences.json)").default([]),
 
 });
 
