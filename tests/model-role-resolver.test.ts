@@ -16,6 +16,7 @@ import {
   modelRoleResolver,
   peekRoleCaps,
   resolveCrystallizerModelKey,
+  resolveCrystallizerForLanguage,
   _setResolverDepsForTests,
   _resetResolverForTests,
   type ModelRole,
@@ -56,6 +57,7 @@ test("[model-role-resolver] listAllRoles exposes stable UI metadata for all role
     "vision_ocr",
     "vision_illustration",
     "evaluator",
+    "ukrainian_specialist",
   ]);
   for (const meta of metas) {
     assert.equal(typeof meta.prefKey, "string");
@@ -414,5 +416,95 @@ describe("[model-role-resolver] PASSIVE_SKIP rate-limit (v1.0.11)", () => {
       10 * 60 * 1000,
       "rate-limit окно должно быть 10 минут (контракт документирован в коде)",
     );
+  });
+});
+
+/* ── language router (resolveCrystallizerForLanguage) ───────────────── */
+
+describe("[model-role-resolver] resolveCrystallizerForLanguage — украинский корпус", () => {
+  beforeEach(() => {
+    _resetResolverForTests();
+    modelRoleResolver.invalidate();
+  });
+
+  test("lang === \"uk\" + ukrainianSpecialistModel задан + загружен → ukrainian_specialist", async () => {
+    _setResolverDepsForTests({
+      listLoaded: async () => [
+        makeModel("uk/specialist"),
+        makeModel("generic/crystallizer"),
+      ],
+      getPrefs: async () => makePrefs({
+        ukrainianSpecialistModel: "uk/specialist",
+        extractorModel: "generic/crystallizer",
+      } as Partial<Preferences>),
+    });
+    const r = await resolveCrystallizerForLanguage("uk");
+    assert.ok(r !== null);
+    assert.equal(r!.modelKey, "uk/specialist", "должна быть выбрана украинская специализированная модель");
+  });
+
+  test("lang === \"uk\" + ukrainianSpecialistModelFallbacks задан → ukrainian_specialist через fallback chain", async () => {
+    _setResolverDepsForTests({
+      listLoaded: async () => [makeModel("uk/from-fallback"), makeModel("generic/crystallizer")],
+      getPrefs: async () => makePrefs({
+        ukrainianSpecialistModel: "",
+        ukrainianSpecialistModelFallbacks: "uk/from-fallback,uk/another",
+        extractorModel: "generic/crystallizer",
+      } as Partial<Preferences>),
+    });
+    const r = await resolveCrystallizerForLanguage("uk");
+    assert.ok(r !== null);
+    assert.equal(r!.modelKey, "uk/from-fallback");
+  });
+
+  test("lang === \"uk\" БЕЗ конфигурации ukrainian_specialist → fallback на crystallizer", async () => {
+    _setResolverDepsForTests({
+      listLoaded: async () => [makeModel("generic/crystallizer")],
+      getPrefs: async () => makePrefs({
+        ukrainianSpecialistModel: "",
+        ukrainianSpecialistModelFallbacks: "",
+        extractorModel: "generic/crystallizer",
+      } as Partial<Preferences>),
+    });
+    const r = await resolveCrystallizerForLanguage("uk");
+    assert.ok(r !== null);
+    assert.equal(r!.modelKey, "generic/crystallizer", "graceful fallback — украинская книга НЕ застревает");
+  });
+
+  test("lang === \"ru\" игнорирует ukrainian_specialist даже если он сконфигурирован", async () => {
+    _setResolverDepsForTests({
+      listLoaded: async () => [makeModel("uk/specialist"), makeModel("generic/crystallizer")],
+      getPrefs: async () => makePrefs({
+        ukrainianSpecialistModel: "uk/specialist",
+        extractorModel: "generic/crystallizer",
+      } as Partial<Preferences>),
+    });
+    const r = await resolveCrystallizerForLanguage("ru");
+    assert.ok(r !== null);
+    assert.equal(r!.modelKey, "generic/crystallizer", "русская книга не должна попасть на украинского специалиста");
+  });
+
+  test("lang === undefined → стандартный crystallizer", async () => {
+    _setResolverDepsForTests({
+      listLoaded: async () => [makeModel("generic/crystallizer")],
+      getPrefs: async () => makePrefs({ extractorModel: "generic/crystallizer" } as Partial<Preferences>),
+    });
+    const r = await resolveCrystallizerForLanguage(undefined);
+    assert.ok(r !== null);
+    assert.equal(r!.modelKey, "generic/crystallizer");
+  });
+
+  test("lang === \"uk\" + uk модель сконфигурирована но НЕ загружена → fallback на crystallizer", async () => {
+    _setResolverDepsForTests({
+      listLoaded: async () => [makeModel("generic/crystallizer")],
+      getPrefs: async () => makePrefs({
+        ukrainianSpecialistModel: "uk/not-loaded",
+        extractorModel: "generic/crystallizer",
+      } as Partial<Preferences>),
+      autoLoad: async () => false,
+    });
+    const r = await resolveCrystallizerForLanguage("uk");
+    assert.ok(r !== null);
+    assert.equal(r!.modelKey, "generic/crystallizer", "если uk-специалист не доступен — graceful fallback");
   });
 });

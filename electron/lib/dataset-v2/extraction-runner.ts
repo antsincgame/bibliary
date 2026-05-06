@@ -25,7 +25,7 @@ import { extractChapterThesis } from "./delta-extractor.js";
 import { embedPassage } from "../embedder/shared.js";
 import { chatWithPolicy, PROFILE } from "../../lmstudio-client.js";
 import { getPreferencesStore } from "../preferences/store.js";
-import { resolveCrystallizerModelKey } from "../llm/model-role-resolver.js";
+import { resolveCrystallizerModelKey, resolveCrystallizerForLanguage } from "../llm/model-role-resolver.js";
 import { filterOrderedCandidatesAgainstLoaded } from "../llm/with-model-fallback.js";
 import { coordinator } from "../resilience/batch-coordinator.js";
 import {
@@ -194,13 +194,13 @@ async function runExtractionInner(
   }
   if (!extractModel) extractModel = PROFILE.BIG.key;
 
-  const llm = makeLlm(extractModel, ctrl.signal);
+  let llm = makeLlm(extractModel, ctrl.signal);
 
   emitWithJob({ stage: "config", phase: "info", extractModel, targetCollection });
 
   const prefs = await getPreferencesStore().getAll();
-  const rawDeltaChain = buildDeltaExtractorModelChain(extractModel, prefs.extractorModelFallbacks ?? "");
-  const extractionDeltaModelChain = await filterOrderedCandidatesAgainstLoaded("crystallizer", rawDeltaChain);
+  let rawDeltaChain = buildDeltaExtractorModelChain(extractModel, prefs.extractorModelFallbacks ?? "");
+  let extractionDeltaModelChain = await filterOrderedCandidatesAgainstLoaded("crystallizer", rawDeltaChain);
   emitWithJob({
     stage: "config",
     phase: "delta-models",
@@ -231,6 +231,38 @@ async function runExtractionInner(
     const range = args.chapterRange ?? { from: 0, to: totalChapters };
     console.log(`[extraction] parsed "${parsed.metadata.title}" — ${totalChapters} chapters, range ${range.from}..${range.to}`);
     emitWithJob({ stage: "parse", phase: "done", bookTitle: parsed.metadata.title, totalChapters });
+
+    /* Language router: для украинских книг переключаемся на ukrainian_specialist
+     * если пользователь его настроил. Делаем это ПОСЛЕ parseBook потому что
+     * detectedLang известен только теперь. UI override (args.extractModel) имеет
+     * приоритет — не перетираем явный выбор пользователя. */
+    if (!args.extractModel && parsed.metadata.language) {
+      const langAware = await resolveCrystallizerForLanguage(parsed.metadata.language);
+      if (langAware?.modelKey && langAware.modelKey !== extractModel) {
+        const previous = extractModel;
+        extractModel = langAware.modelKey;
+        llm = makeLlm(extractModel, ctrl.signal);
+        const ukFallbacks = parsed.metadata.language === "uk"
+          ? String(prefs.ukrainianSpecialistModelFallbacks ?? "").trim()
+          : "";
+        rawDeltaChain = buildDeltaExtractorModelChain(
+          extractModel,
+          ukFallbacks || (prefs.extractorModelFallbacks ?? ""),
+        );
+        extractionDeltaModelChain = await filterOrderedCandidatesAgainstLoaded("crystallizer", rawDeltaChain);
+        console.log(
+          `[extraction] language router: lang="${parsed.metadata.language}" → switched "${previous}" → "${extractModel}"`,
+        );
+        emitWithJob({
+          stage: "config",
+          phase: "language-override",
+          language: parsed.metadata.language,
+          previousModel: previous,
+          extractModel,
+          extractModelChain: extractionDeltaModelChain,
+        });
+      }
+    }
 
     const stats = { chunks: 0, accepted: 0, skipped: 0 };
     const warnings: string[] = [];

@@ -89,6 +89,15 @@ export const ROLE_LOAD_CONFIG: Record<ModelRole, LMSLoadConfig> = {
     keepModelInMemory: true,
     tryMmap: true,
   },
+  ukrainian_specialist: {
+    /* Тот же профиль что crystallizer — роль работает как специализированный
+     * crystallizer для украинских книг (длинные chunks, structured extraction). */
+    contextLength: 32_768,
+    gpu: { ratio: "max" },
+    flashAttention: true,
+    keepModelInMemory: true,
+    tryMmap: true,
+  },
 };
 
 /**
@@ -126,6 +135,7 @@ export const ROLE_INFERENCE_DEFAULTS: Record<ModelRole, InferenceDefaults> = {
   evaluator:            { temperature: 0.2, topP: 0.9, maxTokens: 512 },
   vision_ocr:           { temperature: 0.0, topP: 0.7, maxTokens: 1024 },
   vision_illustration:  { temperature: 0.3, topP: 0.9, maxTokens: 384 },
+  ukrainian_specialist: { temperature: 0.1, topP: 0.9, maxTokens: 2048 },
 };
 
 export function getRoleInferenceDefaults(role: ModelRole): InferenceDefaults {

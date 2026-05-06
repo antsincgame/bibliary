@@ -67,7 +67,8 @@ export type ModelRole =
   | "crystallizer"
   | "vision_ocr"
   | "vision_illustration"
-  | "evaluator";
+  | "evaluator"
+  | "ukrainian_specialist";
 
 export type Capability = "vision";
 
@@ -93,6 +94,7 @@ const ROLE_REQUIRED_CAPS: Record<ModelRole, Capability[]> = {
   vision_ocr: ["vision"],
   vision_illustration: ["vision"],
   evaluator: [],
+  ukrainian_specialist: [],
 };
 
 /**
@@ -104,6 +106,7 @@ const ROLE_PREFERRED_CAPS: Record<ModelRole, Capability[]> = {
   vision_ocr: ["vision"],
   vision_illustration: ["vision"],
   evaluator: [],
+  ukrainian_specialist: [],
 };
 
 /**
@@ -115,6 +118,7 @@ const ROLE_PREF_KEY: Record<ModelRole, string> = {
   vision_ocr: "visionModelKey",
   vision_illustration: "visionModelKey",
   evaluator: "evaluatorModel",
+  ukrainian_specialist: "ukrainianSpecialistModel",
 };
 
 /** CSV ключ для fallback chain. null = нет fallback chain. */
@@ -123,6 +127,7 @@ const ROLE_FALLBACKS_PREF_KEY: Record<ModelRole, string | null> = {
   vision_ocr: "visionModelFallbacks",
   vision_illustration: "visionModelFallbacks",
   evaluator: "evaluatorModelFallbacks",
+  ukrainian_specialist: "ukrainianSpecialistModelFallbacks",
 };
 
 /**
@@ -392,6 +397,42 @@ export async function resolveCrystallizerModelKey(): Promise<ResolvedModel | nul
 }
 
 /**
+ * Language-aware резолв для извлечения концептов.
+ *
+ * Если книга на украинском (`lang === "uk"`) и пользователь сконфигурировал
+ * `ukrainianSpecialistModel` (или fallbacks), пытаемся использовать
+ * специализированную модель — она лучше понимает украинскую лексику и
+ * грамматику чем generic crystallizer.
+ *
+ * Если ukrainian_specialist не сконфигурирован или ни одна из его моделей
+ * не загружена — graceful fallback на обычный crystallizer. То есть
+ * украинская книга НЕ застрянет: pipeline всегда даст какую-то модель.
+ *
+ * Для других языков (ru, en, de, fr, ...) — стандартный crystallizer
+ * (multilingual-e5 и большинство современных LLM их обрабатывают
+ * без специализации).
+ */
+export async function resolveCrystallizerForLanguage(
+  language: string | undefined,
+): Promise<ResolvedModel | null> {
+  if (language === "uk") {
+    /* Только если пользователь явно сконфигурировал ukrainian_specialist
+       (primary или fallback chain). Иначе резолвер просто вернул бы первую
+       загруженную модель — ровно ту же что для crystallizer, без специализации.
+       Читаем prefs через тот же deps что и резолвер — тесты могут инжектить. */
+    const prefs = await deps.getPrefs();
+    const ukConfigured =
+      String((prefs as Record<string, unknown>).ukrainianSpecialistModel ?? "").trim().length > 0 ||
+      String((prefs as Record<string, unknown>).ukrainianSpecialistModelFallbacks ?? "").trim().length > 0;
+    if (ukConfigured) {
+      const ukSpecialist = await modelRoleResolver.resolve("ukrainian_specialist");
+      if (ukSpecialist?.modelKey) return ukSpecialist;
+    }
+  }
+  return modelRoleResolver.resolve("crystallizer");
+}
+
+/**
  * Подсмотреть какие capabilities нужны для роли (без резолва модели).
  * Используется UI для отображения требований и фильтрации dropdown'а.
  */
@@ -416,6 +457,7 @@ export function listAllRoles(): RoleMeta[] {
     "vision_ocr",
     "vision_illustration",
     "evaluator",
+    "ukrainian_specialist",
   ];
   return roles.map((r) => ({
     role: r,
