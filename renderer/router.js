@@ -88,6 +88,12 @@ document.querySelectorAll(".sidebar-icon").forEach((btn) => {
   btn.addEventListener("click", () => showRoute(btn.dataset.route));
 });
 
+/* Application menu (electron Menu) → SPA navigation. На macOS пользователь
+   нажимает в меню File → Open Library Folder и попадает на route "library". */
+if (typeof window.api?.appMenu?.onNavigate === "function") {
+  window.api.appMenu.onNavigate((route) => showRoute(route));
+}
+
 applyI18n(document);
 setupLanguageToggle();
 mountResilienceBar();

@@ -24,6 +24,7 @@
     "electron:build-mac": "npm run setup:djvulibre-macos && npm run setup:7zip-macos && npm run electron:compile && npx electron-builder --mac",
     "electron:build-linux": "npm run setup:djvulibre-linux && npm run setup:7zip-linux && npm run electron:compile && npx electron-builder --linux",
     "doctor": "node scripts/doctor.cjs",
+    "icon:generate": "node scripts/generate-icon.cjs",
     "test:scanner": "tsx scripts/test-scanner.ts",
     "test:e2e:scanner": "tsx scripts/e2e-book-ingest.ts",
     "test:e2e:library-ux": "tsx scripts/e2e-library-ux.ts",

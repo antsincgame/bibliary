@@ -118,6 +118,10 @@ function registerAssetProtocol(): void {
 
 function createWindow(): void {
   const isMac = process.platform === "darwin";
+  /* Иконка для окна: на Linux обязательна (taskbar/dock-иконка), на Win
+     полезна как fallback пока .ico не подгружен из NSIS-установки.
+     На macOS иконка приходит из app bundle (.icns), параметр игнорируется. */
+  const iconPath = path.join(__dirname, "..", "build", "icon.png");
   mainWindow = new BrowserWindow({
     width: WINDOW_WIDTH,
     height: WINDOW_HEIGHT,
@@ -125,6 +129,7 @@ function createWindow(): void {
     minHeight: MIN_HEIGHT,
     backgroundColor: BG_COLOR,
     title: "Bibliary",
+    icon: iconPath,
     /* macOS: native traffic lights inside the dark window frame.
        "hiddenInset" keeps the standard traffic lights but lets
        the renderer extend under the title bar (no white bar). */
@@ -218,6 +223,10 @@ if (!gotLock) {
         }),
       )
       .catch(() => { /* best-effort */ });
+    /* Application menu: macOS — стандартный набор (App / File / Edit / View / Window / Help)
+       с правильными ⌘-акселераторами; Win/Linux — без отдельного App menu. */
+    const { installApplicationMenu } = await import("./lib/app-menu.js");
+    installApplicationMenu();
     createWindow();
   }).catch((err) => {
     console.error("[main] fatal startup error — createWindow was never called:", err);

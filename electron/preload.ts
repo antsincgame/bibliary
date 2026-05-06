@@ -875,4 +875,13 @@ contextBridge.exposeInMainWorld("api", {
       return () => ipcRenderer.removeListener("library:scan-report", l);
     },
   },
+
+  appMenu: {
+    /** Подписка на навигацию из application menu (File → Open Library Folder, etc.) */
+    onNavigate: (cb: (route: string) => void): (() => void) => {
+      const l = (_e: unknown, route: string) => cb(route);
+      ipcRenderer.on("app-menu:navigate", l);
+      return () => ipcRenderer.removeListener("app-menu:navigate", l);
+    },
+  },
 });
