@@ -1,22 +1,45 @@
 /**
  * Postinstall fix: edgeparse bundles all platform .node binaries inside its
- * own npm/ folder but tries to `require('edgeparse-win32-x64-msvc')` as a
+ * own npm/ folder but tries to `require('edgeparse-<platform>-<arch>')` as a
  * separate package. npm doesn't always install the optional platform dep.
  *
- * This script creates the missing directory with a copy of the binary so
- * that the standard require() resolution works in both dev and packaged builds.
+ * Этот скрипт создаёт недостающую директорию с копией бинаря, чтобы стандартный
+ * require() работал и в dev, и в packaged-сборках, на всех поддерживаемых ОС.
  */
+"use strict";
+
 const fs = require("fs");
 const path = require("path");
 
-const platforms = {
-  "win32-x64": { pkg: "edgeparse-win32-x64-msvc", file: "edgeparse-node.win32-x64-msvc.node" },
-  "darwin-x64": { pkg: "edgeparse-darwin-x64", file: "edgeparse-node.darwin-x64.node" },
-  "darwin-arm64": { pkg: "edgeparse-darwin-arm64", file: "edgeparse-node.darwin-arm64.node" },
+/**
+ * Карта `${platform}-${arch}` → пакет + файл + подпапка внутри edgeparse/npm.
+ * Для каждой поддерживаемой платформы нужны все три значения.
+ */
+const PLATFORMS = {
+  "win32-x64": {
+    pkg: "edgeparse-win32-x64-msvc",
+    file: "edgeparse-node.win32-x64-msvc.node",
+    subfolder: "win32-x64-msvc",
+  },
+  "darwin-x64": {
+    pkg: "edgeparse-darwin-x64",
+    file: "edgeparse-node.darwin-x64.node",
+    subfolder: "darwin-x64",
+  },
+  "darwin-arm64": {
+    pkg: "edgeparse-darwin-arm64",
+    file: "edgeparse-node.darwin-arm64.node",
+    subfolder: "darwin-arm64",
+  },
+  "linux-x64": {
+    pkg: "edgeparse-linux-x64-gnu",
+    file: "edgeparse-node.linux-x64-gnu.node",
+    subfolder: "linux-x64-gnu",
+  },
 };
 
 const key = `${process.platform}-${process.arch}`;
-const info = platforms[key];
+const info = PLATFORMS[key];
 if (!info) {
   console.log(`[fix-edgeparse] platform ${key} not supported by edgeparse, skipping`);
   process.exit(0);
@@ -37,8 +60,6 @@ if (fs.existsSync(targetFile)) {
 }
 
 const sourceFile = path.join(edgeparsePkg, "npm", info.file);
-const sourcePkgJson = path.join(edgeparsePkg, "npm", subfolderMap[key], "package.json");
-
 if (!fs.existsSync(sourceFile)) {
   console.log(`[fix-edgeparse] native binary not found at ${sourceFile}, skipping`);
   process.exit(0);
@@ -47,12 +68,7 @@ if (!fs.existsSync(sourceFile)) {
 fs.mkdirSync(targetDir, { recursive: true });
 fs.copyFileSync(sourceFile, targetFile);
 
-const subfolderMap = {
-  "win32-x64": "win32-x64-msvc",
-  "darwin-x64": "darwin-x64",
-  "darwin-arm64": "darwin-arm64",
-};
-const subPkg = path.join(edgeparsePkg, "npm", subfolderMap[key], "package.json");
+const subPkg = path.join(edgeparsePkg, "npm", info.subfolder, "package.json");
 if (fs.existsSync(subPkg)) {
   fs.copyFileSync(subPkg, path.join(targetDir, "package.json"));
 }

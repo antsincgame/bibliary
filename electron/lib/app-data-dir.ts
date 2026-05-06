@@ -29,6 +29,10 @@ function isLikelySameAppExecutable(exePath: string, appName: string): boolean {
 }
 
 export function getWindowsParentExecutablePath(parentPid = process.ppid): string | null {
+  /* Hard guard: powershell.exe доступен только на Windows. На macOS/Linux
+     spawn упадёт ENOENT — возвращаем null чтобы caller просто перешёл к
+     обычному execPath fallback. */
+  if (process.platform !== "win32") return null;
   if (!Number.isInteger(parentPid) || parentPid <= 0) return null;
   try {
     const script = `(Get-CimInstance Win32_Process -Filter "ProcessId=${parentPid}").ExecutablePath`;

@@ -53,6 +53,7 @@ export async function loadEdgeParse(): Promise<EdgeParseModule | null> {
         "win32-x64": "edgeparse-node.win32-x64-msvc.node",
         "darwin-x64": "edgeparse-node.darwin-x64.node",
         "darwin-arm64": "edgeparse-node.darwin-arm64.node",
+        "linux-x64": "edgeparse-node.linux-x64-gnu.node",
       };
       const filename = addonMap[platformKey];
       if (!filename) {
