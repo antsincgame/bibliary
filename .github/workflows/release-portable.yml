@@ -83,11 +83,16 @@ jobs:
         env:
           ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
 
+      - name: Setup vendor binaries (DjVuLibre + 7zip via Homebrew)
+        run: |
+          npm run setup:djvulibre-macos
+          npm run setup:7zip-macos
+
       - name: Compile TypeScript
         run: npm run electron:compile
 
       - name: Build DMG
-        run: npx electron-builder --mac
+        run: npx electron-builder --mac --arm64
         env:
           ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
           # Подпись опциональна: если секреты не заданы — ad-hoc (без Gatekeeper).

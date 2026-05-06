@@ -21,6 +21,7 @@
     "verify:deps-for-packaging": "node scripts/verify-deps-for-packaging.cjs",
     "electron:build": "npm run verify:deps-for-packaging && npm run electron:compile && electron-builder",
     "electron:build-portable": "npm run verify:deps-for-packaging && npm run electron:compile && node scripts/build-portable.js && node scripts/copy-portable-dist.js",
+    "electron:build-mac": "npm run setup:djvulibre-macos && npm run setup:7zip-macos && npm run electron:compile && npx electron-builder --mac",
     "test:scanner": "tsx scripts/test-scanner.ts",
     "test:e2e:scanner": "tsx scripts/e2e-book-ingest.ts",
     "test:e2e:library-ux": "tsx scripts/e2e-library-ux.ts",
