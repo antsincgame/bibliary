@@ -118,6 +118,7 @@ function registerAssetProtocol(): void {
 }
 
 function createWindow(): void {
+  const isMac = process.platform === "darwin";
   mainWindow = new BrowserWindow({
     width: WINDOW_WIDTH,
     height: WINDOW_HEIGHT,
@@ -125,6 +126,13 @@ function createWindow(): void {
     minHeight: MIN_HEIGHT,
     backgroundColor: BG_COLOR,
     title: "Bibliary",
+    /* macOS: native traffic lights inside the dark window frame.
+       "hiddenInset" keeps the standard traffic lights but lets
+       the renderer extend under the title bar (no white bar). */
+    ...(isMac ? {
+      titleBarStyle: "hiddenInset" as const,
+      trafficLightPosition: { x: 14, y: 14 },
+    } : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -176,6 +184,9 @@ if (!gotLock) {
       devBaseDir: __dirname,
       platform: process.platform,
       parentExecutablePath: process.platform === "win32" ? getWindowsParentExecutablePath() : null,
+      /* macOS packaged: execPath is inside read-only .app bundle —
+         pass userData so resolveAppDataDir routes to ~/Library/Application Support. */
+      userDataPath: app.getPath("userData"),
     });
     process.env.BIBLIARY_DATA_DIR = dataDir;
 
@@ -219,8 +230,15 @@ if (!gotLock) {
     app.exit(1);
   });
 
+  /* macOS: keep the app alive when all windows are closed
+     (standard macOS convention — re-open via dock or Cmd+N). */
   app.on("window-all-closed", () => {
-    app.quit();
+    if (process.platform !== "darwin") app.quit();
+  });
+
+  /* macOS: clicking the dock icon re-opens the main window. */
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 
   const FORCE_EXIT_MS = 4_000;

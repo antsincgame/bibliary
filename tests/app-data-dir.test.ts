@@ -81,3 +81,35 @@ test("resolveAppDataDir: development fallback stays at project data directory", 
   );
 });
 
+test("resolveAppDataDir: macOS packaged uses userDataPath (not .app bundle)", () => {
+  const macExec = "/Applications/Bibliary.app/Contents/MacOS/Bibliary";
+  const userDataPath = "/Users/user/Library/Application Support/Bibliary";
+  assert.equal(
+    resolveAppDataDir({
+      env: {},
+      isPackaged: true,
+      execPath: macExec,
+      appName: "Bibliary",
+      devBaseDir,
+      platform: "darwin",
+      userDataPath,
+    }),
+    path.join(userDataPath, "data"),
+  );
+});
+
+test("resolveAppDataDir: macOS packaged without userDataPath falls back to execPath dir", () => {
+  const macExec = "/Applications/Bibliary.app/Contents/MacOS/Bibliary";
+  assert.equal(
+    resolveAppDataDir({
+      env: {},
+      isPackaged: true,
+      execPath: macExec,
+      appName: "Bibliary",
+      devBaseDir,
+      platform: "darwin",
+    }),
+    path.join(path.dirname(macExec), "data"),
+  );
+});
+
