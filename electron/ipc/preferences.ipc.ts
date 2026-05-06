@@ -89,7 +89,9 @@ export function applyRuntimeSideEffects(prefs: Preferences): void {
      binding in qdrant/http-client and drop the cached LM Studio SDK
      client so the next call rebuilds against the new URL. */
   invalidateEndpointsCache();
-  void getEndpoints().then(({ qdrantUrl }) => setQdrantUrl(qdrantUrl));
+  void getEndpoints()
+    .then(({ qdrantUrl }) => setQdrantUrl(qdrantUrl))
+    .catch((err) => console.error("[preferences/applyRuntimeSideEffects] setQdrantUrl failed:", err));
   refreshLmStudioClient();
   /* Sync Marker feature flag to ENV so marker-sidecar.ts can read it
      synchronously without an async preferences store dependency. */

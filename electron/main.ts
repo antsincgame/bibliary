@@ -197,14 +197,17 @@ if (!gotLock) {
     startSchedulerSnapshotBroadcaster(() => mainWindow);
     startModelPoolSnapshotBroadcaster(() => mainWindow);
     registerAllIpcHandlers(() => mainWindow);
-    void bootstrapLibrarySubsystem(() => mainWindow);
+    void bootstrapLibrarySubsystem(() => mainWindow)
+      .catch((err) => console.error("[main] bootstrapLibrarySubsystem failed:", err));
     /* Audit A10 (Wave2): best-effort cleanup orphan'ов bibliary-archive-* в %TEMP%
        от предыдущих crash-сессий. Не блокирующий, не валится при ошибках. */
-    void import("./lib/library/archive-extractor.js").then(({ cleanupOrphanedArchiveTempDirs }) =>
-      cleanupOrphanedArchiveTempDirs().then((res) => {
-        if (res.removed > 0) console.log(`[startup] archive temp cleanup: removed ${res.removed} orphan dirs (errors: ${res.errors})`);
-      }).catch(() => { /* best-effort */ }),
-    );
+    void import("./lib/library/archive-extractor.js")
+      .then(({ cleanupOrphanedArchiveTempDirs }) =>
+        cleanupOrphanedArchiveTempDirs().then((res) => {
+          if (res.removed > 0) console.log(`[startup] archive temp cleanup: removed ${res.removed} orphan dirs (errors: ${res.errors})`);
+        }),
+      )
+      .catch(() => { /* best-effort */ });
     createWindow();
   }).catch((err) => {
     console.error("[main] fatal startup error — createWindow was never called:", err);

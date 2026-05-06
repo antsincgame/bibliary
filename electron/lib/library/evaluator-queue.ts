@@ -342,13 +342,14 @@ export function pauseEvaluator(): void {
 }
 
 export function resumeEvaluator(): void {
-  if (!paused.value) {
-    void enqueuePendingImportedBooks().then(() => scheduleAvailableSlots());
-    return;
+  const wasPaused = paused.value;
+  if (wasPaused) {
+    paused.value = false;
+    emit({ type: "evaluator.resumed" });
   }
-  paused.value = false;
-  emit({ type: "evaluator.resumed" });
-  void enqueuePendingImportedBooks().then(() => scheduleAvailableSlots());
+  void enqueuePendingImportedBooks()
+    .then(() => scheduleAvailableSlots())
+    .catch((err) => console.error("[evaluator-queue/resumeEvaluator] enqueue failed:", err));
 }
 
 /**
