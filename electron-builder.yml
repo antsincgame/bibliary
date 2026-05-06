@@ -55,6 +55,12 @@ dmg:
   window:
     width: 540
     height: 380
+linux:
+  target:
+    - AppImage
+  category: Office
+  synopsis: "Local book library to ChatML JSONL fine-tuning datasets"
+  description: "Bibliary индексирует локальную библиотеку (epub/pdf/djvu/fb2/docx и др.), извлекает структурированный markdown и формирует датасеты для дообучения LLM."
 asar: true
 asarUnpack:
   # Native addons and binary runtimes must be outside asar (no dlopen inside archive).
@@ -77,6 +83,10 @@ asarUnpack:
   - "node_modules/edgeparse/npm/edgeparse-node.darwin-x64.node"
   - "node_modules/edgeparse/npm/darwin-x64/**/*"
   - "node_modules/edgeparse-darwin-x64/**/*"
+  # edgeparse — Linux x64
+  - "node_modules/edgeparse/npm/edgeparse-node.linux-x64-gnu.node"
+  - "node_modules/edgeparse/npm/linux-x64-gnu/**/*"
+  - "node_modules/edgeparse-linux-x64-gnu/**/*"
   # System OCR — Windows + macOS Vision Framework bindings
   - "node_modules/@napi-rs/system-ocr/**/*"
   # Canvas (PDF rasterisation) — native per-platform

@@ -22,6 +22,8 @@
     "electron:build": "npm run verify:deps-for-packaging && npm run electron:compile && electron-builder",
     "electron:build-portable": "npm run verify:deps-for-packaging && npm run electron:compile && node scripts/build-portable.js && node scripts/copy-portable-dist.js",
     "electron:build-mac": "npm run setup:djvulibre-macos && npm run setup:7zip-macos && npm run electron:compile && npx electron-builder --mac",
+    "electron:build-linux": "npm run setup:djvulibre-linux && npm run setup:7zip-linux && npm run electron:compile && npx electron-builder --linux",
+    "doctor": "node scripts/doctor.cjs",
     "test:scanner": "tsx scripts/test-scanner.ts",
     "test:e2e:scanner": "tsx scripts/e2e-book-ingest.ts",
     "test:e2e:library-ux": "tsx scripts/e2e-library-ux.ts",
@@ -50,7 +52,9 @@
     "setup:djvulibre": "node scripts/download-djvulibre-win.cjs",
     "setup:7zip": "node scripts/download-7zip-win.cjs",
     "setup:djvulibre-macos": "node scripts/download-djvulibre-macos.cjs",
-    "setup:7zip-macos": "node scripts/download-7zip-macos.cjs"
+    "setup:7zip-macos": "node scripts/download-7zip-macos.cjs",
+    "setup:djvulibre-linux": "node scripts/download-djvulibre-linux.cjs",
+    "setup:7zip-linux": "node scripts/download-7zip-linux.cjs"
   },
   "dependencies": {
     "@firecrawl/pdf-inspector": "^1.8.0",
