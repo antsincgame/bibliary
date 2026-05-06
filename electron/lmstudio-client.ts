@@ -46,8 +46,6 @@ export const PROFILE = {
   },
 } as const;
 
-export type ProfileName = keyof typeof PROFILE;
-
 export interface SamplingParams {
   temperature: number;
   top_p: number;
@@ -303,152 +301,6 @@ export async function chat(request: ChatRequest): Promise<ChatResponse> {
   };
 }
 
-/* ────────────────── Phase 4.0 — tools-aware chat ──────────────────
- * Расширение `chat()` для function calling. Не модифицирует существующий
- * `chat()` (Strangler Fig) — добавляет соседнюю функцию с `tools` параметром.
- * Использует тот же endpoint /v1/chat/completions, тот же error-handling.
- *
- * Контракт совместим с OpenAI tools API (Qwen3 4B+ поддерживает native).
- */
-
-/**
- * Сообщение в формате OpenAI tools API. Не наследует `ChatMessage`,
- * потому что добавляет роль `"tool"` и поля `tool_call_id` / `tool_calls`.
- */
-export interface ToolMessage {
-  role: "system" | "user" | "assistant" | "tool";
-  content: string;
-  tool_call_id?: string;
-  tool_calls?: Array<{
-    id: string;
-    type: "function";
-    function: { name: string; arguments: string };
-  }>;
-}
-
-export interface ToolDefinitionWire {
-  type: "function";
-  function: {
-    name: string;
-    description: string;
-    parameters: Record<string, unknown>;
-  };
-}
-
-export interface ChatWithToolsRequest {
-  model: string;
-  messages: ToolMessage[];
-  tools: ToolDefinitionWire[];
-  toolChoice?: "auto" | "none" | "required";
-  sampling?: Partial<SamplingParams>;
-  signal?: AbortSignal;
-  /** См. ChatRequest.stop. */
-  stop?: string[];
-  /** См. ChatRequest.responseFormat. Реже нужно с tools, но иногда нужно структурировать финальный answer. */
-  responseFormat?: Record<string, unknown>;
-  /** См. ChatRequest.chatTemplateKwargs. */
-  chatTemplateKwargs?: Record<string, unknown>;
-}
-
-export interface ChatToolCall {
-  id: string;
-  name: string;
-  argsJson: string;
-}
-
-export interface ChatWithToolsResponse {
-  content: string;
-  /** См. `ChatResponse.reasoningContent`. */
-  reasoningContent?: string;
-  toolCalls?: ChatToolCall[];
-  finishReason?: string;
-  usage?: ChatUsage;
-}
-
-interface OpenAiToolCallWire {
-  id?: string;
-  type: "function";
-  function: { name: string; arguments: string };
-}
-
-interface OpenAiChatWithToolsResponse {
-  choices: Array<{
-    message: {
-      content?: string | null;
-      reasoning_content?: string;
-      tool_calls?: OpenAiToolCallWire[];
-    };
-    finish_reason?: string;
-  }>;
-  usage?: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    total_tokens?: number;
-  };
-}
-
-export async function chatWithTools(request: ChatWithToolsRequest): Promise<ChatWithToolsResponse> {
-  const sampling = { ...DEFAULT_SAMPLING, ...request.sampling };
-  const payload: Record<string, unknown> = {
-    model: request.model,
-    messages: request.messages,
-    tools: request.tools,
-    tool_choice: request.toolChoice ?? "auto",
-    temperature: sampling.temperature,
-    top_p: sampling.top_p,
-    top_k: sampling.top_k,
-    min_p: sampling.min_p,
-    presence_penalty: sampling.presence_penalty,
-    max_tokens: sampling.max_tokens,
-  };
-  if (request.stop && request.stop.length > 0) payload.stop = request.stop;
-  if (request.responseFormat) payload.response_format = request.responseFormat;
-  if (request.chatTemplateKwargs) payload.chat_template_kwargs = request.chatTemplateKwargs;
-
-  const baseUrl = await getLmStudioUrl();
-  /* Per-modelKey serialization (см. model-inference-lock.ts). */
-  const data = await runExclusiveOnModel(request.model, async () => {
-    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: request.signal,
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      throw new Error(`LM Studio HTTP ${response.status}: ${response.statusText}${text ? ` — ${text.slice(0, 200)}` : ""}`);
-    }
-
-    return (await response.json()) as OpenAiChatWithToolsResponse;
-  });
-
-  const choice = data.choices[0];
-  if (!choice) throw new Error("LM Studio returned no completion choice");
-
-  const content = choice.message.content ?? "";
-  const reasoningContent = choice.message.reasoning_content ?? "";
-  const toolCalls = choice.message.tool_calls?.map((tc) => ({
-    id: tc.id ?? `tc_${Math.random().toString(36).slice(2, 12)}`,
-    name: tc.function.name,
-    argsJson: tc.function.arguments,
-  }));
-
-  return {
-    content,
-    reasoningContent: reasoningContent.length > 0 ? reasoningContent : undefined,
-    toolCalls,
-    finishReason: choice.finish_reason,
-    usage: data.usage
-      ? {
-          prompt: data.usage.prompt_tokens ?? 0,
-          completion: data.usage.completion_tokens ?? 0,
-          total: data.usage.total_tokens ?? 0,
-        }
-      : undefined,
-  };
-}
-
 /**
  * Build a RequestPolicy from current preferences (with sane fallbacks
  * when the store is not yet initialised, e.g. in unit-tests).
@@ -494,27 +346,6 @@ export async function chatWithPolicy(
       observedTps: ctx.observedTps ?? DEFAULT_OBSERVED_TPS,
     },
     (innerSignal) => chat({ ...request, signal: innerSignal }),
-  );
-}
-
-/**
- * Same as chatWithPolicy but for the tools-aware variant. Agent loop
- * uses this so a flaky LM Studio doesn't kill the whole ReAct iteration.
- */
-export async function chatWithToolsAndPolicy(
-  request: ChatWithToolsRequest,
-  ctx: PolicyContextOverride = {},
-): Promise<ChatWithToolsResponse> {
-  const policy = await loadRuntimePolicy();
-  const externalSignal = ctx.externalSignal ?? request.signal ?? new AbortController().signal;
-  return withPolicy(
-    policy,
-    externalSignal,
-    {
-      expectedTokens: ctx.expectedTokens ?? request.sampling?.max_tokens ?? DEFAULT_EXPECTED_TOKENS,
-      observedTps: ctx.observedTps ?? DEFAULT_OBSERVED_TPS,
-    },
-    (innerSignal) => chatWithTools({ ...request, signal: innerSignal }),
   );
 }
 
@@ -647,23 +478,6 @@ export async function unloadModel(identifier: string): Promise<void> {
   if (modelKey) unregisterModelContext(modelKey);
 }
 
-export async function switchProfile(profileName: ProfileName, contextLength = 32768): Promise<LoadedModelInfo> {
-  const profile = PROFILE[profileName];
-  const loaded = await listLoaded();
-  for (const m of loaded) {
-    if (m.modelKey !== profile.key) {
-      await unloadModel(m.identifier);
-    }
-  }
-  const existing = loaded.find((m) => m.modelKey === profile.key);
-  if (existing) return existing;
-  return loadModel(profile.key, {
-    contextLength,
-    ttlSec: profile.ttlSec,
-    gpuOffload: "max",
-  });
-}
-
 /* S2.1: in-flight dedup для getServerStatus(). Watchdog (lmstudio-watchdog.ts)
    опрашивает раз в 5s, параллельно UI Settings/Welcome Wizard может вызвать
    тот же ping. До дедупа на каждый вызов уходил отдельный WS-handshake
@@ -694,29 +508,6 @@ export async function getServerStatus(): Promise<{ online: boolean; version?: st
     }
   })();
   return inflightStatus;
-}
-
-/**
- * Sync-fire path: запускает disposal SDK клиента в фоне без await.
- *
- * ВАЖНО: используй ТОЛЬКО когда вызывающий код не может быть async
- * (например, обработчики синхронных subsystems в `main.ts:teardownSubsystems`
- * — они построены как массив `() => void`).
- *
- * Для graceful-shutdown с гарантией закрытия websocket'а используй
- * `disposeClientAsync()` (см. ниже).
- *
- * Iter 14.3 (2026-05-04, /imperor): найдено что LM Studio после quit
- * Bibliary держал JSON-RPC соединение, потому что Symbol.asyncDispose
- * запускался fire-and-forget без await. Теперь у нас ДВА пути:
- * sync (legacy, для обратной совместимости массивов teardown) и async.
- */
-export function disposeClient(): void {
-  if (cachedClient) {
-    /* fire-and-forget — websocket МОЖЕТ остаться висеть, см. async-вариант. */
-    cachedClient[Symbol.asyncDispose]?.().catch((err) => console.error("[lmstudio-client/disposeClient] Error:", err));
-    dropClient();
-  }
 }
 
 /**

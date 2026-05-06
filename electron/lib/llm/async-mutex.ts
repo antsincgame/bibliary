@@ -14,15 +14,6 @@ export class AsyncMutex {
       release();
     }
   }
-
-  isFree(): boolean {
-    let pending = false;
-    void this.chain.then(() => undefined).catch(() => undefined);
-    /* Synchronous best-effort: chain is a Promise, we cannot inspect it
-       without a microtask. Caller treats true as a hint, never as guarantee. */
-    pending = false;
-    return !pending;
-  }
 }
 
 export class KeyedAsyncMutex {

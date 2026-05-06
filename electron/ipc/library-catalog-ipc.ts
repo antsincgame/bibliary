@@ -107,27 +107,6 @@ async function countTreeEntries(
   return { files, dirs };
 }
 
-/**
- * Lazy Versator-upgrade для legacy book.md (импортированных до v0.8.0).
- *
- * При чтении книги проверяем `layoutVersion` во frontmatter:
- *   - если совпадает с текущей `LAYOUT_VERSION` — отдаём как есть;
- *   - иначе — применяем `applyLayout` к телу markdown (НЕ трогая frontmatter
- *     и image refs в конце), отдаём в reader. Файл на диске НЕ перезаписываем
- *     (прозрачный read-only апгрейд: дешевле и обратимо в случае регрессии).
- *
- * Image refs (`[img-...]: data:image/...`) защищены тем, что они оформлены
- * как стандартные markdown link references — typograf/callouts/dropcaps их
- * не модифицируют (проверено тестами layout-pipeline.test.ts).
- *
- * Iter 13.1 (2026-05-03): родилось от пользовательской диагностики «книга
- * показывается просто копией без вёрстки» — Versator применялся только в
- * момент импорта, существующие 470+ книг оставались без научной вёрстки.
- */
-function ensureVersatorUpgrade(markdown: string, _language?: string): string {
-  return markdown;
-}
-
 export function registerLibraryCatalogIpc(): void {
   ipcMain.handle(
     "library:catalog",
@@ -187,8 +166,7 @@ export function registerLibraryCatalogIpc(): void {
       const meta = getBookById(bookId);
       if (!meta) return null;
       try {
-        const raw = await fs.readFile(meta.mdPath, "utf-8");
-        const markdown = ensureVersatorUpgrade(raw, meta.language);
+        const markdown = await fs.readFile(meta.mdPath, "utf-8");
         return { markdown, mdPath: meta.mdPath };
       } catch (e) {
         console.warn(`[library:read-book-md] ${bookId}:`, e instanceof Error ? e.message : e);
