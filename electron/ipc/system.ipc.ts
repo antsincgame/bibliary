@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { detectHardware } from "../lib/hardware/profiler.js";
 import { getEndpoints } from "../lib/endpoints/index.js";
 import { getServerStatus } from "../lmstudio-client.js";
-import { QDRANT_URL, QDRANT_API_KEY } from "../lib/qdrant/http-client.js";
+import { CHROMA_URL, CHROMA_API_KEY, chromaUrl } from "../lib/chroma/http-client.js";
 
 interface AppBuildInfo {
   version: string;
@@ -58,22 +58,31 @@ function getBuildInfo(): AppBuildInfo {
 const ALLOWED_OPEN_SCHEMES = ["http:", "https:", "lmstudio:"];
 
 /**
- * Лёгкий ping Qdrant root для onboarding wizard.
- * Намеренно дублирует часть логики qdrant:cluster-info — здесь нужен только
- * online/version с коротким таймаутом, без подсчёта коллекций (быстрее, проще
- * в обработке offline кейсов wizard'ом).
+ * Лёгкий ping Chroma для onboarding wizard. Heartbeat + version параллельно.
+ * Короткий timeout 3s — wizard должен реагировать быстро на offline server.
  */
-async function probeQdrant(): Promise<{ online: boolean; version?: string; url: string }> {
-  const url = QDRANT_URL;
+async function probeChroma(): Promise<{ online: boolean; version?: string; url: string }> {
+  const url = CHROMA_URL;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 3000);
   try {
     const headers: Record<string, string> = {};
-    if (QDRANT_API_KEY) headers["api-key"] = QDRANT_API_KEY;
-    const resp = await fetch(`${url}/`, { signal: ctrl.signal, headers });
-    if (!resp.ok) return { online: false, url };
-    const root = (await resp.json().catch(() => ({}))) as { version?: string };
-    return { online: true, version: root.version, url };
+    if (CHROMA_API_KEY) headers["X-Chroma-Token"] = CHROMA_API_KEY;
+    const heartbeatResp = await fetch(chromaUrl("/heartbeat"), { signal: ctrl.signal, headers });
+    if (!heartbeatResp.ok) return { online: false, url };
+    /* version endpoint опционален — heartbeat=200 уже означает online. */
+    let version: string | undefined;
+    try {
+      const verResp = await fetch(chromaUrl("/version"), { signal: ctrl.signal, headers });
+      if (verResp.ok) {
+        const v = await verResp.json().catch(() => null);
+        if (typeof v === "string") version = v;
+        else if (v && typeof v === "object" && typeof (v as { version?: string }).version === "string") {
+          version = (v as { version: string }).version;
+        }
+      }
+    } catch { /* version optional */ }
+    return { online: true, version, url };
   } catch {
     return { online: false, url };
   } finally {
@@ -97,16 +106,16 @@ export function registerSystemIpc(): void {
     "system:probe-services",
     async (): Promise<{
       lmStudio: { online: boolean; version?: string; url: string };
-      qdrant: { online: boolean; version?: string; url: string };
+      chroma: { online: boolean; version?: string; url: string };
     }> => {
       const { lmStudioUrl } = await getEndpoints();
-      const [lmStatus, qdrantStatus] = await Promise.all([
+      const [lmStatus, chromaStatus] = await Promise.all([
         getServerStatus(),
-        probeQdrant(),
+        probeChroma(),
       ]);
       return {
         lmStudio: { ...lmStatus, url: lmStudioUrl },
-        qdrant: qdrantStatus,
+        chroma: chromaStatus,
       };
     }
   );

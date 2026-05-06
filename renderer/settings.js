@@ -11,7 +11,7 @@ function api() { return /** @type {any} */ (window).api; }
 
 /**
  * Iter 14.1 (2026-05-04): настройки сильно упрощены.
- * Только базовые URL (LM Studio + Qdrant) — остальное живёт в Zod-дефолтах
+ * Только базовые URL (LM Studio + Chroma) — остальное живёт в Zod-дефолтах
  * (electron/lib/preferences/store.ts) и работает «из коробки».
  */
 
@@ -259,7 +259,7 @@ function render(root) {
 
 /**
  * Кнопка «Сжечь библиотеку» — destructive операция (удаляет ВСЁ под
- * data/library/, bibliary-cache.db и Qdrant коллекции bibliary-*).
+ * data/library/, bibliary-cache.db и Chroma коллекции bibliary-*).
  * Защищена двойным confirm.
  */
 function buildBurnLibraryBtn() {
@@ -291,10 +291,10 @@ function buildBurnLibraryBtn() {
       const summary = t("settings.burnLibrary.done", {
         files: String(r.removedFiles ?? 0),
         dirs: String(r.removedDirs ?? 0),
-        qdrant: String(r.qdrantCleaned ?? 0),
+        chroma: String(r.chromaCleaned ?? 0),
       });
-      const errs = Array.isArray(r.qdrantErrors) && r.qdrantErrors.length > 0
-        ? "\n\nQdrant warnings:\n" + r.qdrantErrors.slice(0, 5).join("\n")
+      const errs = Array.isArray(r.chromaErrors) && r.chromaErrors.length > 0
+        ? "\n\nChroma warnings:\n" + r.chromaErrors.slice(0, 5).join("\n")
         : "";
       await showAlert(summary + errs);
     } catch (e) {

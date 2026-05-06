@@ -274,7 +274,7 @@ export function registerLibraryCatalogIpc(): void {
       /** Иt 8Е.1 (hybrid cascade): активная коллекция в renderer (если выбрана).
        *  Sync-удаление точек этой книги ДО возврата (быстро, ~50ms). */
       activeCollection?: string;
-    }): Promise<{ ok: boolean; reason?: string; qdrantCleaned?: number; qdrantBackgroundScheduled?: boolean; filesRemoved?: number; dirsRemoved?: number }> => {
+    }): Promise<{ ok: boolean; reason?: string; chromaCleaned?: number; chromaBackgroundScheduled?: boolean; filesRemoved?: number; dirsRemoved?: number }> => {
       if (!args || typeof args.bookId !== "string") return { ok: false, reason: "bookId required" };
       const meta = getBookById(args.bookId);
       if (!meta) return { ok: false, reason: "not-found" };
@@ -342,28 +342,24 @@ export function registerLibraryCatalogIpc(): void {
            Оба этапа используют bookId фильтр (Иt 8Г.3 payload + индекс).
            bookSourcePath fallback не нужен — bookId стабильнее (выживает
            перемещение файла). */
-        let qdrantCleaned = 0;
-        let qdrantBackgroundScheduled = false;
+        let chromaCleaned = 0;
+        let chromaBackgroundScheduled = false;
         try {
-          const { deletePointsByFilter } = await import("../lib/qdrant/http-client.js");
+          const { chromaDeleteByWhere } = await import("../lib/chroma/points.js");
           if (args.activeCollection) {
-            const r = await deletePointsByFilter(args.activeCollection, [
-              { field: "bookId", value: args.bookId },
-            ]);
-            qdrantCleaned = r.status === "ok" ? 1 : 0;
+            const r = await chromaDeleteByWhere(args.activeCollection, { bookId: args.bookId });
+            chromaCleaned = r.deleted;
           }
-          /* Background full scan для orphan-vector cleanup. */
+          /* Background full scan для orphan-vector cleanup во всех остальных коллекциях. */
           void (async () => {
             try {
-              const { fetchQdrantJson, QDRANT_URL } = await import("../lib/qdrant/http-client.js");
-              const all = await fetchQdrantJson<{ result?: { collections?: Array<{ name: string }> } }>(
-                `${QDRANT_URL}/collections`,
-              );
-              const names = (all.result?.collections ?? []).map((c) => c.name);
+              const { chromaUrl, fetchChromaJson } = await import("../lib/chroma/http-client.js");
+              const collections = await fetchChromaJson<Array<{ name: string }>>(chromaUrl("/collections"));
+              const names = (collections ?? []).map((c) => c.name);
               for (const collection of names) {
                 if (collection === args.activeCollection) continue;
                 try {
-                  await deletePointsByFilter(collection, [{ field: "bookId", value: args.bookId }]);
+                  await chromaDeleteByWhere(collection, { bookId: args.bookId });
                 } catch (innerErr) {
                   console.warn(`[library:delete-book] background cleanup failed for "${collection}":`, innerErr);
                 }
@@ -372,14 +368,14 @@ export function registerLibraryCatalogIpc(): void {
               console.warn("[library:delete-book] background full-scan failed:", bgErr);
             }
           })();
-          qdrantBackgroundScheduled = true;
-        } catch (qdrantErr) {
-          /* Qdrant unreachable — не блокируем delete-book (книга и так удалена
+          chromaBackgroundScheduled = true;
+        } catch (chromaErr) {
+          /* Chroma unreachable — не блокируем delete-book (книга и так удалена
              из SQLite). Просто warning. */
-          console.warn("[library:delete-book] Qdrant cascade cleanup failed (non-fatal):", qdrantErr);
+          console.warn("[library:delete-book] Chroma cascade cleanup failed (non-fatal):", chromaErr);
         }
 
-        return { ok: true, qdrantCleaned, qdrantBackgroundScheduled, filesRemoved, dirsRemoved };
+        return { ok: true, chromaCleaned, chromaBackgroundScheduled, filesRemoved, dirsRemoved };
       } catch (e) {
         return { ok: false, reason: e instanceof Error ? e.message : String(e), filesRemoved, dirsRemoved };
       }
@@ -442,8 +438,8 @@ export function registerLibraryCatalogIpc(): void {
       libraryRoot: string;
       removedFiles: number;
       removedDirs: number;
-      qdrantCleaned: number;
-      qdrantErrors: string[];
+      chromaCleaned: number;
+      chromaErrors: string[];
     }> => {
       const root = resolveLibraryRoot();
       const dbPath = getCacheDbPath();
@@ -469,28 +465,29 @@ export function registerLibraryCatalogIpc(): void {
         resetNearDupCache();
         resetRevisionDedupCache();
 
-        let qdrantCleaned = 0;
-        const qdrantErrors: string[] = [];
+        let chromaCleaned = 0;
+        const chromaErrors: string[] = [];
         try {
-          const { fetchQdrantJson, QDRANT_URL } = await import("../lib/qdrant/http-client.js");
-          const all = await fetchQdrantJson<{ result?: { collections?: Array<{ name: string }> } }>(
-            `${QDRANT_URL}/collections`,
-          );
-          const names = (all.result?.collections ?? [])
+          const { chromaUrl, fetchChromaJson } = await import("../lib/chroma/http-client.js");
+          const { invalidate, clearAll } = await import("../lib/chroma/collection-cache.js");
+          const collections = await fetchChromaJson<Array<{ name: string }>>(chromaUrl("/collections"));
+          const names = (collections ?? [])
             .map((c) => c.name)
             .filter((n) => typeof n === "string" && n.startsWith("bibliary-"));
           for (const collection of names) {
             try {
-              await fetchQdrantJson(`${QDRANT_URL}/collections/${collection}`, {
+              await fetchChromaJson(chromaUrl(`/collections/${encodeURIComponent(collection)}`), {
                 method: "DELETE",
               });
-              qdrantCleaned += 1;
+              invalidate(collection);
+              chromaCleaned += 1;
             } catch (err) {
-              qdrantErrors.push(`${collection}: ${err instanceof Error ? err.message : String(err)}`);
+              chromaErrors.push(`${collection}: ${err instanceof Error ? err.message : String(err)}`);
             }
           }
-        } catch (qdrantErr) {
-          qdrantErrors.push(qdrantErr instanceof Error ? qdrantErr.message : String(qdrantErr));
+          clearAll();
+        } catch (chromaErr) {
+          chromaErrors.push(chromaErr instanceof Error ? chromaErr.message : String(chromaErr));
         }
 
         return {
@@ -498,8 +495,8 @@ export function registerLibraryCatalogIpc(): void {
           libraryRoot: root,
           removedFiles,
           removedDirs,
-          qdrantCleaned,
-          qdrantErrors,
+          chromaCleaned,
+          chromaErrors,
         };
       } catch (e) {
         return {
@@ -508,8 +505,8 @@ export function registerLibraryCatalogIpc(): void {
           libraryRoot: root,
           removedFiles,
           removedDirs,
-          qdrantCleaned: 0,
-          qdrantErrors: [],
+          chromaCleaned: 0,
+          chromaErrors: [],
         };
       }
     }

@@ -2,9 +2,10 @@ import { parseBook } from "./parsers/index.js";
 import type { ParseOptions, ParseResult } from "./parsers/types.js";
 import { chunkBook, type BookChunk, type ChunkerOptions } from "./chunker.js";
 import { ScannerStateStore } from "./state.js";
-import { DEFAULT_EMBED_MODEL, EMBEDDING_DIM, EMBED_MAX_INPUT_CHARS } from "./embedding.js";
+import { DEFAULT_EMBED_MODEL, EMBED_MAX_INPUT_CHARS } from "./embedding.js";
 import { embedPassage } from "../embedder/shared.js";
-import { ensureQdrantCollection } from "../qdrant/collection-config.js";
+import { ensureChromaCollection } from "../chroma/collection-config.js";
+import { chromaUpsertAdaptive, sanitizeMetadata, type ChromaPoint } from "../chroma/points.js";
 
 async function maybeTranslateNonRussian(
   _parsed: ParseResult,
@@ -48,8 +49,10 @@ export interface IngestProgress {
 
 export interface IngestOptions {
   collection: string;
-  qdrantUrl: string;
-  qdrantApiKey?: string;
+  /** URL Chroma server (например http://localhost:8000). На текущем этапе
+   *  передаётся caller'ом для логирования; runtime берёт URL через live-binding
+   *  в `chroma/http-client.ts`. */
+  chromaUrl?: string;
   embedModel?: string;
   chunkerOptions?: ChunkerOptions;
   signal?: AbortSignal;
@@ -74,68 +77,22 @@ export interface IngestOptions {
 const DEFAULT_UPSERT_BATCH = 32;
 const DEFAULT_MAX_BOOK_CHARS = 5_000_000;
 
-interface QdrantPoint {
-  id: string;
-  vector: unknown;
-  payload: Record<string, unknown>;
-}
-
-async function qdrantUpsert(
-  url: string,
-  collection: string,
-  points: QdrantPoint[],
-  apiKey: string | undefined,
-  signal?: AbortSignal
-): Promise<void> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (apiKey) headers["api-key"] = apiKey;
-  const resp = await fetch(`${url}/collections/${encodeURIComponent(collection)}/points?wait=true`, {
-    method: "PUT",
-    headers,
-    body: JSON.stringify({ points }),
-    signal,
-  });
-  if (!resp.ok) {
-    const txt = await resp.text().catch(() => "");
-    throw new Error(`qdrant upsert ${resp.status}: ${txt.slice(0, 240)}`);
-  }
-}
-
-async function qdrantUpsertAdaptive(
-  url: string,
-  collection: string,
-  points: QdrantPoint[],
-  apiKey: string | undefined,
-  signal?: AbortSignal
-): Promise<void> {
-  if (points.length === 0) return;
-  try {
-    await qdrantUpsert(url, collection, points, apiKey, signal);
-    return;
-  } catch (err) {
-    if (points.length <= 1) throw err;
-    const mid = Math.ceil(points.length / 2);
-    await qdrantUpsertAdaptive(url, collection, points.slice(0, mid), apiKey, signal);
-    await qdrantUpsertAdaptive(url, collection, points.slice(mid), apiKey, signal);
-  }
-}
-
-async function ensureCollectionDense(
-  url: string,
-  collection: string,
-): Promise<void> {
-  await ensureQdrantCollection({
+/**
+ * Создать коллекцию в Chroma с tuned HNSW (M=24, construction_ef=128) для
+ * мультиязычных книжных корпусов. Идемпотентно: повторный вызов для
+ * существующей коллекции = no-op.
+ *
+ * Note: Chroma не имеет отдельных payload-индексов как Qdrant —
+ * фильтрация по metadata работает встроенным механизмом, поэтому
+ * `bookSourcePath` / `bookTitle` / `tags` / `language` не требуют
+ * явного индексирования.
+ */
+async function ensureCollectionDense(collection: string): Promise<void> {
+  await ensureChromaCollection({
     name: collection,
-    vectorSize: EMBEDDING_DIM,
-    distance: "Cosine",
-    hnsw: { m: 24, ef_construct: 128 },
-    payloadIndexes: [
-      { field: "bookSourcePath", type: "keyword" },
-      { field: "bookTitle", type: "keyword" },
-      { field: "tags", type: "keyword" },
-      { field: "language", type: "keyword" },
-    ],
-  }, url);
+    distance: "cosine",
+    hnsw: { m: 24, construction_ef: 128 },
+  });
 }
 
 export interface IngestResult {
@@ -200,7 +157,7 @@ export async function ingestBook(filePath: string, opts: IngestOptions): Promise
     return { bookTitle, totalChunks: 0, embedded: 0, upserted: 0, skipped: 0, warnings: parsed.metadata.warnings };
   }
 
-  await ensureCollectionDense(opts.qdrantUrl, opts.collection);
+  await ensureCollectionDense(opts.collection);
 
   let processedSet = new Set<string>();
   if (opts.state) {
@@ -221,13 +178,13 @@ export async function ingestBook(filePath: string, opts: IngestOptions): Promise
   let embedded = 0;
   let upserted = 0;
   let skipped = 0;
-  const buf: QdrantPoint[] = [];
+  const buf: ChromaPoint[] = [];
   const flushedIds: string[] = [];
 
   const flush = async (): Promise<void> => {
     if (buf.length === 0) return;
     if (opts.signal?.aborted) throw new Error("ingest aborted");
-    await qdrantUpsertAdaptive(opts.qdrantUrl, opts.collection, buf, opts.qdrantApiKey, opts.signal);
+    await chromaUpsertAdaptive(opts.collection, buf, { signal: opts.signal });
     upserted += buf.length;
     if (opts.state) await opts.state.markProgress(filePath, flushedIds.splice(0));
     emit({
@@ -252,20 +209,26 @@ export async function ingestBook(filePath: string, opts: IngestOptions): Promise
       const truncated = c.text.length > EMBED_MAX_INPUT_CHARS ? c.text.slice(0, EMBED_MAX_INPUT_CHARS) : c.text;
       const denseVec = await embedPassage(truncated, model);
       embedded++;
+      /* Chroma shape:
+       *  - id            — String (defensive coercion в chromaUpsert)
+       *  - embedding     — Float32Array → number[]
+       *  - document      — text chunk (top-level в Chroma, поддерживает FTS)
+       *  - metadata      — только скаляры; tags → "|tag|tag|" (sanitizeMetadata).
+       *    `text` НЕ дублируем в metadata — он уже в `document`. */
       buf.push({
-        id: c.id,
-        vector: denseVec,
-        payload: {
+        id: String(c.id),
+        embedding: denseVec,
+        document: c.text,
+        metadata: sanitizeMetadata({
           bookTitle: c.bookTitle,
-          bookAuthor: c.bookAuthor ?? null,
+          bookAuthor: c.bookAuthor ?? "",
           bookSourcePath: c.bookSourcePath,
           chapterTitle: c.chapterTitle,
           chapterIndex: c.chapterIndex,
           chunkIndex: c.chunkIndex,
-          text: c.text,
           charCount: c.charCount,
-          tags: c.tags,
-        },
+          tagsCsv: c.tags,
+        }),
       });
       flushedIds.push(c.id);
       emit({

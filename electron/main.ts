@@ -200,10 +200,10 @@ if (!gotLock) {
     const prefs = await prefsStore.getAll();
     const { applyRuntimeSideEffects } = await import("./ipc/preferences.ipc.js");
     applyRuntimeSideEffects(prefs);
-    const { setQdrantUrl } = await import("./lib/qdrant/http-client.js");
+    const { setChromaUrl } = await import("./lib/chroma/http-client.js");
     const { getEndpoints } = await import("./lib/endpoints/index.js");
     const endpoints = await getEndpoints();
-    setQdrantUrl(endpoints.qdrantUrl);
+    setChromaUrl(endpoints.chromaUrl);
 
     registerExtractionPipeline();
     applyCsp();

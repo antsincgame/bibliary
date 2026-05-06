@@ -58,9 +58,9 @@ export const PreferencesSchema = z.object({
   searchPerSourceLimit: z.number().int().min(1).max(50).default(20),
   downloadMaxRetries: z.number().int().min(1).max(10).default(3),
 
-  // -- Qdrant --
-  qdrantTimeoutMs: z.number().int().min(1000).max(60_000).default(8000),
-  qdrantSearchLimit: z.number().int().min(1).max(100).default(12),
+  // -- Chroma (vector DB) --
+  chromaTimeoutMs: z.number().int().min(1000).max(60_000).default(8000),
+  chromaSearchLimit: z.number().int().min(1).max(100).default(12),
 
   // -- UI --
   /* refreshIntervalMs / toastTtlMs / spinDurationMs удалены 2026-05-01:
@@ -138,7 +138,7 @@ export const PreferencesSchema = z.object({
   // -- Connectivity (external service URLs) --
   /** Empty string = use env var or built-in default. Validation: no trailing slash. */
   lmStudioUrl: z.string().regex(/^$|^https?:\/\/[^\s/$.?#].[^\s]*[^/]$/i, "must be a URL without trailing slash, or empty for default").default(""),
-  qdrantUrl: z.string().regex(/^$|^https?:\/\/[^\s/$.?#].[^\s]*[^/]$/i, "must be a URL without trailing slash, or empty for default").default(""),
+  chromaUrl: z.string().regex(/^$|^https?:\/\/[^\s/$.?#].[^\s]*[^/]$/i, "must be a URL without trailing slash, or empty for default").default(""),
 
   // -- Selected models per role --
   /** Модель LM Studio для extractor (Crystallizer). Пусто = первая загруженная. */

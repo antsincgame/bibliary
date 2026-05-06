@@ -2,11 +2,11 @@
 
 ## Purpose
 
-Encode editorial wisdom from books into compressed MECHANICUS format for vector storage (Qdrant) and LLM system prompt injection via RAG. Each chunk = one retrievable editorial skill.
+Encode editorial wisdom from books into compressed MECHANICUS format for vector storage (Chroma) and LLM system prompt injection via RAG. Each chunk = one retrievable editorial skill.
 
 ## Target Collection
 
-Defined in `.env` as `QDRANT_COLLECTION`. Always check `.env` before loading.
+Defined in `.env` as `CHROMA_COLLECTION`. Always check `.env` before loading.
 
 ## Language: English Only
 

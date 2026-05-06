@@ -1,12 +1,17 @@
 services:
-  qdrant:
-    image: qdrant/qdrant:latest
+  chroma:
+    image: chromadb/chroma:latest
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "8000:8000"
     volumes:
-      - qdrant_data:/qdrant/storage
+      - chroma_data:/chroma/chroma
     restart: unless-stopped
 
 volumes:
-  qdrant_data:
+  chroma_data:
+
+# Primary local-dev path — без Docker, через uv:
+#   uvx chromadb run --path ./db_data --port 8000
+#
+# Этот compose-файл — fallback для пользователей с Docker, у которых
+# нет uv. Тот же port 8000, persistence через volume `chroma_data`.

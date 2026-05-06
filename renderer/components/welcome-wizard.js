@@ -9,7 +9,7 @@ const STEP_COUNT = 4;
 /**
  * Onboarding wizard v3 — 4 шага:
  *   0 Hero       → приветствие
- *   1 Connect    → health-check LM Studio + Qdrant с visible feedback
+ *   1 Connect    → health-check LM Studio + Chroma с visible feedback
  *   2 Setup      → hardware-info + инструкция «настройте модели вручную в Models».
  *                  Выбор моделей — задача страницы Models, не wizard'а.
  *   3 Done       → persist в preferences (onboardingDone) + 3 action-карточки
@@ -34,12 +34,12 @@ export function openWelcomeWizard(opts) {
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 
-  /** @type {{ step: number, hardware: any, services: any, urlsTouched: { lm: boolean, qd: boolean } }} */
+  /** @type {{ step: number, hardware: any, services: any, urlsTouched: { lm: boolean, ch: boolean } }} */
   const STATE = {
     step: 0,
     hardware: null,
     services: null,
-    urlsTouched: { lm: false, qd: false },
+    urlsTouched: { lm: false, ch: false },
   };
 
   void renderStep();
@@ -97,8 +97,8 @@ export function openWelcomeWizard(opts) {
     ]);
     const grid = el("div", { class: "ww-conn-grid" });
     const lmCard = el("div", { class: "ww-conn-card ww-conn-card-loading" }, t("ww.conn.probing"));
-    const qdCard = el("div", { class: "ww-conn-card ww-conn-card-loading" }, t("ww.conn.probing"));
-    grid.append(lmCard, qdCard);
+    const chCard = el("div", { class: "ww-conn-card ww-conn-card-loading" }, t("ww.conn.probing"));
+    grid.append(lmCard, chCard);
     wrap.appendChild(grid);
 
     const retryBtn = /** @type {HTMLButtonElement} */ (el(
@@ -115,17 +115,17 @@ export function openWelcomeWizard(opts) {
       retryBtn.textContent = t("ww.conn.probing");
       retryBtn.setAttribute("aria-busy", "true");
       lmCard.className = "ww-conn-card ww-conn-card-loading";
-      qdCard.className = "ww-conn-card ww-conn-card-loading";
+      chCard.className = "ww-conn-card ww-conn-card-loading";
       lmCard.textContent = t("ww.conn.probing");
-      qdCard.textContent = t("ww.conn.probing");
+      chCard.textContent = t("ww.conn.probing");
       const startedAt = Date.now();
       try {
         STATE.services = /** @type {any} */ (await window.api.system.probeServices());
         renderConnCard(lmCard, "lm", STATE.services.lmStudio);
-        renderConnCard(qdCard, "qd", STATE.services.qdrant);
+        renderConnCard(chCard, "ch", STATE.services.chroma);
       } catch (e) {
         renderConnCard(lmCard, "lm", { online: false, url: "?", error: errMsg(e) });
-        renderConnCard(qdCard, "qd", { online: false, url: "?", error: errMsg(e) });
+        renderConnCard(chCard, "ch", { online: false, url: "?", error: errMsg(e) });
       } finally {
         const elapsed = Date.now() - startedAt;
         if (elapsed < 250) await new Promise((r) => setTimeout(r, 250 - elapsed));
@@ -151,7 +151,7 @@ export function openWelcomeWizard(opts) {
     const isOnline = status?.online === true;
     card.className = "ww-conn-card " + (isOnline ? "ww-conn-card-ok" : "ww-conn-card-off");
 
-    const titleKey = kind === "lm" ? "ww.conn.lm.title" : "ww.conn.qd.title";
+    const titleKey = kind === "lm" ? "ww.conn.lm.title" : "ww.conn.ch.title";
     const head = el("div", { class: "ww-conn-card-head" }, [
       el("span", { class: "ww-conn-card-title" }, t(titleKey)),
       el(
@@ -170,15 +170,15 @@ export function openWelcomeWizard(opts) {
         type: "url",
         class: "ww-conn-card-url",
         value: url,
-        placeholder: kind === "lm" ? "http://localhost:1234" : "http://localhost:6333",
+        placeholder: kind === "lm" ? "http://localhost:1234" : "http://localhost:8000",
       })
     );
     urlInput.addEventListener("input", () => {
-      STATE.urlsTouched[kind === "lm" ? "lm" : "qd"] = true;
+      STATE.urlsTouched[kind === "lm" ? "lm" : "ch"] = true;
     });
     urlInput.addEventListener("change", async () => {
       const v = urlInput.value.trim().replace(/\/+$/, "");
-      const prefKey = kind === "lm" ? "lmStudioUrl" : "qdrantUrl";
+      const prefKey = kind === "lm" ? "lmStudioUrl" : "chromaUrl";
       try {
         await window.api.preferences.set({ [prefKey]: v });
       } catch { /* ignore */ }
@@ -186,7 +186,7 @@ export function openWelcomeWizard(opts) {
     card.appendChild(urlInput);
 
     if (!isOnline) {
-      const hintKey = kind === "lm" ? "ww.conn.lm.offlineHint" : "ww.conn.qd.offlineHint";
+      const hintKey = kind === "lm" ? "ww.conn.lm.offlineHint" : "ww.conn.ch.offlineHint";
       card.appendChild(el("p", { class: "ww-conn-card-hint" }, t(hintKey)));
     }
   }
@@ -324,7 +324,7 @@ export function openWelcomeWizard(opts) {
       const isConn = STATE.step === 1;
       const bothOffline =
         isConn && STATE.services
-          ? !STATE.services.lmStudio?.online && !STATE.services.qdrant?.online
+          ? !STATE.services.lmStudio?.online && !STATE.services.chroma?.online
           : false;
       const nextLabel =
         STATE.step === 0

@@ -177,7 +177,9 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
   ipcMain.handle(
     "dataset-v2:list-accepted",
     async (_e, collection?: string): Promise<{ total: number; byDomain: Record<string, number>; collection: string }> => {
-      const { fetchQdrantJson, QDRANT_URL } = await import("../lib/qdrant/http-client.js");
+      const { chromaCount } = await import("../lib/chroma/points.js");
+      const { resolveCollectionId } = await import("../lib/chroma/collection-cache.js");
+      const { scrollChroma } = await import("../lib/chroma/scroll.js");
       const targetCollection = collection ?? DEFAULT_COLLECTION;
       try {
         assertValidCollectionName(targetCollection);
@@ -186,10 +188,7 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
         return { total: 0, byDomain: {}, collection: targetCollection };
       }
       try {
-        const data = await fetchQdrantJson<{ result: { points_count?: number } }>(
-          `${QDRANT_URL}/collections/${targetCollection}`
-        );
-        const total = data.result.points_count ?? 0;
+        const total = await chromaCount(targetCollection);
         const byDomain: Record<string, number> = {};
 
         if (total > 50_000) {
@@ -198,31 +197,25 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
           );
         }
         if (total > 0 && total <= 50_000) {
-          const scrollData = await fetchQdrantJson<{
-            result: { points: Array<{ payload?: { domain?: string } }> };
-          }>(
-            `${QDRANT_URL}/collections/${targetCollection}/points/scroll`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                limit: Math.min(total, 10_000),
-                with_payload: ["domain"],
-                with_vector: false,
-              }),
-              timeoutMs: 30_000,
-            },
-          );
-          for (const pt of scrollData.result.points) {
-            const d = pt.payload?.domain || "unknown";
-            byDomain[d] = (byDomain[d] || 0) + 1;
+          const collectionId = await resolveCollectionId(targetCollection);
+          for await (const page of scrollChroma({
+            collectionId,
+            include: ["metadatas"],
+            pageSize: 1000,
+            maxItems: 50_000,
+            timeoutMs: 30_000,
+          })) {
+            for (const m of page.metadatas ?? []) {
+              const d = (m && typeof m.domain === "string" ? m.domain : "unknown") as string;
+              byDomain[d] = (byDomain[d] || 0) + 1;
+            }
           }
         }
 
         return { total, byDomain, collection: targetCollection };
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        console.warn(`[dataset-v2:list-accepted] Qdrant unavailable for ${targetCollection}: ${msg}`);
+        console.warn(`[dataset-v2:list-accepted] Chroma unavailable for ${targetCollection}: ${msg}`);
         return { total: 0, byDomain: {}, collection: targetCollection };
       }
     }
@@ -242,15 +235,20 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
         console.warn(`[dataset-v2:reject-accepted] ${e instanceof Error ? e.message : e}`);
         return false;
       }
-      const { QDRANT_URL, QDRANT_API_KEY } = await import("../lib/qdrant/http-client.js");
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (QDRANT_API_KEY) headers["api-key"] = QDRANT_API_KEY;
-      const resp = await fetch(`${QDRANT_URL}/collections/${targetCollection}/points/delete?wait=true`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ points: [conceptId] }),
-      });
-      return resp.ok;
+      try {
+        const { chromaUrl, fetchChromaJson } = await import("../lib/chroma/http-client.js");
+        const { resolveCollectionId } = await import("../lib/chroma/collection-cache.js");
+        const collectionId = await resolveCollectionId(targetCollection);
+        await fetchChromaJson(chromaUrl(`/collections/${encodeURIComponent(collectionId)}/delete`), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: [String(conceptId)] }),
+        });
+        return true;
+      } catch (e) {
+        console.warn(`[dataset-v2:reject-accepted] Chroma delete failed: ${e instanceof Error ? e.message : e}`);
+        return false;
+      }
     }
   );
 

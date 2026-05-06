@@ -109,7 +109,7 @@ export async function cancelBatchExtraction() {
 
 /**
  * Иt 8Е.3 (симметрия удаления): откатить crystallize для выделенных книг —
- * удаляет точки этих книг из активной Qdrant коллекции.
+ * удаляет точки этих книг из активной Chroma коллекции.
  * Условие применения: книги имеют status === "indexed" (уже crystallized) и
  * выбрана активная коллекция в STATE.targetCollection.
  *

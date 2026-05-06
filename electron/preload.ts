@@ -22,26 +22,20 @@ interface ServerStatus {
   version?: string;
 }
 
-interface QdrantCollectionsListItem {
+interface ChromaCollectionsListItem {
   name: string;
   pointsCount: number;
-  vectorSize?: number;
   status: string;
 }
 
-interface QdrantCollectionInfo {
+interface ChromaCollectionInfo {
   name: string;
   pointsCount: number;
-  vectorsCount: number;
-  segmentsCount: number;
   status: string;
-  vectorSize?: number;
-  distance?: string;
-  diskDataSize?: number;
-  ramDataSize?: number;
+  metadata?: Record<string, unknown> | null;
 }
 
-interface QdrantClusterInfo {
+interface ChromaHeartbeatInfo {
   url: string;
   online: boolean;
   version?: string;
@@ -186,24 +180,23 @@ if (smokeLibrary !== null) {
 contextBridge.exposeInMainWorld("api", {
   smokeMode: smokeLibrary !== null,
 
-  getCollections: (): Promise<string[]> => ipcRenderer.invoke("qdrant:collections"),
+  getCollections: (): Promise<string[]> => ipcRenderer.invoke("chroma:collections"),
 
-  qdrant: {
-    listDetailed: (): Promise<QdrantCollectionsListItem[]> =>
-      ipcRenderer.invoke("qdrant:collections-detailed"),
-    info: (name: string): Promise<QdrantCollectionInfo | null> =>
-      ipcRenderer.invoke("qdrant:collection-info", name),
+  chroma: {
+    listDetailed: (): Promise<ChromaCollectionsListItem[]> =>
+      ipcRenderer.invoke("chroma:collections-detailed"),
+    info: (name: string): Promise<ChromaCollectionInfo | null> =>
+      ipcRenderer.invoke("chroma:collection-info", name),
     create: (
       args: {
         name: string;
-        vectorSize?: number;
-        distance?: "Cosine" | "Euclid" | "Dot";
+        distance?: "cosine" | "l2" | "ip";
       }
-    ): Promise<{ ok: boolean; error?: string }> =>
-      ipcRenderer.invoke("qdrant:create-collection", args),
+    ): Promise<{ ok: boolean; error?: string; hnswMismatch?: string[] }> =>
+      ipcRenderer.invoke("chroma:create-collection", args),
     remove: (name: string): Promise<{ ok: boolean; error?: string }> =>
-      ipcRenderer.invoke("qdrant:delete-collection", name),
-    cluster: (): Promise<QdrantClusterInfo> => ipcRenderer.invoke("qdrant:cluster-info"),
+      ipcRenderer.invoke("chroma:delete-collection", name),
+    heartbeat: (): Promise<ChromaHeartbeatInfo> => ipcRenderer.invoke("chroma:heartbeat"),
   },
 
   lmstudio: {
@@ -312,7 +305,7 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.invoke("system:hardware-info", { force: force === true }),
     probeServices: (): Promise<{
       lmStudio: { online: boolean; version?: string; url: string };
-      qdrant: { online: boolean; version?: string; url: string };
+      chroma: { online: boolean; version?: string; url: string };
     }> => ipcRenderer.invoke("system:probe-services"),
     openExternal: (url: string): Promise<{ ok: boolean; reason?: string }> =>
       ipcRenderer.invoke("system:open-external", url),
@@ -643,11 +636,11 @@ contextBridge.exposeInMainWorld("api", {
     deleteBook: (
       bookId: string,
       deleteFiles?: boolean,
-      /* Иt 8Е.1 (cascade Qdrant cleanup): активная коллекция в renderer
-         для sync-удаления точек этой книги до возврата. Если undefined —
-         только background full-scan. */
+      /* Cascade Chroma cleanup: активная коллекция в renderer для sync-удаления
+         точек этой книги до возврата. Если undefined — только background
+         full-scan. */
       activeCollection?: string,
-    ): Promise<{ ok: boolean; reason?: string; qdrantCleaned?: number; qdrantBackgroundScheduled?: boolean }> =>
+    ): Promise<{ ok: boolean; reason?: string; chromaCleaned?: number; chromaBackgroundScheduled?: boolean }> =>
       smokeLibrary
         ? Promise.resolve({ ok: true }).then((res) => {
           smokeLibrary.rows = smokeLibrary.rows.filter((row) => row.id !== bookId);
@@ -665,7 +658,7 @@ contextBridge.exposeInMainWorld("api", {
         ? Promise.resolve({ scanned: 0, ingested: 0, skipped: 0, pruned: 0, errors: [] })
         : ipcRenderer.invoke("library:rebuild-cache"),
     /* Iter 13.2 (P6, dev-mode): "Сжечь библиотеку" — снести все файлы под
-       data/library/, bibliary-cache.db (+ wal/shm), Qdrant коллекции
+       data/library/, bibliary-cache.db (+ wal/shm), Chroma коллекции
        bibliary-*. Кэш-DB откроется заново лениво. */
     burnAll: (): Promise<{
       ok: boolean;
@@ -673,8 +666,8 @@ contextBridge.exposeInMainWorld("api", {
       libraryRoot: string;
       removedFiles: number;
       removedDirs: number;
-      qdrantCleaned: number;
-      qdrantErrors: string[];
+      chromaCleaned: number;
+      chromaErrors: string[];
     }> =>
       smokeLibrary
         ? Promise.resolve({
@@ -682,8 +675,8 @@ contextBridge.exposeInMainWorld("api", {
           libraryRoot: "(smoke)",
           removedFiles: 0,
           removedDirs: 0,
-          qdrantCleaned: 0,
-          qdrantErrors: [],
+          chromaCleaned: 0,
+          chromaErrors: [],
         }).then((r) => {
           smokeLibrary.rows = [];
           return r;

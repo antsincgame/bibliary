@@ -4,7 +4,7 @@ import { getPreferencesStore, DEFAULTS, type Preferences } from "../lib/preferen
 import { configureWatchdog } from "../lib/resilience/lmstudio-watchdog.js";
 import { configureFileLockDefaults } from "../lib/resilience/index.js";
 import { invalidateEndpointsCache, getEndpoints } from "../lib/endpoints/index.js";
-import { setQdrantUrl } from "../lib/qdrant/http-client.js";
+import { setChromaUrl } from "../lib/chroma/http-client.js";
 import { refreshLmStudioClient } from "../lmstudio-client.js";
 import { syncMarkerEnvFromPrefs } from "../lib/library/marker-sidecar.js";
 import { modelRoleResolver } from "../lib/llm/model-role-resolver.js";
@@ -18,7 +18,7 @@ import { applyIllustrationSemaphorePrefs } from "../lib/library/illustration-sem
  *
  * Что входит: только модели по ролям + цепочки fallback'ов + связанный
  * флажок translatorTargetLang (нужен для корректной интерпретации translator-роли).
- * Что НЕ входит: URL'ы (lmStudioUrl/qdrantUrl), RAG-параметры, OCR, watchdog —
+ * Что НЕ входит: URL'ы (lmStudioUrl/chromaUrl), RAG-параметры, OCR, watchdog —
  * это «среда», а не «профиль ролей». Импорт профиля не должен ломать
  * подключение к LM Studio или менять размер chunk'ов.
  */
@@ -86,12 +86,12 @@ export function applyRuntimeSideEffects(prefs: Preferences): void {
     stale: prefs.lockStaleMs,
   });
   /* URL changes: invalidate the endpoint cache, then refresh the live
-     binding in qdrant/http-client and drop the cached LM Studio SDK
+     binding in chroma/http-client and drop the cached LM Studio SDK
      client so the next call rebuilds against the new URL. */
   invalidateEndpointsCache();
   void getEndpoints()
-    .then(({ qdrantUrl }) => setQdrantUrl(qdrantUrl))
-    .catch((err) => console.error("[preferences/applyRuntimeSideEffects] setQdrantUrl failed:", err));
+    .then(({ chromaUrl }) => setChromaUrl(chromaUrl))
+    .catch((err) => console.error("[preferences/applyRuntimeSideEffects] setChromaUrl failed:", err));
   refreshLmStudioClient();
   /* Sync Marker feature flag to ENV so marker-sidecar.ts can read it
      synchronously without an async preferences store dependency. */

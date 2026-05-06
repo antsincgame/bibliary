@@ -52,10 +52,11 @@ import {
   type OcrSupportInfo,
 } from "../lib/scanner/index.js";
 
-/* QDRANT_URL is now read at-call from preferences-aware getQdrantUrl().
-   Keeps user-changed URL hot without app restart. */
-import { getQdrantUrl } from "../lib/endpoints/index.js";
-const QDRANT_API_KEY = process.env.QDRANT_API_KEY || undefined;
+/* CHROMA_URL читается через preferences-aware getChromaUrl() при каждом
+   вызове — user-changed URL применяется без перезапуска приложения. */
+import { getChromaUrl } from "../lib/endpoints/index.js";
+import { chromaDeleteByWhere, chromaWhereAnyOf } from "../lib/chroma/points.js";
+import { invalidate as invalidateCollectionCache } from "../lib/chroma/collection-cache.js";
 
 interface ParsePreview {
   metadata: {
@@ -180,11 +181,10 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
       try {
         const prefs = await getPreferencesStore().getAll();
         const ocrWanted = typeof args.ocrOverride === "boolean" ? args.ocrOverride : prefs.ocrEnabled;
-        const qdrantUrl = await getQdrantUrl();
+        const chromaUrl = await getChromaUrl();
         const result = await ingestBook(args.filePath, {
           collection: args.collection,
-          qdrantUrl,
-          qdrantApiKey: QDRANT_API_KEY,
+          chromaUrl,
           state: stateStore(),
           signal: ctrl.signal,
           chunkerOptions: args.chunkerOptions,
@@ -313,11 +313,10 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
         send("scanner:bundle-progress", { ingestId, phase: "ingest", file: tmpFile });
 
         const prefs = await getPreferencesStore().getAll();
-        const qdrantUrl = await getQdrantUrl();
+        const chromaUrl = await getChromaUrl();
         await ingestBook(tmpFile, {
           collection,
-          qdrantUrl,
-          qdrantApiKey: QDRANT_API_KEY,
+          chromaUrl,
           state: stateStore(),
           signal: ctrl.signal,
           upsertBatch: prefs.ingestUpsertBatch,
@@ -434,39 +433,27 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
       const bookSourcePath = parseOrThrow(AbsoluteFilePathSchema, args.bookSourcePath, "bookSourcePath");
       const collection = parseOrThrow(CollectionNameSchema, args.collection, "collection");
       const bookId = typeof args.bookId === "string" && args.bookId.length > 0 ? args.bookId : undefined;
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (QDRANT_API_KEY) headers["api-key"] = QDRANT_API_KEY;
-      const qdrantUrl = await getQdrantUrl();
-      const filter = bookId
-        ? {
-            should: [
-              { key: "bookId", match: { value: bookId } },
-              { key: "bookSourcePath", match: { value: bookSourcePath } },
-            ],
-          }
-        : {
-            must: [{ key: "bookSourcePath", match: { value: bookSourcePath } }],
-          };
-      const resp = await fetch(
-        `${qdrantUrl}/collections/${encodeURIComponent(collection)}/points/delete?wait=true`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ filter }),
-        }
-      );
-      const text = await resp.text().catch(() => "");
-      if (!resp.ok) {
-        throw new Error(`qdrant delete ${resp.status}: ${text.slice(0, 240)}`);
-      }
+
+      /* Chroma where: если есть bookId — OR через $or (legacy книги до коммита
+         8a9f171 не имеют bookId, идентифицируются по bookSourcePath); иначе
+         просто по bookSourcePath. */
+      const where = bookId
+        ? chromaWhereAnyOf([
+            { field: "bookId", value: bookId },
+            { field: "bookSourcePath", value: bookSourcePath },
+          ])
+        : { bookSourcePath };
+
       try {
-        const parsed = JSON.parse(text) as { result?: { operation_id?: number; status?: string } };
-        const status = parsed?.result?.status ?? "unknown";
-        if (status !== "completed" && status !== "acknowledged") {
-          console.warn("[scanner:delete-from-collection]", `qdrant status=${status}`);
+        await chromaDeleteByWhere(collection, where);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        /* 404 / коллекция отсутствует — не ошибка delete-from-collection,
+           продолжаем удаление scanner state ниже. */
+        if (!/404|not found|does not exist/i.test(msg)) {
+          throw new Error(`chroma delete: ${msg.slice(0, 240)}`);
         }
-      } catch {
-        /* qdrant возвращает ok без числа удалённых; принимаем как success */
+        invalidateCollectionCache(collection);
       }
 
       let pointsDeleted = 0;

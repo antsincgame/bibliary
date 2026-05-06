@@ -4,7 +4,7 @@
 
 import type { BrowserWindow } from "electron";
 
-import { registerQdrantIpc } from "./qdrant.ipc.js";
+import { registerChromaIpc } from "./chroma.ipc.js";
 import { registerLmstudioIpc } from "./lmstudio.ipc.js";
 import { registerSystemIpc } from "./system.ipc.js";
 import { registerScannerIpc, abortAllIngests } from "./scanner.ipc.js";
@@ -43,7 +43,7 @@ export function registerAllIpcHandlers(getMainWindow: () => BrowserWindow | null
     }
   };
 
-  safeRegister("qdrant", () => registerQdrantIpc());
+  safeRegister("chroma", () => registerChromaIpc());
   safeRegister("lmstudio", () => registerLmstudioIpc());
   safeRegister("system", () => registerSystemIpc());
   safeRegister("scanner", () => registerScannerIpc(getMainWindow));

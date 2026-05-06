@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * Collection Picker -- reusable component for selecting (and creating)
- * Qdrant collections. Used by Library top-bar and (later in Iter 6)
+ * Chroma collections. Used by Library top-bar and (later in Iter 6)
  * by Crystallizer to pick a thematic target collection.
  *
  * Visual: HUD-style native <select> + "+" button matching the existing
@@ -101,10 +101,9 @@ export function buildCollectionPicker(opts) {
     root.appendChild(deleteBtn);
   }
 
-  /* Открыть Qdrant Dashboard в системном браузере. Полезно когда автоматическое
-     создание коллекции упало (Qdrant офлайн / не localhost / нужен ручной выбор
-     vector size / distance). URL берём из preferences (qdrantUrl) с fallback'ом
-     на http://localhost:6333. */
+  /* "Open Chroma API" — у Chroma нет полноценного дашборда (как у Qdrant), но
+     можно открыть REST API root в браузере для отладки. URL читаем из
+     preferences.chromaUrl, fallback http://localhost:8000. */
   const dashBtn = el(
     "button",
     {
@@ -116,7 +115,7 @@ export function buildCollectionPicker(opts) {
     "\u29C9"
   );
   dashBtn.addEventListener("click", () => {
-    void openQdrantDashboard();
+    void openChromaApi();
   });
   root.appendChild(dashBtn);
 
@@ -211,32 +210,34 @@ export function buildCollectionPicker(opts) {
 }
 
 /**
- * Спросить пользователя про fallback на Qdrant Dashboard и открыть в браузере.
+ * Спросить пользователя про fallback на Chroma API и открыть в браузере.
  * Используется когда автоматическое создание коллекции упало.
  * @param {string} errorMsg
  */
 async function offerDashboardFallback(errorMsg) {
   const msg = t("library.collection.create.openDashboardConfirm", { error: errorMsg });
   if (!(await showConfirm(msg))) return;
-  await openQdrantDashboard();
+  await openChromaApi();
 }
 
 /**
- * Открыть Qdrant web UI в системном браузере.
- * URL читаем из preferences.qdrantUrl, иначе localhost:6333.
- * Идём через preload (system.openExternal), чтобы не зависеть от
- * webContents.setWindowOpenHandler и CSP.
+ * Открыть Chroma REST API root в системном браузере. У Chroma нет
+ * полноценного дашборда (как у Qdrant), но root URL отдаёт API info /
+ * документацию для отладки. URL читаем из preferences.chromaUrl, иначе
+ * localhost:8000. Идём через preload (system.openExternal), чтобы не
+ * зависеть от webContents.setWindowOpenHandler и CSP.
  */
-async function openQdrantDashboard() {
-  let baseUrl = "http://localhost:6333";
+async function openChromaApi() {
+  let baseUrl = "http://localhost:8000";
   try {
     const api = /** @type {any} */ (window).api;
     const prefs = await api?.preferences?.getAll?.();
-    if (prefs?.qdrantUrl && typeof prefs.qdrantUrl === "string" && prefs.qdrantUrl.trim()) {
-      baseUrl = prefs.qdrantUrl.trim().replace(/\/+$/, "");
+    if (prefs?.chromaUrl && typeof prefs.chromaUrl === "string" && prefs.chromaUrl.trim()) {
+      baseUrl = prefs.chromaUrl.trim().replace(/\/+$/, "");
     }
   } catch (_e) { /* tolerate: pref read non-critical */ }
-  const url = `${baseUrl}/dashboard`;
+  /* Chroma корневой path отдаёт статус/info; /api/v1/heartbeat для смока. */
+  const url = baseUrl;
   try {
     const api = /** @type {any} */ (window).api;
     if (typeof api?.system?.openExternal === "function") {

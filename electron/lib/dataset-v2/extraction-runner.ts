@@ -236,43 +236,34 @@ async function runExtractionInner(
     const warnings: string[] = [];
     let processed = 0;
 
-    const { fetchQdrantJson, QDRANT_URL, deletePointsByFilter } = await import("../qdrant/http-client.js");
+    const { CHROMA_URL } = await import("../chroma/http-client.js");
     const { EMBEDDING_DIM } = await import("../scanner/embedding.js");
-    const { ensureQdrantCollection } = await import("../qdrant/collection-config.js");
-    console.log(`[extraction] Qdrant: ${QDRANT_URL} → collection "${targetCollection}" (dim=${EMBEDDING_DIM})`);
+    const { ensureChromaCollection } = await import("../chroma/collection-config.js");
+    const { chromaUpsert, chromaDeleteByWhere, sanitizeMetadata } = await import("../chroma/points.js");
+    console.log(`[extraction] Chroma: ${CHROMA_URL} → collection "${targetCollection}" (dim=${EMBEDDING_DIM})`);
 
     try {
-      await ensureQdrantCollection({
+      const ensureRes = await ensureChromaCollection({
         name: targetCollection,
-        vectorSize: EMBEDDING_DIM,
-        distance: "Cosine",
-        hnsw: { m: 24, ef_construct: 128 },
-        payloadIndexes: [
-          { field: "bookSourcePath", type: "keyword" },
-          { field: "domain", type: "keyword" },
-          /* Иt 8Г.3: bookId index для O(log N) delete-by-filter и фильтра
-             выборок. Безопасно для legacy коллекций — Qdrant создаёт индекс
-             поверх существующих payload (поле может отсутствовать в части
-             точек, индекс просто их не покрывает). */
-          { field: "bookId", type: "keyword" },
-        ],
+        distance: "cosine",
+        hnsw: { m: 24, construction_ef: 128 },
       });
+      if (ensureRes.hnswMismatch.length > 0) {
+        console.warn(`[extraction] HNSW mismatch on existing collection "${targetCollection}":`, ensureRes.hnswMismatch);
+        warnings.push(`hnsw-mismatch: ${ensureRes.hnswMismatch.join(", ")}`);
+      }
     } catch (createErr) {
       console.warn(`[extraction] collection create failed (will try upsert anyway): ${createErr instanceof Error ? createErr.message : createErr}`);
     }
 
-    /* Иt 8Г.3: delete-on-reimport — удаляем точки этой книги ДО upsert
-       новых, чтобы не было orphan vectors после rechunk/reextraction.
+    /* Delete-on-reimport — удаляем точки этой книги ДО upsert новых,
+       чтобы не было orphan vectors после rechunk/reextraction.
        Условие: bookId передан (новый код) — иначе legacy путь без cleanup. */
     if (args.bookId) {
       try {
-        const res = await deletePointsByFilter(targetCollection, [
-          { field: "bookId", value: args.bookId },
-        ]);
-        console.log(`[extraction] reimport cleanup: deleted points for bookId="${args.bookId}" → ${res.status}`);
+        const res = await chromaDeleteByWhere(targetCollection, { bookId: args.bookId });
+        console.log(`[extraction] reimport cleanup: deleted ${res.deleted} points for bookId="${args.bookId}"`);
       } catch (deleteErr) {
-        /* Не падаем: коллекция может быть пустой или новой; upsert ниже
-           всё равно поедет. Но логируем — это потенциально orphan-источник. */
         const msg = deleteErr instanceof Error ? deleteErr.message : String(deleteErr);
         console.warn(`[extraction] reimport cleanup failed (continuing with upsert): ${msg}`);
         warnings.push(`reimport-cleanup-failed: ${msg.slice(0, 120)}`);
@@ -347,38 +338,33 @@ async function runExtractionInner(
           continue;
         }
         console.log(`[extraction] ✓ upsert → "${targetCollection}" id=${delta.id} domain=${delta.domain} tags=[${delta.tags.join(",")}]`);
-        await fetchQdrantJson(`${QDRANT_URL}/collections/${targetCollection}/points?wait=true`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            points: [{
-              id: delta.id,
-              vector,
-              payload: {
-                domain: delta.domain,
-                chapterContext: delta.chapterContext,
-                essence: delta.essence,
-                cipher: delta.cipher,
-                proof: delta.proof,
-                applicability: delta.applicability,
-                auraFlags: delta.auraFlags,
-                tags: delta.tags,
-                /* Топологические связи (S→P→O) — для графового поиска
-                 * и фильтрации по предикатам типа "depends_on", "refutes". */
-                relations: delta.relations,
-                bookSourcePath: delta.bookSourcePath,
-                acceptedAt: delta.acceptedAt,
-                /* Иt 8Г.3: stable id (UUID/SHA-derived) — выживает
-                   перемещение файла, позволяет точечный delete-by-filter
-                   при reimport. Optional spread: legacy callers без
-                   bookId не получают ключ в payload (consistent с тем что
-                   delete-on-reimport тоже пропускается). */
-                ...(args.bookId ? { bookId: args.bookId } : {}),
-              },
-            }],
+        /* Chroma upsert: text концепта (essence) → documents[]; остальное →
+         * metadata через sanitizeMetadata (массивы → "|tag|tag|", объекты →
+         * JSON.stringify, null → ""). */
+        await chromaUpsert(targetCollection, [{
+          id: String(delta.id),
+          embedding: vector,
+          document: delta.essence,
+          metadata: sanitizeMetadata({
+            domain: delta.domain,
+            chapterContext: delta.chapterContext,
+            essence: delta.essence,
+            cipher: delta.cipher,
+            proof: delta.proof,
+            applicability: delta.applicability,
+            auraFlags: delta.auraFlags,
+            tagsCsv: delta.tags,
+            /* relations (S→P→O) — массив объектов; sanitizeMetadata
+             * сериализует в JSON-string. Для будущего графового поиска
+             * восстанавливается через JSON.parse(metadata.relations). */
+            relations: delta.relations,
+            bookSourcePath: delta.bookSourcePath,
+            acceptedAt: delta.acceptedAt,
+            /* Stable bookId (UUID/SHA-derived) — выживает перемещение
+               файла, делает точечный delete-by-where возможным. */
+            ...(args.bookId ? { bookId: args.bookId } : {}),
           }),
-          timeoutMs: 15_000,
-        });
+        }], { timeoutMs: 15_000 });
         stats.accepted++;
         emitWithJob({
           stage: "accepted",
