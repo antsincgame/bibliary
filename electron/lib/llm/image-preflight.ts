@@ -1,4 +1,43 @@
-import sharp from "sharp";
+/**
+ * Image preflight: magic-byte detection (fast, no native deps) + optional
+ * sharp metadata validation (slow, requires sharp prebuild for the platform).
+ *
+ * `sharp` is loaded lazily so a missing prebuild (e.g. на чистом Linux dev
+ * без `@img/sharp-linux-x64`) НЕ роняет main process на старте — модуль
+ * импортируется через цепочку `library.ipc → illustration-worker → image-preflight`,
+ * и top-level `import sharp from "sharp"` крашит весь Electron boot.
+ *
+ * При отсутствии sharp `validateImageBuffer` возвращает `{ok: false}` с
+ * понятной причиной; magic-byte fast path (`detectImageMimeFromMagic`)
+ * продолжает работать без него.
+ */
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* sharp типизация при dynamic import зависит от esModuleInterop / module
+ * setting; чтобы избежать вечной игры со сменой `m.default` vs `m`, держим
+ * loader как `any`-фабрику. Использование далее (`sharp(buf, opts).metadata()`)
+ * остаётся типобезопасным благодаря runtime API sharp. */
+type SharpFn = (buf: Buffer, opts?: { failOnError?: boolean }) => {
+  metadata: () => Promise<{ width?: number; height?: number }>;
+};
+
+let _sharpPromise: Promise<SharpFn | null> | null = null;
+async function loadSharp(): Promise<SharpFn | null> {
+  if (_sharpPromise === null) {
+    _sharpPromise = import("sharp")
+      .then((m: any) => (typeof m === "function" ? m : m?.default ?? null))
+      .catch((err: unknown) => {
+        console.warn(
+          `[image-preflight] sharp unavailable (${err instanceof Error ? err.message : String(err)}); ` +
+            "validateImageBuffer will skip metadata checks. " +
+            "Magic-byte detection still works.",
+        );
+        return null;
+      });
+  }
+  return _sharpPromise;
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 export type ImagePreflightVerdict =
   | { ok: true; mime: "image/png" | "image/jpeg" | "image/webp" | "image/gif"; width?: number; height?: number }
@@ -46,6 +85,13 @@ export function detectImageMimeFromMagic(buf: Buffer): ImagePreflightVerdict {
 export async function validateImageBuffer(buf: Buffer): Promise<ImagePreflightVerdict> {
   const fastVerdict = detectImageMimeFromMagic(buf);
   if (!fastVerdict.ok) return fastVerdict;
+
+  const sharp = await loadSharp();
+  if (sharp === null) {
+    /* Sharp недоступен — отдаём результат magic-byte проверки без metadata.
+     * Caller получит ok:true с подтверждённым MIME, но без width/height. */
+    return { ok: true, mime: fastVerdict.mime };
+  }
 
   try {
     const meta = await sharp(buf, { failOnError: false }).metadata();
