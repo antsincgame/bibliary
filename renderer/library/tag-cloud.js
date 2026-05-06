@@ -34,10 +34,10 @@ export async function openTagCloudModal(deps) {
   }
   if (stats.length === 0) {
     const overlay = buildOverlay();
-    const dialog = el("div", { class: "qdrant-dialog ui-dialog tag-cloud-dialog" }, [
-      el("div", { class: "qdrant-dialog-title" }, t("library.tagCloud.title")),
+    const dialog = el("div", { class: "ui-dialog tag-cloud-dialog" }, [
+      el("div", { class: "ui-dialog-title" }, t("library.tagCloud.title")),
       el("div", { class: "ui-dialog-message" }, t("library.tagCloud.empty")),
-      el("div", { class: "qdrant-dialog-actions ui-dialog-actions" }, [
+      el("div", { class: "ui-dialog-actions" }, [
         el("button", { class: "btn-primary", type: "button", onclick: () => overlay.remove() },
           t("dialog.ok")),
       ]),
@@ -56,7 +56,7 @@ export async function openTagCloudModal(deps) {
   const range = maxCount - minCount || 1;
 
   const overlay = buildOverlay();
-  const title = el("div", { class: "qdrant-dialog-title" }, t("library.tagCloud.title"));
+  const title = el("div", { class: "ui-dialog-title" }, t("library.tagCloud.title"));
   const matchCounter = el("span", { class: "tag-cloud-match-count" }, "");
   const searchInput = el("input", {
     type: "text",
@@ -143,12 +143,12 @@ export async function openTagCloudModal(deps) {
   overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
   overlay.addEventListener("keydown", (e) => { if (e.key === "Escape") overlay.remove(); });
 
-  const actions = el("div", { class: "qdrant-dialog-actions ui-dialog-actions" }, [
+  const actions = el("div", { class: "ui-dialog-actions" }, [
     clearBtn, cancelBtn, applyBtn,
   ]);
 
   const dialog = el("div", {
-    class: "qdrant-dialog ui-dialog tag-cloud-dialog",
+    class: "ui-dialog tag-cloud-dialog",
     role: "dialog",
     "aria-modal": "true",
   }, [title, searchInput, matchCounter, cloud, actions]);
@@ -161,5 +161,5 @@ export async function openTagCloudModal(deps) {
 }
 
 function buildOverlay() {
-  return el("div", { class: "qdrant-overlay ui-dialog-overlay" });
+  return el("div", { class: "ui-dialog-overlay" });
 }

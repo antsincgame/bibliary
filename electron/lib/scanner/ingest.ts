@@ -24,7 +24,7 @@ async function maybeTranslateNonRussian(
  *   1. parse(file) → ParseResult (sections + metadata)
  *   2. chunk(parsed) → BookChunk[]
  *   3. для каждого chunk: embed("passage: …") → Float32 vector
- *   4. batch upsert в Qdrant (32 chunks за раз)
+ *   4. batch upsert в Chroma (32 chunks за раз)
  *   5. progress: ScannerStateStore.markProgress
  *   6. resume: пропускаем chunkId уже processedChunkIds
  *
@@ -82,8 +82,8 @@ const DEFAULT_MAX_BOOK_CHARS = 5_000_000;
  * мультиязычных книжных корпусов. Идемпотентно: повторный вызов для
  * существующей коллекции = no-op.
  *
- * Note: Chroma не имеет отдельных payload-индексов как Qdrant —
- * фильтрация по metadata работает встроенным механизмом, поэтому
+ * Note: Chroma не имеет отдельных payload-индексов — фильтрация по
+ * metadata работает встроенным механизмом, поэтому
  * `bookSourcePath` / `bookTitle` / `tags` / `language` не требуют
  * явного индексирования.
  */

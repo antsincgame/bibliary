@@ -36,11 +36,11 @@ export function showCreateCollectionModal() {
     document.body.style.overflow = "hidden";
 
     const overlay = el("div", {
-      class: "qdrant-overlay ui-dialog-overlay create-collection-overlay",
+      class: "ui-dialog-overlay create-collection-overlay",
       role: "presentation",
     });
     const dialog = el("div", {
-      class: "qdrant-dialog ui-dialog create-collection-dialog",
+      class: "ui-dialog create-collection-dialog",
       role: "dialog",
       "aria-modal": "true",
       "aria-labelledby": "create-collection-title",
@@ -49,7 +49,7 @@ export function showCreateCollectionModal() {
 
     const title = el("div", {
       id: "create-collection-title",
-      class: "qdrant-dialog-title",
+      class: "ui-dialog-title",
     }, t("library.collection.create.modal.title"));
 
     const intro = el("p", {
@@ -58,7 +58,7 @@ export function showCreateCollectionModal() {
 
     const input = /** @type {HTMLInputElement} */ (el("input", {
       type: "text",
-      class: "qdrant-input ui-dialog-input create-collection-input",
+      class: "ui-dialog-input create-collection-input",
       placeholder: t("library.collection.create.modal.placeholder"),
       autocomplete: "off",
       spellcheck: "false",
@@ -154,7 +154,7 @@ export function showCreateCollectionModal() {
     });
 
     const actions = el("div", {
-      class: "qdrant-dialog-actions ui-dialog-actions create-collection-actions",
+      class: "ui-dialog-actions create-collection-actions",
     }, [cancelBtn, okBtn]);
 
     dialog.append(title, intro, input, hint, status, actions);

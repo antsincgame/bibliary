@@ -17,7 +17,7 @@ import { writeJsonAtomic, withFileLock } from "../resilience";
 // ---------------------------------------------------------------------------
 
 export const PreferencesSchema = z.object({
-  // -- Qdrant search threshold (cosine score 0..1) --
+  // -- Chroma search threshold (cosine score 0..1) --
   searchScoreThreshold: z.number().min(0).max(1).default(0.55),
 
   // -- Scanner / Ingest --

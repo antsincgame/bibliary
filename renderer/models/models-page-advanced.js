@@ -3,7 +3,7 @@
  * Панель «Дополнительные настройки» для страницы Models (Иt 8Б — упрощена).
  *
  * История:
- *   - До Иt 8Б: содержала 6 дублирующих полей (lmStudioUrl, qdrantUrl,
+ *   - До Иt 8Б: содержала 6 дублирующих полей (lmStudioUrl, chromaUrl,
  *     ingestParallelism, metadataOnlineLookup, visionMetaEnabled, ocrEnabled),
  *     которые ДУБЛИРОВАЛИ Settings UI. Это нарушало принцип single source
  *     of truth (Perplexity research 2026-05-01).

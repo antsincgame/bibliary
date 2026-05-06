@@ -333,7 +333,7 @@ export function registerLibraryCatalogIpc(): void {
           );
         }
 
-        /* Иt 8Е.1: cascade Qdrant cleanup (hybrid стратегия).
+        /* Иt 8Е.1: cascade Chroma cleanup (hybrid стратегия).
            Этап 1 (sync, быстро): удалить точки книги из активной коллекции
            если она передана из renderer. Это покрывает 90% случаев —
            пользователь обычно работает с одной коллекцией.
@@ -420,7 +420,7 @@ export function registerLibraryCatalogIpc(): void {
    *   - .blobs/ (CAS-storage иллюстраций)
    *   - .import/ (state-журналы импорта, locks)
    *   - bibliary-cache.db (+ -wal, -shm) — закрываем хэндл ДО rm
-   *   - все Qdrant коллекции с префиксом "bibliary-" (best-effort, non-fatal)
+   *   - все Chroma коллекции с префиксом "bibliary-" (best-effort, non-fatal)
    *
    * Сбрасывает all in-process кэши: near-dup, revision-dedup. Cache-DB
    * откроется заново лениво при следующем запросе (свежая, пустая).

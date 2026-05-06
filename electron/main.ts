@@ -76,7 +76,7 @@ let mainWindow: BrowserWindow | null = null;
  *   - img:    self + data: (icons embedded as base64) + https: (book
  *     covers from BookHunter sources)
  *   - connect: self + Google Fonts + http(s):// localhost (LM Studio,
- *     Qdrant) + http(s)://* for HF / BookHunter sources
+ *     Chroma) + http(s)://* for HF / BookHunter sources
  */
 const CSP_HEADER = [
   "default-src 'self'",

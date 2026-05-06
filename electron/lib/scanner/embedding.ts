@@ -2,19 +2,19 @@
  * Embedding model contract -- single source of truth for vector dimension
  * and chunk truncation budget.
  *
- * Why a separate file: hard-coded `384` was duplicated across ingest.ts,
- * dataset-v2 extractor pipeline and qdrant.ipc.ts. Any future model swap
- * (BGE, mxbai, OpenAI) means changing the number in one place and everything
- * downstream stays consistent.
+ * Why a separate file: hard-coded `384` was duplicated across ingest.ts and
+ * dataset-v2 extractor pipeline. Any future model swap (BGE, mxbai, OpenAI)
+ * means changing the number in one place and everything downstream stays
+ * consistent.
  *
  * If you change EMBEDDING_DIM, you MUST also change the model name and
- * vacate existing Qdrant collections (different dim = incompatible vectors).
+ * vacate existing Chroma collections (different dim = incompatible vectors).
  */
 
 /**
  * Default embedding model. Used by the scanner ingest pipeline and the
  * dataset-v2 delta-extractor для embedding принятых концептов перед upsert
- * в Qdrant (cross-library dedupe выполняется в delta-extractor через
+ * в Chroma (cross-library dedupe выполняется в delta-extractor через
  * vector similarity search).
  */
 export const DEFAULT_EMBED_MODEL = "Xenova/multilingual-e5-small";

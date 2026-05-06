@@ -2,7 +2,7 @@
  * Batch runner — pure batch extraction function for the Library catalog.
  *
  * Separated from IPC handler for testability (DI for getBookById,
- * setBookStatus, runExtraction — no Electron/LLM/Qdrant required).
+ * setBookStatus, runExtraction — no Electron/LLM/Chroma required).
  */
 
 import {
@@ -71,7 +71,7 @@ export interface BatchRunnerDeps {
       bookSourcePath: string;
       extractModel?: string;
       targetCollection: string;
-      /** Иt 8Г.3: stable id для Qdrant payload + delete-on-reimport. */
+      /** Иt 8Г.3: stable id для Chroma payload + delete-on-reimport. */
       bookId?: string;
     },
     ctx: { bookId: string; bookIndex: number; bookTotal: number },
@@ -137,7 +137,7 @@ export async function runBatchExtraction(
     try {
       const r = await deps.runExtraction(
         /* Иt 8Г.3: пробрасываем bookId в args runExtraction — он попадает
-           в Qdrant payload и активирует delete-on-reimport cleanup. */
+           в Chroma payload и активирует delete-on-reimport cleanup. */
         { bookSourcePath: book.mdPath, extractModel: args.extractModel, targetCollection: args.targetCollection, bookId: book.id },
         { bookId: book.id, bookIndex: i + 1, bookTotal: eligible.length },
       );

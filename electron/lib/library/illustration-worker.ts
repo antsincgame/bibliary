@@ -7,7 +7,7 @@
  *
  * Step C (Markdown Enrichment): images with score > 5 are kept in CAS.
  * Their description is recorded in illustrations.json AND inserted into
- * book.md as alt-text ![LLM_DESC: ...] so Qdrant can do text search on
+ * book.md as alt-text ![LLM_DESC: ...] so Chroma can do text search on
  * illustration content.
  *
  * Images with score ≤ 5 are NOT stored in CAS (disk savings). Their CAS blob
@@ -71,7 +71,7 @@ export interface SemanticTriageResult {
  * generic: "a red rectangle". С контекстом модель привязывает иллюстрацию
  * к теме главы: "a red rectangular block — likely a memory page diagram".
  *
- * Это ключ для тематического vector search в Qdrant: описание без контекста
+ * Это ключ для тематического vector search в Chroma: описание без контекста
  * не даёт результатов на запрос «найди диаграмму memory hierarchy».
  */
 function buildSemanticTriagePrompt(ctx: { bookTitle?: string; chapterTitle?: string } = {}): string {
@@ -297,7 +297,7 @@ function extractJsonFromResponse(raw: string): Record<string, unknown> | null {
  *
  * B: Semantic Triage — каждое изображение оценивается Vision LLM (score 0-10).
  * C: Markdown Enrichment — description вставляется в book.md как alt-текст
- *    ![LLM_DESC: ...] для Qdrant текстового поиска по иллюстрациям.
+ *    ![LLM_DESC: ...] для Chroma текстового поиска по иллюстрациям.
  *
  * Не блокирует импорт — вызывается асинхронно из import.ts.
  */
@@ -400,7 +400,7 @@ export async function processIllustrations(
     ? prefs.illustrationParallelism
     : 1;
 
-  /* Сериализуем только md-патчинг — остальные шаги (vision call, qdrant index)
+  /* Сериализуем только md-патчинг — остальные шаги (vision call, chroma index)
    * полностью независимые по entries. */
   let mdSerial: Promise<void> = Promise.resolve();
   const serializeMd = (op: () => void): Promise<void> => {

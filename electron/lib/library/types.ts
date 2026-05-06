@@ -27,7 +27,7 @@ export type BookStatus =
   | "evaluating"      // эвалюатор работает прямо сейчас
   | "evaluated"       // получены qualityScore + domain + tags
   | "crystallizing"   // кристаллизация в процессе
-  | "indexed"         // концепты приняты в Qdrant
+  | "indexed"         // концепты приняты в Chroma
   | "failed"          // парсер или эвалюатор упали
   | "unsupported";    // парсер не смог собрать ни одной главы
 

@@ -1,7 +1,7 @@
 /**
  * Helper для batched-pagination через Chroma `/collections/{id}/get`.
  *
- * Chroma не имеет cursor-API как Qdrant — только integer offset. Этот helper
+ * Chroma не имеет cursor-API — только integer offset. Этот helper
  * автоматически итерируется через offsets до пустой страницы. Используется в
  * dataset-v2 domain breakdown (50K-cap) и любых других местах, где нужно
  * пройтись по всем точкам коллекции.

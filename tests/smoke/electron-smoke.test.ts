@@ -108,11 +108,7 @@ test("electron smoke: app launches, preload bridge works, IPC handlers respond",
   assert.ok(prefs && typeof prefs === "object", "preferences.getAll must return an object");
   assert.ok(!Array.isArray(prefs), "preferences should be a record, not an array");
 
-  /* Smoke #3: structural check that window.api.library exists and exposes
-     ожидаемый набор methods (без их вызова -- избегаем native deps).
-     `rebuildCache` удалён из preload bridge 2026-05-01 (Иt 8А library-fortress)
-     как мёртвый мост (zero renderer callers). IPC handler пока остаётся в
-     library-catalog-ipc.ts на случай будущего возврата UI кнопки. */
+  /* Smoke #3: structural check that window.api.library exposes expected methods. */
   const libraryShape = await window.evaluate(() => {
     const lib = (globalThis as { api: { library: Record<string, unknown> } }).api.library;
     return {
@@ -125,7 +121,6 @@ test("electron smoke: app launches, preload bridge works, IPC handlers respond",
   assert.equal(libraryShape.hasCatalog, true, "window.api.library.catalog must be a function");
   assert.equal(libraryShape.hasDeleteBook, true, "window.api.library.deleteBook must be a function");
   assert.equal(libraryShape.hasEvaluatorStatus, true, "window.api.library.evaluatorStatus must be a function");
-  /* Иt 8Е.5 (rebuild cache UI restored): preload bridge возвращён. */
   assert.equal(libraryShape.hasRebuildCache, true, "window.api.library.rebuildCache must be a function");
 
   /* Smoke #4: Models route — минимальная страница (статус LM Studio, списки моделей, роли). */

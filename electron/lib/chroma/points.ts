@@ -2,7 +2,7 @@
  * Низкоуровневые операции с точками Chroma коллекции (upsert / delete / count).
  *
  * Делает подъём `name → id` через collection-cache, поэтому caller передаёт
- * **имя** коллекции (как в Qdrant-эпохе) — это снижает ребус миграции в
+ * **имя** коллекции (как в Chroma-эпохе) — это снижает ребус миграции в
  * остальном коде. Если коллекция не существует — caller должен сначала
  * вызвать `ensureChromaCollection()`.
  */
@@ -74,7 +74,7 @@ interface ChromaUpsertBody {
  * перезаписывает (без duplicate-ошибок).
  *
  * Body shape: parallel arrays ({ids, embeddings, metadatas, documents}) —
- * это canonical Chroma pattern, отличается от Qdrant `{points:[…]}`.
+ * это canonical Chroma pattern, отличается от Chroma `{points:[…]}`.
  *
  * Защитные преобразования:
  *  - `String(point.id)` — Chroma строго требует string IDs;
@@ -113,8 +113,6 @@ export async function chromaUpsert(
  * Adaptive upsert с binary backoff. Если batch падает (например HTTP 413
  * payload-too-large), делим пополам и пробуем снова. Достигаем minimum batch=1
  * — если single point всё ещё падает, бросаем.
- *
- * Логика идентична Qdrant-эпохе (qdrantUpsertAdaptive в ingest.ts).
  */
 export async function chromaUpsertAdaptive(
   collectionName: string,
@@ -174,8 +172,7 @@ export async function chromaCount(collectionName: string): Promise<number> {
 }
 
 /* ─────────────────────────────────────────────────────────────────────
- * Filter translation helpers — используются consumers'ами при миграции
- * с Qdrant filter shapes на Chroma `where`. Pure functions, no I/O.
+ * Filter translation helpers — pure functions для Chroma `where`. No I/O.
  * ───────────────────────────────────────────────────────────────────── */
 
 /**
@@ -186,7 +183,7 @@ export function chromaWhereExact(field: string, value: string | number | boolean
 }
 
 /**
- * `OR` через `$or` — Chroma эквивалент Qdrant `should`.
+ * `OR` через `$or` — несколько альтернативных условий.
  * Каждый matcher — `{field, value}`. Результат: `{$or: [{f1:v1},{f2:v2}]}`.
  */
 export function chromaWhereAnyOf(matchers: Array<{ field: string; value: string | number | boolean }>): Record<string, unknown> {
@@ -196,7 +193,7 @@ export function chromaWhereAnyOf(matchers: Array<{ field: string; value: string 
 }
 
 /**
- * `AND` через `$and` — Chroma эквивалент Qdrant `must`.
+ * `AND` через `$and` — все условия должны выполняться.
  */
 export function chromaWhereAllOf(matchers: Array<{ field: string; value: string | number | boolean }>): Record<string, unknown> {
   if (matchers.length === 0) return {};

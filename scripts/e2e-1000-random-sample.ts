@@ -24,7 +24,7 @@
  *
  * Требования:
  *   - LM Studio запущен (для vision-meta + evaluator если включены)
- *   - Qdrant запущен (если illustration-worker / dataset-v2 индексируют)
+ *   - Chroma запущен (если illustration-worker / dataset-v2 индексируют)
  *   - Папка с книгами по указанному --root
  *
  * Производительность:
@@ -174,7 +174,7 @@ const BUG_CATEGORIES: BugCategory[] = [
   { pattern: /enospc|disk space/i, category: "disk-space" },
   { pattern: /memory|oom|heap/i, category: "memory-error" },
   { pattern: /database|sqlite/i, category: "db-error" },
-  { pattern: /qdrant/i, category: "qdrant-error" },
+  { pattern: /chroma/i, category: "chroma-error" },
   { pattern: /lm[- ]?studio|llm/i, category: "llm-error" },
   { pattern: /aborted|signal/i, category: "abort" },
   { pattern: /encoding|charset|invalid/i, category: "encoding-error" },

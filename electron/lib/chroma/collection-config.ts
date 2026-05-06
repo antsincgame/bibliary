@@ -1,8 +1,6 @@
 /**
  * Chroma collection configuration — централизованные HNSW defaults.
  *
- * Замена `electron/lib/qdrant/collection-config.ts` (Qdrant-эпоха).
- *
  * Chroma не имеет отдельного payload-index API — фильтрация по metadata
  * работает через встроенный механизм. HNSW параметры передаются как
  * метаданные коллекции при создании:

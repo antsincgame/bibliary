@@ -1,5 +1,5 @@
 /**
- * Dataset Export — Qdrant концепты → JSONL для облачного fine-tuning.
+ * Dataset Export — Chroma концепты → JSONL для облачного fine-tuning.
  *
  * Прагматичный шаблонный экспорт без LLM-синтеза:
  *   каждый принятый концепт превращается в N диалоговых примеров,
@@ -80,7 +80,7 @@ function buildAnswer(c: RawConcept, depth: number): string {
 }
 
 export interface ExportOptions {
-  /** Qdrant-коллекция с принятыми концептами. */
+  /** Chroma-коллекция с принятыми концептами. */
   collection: string;
   /** Выходная папка. Будет создана. */
   outputDir: string;

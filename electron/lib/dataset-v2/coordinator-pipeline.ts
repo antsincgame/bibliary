@@ -8,7 +8,7 @@
  * dozens of failed retries.
  *
  * Unlike dataset/forge, extraction has no on-disk job state (results
- * stream directly to Qdrant). So pause = abort, discard = no-op,
+ * stream directly to Chroma). So pause = abort, discard = no-op,
  * flushPending = no-op. resume = no-op too (jobs are not mid-flight
  * resumable; the user starts a new job after the issue is resolved).
  */
@@ -48,7 +48,7 @@ export function abortAllExtractionJobs(reason: string): void {
 }
 
 /**
- * No-op checkpoint store. Extraction state lives in Qdrant (accepted
+ * No-op checkpoint store. Extraction state lives in Chroma (accepted
  * concepts go straight there); no per-job snapshot file is needed. We
  * implement the full interface so PipelineHandle.store is a real value
  * the coordinator can poke at without runtime errors.
@@ -88,7 +88,7 @@ export function registerExtractionPipeline(): void {
     },
     flushPending: async () => {
       /* Nothing buffered locally. Each accepted concept is upserted
-         immediately into Qdrant; the embedder cache flushes on its own. */
+         immediately into Chroma; the embedder cache flushes on its own. */
     },
   };
   coordinator.registerPipeline(handle);

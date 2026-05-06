@@ -54,15 +54,15 @@ export function showPrompt(message, defaultValue = "", opts = {}) {
  */
 function showDialog(config) {
   return new Promise((resolve) => {
-    const overlay = el("div", { class: "qdrant-overlay ui-dialog-overlay" });
+    const overlay = el("div", { class: "ui-dialog-overlay" });
     const dialog = el("div", {
-      class: "qdrant-dialog ui-dialog",
+      class: "ui-dialog",
       role: "dialog",
       "aria-modal": "true",
       "aria-label": config.title || "Bibliary",
     });
     if (config.title) {
-      dialog.appendChild(el("div", { class: "qdrant-dialog-title" }, config.title));
+      dialog.appendChild(el("div", { class: "ui-dialog-title" }, config.title));
     }
     dialog.appendChild(el("div", { class: "ui-dialog-message" }, config.message));
 
@@ -72,14 +72,14 @@ function showDialog(config) {
       input = /** @type {HTMLInputElement} */ (
         el("input", {
           type: "text",
-          class: "qdrant-input ui-dialog-input",
+          class: "ui-dialog-input",
           value: config.defaultValue || "",
         })
       );
       dialog.appendChild(input);
     }
 
-    const actions = el("div", { class: "qdrant-dialog-actions ui-dialog-actions" });
+    const actions = el("div", { class: "ui-dialog-actions" });
     const okBtn = /** @type {HTMLButtonElement} */ (
       el("button", {
         class: config.okVariant === "danger" ? "btn-danger" : "btn-primary",

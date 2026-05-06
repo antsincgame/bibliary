@@ -492,7 +492,7 @@ export function buildCatalogBottomBar(root, deps) {
       }))) return;
       const deleteErrors = /** @type {string[]} */ ([]);
       let deleteOk = 0;
-      /* Иt 8Е.1 (cascade Qdrant cleanup): передаём активную коллекцию из STATE.
+      /* Иt 8Е.1 (cascade Chroma cleanup): передаём активную коллекцию из STATE.
          Backend синхронно удалит точки этой книги из неё (быстро) + запустит
          background full-scan по остальным коллекциям (orphan vectors). */
       const activeCollection = STATE.targetCollection || undefined;

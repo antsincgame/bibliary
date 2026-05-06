@@ -100,7 +100,7 @@ Usage:
   npm run dataset:synth -- --collection <name> --out <dir> [options]
 
 Options:
-  --collection <name>          Qdrant collection (default: delta-knowledge)
+  --collection <name>          Chroma collection (default: delta-knowledge)
   --out <dir>                  Output directory (default: release/datasets/synth)
   --pairs-per-concept <1..5>   Q/A pairs per concept (default: 2)
   --format <sharegpt|chatml>   Output format (default: sharegpt)

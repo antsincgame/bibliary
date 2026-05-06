@@ -46,13 +46,13 @@ export interface StartExtractionArgs {
   /** Override модели (по умолчанию — BIG profile). */
   extractModel?: string;
   /**
-   * Имя Qdrant-коллекции, куда уходят принятые концепты + где
+   * Имя Chroma-коллекции, куда уходят принятые концепты + где
    * выполняется cross-library dedup. Если не указано — `DEFAULT_COLLECTION`.
    */
   targetCollection?: string;
   /**
    * Иt 8Г.3: stable book identifier (UUID/SHA-derived) для:
-   *   - payload Qdrant (более стабильный ключ чем bookSourcePath, который
+   *   - payload Chroma (более стабильный ключ чем bookSourcePath, который
    *     может меняться при перемещении файла);
    *   - delete-on-reimport: перед upsert новых точек книги — удалить старые
    *     `must.bookId === args.bookId` (нет orphan vectors при reimport).

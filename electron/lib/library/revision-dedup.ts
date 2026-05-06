@@ -234,7 +234,7 @@ export function findLatestRevisionMatch(
  *   - Best-effort: если remove файла упал — логгируем warning, не throw
  *     (новая книга уже добавлена; пусть лучше старые orphan-файлы остануся,
  *     чем пользователь потеряет обе книги).
- *   - Qdrant orphan-vectors не убиваем здесь — это делают периодические
+ *   - Chroma orphan-vectors не убиваем здесь — это делают периодические
  *     scanner-ы (см. library:delete-book IPC).
  */
 export async function replaceBookRevision(

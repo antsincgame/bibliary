@@ -1,8 +1,8 @@
 /**
  * Dataset v2 типы — Delta-Knowledge Pipeline.
  *
- * Единый пайплайн: чанкинг → AURA-фильтр → DeltaKnowledge → Qdrant.
- * Один чанк = 0 или 1 запись в Qdrant.
+ * Единый пайплайн: чанкинг → AURA-фильтр → DeltaKnowledge → Chroma.
+ * Один чанк = 0 или 1 запись в Chroma.
  */
 import { z } from "zod";
 
@@ -89,7 +89,7 @@ export const DeltaKnowledgeSchema = z.object({
    * связи "X depends_on Y", строить knowledge maps, выявлять противоречия.
    * Минимум 1 связь обязательна (модель должна выделить хотя бы одну).
    *
-   * NB: для backward-compat существующих записей в Qdrant без relations
+   * NB: для backward-compat существующих записей в Chroma без relations
    * предусмотрена отдельная legacy-схема `DeltaKnowledgeLegacySchema` ниже.
    */
   relations: z.array(TopologyRelationSchema).min(1).max(8),
@@ -106,7 +106,7 @@ export interface DeltaKnowledge extends z.infer<typeof DeltaKnowledgeSchema> {
 
 /**
  * Legacy schema (без relations) — только для безопасного чтения старых
- * записей из Qdrant. Новые записи ВСЕГДА должны проходить
+ * записей из Chroma. Новые записи ВСЕГДА должны проходить
  * `DeltaKnowledgeSchema` с обязательным `relations`.
  *
  * Использовать при миграции / экспорте старых датасетов.

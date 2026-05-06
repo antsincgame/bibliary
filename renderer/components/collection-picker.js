@@ -101,7 +101,7 @@ export function buildCollectionPicker(opts) {
     root.appendChild(deleteBtn);
   }
 
-  /* "Open Chroma API" — у Chroma нет полноценного дашборда (как у Qdrant), но
+  /* "Open Chroma API" — у Chroma нет полноценного дашборда (как у Chroma), но
      можно открыть REST API root в браузере для отладки. URL читаем из
      preferences.chromaUrl, fallback http://localhost:8000. */
   const dashBtn = el(
@@ -222,7 +222,7 @@ async function offerDashboardFallback(errorMsg) {
 
 /**
  * Открыть Chroma REST API root в системном браузере. У Chroma нет
- * полноценного дашборда (как у Qdrant), но root URL отдаёт API info /
+ * полноценного дашборда (как у Chroma), но root URL отдаёт API info /
  * документацию для отладки. URL читаем из preferences.chromaUrl, иначе
  * localhost:8000. Идём через preload (system.openExternal), чтобы не
  * зависеть от webContents.setWindowOpenHandler и CSP.

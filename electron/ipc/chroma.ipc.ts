@@ -28,7 +28,7 @@ interface ChromaCollectionResponse {
 }
 
 /**
- * IPC слой для Chroma vector store. Заменяет qdrant.ipc.ts (Qdrant-эпоха).
+ * IPC слой для Chroma vector store.
  *
  * Каналы:
  *   chroma:collections           — list collection names (string[])
@@ -65,7 +65,7 @@ export function registerChromaIpc(): void {
       const data = await fetchChromaJson<ChromaCollectionResponse[]>(chromaUrl("/collections"));
       const items: CollectionsListItem[] = [];
       /* Fan-out per-collection /count в parallel — Chroma не отдаёт счётчик
-         в общем list endpoint'е (в отличие от Qdrant). */
+         в общем list endpoint'е (в отличие от Chroma). */
       await Promise.all(
         (data ?? []).map(async (c) => {
           if (!c?.id || !c?.name) return;

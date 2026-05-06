@@ -140,7 +140,7 @@ function buildField(field, root) {
 }
 
 async function probeEndpoint(kind, baseUrl) {
-  const path = kind === "lmstudio" ? "/v1/models" : "/collections";
+  const path = kind === "lmstudio" ? "/v1/models" : "/api/v1/heartbeat";
   const url = baseUrl.replace(/\/+$/, "") + path;
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 5000);

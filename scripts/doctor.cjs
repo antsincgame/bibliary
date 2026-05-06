@@ -8,7 +8,7 @@
  *   - Платформа поддерживается
  *   - Native modules загружаются (better-sqlite3, sharp, edgeparse, system-ocr)
  *   - Vendor binaries присутствуют для текущей платформы (7zip, djvulibre)
- *   - LM Studio + Qdrant доступны (опционально, через preferences)
+ *   - LM Studio + Chroma доступны (опционально, через preferences)
  *
  * Запуск:
  *   npm run doctor

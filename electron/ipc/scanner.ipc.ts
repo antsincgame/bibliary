@@ -13,7 +13,7 @@
  *   - scanner:start-ingest   → IngestResult       (полный pipeline с прогрессом)
  *   - scanner:cancel-ingest  → boolean            (по ingestId)
  *   - scanner:list-history   → агрегированная история по коллекциям
- *   - scanner:delete-from-collection → удаление книги из Qdrant + state cleanup
+ *   - scanner:delete-from-collection → удаление книги из Chroma + state cleanup
  *
  * Прогресс летит в renderer через 'scanner:ingest-progress' (push event).
  */
@@ -410,7 +410,7 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
   );
 
   /**
-   * Удалить все точки книги из Qdrant-коллекции и очистить scanner-state.
+   * Удалить все точки книги из Chroma-коллекции и очистить scanner-state.
    *
    * Унифицированный контракт удаления (Mahakala 2026-05-02):
    *   - Если передан `bookId` (новые книги после Иt 8Г.3 имеют его в payload) —
