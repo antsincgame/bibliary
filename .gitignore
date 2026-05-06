@@ -75,6 +75,17 @@ test_rust.rs
 # DjVuLibre downloaded installers (not needed in repo)
 vendor/djvulibre/**/*_Setup.exe
 
+# Linux/macOS vendor binaries — устанавливаются setup-скриптами перед сборкой
+# (`npm run setup:djvulibre-linux`, `npm run setup:7zip-linux`, etc.) из системного
+# apt/Homebrew. Windows vendors зафиксированы в репо для воспроизводимой
+# Windows-портабл-сборки без apt/brew.
+vendor/djvulibre/linux-x64/
+vendor/djvulibre/darwin-x64/
+vendor/djvulibre/darwin-arm64/
+vendor/7zip/linux-x64/
+vendor/7zip/darwin-x64/
+vendor/7zip/darwin-arm64/
+
 # Benchmark and E2E reports (generated data, not for VCS)
 data/benchmarks/
 data/e2e-reports/

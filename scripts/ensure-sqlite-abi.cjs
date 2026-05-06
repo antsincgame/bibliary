@@ -94,7 +94,55 @@ function tryRebuildElectron() {
     ["@electron/rebuild", "--only", "better-sqlite3", "--force", "--build-from-source"],
     { cwd: PROJECT_ROOT, stdio: "inherit", shell: true },
   );
-  return res.status === 0;
+  if (res.status === 0) return true;
+
+  /* Fallback: @electron/rebuild требует Electron headers с electronjs.org —
+   * на машинах с ограниченным сетевым доступом (corporate firewall, sandbox)
+   * это падает с 403/timeout. prebuild-install качает готовый бинарник
+   * прямо с npm registry — обычно доступен даже когда electronjs.org нет. */
+  console.log("[ensure-sqlite-abi] @electron/rebuild failed; trying prebuild-install fallback");
+
+  let electronVersion;
+  try {
+    electronVersion = require("electron/package.json").version;
+  } catch (e) {
+    console.error("[ensure-sqlite-abi] cannot read electron version:", e.message);
+    return false;
+  }
+
+  /* Map Electron major version → V8 NODE_MODULE_VERSION (ABI).
+   * Source: https://nodejs.org/en/download/releases (Modules column)
+   *         + Electron's bundled Node version per release.
+   * Если версия Electron unknown в этой таблице — prebuild-install сам узнает
+   * через electron-to-chromium, но мы прокидываем явно для надёжности. */
+  const ABI_BY_ELECTRON_MAJOR = {
+    "30": 123, "31": 125, "32": 128, "33": 130,
+    "34": 133, "35": 135, "36": 137, "37": 139,
+    "38": 140, "39": 142, "40": 143, "41": 145,
+    "42": 146, "43": 148, "44": 150,
+  };
+  const major = String(electronVersion).split(".")[0];
+  const abi = ABI_BY_ELECTRON_MAJOR[major];
+
+  const args = ["prebuild-install", "--runtime", "electron", "--target", electronVersion];
+  if (abi) args.push("--abi", String(abi));
+
+  const res2 = spawnSync(
+    "npx",
+    args,
+    {
+      cwd: path.join(PROJECT_ROOT, "node_modules", "better-sqlite3"),
+      stdio: "inherit",
+      shell: true,
+    },
+  );
+  if (res2.status === 0) {
+    console.log("[ensure-sqlite-abi] prebuild-install succeeded (Electron-ABI from npm registry)");
+    return true;
+  }
+
+  console.error("[ensure-sqlite-abi] prebuild-install also failed; give up");
+  return false;
 }
 
 if (saveMode) {
