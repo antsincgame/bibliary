@@ -80,6 +80,42 @@ jobs:
           if-no-files-found: ignore
 
   # ─────────────────────────────────────────────────────────────────
+  # macOS job: lint + unit tests + tsc compile.
+  # Playwright smoke пропускается — smoke-тесты запускают .exe,
+  # на macOS нужен отдельный Electron build в release workflow.
+  # ─────────────────────────────────────────────────────────────────
+  ci-macos:
+    name: macOS · Lint · Tests · Compile
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+      - name: Ensure better-sqlite3 ABI (Node)
+        run: node scripts/ensure-sqlite-abi.cjs --target=node
+
+      - name: Lint (tsc + eslint)
+        run: npm run lint
+
+      - name: Unit tests (Node test runner)
+        run: npm run test:fast
+        env:
+          BIBLIARY_SKIP_OCR: '1'
+
+      - name: Compile Electron TypeScript
+        run: npx tsc -p tsconfig.electron.json
+
+  # ─────────────────────────────────────────────────────────────────
   # Отдельный policy-gate: ловит регрессии "thinking-friendly" политики
   # роли → дисциплины. Если кто-то добавил новую crystallizer/evaluator
   # дисциплину без `thinkingFriendly: true` — этот job упадёт быстро

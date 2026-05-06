@@ -1,8 +1,8 @@
-name: Release · Portable Build
+name: Release · Build
 
 # Запуск:
 #   1. Вручную через "Run workflow" в Actions UI
-#   2. Автоматически при пуше тега вида v0.2.4
+#   2. Автоматически при пуше тега вида v1.2.3
 on:
   push:
     tags:
@@ -10,12 +10,15 @@ on:
   workflow_dispatch:
     inputs:
       version_tag:
-        description: 'Имя тега для release (например v0.2.5). Пустое — без публикации release.'
+        description: 'Имя тега для release (например v1.2.0). Пустое — без публикации release.'
         required: false
         default: ''
 
 jobs:
-  build-portable:
+  # ─────────────────────────────────────────────────────────────────
+  # Windows: portable .exe + NSIS installer
+  # ─────────────────────────────────────────────────────────────────
+  build-windows:
     name: Build portable .exe (Windows)
     runs-on: windows-latest
     timeout-minutes: 30
@@ -23,7 +26,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Полная история нужна для генерации changelog по тегам.
           fetch-depth: 0
 
       - uses: actions/setup-node@v4
@@ -37,27 +39,106 @@ jobs:
       - name: Compile + portable build
         run: npm run electron:build-portable
         env:
-          # На случай если @electron/rebuild для better-sqlite3 захочет
-          # тянуть бинарь из мирор сети.
           ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
 
-      - name: Upload portable artifact
+      - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: bibliary-portable-${{ github.sha }}
+          name: bibliary-windows-${{ github.sha }}
           path: |
             release/dist-portable/**
             !release/dist-portable/**/.gitkeep
           retention-days: 30
 
-      # Если запущено по тегу — публикуем GitHub Release
+  # ─────────────────────────────────────────────────────────────────
+  # macOS: DMG + ZIP (arm64 + x64 via universal build)
+  #
+  # Подпись/нотаризация:
+  #   Чтобы включить подпись, добавьте секреты в репозиторий:
+  #     CSC_LINK         — base64-encoded .p12 Developer ID Application cert
+  #     CSC_KEY_PASSWORD — пароль к .p12
+  #     APPLE_ID         — Apple ID для нотаризации (user@example.com)
+  #     APPLE_APP_SPECIFIC_PASSWORD — app-specific password из appleid.apple.com
+  #     APPLE_TEAM_ID    — Team ID из developer.apple.com
+  #   Без этих секретов приложение собирается без подписи (ad-hoc),
+  #   работает локально, но macOS Gatekeeper потребует разрешения при запуске.
+  # ─────────────────────────────────────────────────────────────────
+  build-macos:
+    name: Build DMG (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
+
+      - name: Compile TypeScript
+        run: npm run electron:compile
+
+      - name: Build DMG
+        run: npx electron-builder --mac
+        env:
+          ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
+          # Подпись опциональна: если секреты не заданы — ad-hoc (без Gatekeeper).
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.CSC_LINK != '' && 'true' || 'false' }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          # Нотаризация опциональна: если APPLE_ID не задан — пропускается.
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bibliary-macos-${{ github.sha }}
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/mac*/**
+          retention-days: 30
+          if-no-files-found: warn
+
+  # ─────────────────────────────────────────────────────────────────
+  # Публикация GitHub Release (запускается после обоих build jobs)
+  # ─────────────────────────────────────────────────────────────────
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: bibliary-windows-${{ github.sha }}
+          path: artifacts/windows
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: bibliary-macos-${{ github.sha }}
+          path: artifacts/macos
+
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: |
-            release/dist-portable/Bibliary*.exe
-            release/dist-portable/data/**
+            artifacts/windows/Bibliary*.exe
+            artifacts/macos/*.dmg
+            artifacts/macos/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
