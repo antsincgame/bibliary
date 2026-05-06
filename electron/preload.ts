@@ -371,34 +371,6 @@ contextBridge.exposeInMainWorld("api", {
     }>> => ipcRenderer.invoke("model-roles:list", roles ? { roles } : {}),
   },
 
-  arena: {
-    /* Shadow Arena (Elo + golden prompts) удалена в apr 2026.
-     * Bridge оставляет имя `arena` для backward-compat с models-page.js. */
-    getLockStatus: (): Promise<{ busy: boolean; reasons: string[] }> =>
-      ipcRenderer.invoke("arena:get-lock-status"),
-    runOlympics: (opts?: {
-      models?: string[];
-      disciplines?: string[];
-      maxModels?: number;
-      weightClasses?: string[];
-      testAll?: boolean;
-      roles?: string[];
-    }): Promise<unknown> =>
-      ipcRenderer.invoke("arena:run-olympics", opts ?? {}),
-    cancelOlympics: (): Promise<boolean> => ipcRenderer.invoke("arena:cancel-olympics"),
-    clearOlympicsCache: (): Promise<unknown> => ipcRenderer.invoke("arena:clear-olympics-cache"),
-    getLastReport: (): Promise<unknown> => ipcRenderer.invoke("arena:get-last-report"),
-    applyOlympicsRecommendations: (payload: { recommendations: Record<string, string> }): Promise<unknown> =>
-      ipcRenderer.invoke("arena:apply-olympics-recommendations", payload),
-    onOlympicsProgress: (cb: (e: unknown) => void): (() => void) => {
-      const listener = (_: unknown, data: unknown): void => cb(data);
-      ipcRenderer.on("arena:olympics-progress", listener);
-      return () => ipcRenderer.off("arena:olympics-progress", listener);
-    },
-    /* v1.0.11 (2026-05-06): customDisciplines API удалён — feature deprecated.
-       См. CHANGELOG.md v1.0.11. */
-  },
-
   scanner: {
     probeFolder: (): Promise<Array<{ absPath: string; fileName: string; ext: string; sizeBytes: number; mtimeMs: number }>> =>
       ipcRenderer.invoke("scanner:probe-folder"),

@@ -48,16 +48,6 @@ export type TelemetryEvent =
       lastError: string;
       ts: string;
     }
-  | { type: "olympics.run"; phase: "start" | "done"; models: string[]; disciplines: string[]; durationMs?: number; skippedModels?: number; ts: string }
-  | {
-      type: "olympics.model_lifecycle";
-      phase: "cleanup" | "load_start" | "load_ok" | "load_fail" | "unload_ok" | "unload_fail";
-      modelKey: string;
-      instanceId?: string;
-      durationMs?: number;
-      error?: string;
-      ts: string;
-    }
   | {
       /**
        * Circuit Breaker для LM Studio HTTP API перешёл в OPEN: errorRate в

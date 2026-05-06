@@ -37,7 +37,6 @@ export const STATE = {
     /** @type {string | null} */
     currentJobId: null,
   },
-  showAdvanced: false,
   /**
    * Runtime-only refs на DOM-компоненты. Wizard заполняет, action читает —
    * чтобы избежать передачи синглтонов через все 4 step builder'ов.

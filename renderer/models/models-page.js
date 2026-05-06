@@ -1,18 +1,7 @@
 // @ts-check
 /**
  * Страница «Модели» (route: models) — entry point.
- *
- * Реальная реализация разнесена на 5 модулей по ответственности (Phase 2.4
- * cross-platform roadmap, 2026-04-30):
- *
- *   - `models-page-internals.js`           — shared state (ctx) + toast / busy / apply
- *   - `models-hardware-status.js`          — hardware strip + status + loaded + roles
- *   - `models-page-olympics-labels.js`     — лейблы дисциплин и ролей (атмосфера)
- *   - `models-page-olympics-controls.js`   — карточка Олимпиады + advanced + run/cancel
- *   - `models-page-olympics-report.js`     — рендер отчёта Олимпиады
- *
- * Этот файл оставляет только: `mountModels`, `unmountModels`, `buildLayout` и
- * минимальный orchestrator (timer, locale subscription).
+ * Хост: hardware strip, конфиг ролей, advanced, actions log.
  */
 
 import { el } from "../dom.js";
@@ -26,8 +15,6 @@ import {
   buildHwStrip,
   unmountHwStrip,
 } from "./models-hardware-status.js";
-import { buildOlympicsCard } from "./models-page-olympics-controls.js";
-import { renderOlympicsReport } from "./models-page-olympics-report.js";
 import { buildAdvancedPanel } from "./models-page-advanced.js";
 import { buildActionsLogPanel } from "./models-actions-log-panel.js";
 
@@ -49,9 +36,6 @@ function buildLayout() {
       ]),
       el("p", { class: "mp-header-sub" }, t("models.header.sub_compact")),
     ]),
-
-    /* Олимпиада — НАВЕРХУ: это главная точка входа для автонастройки. */
-    buildOlympicsCard(),
 
     /* Железо — компактно, свёрнуто, не занимает место. */
     buildHwStrip(),
@@ -80,23 +64,6 @@ export function mountModels(root) {
   if (hwBtn) hwBtn.addEventListener("click", () => void refreshHardware(true).then(() => renderHardwareStrip()));
 
   void refreshHardware(false).then(() => refresh());
-
-  /* Restore last Olympics report from disk — user sees results even after
-   * app restart without re-running the tournament.
-   *
-   * Race-guard: если пользователь успел нажать «Run Olympics» пока promise
-   * ещё резолвится — не затирать свежесброшенный UI. resetOlympicsUI()
-   * выставляет ctx.olympicsBusy=true; busy уйдёт в false только после
-   * завершения runOlympics — к этому моменту renderOlympicsReport уже
-   * отработает с НОВЫМ отчётом. */
-  if (typeof window.api?.arena?.getLastReport === "function") {
-    void window.api.arena.getLastReport().then((report) => {
-      if (ctx.olympicsBusy) return;
-      if (report && typeof report === "object" && (report.disciplines || report.roleAggregates)) {
-        renderOlympicsReport(report);
-      }
-    }).catch(() => { /* no saved report — ok */ });
-  }
 
   if (typeof window.api.preferences?.onChanged === "function") {
     preferencesUnsubscribe = window.api.preferences.onChanged(() => {

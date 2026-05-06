@@ -258,52 +258,38 @@ export function buildPrimaryAction(root) {
   );
   const hint = el("p", { class: "ds-primary-hint" }, t("dataset.synth.hint"));
 
-  const advanced = buildAdvancedModelRow(root);
+  const modelRow = buildPrimaryModelRow(root);
 
   return el("div", { class: "ds-primary-row" }, [
+    modelRow,
     el("div", { class: "ds-primary-buttons" }, [startBtn, stopBtn]),
     hint,
-    advanced,
   ]);
 }
 
-function buildAdvancedModelRow(root) {
-  const summary = el(
-    "summary",
-    { class: "ds-advanced-summary" },
-    t("dataset.synth.modelOptional.summary"),
-  );
-  const slot = el("div", { class: "ds-advanced-body", id: "ds-advanced-body" });
-  const wrap = el("details", {
-    class: "ds-advanced",
-    open: STATE.showAdvanced ? "" : null,
-    ontoggle: () => {
-      const w = root.querySelector(".ds-advanced");
-      if (w instanceof HTMLDetailsElement) STATE.showAdvanced = w.open;
-    },
-  }, [summary, slot]);
-
-  setTimeout(() => mountAdvancedBody(root), 0);
-  return wrap;
+function buildPrimaryModelRow(root) {
+  const slot = el("div", { class: "ds-model-row", id: "ds-model-row" });
+  setTimeout(() => mountModelRow(root), 0);
+  return slot;
 }
 
-function mountAdvancedBody(root) {
-  const slot = root.querySelector("#ds-advanced-body");
+function mountModelRow(root) {
+  const slot = root.querySelector("#ds-model-row");
   if (!slot) return;
   clear(slot);
 
   const modelRow = buildModelSelect({
     role: "extractor",
-    label: t("dataset.synth.modelOptional.label"),
+    label: t("dataset.synth.model.label"),
     hints: SYNTH_MODEL_HINTS,
-    wrapClass: "cv-row",
-    labelClass: "cv-label ds-advanced-label",
-    selectClass: "cv-select ds-advanced-select",
+    wrapClass: "cv-row ds-model-select-row",
+    labelClass: "cv-label ds-model-label",
+    selectClass: "cv-select ds-model-select",
   });
   STATE.refs.synthModelSelect = modelRow;
 
   slot.append(
     modelRow.wrap,
-    el("p", { class: "ds-advanced-hint" }, t("dataset.synth.modelOptional.hint")),
+    el("p", { class: "ds-model-hint" }, t("dataset.synth.model.hint")),
   );
 }

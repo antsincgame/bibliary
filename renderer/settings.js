@@ -228,12 +228,6 @@ function render(root) {
 
   root.appendChild(renderPanelContent(root));
 
-  /* v1.0.11 (2026-05-06, /imperor /mahakala): редактор custom Olympics
-     дисциплин удалён по запросу пользователя — раздел Settings перегружен,
-     custom тесты создавали ложное чувство контроля без реального улучшения
-     калибровки моделей (статические дисциплины из disciplines.ts покрывают
-     все production-роли). См. CHANGELOG.md v1.0.11. */
-
   const actions = el("div", { class: "settings-actions" }, [
     el("span", { id: "settings-unsaved-count", class: "settings-unsaved-count" }, ""),
     el("button", {

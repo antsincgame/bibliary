@@ -40,8 +40,7 @@ export type ModelActionKind =
   | "AUTO-LOAD-FAIL"           /* defaultAutoLoad упал */
   | "RESOLVE-PASSIVE-SKIP"     /* passive caller отказался триггерить autoLoad */
   | "EVALUATOR-DEFER-RESUME"   /* книга не оценена при cold-start, ждёт явной команды */
-  | "EVALUATOR-PICK-FAIL"      /* picker не смог выбрать модель */
-  | "OLYMPICS-APPLY-PREFS-ONLY"; /* v1.0.8: post-Olympics apply ТОЛЬКО prefs, без VRAM grab */
+  | "EVALUATOR-PICK-FAIL";     /* picker не смог выбрать модель */
 
 export interface ModelActionEvent {
   kind: ModelActionKind;

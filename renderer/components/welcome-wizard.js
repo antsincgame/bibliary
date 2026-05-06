@@ -10,16 +10,8 @@ const STEP_COUNT = 4;
  * Onboarding wizard v3 — 4 шага:
  *   0 Hero       → приветствие
  *   1 Connect    → health-check LM Studio + Qdrant с visible feedback
- *   2 Setup      → hardware-info + инструкция «как настроить модели»
- *                  (через Olympics автоматически или вручную в Models).
- *                  Версия v3 (2026-05-05): УБРАН picker default chat model
- *                  и кнопка Auto-pick. Причины:
- *                  - chatModel не персистится в preferences (поле удалено
- *                    в Иt 8А);
- *                  - Auto-pick выбирал «самую мощную» модель по VRAM, что
- *                    для ролей (Crystallizer/Evaluator/Vision) часто хуже,
- *                    чем правильный выбор через Olympics;
- *                  - выбор моделей — задача страницы Models, не wizard'а.
+ *   2 Setup      → hardware-info + инструкция «настройте модели вручную в Models».
+ *                  Выбор моделей — задача страницы Models, не wizard'а.
  *   3 Done       → persist в preferences (onboardingDone) + 3 action-карточки
  *
  * Визуально — /2666 HUD-нотация: моноширинный шрифт, кислотный акцент,
@@ -202,10 +194,8 @@ export function openWelcomeWizard(opts) {
   /* ─── Step 2: Setup (Hardware + инструкция «как настроить модели») ────── */
 
   /**
-   * v3 (2026-05-05): шаг превратился из «выбор default chat model» в
-   * чисто-информационный «hardware info + краткая инструкция, куда идти
-   * за настройкой моделей». Никакого выбора моделей здесь больше нет —
-   * это работа Olympics (auto) и Settings → Models (manual).
+   * Шаг чисто-информационный: hardware info + ссылка на страницу Models
+   * для ручной настройки моделей по ролям.
    */
   async function buildSetup() {
     const wrap = el("div", { class: "ww-step ww-step-setup" }, [
@@ -252,10 +242,7 @@ export function openWelcomeWizard(opts) {
   }
 
   /**
-   * Краткая инструкция «как настроить модели» — два пути: Olympics (auto)
-   * или manual в Models. Никаких select'ов, никаких автоподборов «по железу».
-   * Каждый совет визуально отдельная карточка, без действия — просто текст,
-   * пользователь дойдёт до конкретных кнопок на странице Models после Done.
+   * Карточка-инструкция «как настроить модели» — ручной выбор в Models.
    */
   function buildModelsHowto() {
     const block = el("div", { class: "ww-setup-block" }, [
@@ -263,13 +250,10 @@ export function openWelcomeWizard(opts) {
       el("p", { class: "ww-p ww-p-muted ww-setup-model-hint" }, t("ww.setup.howto_hint")),
     ]);
     const row = el("div", { class: "ww-setup-howto" });
-    const optionKeys = ["olympics", "manual"];
-    for (const k of optionKeys) {
-      row.appendChild(el("div", { class: "ww-setup-howto-card" }, [
-        el("div", { class: "ww-setup-howto-title" }, t(`ww.setup.howto.${k}.title`)),
-        el("p", { class: "ww-setup-howto-desc" }, t(`ww.setup.howto.${k}.desc`)),
-      ]));
-    }
+    row.appendChild(el("div", { class: "ww-setup-howto-card" }, [
+      el("div", { class: "ww-setup-howto-title" }, t("ww.setup.howto.manual.title")),
+      el("p", { class: "ww-setup-howto-desc" }, t("ww.setup.howto.manual.desc")),
+    ]));
     block.appendChild(row);
     return block;
   }

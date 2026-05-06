@@ -278,10 +278,6 @@ export const PreferencesSchema = z.object({
   onboardingDone: z.boolean().default(false),
   /** Версия пройденного wizard. Позволяет показать wizard повторно при major update. */
   onboardingVersion: z.number().int().min(0).max(1000).default(0),
-
-  /* v1.0.11 (2026-05-06, /imperor /mahakala): customOlympicsDisciplines
-     удалено. Старые сохранённые значения в preferences.json игнорируются
-     (Zod .strict() не задействован, unknown ключи тихо отбрасываются). */
 });
 
 export type Preferences = z.infer<typeof PreferencesSchema>;

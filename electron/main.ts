@@ -10,7 +10,6 @@ import {
   bootstrapLibrarySubsystem,
 } from "./ipc";
 import { disposeClientAsync } from "./lmstudio-client";
-import { disposeOlympicsSdkClientAsync } from "./lib/llm/arena/lms-client-sdk.js";
 import { getModelPool } from "./lib/llm/model-pool.js";
 import { triggerAppShutdown } from "./lib/app-lifecycle.js";
 import {
@@ -270,20 +269,8 @@ if (!gotLock) {
   }
 
   /**
-   * Закрытие всех LM Studio ресурсов — ОБА контура SDK + eviction моделей пула.
-   * v0.11.14: фикс зомби-процесса. До этого:
-   *   - `_cachedSdkClient` (Olympics) НЕ закрывался → WebSocket к LM Studio
-   *     висел от мёртвого процесса (зомби-соединение).
-   *   - `getModelPool().evictAll()` НЕ вызывался → loaded модели в LM Studio
-   *     оставались с refCount=0 в нашем учёте без unload.
-   *
-   * Контракт:
-   *   1. evictAll моделей пула (best-effort, max 1.5с) → освобождает VRAM
-   *      на стороне LM Studio.
-   *   2. dispose основного клиента (already existing) → закрывает основной WebSocket.
-   *   3. dispose Olympics SDK клиента → закрывает второй WebSocket + handles.
-   *
-   * Все шаги best-effort с timeout — quit не должен зависать дольше 4с (force-exit).
+   * Закрытие всех LM Studio ресурсов — eviction моделей пула + dispose клиента.
+   * Все шаги best-effort с timeout: quit не должен зависать дольше 4с (force-exit).
    */
   async function disposeAllLmStudioResources(): Promise<void> {
     try {
@@ -301,12 +288,6 @@ if (!gotLock) {
       console.log(`[main/shutdown] LM Studio main client dispose: ${closedOk ? "OK" : "TIMEOUT/ERROR"}`);
     } catch (err) {
       console.error("[main/shutdown] disposeClientAsync Error:", err);
-    }
-    try {
-      const closedOk = await disposeOlympicsSdkClientAsync(1_000);
-      console.log(`[main/shutdown] LM Studio Olympics SDK dispose: ${closedOk ? "OK" : "TIMEOUT/ERROR"}`);
-    } catch (err) {
-      console.error("[main/shutdown] disposeOlympicsSdkClientAsync Error:", err);
     }
   }
 

@@ -12,7 +12,6 @@ import { registerDatasetV2Ipc, abortAllDatasetV2 } from "./dataset-v2.ipc.js";
 import { registerDatasetsIpc } from "./datasets.ipc.js";
 import { registerPreferencesIpc } from "./preferences.ipc.js";
 import { registerModelRolesIpc } from "./model-roles.ipc.js";
-import { registerArenaIpc } from "./arena.ipc.js";
 import {
   registerLibraryIpc,
   abortAllLibrary,
@@ -31,16 +30,8 @@ export {
 };
 
 /**
- * Регистрирует ВСЕ IPC-handlers с изоляцией ошибок.
- *
- * КРИТИЧНО: если регистрация одного handler-набора (например arena) бросает
- * exception на top-level, остальные ДОЛЖНЫ продолжить регистрацию. Иначе один
- * сломанный модуль валит весь UI приложения (см. инцидент 30 апр 2026:
- * после рефакторинга olympics.ts падал arena.ipc → library.ipc не успевал
- * зарегистрироваться → раздел "Библиотека" мёртв, UI-клики не реагируют).
- *
- * Каждый сбой логируется с контекстом — для post-mortem диагностики через
- * stderr приложения (видно в DevTools console + main process log).
+ * Регистрирует ВСЕ IPC-handlers с изоляцией ошибок: сбой регистрации одного
+ * набора не блокирует остальные. Каждый сбой логируется в stderr.
  */
 export function registerAllIpcHandlers(getMainWindow: () => BrowserWindow | null): void {
   const safeRegister = (name: string, fn: () => void): void => {
@@ -60,6 +51,5 @@ export function registerAllIpcHandlers(getMainWindow: () => BrowserWindow | null
   safeRegister("datasets", () => registerDatasetsIpc(getMainWindow));
   safeRegister("preferences", () => registerPreferencesIpc());
   safeRegister("model-roles", () => registerModelRolesIpc());
-  safeRegister("arena", () => registerArenaIpc());
   safeRegister("library", () => registerLibraryIpc(getMainWindow));
 }
