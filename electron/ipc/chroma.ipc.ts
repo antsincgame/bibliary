@@ -190,6 +190,33 @@ export function registerChromaIpc(): void {
     },
   );
 
+  /**
+   * `chroma:start-embedded` — manual trigger из Welcome Wizard UI.
+   * Полезен когда auto-spawn выключен (chromaAutoSpawn=false) или не сработал
+   * (uvx/python отсутствовали в момент boot, но пользователь установил их
+   * после). Идемпотентно: если Chroma уже запущена — return уже-OK статус.
+   */
+  ipcMain.handle("chroma:start-embedded", async (): Promise<{ ok: boolean; reason?: string; alreadyRunning?: boolean }> => {
+    try {
+      const { startEmbeddedChroma, defaultChromaDataPath } = await import("../lib/chroma/auto-spawn.js");
+      const { app } = await import("electron");
+      const dataDir = process.env.BIBLIARY_DATA_DIR ?? app.getPath("userData");
+      const result = await startEmbeddedChroma({
+        dataPath: defaultChromaDataPath(dataDir),
+        port: 8000,
+      });
+      if (!result) {
+        /* Уже запущена (heartbeat OK) — для UI это успех. */
+        return { ok: true, alreadyRunning: true };
+      }
+      await result.ready;
+      return { ok: true };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, reason: msg };
+    }
+  });
+
   /* Helper, used internally by other IPC handlers — exposed via export of name→id cache. */
   void resolveCollectionId; /* silence unused-import if not used directly here */
 }

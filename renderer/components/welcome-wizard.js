@@ -188,6 +188,42 @@ export function openWelcomeWizard(opts) {
     if (!isOnline) {
       const hintKey = kind === "lm" ? "ww.conn.lm.offlineHint" : "ww.conn.ch.offlineHint";
       card.appendChild(el("p", { class: "ww-conn-card-hint" }, t(hintKey)));
+
+      /* Для Chroma: кнопка «Запустить автоматически» — пытается
+       * spawn'нуть child-процесс через uvx/python. Если получится,
+       * отрисуем cards заново через probeServices. */
+      if (kind === "ch") {
+        const autoBtn = el("button", {
+          class: "ww-conn-auto-btn",
+          type: "button",
+        }, t("ww.conn.ch.autoStart"));
+        autoBtn.addEventListener("click", async () => {
+          autoBtn.disabled = true;
+          autoBtn.textContent = t("ww.conn.ch.autoStarting");
+          try {
+            const res = await window.api.chroma.startEmbedded();
+            if (res.ok) {
+              autoBtn.textContent = res.alreadyRunning
+                ? t("ww.conn.ch.autoAlready")
+                : t("ww.conn.ch.autoStarted");
+              /* Дать пользователю понять что нажать «Перепроверить» — Chroma
+               * требует ~1-2 сек чтобы поднять HTTP сервер после spawn. */
+            } else {
+              autoBtn.disabled = false;
+              autoBtn.textContent = t("ww.conn.ch.autoStart");
+              const errLine = el("p", { class: "ww-conn-card-error" }, res.reason ?? "spawn failed");
+              card.appendChild(errLine);
+            }
+          } catch (e) {
+            autoBtn.disabled = false;
+            autoBtn.textContent = t("ww.conn.ch.autoStart");
+            const errLine = el("p", { class: "ww-conn-card-error" },
+              e instanceof Error ? e.message : String(e));
+            card.appendChild(errLine);
+          }
+        });
+        card.appendChild(autoBtn);
+      }
     }
   }
 

@@ -197,6 +197,10 @@ contextBridge.exposeInMainWorld("api", {
     remove: (name: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke("chroma:delete-collection", name),
     heartbeat: (): Promise<ChromaHeartbeatInfo> => ipcRenderer.invoke("chroma:heartbeat"),
+    /** Manually spawn embedded Chroma child process. Idempotent: если уже
+     * запущена (heartbeat OK) → `{ok: true, alreadyRunning: true}`. */
+    startEmbedded: (): Promise<{ ok: boolean; reason?: string; alreadyRunning?: boolean }> =>
+      ipcRenderer.invoke("chroma:start-embedded"),
   },
 
   lmstudio: {

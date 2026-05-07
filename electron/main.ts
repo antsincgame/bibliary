@@ -205,6 +205,29 @@ if (!gotLock) {
     const endpoints = await getEndpoints();
     setChromaUrl(endpoints.chromaUrl);
 
+    /* Auto-spawn Chroma как child process если pref включён И heartbeat
+       пуст. Не блокирующий: bootstrap идёт дальше пока Chroma поднимается
+       (renderer всё равно делает heartbeat polling через probeServices). */
+    if (prefs.chromaAutoSpawn) {
+      void import("./lib/chroma/auto-spawn.js").then(async ({ startEmbeddedChroma, defaultChromaDataPath }) => {
+        try {
+          const result = await startEmbeddedChroma({
+            dataPath: defaultChromaDataPath(dataDir),
+            port: 8000,
+          });
+          if (result) {
+            await result.ready;
+            console.log("[main] Embedded Chroma is ready");
+          }
+        } catch (err) {
+          /* Не валим запуск приложения — пользователь увидит chroma offline
+             в Welcome Wizard и сможет либо install uv/python, либо
+             запустить Chroma вручную, либо отключить chromaAutoSpawn. */
+          console.warn(`[main] Embedded Chroma not started: ${err instanceof Error ? err.message : err}`);
+        }
+      });
+    }
+
     registerExtractionPipeline();
     applyCsp();
     registerAssetProtocol();
@@ -262,6 +285,13 @@ if (!gotLock) {
       ["killAllSynthChildren", killAllSynthChildren],
       ["abortAllLibrary", () => abortAllLibrary("app-quit")],
       ["closeCacheDb", closeCacheDb],
+      ["stopEmbeddedChroma", () => {
+        /* fire-and-forget — kill child grace-фул, не ждём.
+           Если Chroma не была spawn'нута (pref выкл / уже запущена) — no-op. */
+        void import("./lib/chroma/auto-spawn.js")
+          .then(({ stopEmbeddedChroma }) => stopEmbeddedChroma())
+          .catch(() => { /* ignore */ });
+      }],
     ];
     for (const [label, fn] of subsystems) {
       try { fn(); } catch (e) {

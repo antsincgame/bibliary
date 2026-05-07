@@ -142,6 +142,10 @@ export const PreferencesSchema = z.object({
   /** Empty string = use env var or built-in default. Validation: no trailing slash. */
   lmStudioUrl: z.string().regex(/^$|^https?:\/\/[^\s/$.?#].[^\s]*[^/]$/i, "must be a URL without trailing slash, or empty for default").default(""),
   chromaUrl: z.string().regex(/^$|^https?:\/\/[^\s/$.?#].[^\s]*[^/]$/i, "must be a URL without trailing slash, or empty for default").default(""),
+  /** Auto-spawn Chroma при старте Bibliary (через uvx/python). Default true.
+   * Выключить если Chroma запускается отдельно (Docker, удалённый сервер,
+   * системный launchctl). */
+  chromaAutoSpawn: z.boolean().default(true),
 
   // -- Selected models per role --
   /** Модель LM Studio для extractor (Crystallizer). Пусто = первая загруженная. */
