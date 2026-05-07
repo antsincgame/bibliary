@@ -1,4 +1,5 @@
 import { promises as fs } from "fs";
+import * as os from "os";
 import * as path from "path";
 import { cleanParagraph, looksLikeHeading, type BookParser, type ParseOptions, type ParseResult, type BookSection } from "./types.js";
 import { isOcrSupported, recognizeImageBuffer, reorderLanguagesForCyrillic } from "../ocr/index.js";
@@ -267,12 +268,23 @@ async function ocrDjvuPages(
 
     /* Tier 1/2 per-page: страница без встроенного текста — рендерим и OCR'им.
      *
-     * Multi-language fallback (Iter 14.7): если первый язык дал слишком мало
-     * текста (≤30 chars при разрешении ≥150 dpi), это часто означает что
-     * Windows.Media.Ocr использует НЕ тот language pack (например `en` для
-     * украинской страницы). Пробуем оставшиеся языки из effectiveLangs по
-     * очереди. Накопительная стратегия: берём самый длинный результат среди
-     * попыток. Stops at first language giving ≥MIN_OCR_TEXT_THRESHOLD chars. */
+     * Multi-language strategy зависит от platform/provider:
+     *
+     *   Windows.Media.Ocr (system on Win): использует ТОЛЬКО первый язык из
+     *     preferredLangs. Если страница на украинском но в langs первый "en" —
+     *     получим garbage. → Cycling: каждый язык по очереди, выбираем самый
+     *     длинный результат (early stop ≥30 chars).
+     *
+     *   macOS Vision Framework (system on Mac): нативно multi-language. Один
+     *     call с массивом всех языков отрабатывает быстрее cycling'а в N раз
+     *     (нет повторной obj-c calls). → Single call with all langs.
+     *
+     *   vision-LLM (LM Studio любая платформа): LLM сам понимает текст
+     *     многоязычно из image content. Передаём все языки как hint в prompt
+     *     (recognizeWithVisionLlm объединяет их в "ru/uk/en"). → Single call.
+     *
+     *   Linux system OCR: недоступно (нет нативного API). Сюда не доходим —
+     *     parseDjvu выше уже переключил на vision-LLM или вернул warning. */
     const MIN_OCR_TEXT_THRESHOLD = 30;
     opts.onPageProgress?.({
       pageIndex: page,
@@ -283,15 +295,19 @@ async function ocrDjvuPages(
       const imageBuffer = await runDdjvu(filePath, page, dpi, opts.signal);
       const pngBuffer = await imageBufferToPng(imageBuffer);
 
-      let bestText = "";
-      let bestLang = effectiveLangs[0] ?? "";
       const langsToTry = effectiveLangs.length > 0 ? effectiveLangs : ["ru", "uk", "en"];
+      const platform = os.platform();
+      const supportsNativeMultiLang = platform === "darwin" || provider === "vision-llm";
 
-      for (const lang of langsToTry) {
-        if (opts.signal?.aborted) break;
+      let bestText = "";
+      let bestLang = langsToTry[0];
+
+      if (supportsNativeMultiLang) {
+        /* macOS Vision Framework + vision-LLM умеют multi-lang нативно.
+           Один проход со всем списком — N раз быстрее cycling'а. */
         const result = provider === "vision-llm"
           ? await recognizeWithVisionLlm(pngBuffer, {
-            languages: [lang],
+            languages: langsToTry,
             signal: opts.signal,
             mimeType: "image/png",
             modelKey: opts.visionModelKey,
@@ -299,19 +315,32 @@ async function ocrDjvuPages(
           : await recognizeImageBuffer(
             new Uint8Array(pngBuffer.buffer, pngBuffer.byteOffset, pngBuffer.byteLength),
             page,
+            langsToTry,
+            opts.ocrAccuracy ?? "accurate",
+            opts.signal,
+          );
+        bestText = result.text.trim();
+      } else {
+        /* Windows.Media.Ocr: cycling — single-lang per call. */
+        for (const lang of langsToTry) {
+          if (opts.signal?.aborted) break;
+          const result = await recognizeImageBuffer(
+            new Uint8Array(pngBuffer.buffer, pngBuffer.byteOffset, pngBuffer.byteLength),
+            page,
             [lang],
             opts.ocrAccuracy ?? "accurate",
             opts.signal,
           );
-        const candidate = result.text.trim();
-        if (candidate.length > bestText.length) {
-          bestText = candidate;
-          bestLang = lang;
+          const candidate = result.text.trim();
+          if (candidate.length > bestText.length) {
+            bestText = candidate;
+            bestLang = lang;
+          }
+          if (candidate.length >= MIN_OCR_TEXT_THRESHOLD) break;
         }
-        if (candidate.length >= MIN_OCR_TEXT_THRESHOLD) break;
-      }
-      if (bestLang !== langsToTry[0] && bestText.length > 0) {
-        warnings.push(`DJVU page ${page + 1}: lang fallback "${langsToTry[0]}" → "${bestLang}" (better OCR result)`);
+        if (bestLang !== langsToTry[0] && bestText.length > 0) {
+          warnings.push(`DJVU page ${page + 1}: lang fallback "${langsToTry[0]}" → "${bestLang}" (Win.Media.Ocr single-lang)`);
+        }
       }
       const text = bestText;
       if (!text) continue;
