@@ -142,6 +142,14 @@ jobs:
     needs: [build-windows, build-macos]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      # `contents: write` нужен softprops/action-gh-release@v2 чтобы создать
+      # Release + загрузить assets через GitHub API. По default GITHUB_TOKEN
+      # выдаётся read-only для contents → 403 «Resource not accessible by
+      # integration». Вариант: Settings → Actions → General → Workflow
+      # permissions = "Read and write" (глобально). Мы делаем job-scoped
+      # явный override — безопаснее и переносимо между repo.
+      contents: write
 
     steps:
       - name: Download Windows artifact
