@@ -68,13 +68,16 @@ if (targetOverride) {
   console.error(`[build-portable] unsupported platform: ${process.platform}. Only win32 is supported.`);
   process.exit(1);
 }
-const args = ["electron-builder", ...targetArgs];
+const args = ["electron-builder", ...targetArgs, "--publish", "never"];
 if (out) {
   args.push(`--config.directories.output=${out}`);
   console.log(`[build-portable] output override: ${out}`);
 } else {
   console.log(`[build-portable] output: release/ (default)`);
 }
+/* `--publish never` критично в CI: при git tag electron-builder сам
+ * пытается опубликовать в GH Release (требует GH_TOKEN). Публикация
+ * делается отдельным publish-release job'ом через action-gh-release. */
 
 const result = spawnSync("npx", args, {
   stdio: "inherit",

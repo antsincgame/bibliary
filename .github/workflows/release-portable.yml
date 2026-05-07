@@ -92,16 +92,19 @@ jobs:
         run: npm run electron:compile
 
       - name: Build DMG
-        # Если секрет CSC_LINK не задан — `--config.mac.identity=null` явно
-        # отключает code-signing. Без этой опции electron-builder при пустом
-        # CSC_KEY_PASSWORD пытается читать default cert path и падает с
-        # `not a file`. На свободно распространяемом приложении (без Apple
-        # Developer Program) signing невозможен → ad-hoc билд.
+        # `--publish never` критично: при наличии git tag electron-builder сам
+        # пытается публиковать в GitHub Release требуя GH_TOKEN. Мы делаем
+        # публикацию отдельным `publish-release` job'ом через softprops/action-gh-release.
+        #
+        # `--config.mac.identity=null` при отсутствии CSC_LINK явно отключает
+        # code-signing (без этого electron-builder ищет default cert path и
+        # падает с `not a file`). На приложении без Apple Developer Program
+        # signing невозможен → ad-hoc билд (Gatekeeper попросит «Open Anyway»).
         run: |
           if [ -z "${CSC_LINK}" ]; then
-            npx electron-builder --mac --arm64 --config.mac.identity=null
+            npx electron-builder --mac --arm64 --publish never --config.mac.identity=null
           else
-            npx electron-builder --mac --arm64
+            npx electron-builder --mac --arm64 --publish never
           fi
         env:
           ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
