@@ -101,8 +101,40 @@ export function detectLatinCyrillicConfusion(text: string): ConfusionResult {
     }
   }
 
+  /* Char-frequency heuristic: на OCR-textах с систематической homoglyph-
+   * подменой общая частота латиницы возрастает аномально. В чистом русском
+   * тексте Latin letters обычно <2% (иностранные термины "API", "iPhone").
+   *
+   * Украинский edge case: буква `і` нередко представлена как Latin `i` —
+   * это legitimate (одинаковая глифа), не OCR-error. Исключаем `i/I` из
+   * подсчёта чтобы не false-trigger на украинских текстах.
+   *
+   * Threshold 0.05 (5%) подобран чтобы пройти normal текст с одиночными
+   * терминами но flagить systemic подмену (типичные homoglyph-OCR кейсы:
+   * 15-30% chars). Upper bound 0.40 — выше это просто английский текст. */
+  let totalCyrillic = 0;
+  let totalSuspectLatin = 0;
+  for (const ch of text) {
+    const code = ch.charCodeAt(0);
+    if (code >= 0x0400 && code <= 0x04ff) totalCyrillic++;
+    else if (
+      ((code >= 0x41 && code <= 0x5a) || (code >= 0x61 && code <= 0x7a))
+      && code !== 0x49 /* I */
+      && code !== 0x69 /* i */
+    ) {
+      totalSuspectLatin++;
+    }
+  }
+  const charRatio = totalCyrillic > 50 && totalSuspectLatin > 0
+    ? totalSuspectLatin / (totalCyrillic + totalSuspectLatin)
+    : 0;
+  const charFreqAnomaly = totalCyrillic > 50 && charRatio > 0.05 && charRatio < 0.40;
+
   const weightedCount = homoglyphTokens + digitSubstitutions * 2;
-  const isConfused = weightedCount >= 5 || (sampleTokens > 0 && weightedCount / sampleTokens > 0.03);
+  const isConfused =
+    weightedCount >= 5 ||
+    (sampleTokens > 0 && weightedCount / sampleTokens > 0.03) ||
+    charFreqAnomaly;
 
   return { isConfused, homoglyphTokens, digitSubstitutions, sampleTokens };
 }

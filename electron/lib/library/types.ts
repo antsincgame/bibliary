@@ -213,6 +213,8 @@ export interface ConvertOptions {
   ocrPdfDpi?: number;
   /** DPI рендера страниц DJVU. Default 400. */
   djvuRenderDpi?: number;
+  /** Hard cap на размер DJVU в MB. Default 500; max 4096. */
+  djvuMaxFileSizeMb?: number;
   /** Хинты языков для OCR ("uk", "en", "ru"). Первый — primary. */
   ocrLanguages?: string[];
   /**

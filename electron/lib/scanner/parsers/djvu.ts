@@ -3,7 +3,7 @@ import * as path from "path";
 import { cleanParagraph, looksLikeHeading, type BookParser, type ParseOptions, type ParseResult, type BookSection } from "./types.js";
 import { isOcrSupported, recognizeImageBuffer, reorderLanguagesForCyrillic } from "../ocr/index.js";
 import { recognizeWithVisionLlm } from "../../llm/vision-ocr.js";
-import { getDjvuInstallHint, getDjvuPageCount, runDdjvu, runDjvutxt, runDjvutxtPage } from "./djvu-cli.js";
+import { getDjvuBookmarks, getDjvuInstallHint, getDjvuPageCount, runDdjvu, runDjvutxt, runDjvutxtPage } from "./djvu-cli.js";
 import { imageBufferToPng } from "../../native/sharp-loader.js";
 import { pickBestBookTitle } from "../../library/title-heuristics.js";
 import { isQualityText, detectLatinCyrillicConfusion } from "../extractors/quality-heuristic.js";
@@ -16,16 +16,31 @@ import { convertDjvu } from "../converters/djvu.js";
 export { isQualityText };
 
 const MAX_DJVU_FILE_BYTES = 500 * 1024 * 1024;
+const MIN_DJVU_OVERRIDE_BYTES = 50 * 1024 * 1024;
+const MAX_DJVU_OVERRIDE_BYTES = 4 * 1024 * 1024 * 1024;
 
 async function parseDjvu(filePath: string, opts: ParseOptions = {}): Promise<ParseResult> {
   const stat = await fs.stat(filePath);
   const baseName = path.basename(filePath, path.extname(filePath));
   const warnings: string[] = [];
 
-  if (stat.size > MAX_DJVU_FILE_BYTES) {
+  /* Hard limit: default 500 MB, override через opts.djvuMaxBytes (зажат в 50 MB..4 GB).
+   * Архивные тома (Britannica, БСЭ) часто 800-2000 MB — пользователь может
+   * явно их разрешить через preferences.djvuMaxBytes. */
+  const limitBytes = (() => {
+    const o = opts.djvuMaxBytes;
+    if (typeof o !== "number" || !Number.isFinite(o) || o <= 0) return MAX_DJVU_FILE_BYTES;
+    return Math.min(MAX_DJVU_OVERRIDE_BYTES, Math.max(MIN_DJVU_OVERRIDE_BYTES, o));
+  })();
+
+  if (stat.size > limitBytes) {
     const sizeMb = (stat.size / 1024 / 1024).toFixed(1);
+    const limitMb = (limitBytes / 1024 / 1024).toFixed(0);
     return {
-      metadata: { title: baseName, warnings: [`DJVU too large (${sizeMb} MB) — refused`] },
+      metadata: {
+        title: baseName,
+        warnings: [`DJVU too large (${sizeMb} MB > ${limitMb} MB limit) — refused`],
+      },
       sections: [],
       rawCharCount: 0,
     };
@@ -220,6 +235,7 @@ async function ocrDjvuPages(
        (один djvutxt --page=N вызов, обычно <100ms). Если на странице есть
        ≥ PER_PAGE_TEXT_THRESHOLD chars И текст не является OCR-кашей
        (Latin-Cyrillic confusion, digit substitutions) — пропускаем OCR. */
+    opts.onPageProgress?.({ pageIndex: page, totalPages: pageCount, source: "text-layer" });
     const pageText = await runDjvutxtPage(filePath, page, opts.signal);
     let confusedTextLayer = false;
     if (pageText.length >= PER_PAGE_TEXT_THRESHOLD) {
@@ -249,25 +265,55 @@ async function ocrDjvuPages(
       ? reorderLanguagesForCyrillic(opts.ocrLanguages ?? [])
       : (opts.ocrLanguages ?? []);
 
-    /* Tier 1/2 per-page: страница без встроенного текста — рендерим и OCR'им. */
+    /* Tier 1/2 per-page: страница без встроенного текста — рендерим и OCR'им.
+     *
+     * Multi-language fallback (Iter 14.7): если первый язык дал слишком мало
+     * текста (≤30 chars при разрешении ≥150 dpi), это часто означает что
+     * Windows.Media.Ocr использует НЕ тот language pack (например `en` для
+     * украинской страницы). Пробуем оставшиеся языки из effectiveLangs по
+     * очереди. Накопительная стратегия: берём самый длинный результат среди
+     * попыток. Stops at first language giving ≥MIN_OCR_TEXT_THRESHOLD chars. */
+    const MIN_OCR_TEXT_THRESHOLD = 30;
+    opts.onPageProgress?.({
+      pageIndex: page,
+      totalPages: pageCount,
+      source: provider === "vision-llm" ? "ocr-vision" : "ocr-system",
+    });
     try {
       const imageBuffer = await runDdjvu(filePath, page, dpi, opts.signal);
       const pngBuffer = await imageBufferToPng(imageBuffer);
-      const result = provider === "vision-llm"
-        ? await recognizeWithVisionLlm(pngBuffer, {
-          languages: effectiveLangs,
-          signal: opts.signal,
-          mimeType: "image/png",
-          modelKey: opts.visionModelKey,
-        })
-        : await recognizeImageBuffer(
-          new Uint8Array(pngBuffer.buffer, pngBuffer.byteOffset, pngBuffer.byteLength),
-          page,
-          effectiveLangs,
-          opts.ocrAccuracy ?? "accurate",
-          opts.signal,
-        );
-      const text = result.text.trim();
+
+      let bestText = "";
+      let bestLang = effectiveLangs[0] ?? "";
+      const langsToTry = effectiveLangs.length > 0 ? effectiveLangs : ["ru", "uk", "en"];
+
+      for (const lang of langsToTry) {
+        if (opts.signal?.aborted) break;
+        const result = provider === "vision-llm"
+          ? await recognizeWithVisionLlm(pngBuffer, {
+            languages: [lang],
+            signal: opts.signal,
+            mimeType: "image/png",
+            modelKey: opts.visionModelKey,
+          })
+          : await recognizeImageBuffer(
+            new Uint8Array(pngBuffer.buffer, pngBuffer.byteOffset, pngBuffer.byteLength),
+            page,
+            [lang],
+            opts.ocrAccuracy ?? "accurate",
+            opts.signal,
+          );
+        const candidate = result.text.trim();
+        if (candidate.length > bestText.length) {
+          bestText = candidate;
+          bestLang = lang;
+        }
+        if (candidate.length >= MIN_OCR_TEXT_THRESHOLD) break;
+      }
+      if (bestLang !== langsToTry[0] && bestText.length > 0) {
+        warnings.push(`DJVU page ${page + 1}: lang fallback "${langsToTry[0]}" → "${bestLang}" (better OCR result)`);
+      }
+      const text = bestText;
       if (!text) continue;
       const blocks = text
         .split(/\n{2,}/)
@@ -293,7 +339,20 @@ async function ocrDjvuPages(
     warnings.push("Possible causes: missing language pack (system OCR), vision-LLM model mismatch, or unreadable scan quality");
   }
 
-  const sections = paragraphsToSections(paragraphs);
+  /* Outline (bookmarks) — если автор оцифровки сделал TOC, используем его
+   * как chapter boundaries. Best-effort: при отсутствии outline возвращает [],
+   * paragraphsToSections фоллбекит на "Page N" без поломки. */
+  let bookmarks: Awaited<ReturnType<typeof getDjvuBookmarks>> = [];
+  try {
+    bookmarks = await getDjvuBookmarks(filePath, opts.signal);
+    if (bookmarks.length > 0) {
+      warnings.push(`DjVu outline found: ${bookmarks.length} bookmark(s) → MD chapter anchors`);
+    }
+  } catch {
+    /* not fatal — fallback на "Page N" sections */
+  }
+
+  const sections = paragraphsToSections(paragraphs, bookmarks);
   return {
     metadata: { title: baseName, warnings },
     sections,
@@ -323,14 +382,34 @@ function textToSections(text: string): BookSection[] {
   return sections.filter((s) => s.paragraphs.length > 0);
 }
 
-/** Экспорт для регрессионных тестов (Iter 14.5: вертикальный текст). */
-export function paragraphsToSections(paragraphs: Array<{ page: number; text: string }>): BookSection[] {
+/** Экспорт для регрессионных тестов (Iter 14.5: вертикальный текст).
+ *
+ * Если bookmarks (outline DjVu) переданы, использует их title как заголовок
+ * главы. Это даёт МД с настоящими chapter-границами вместо безликих "Page N".
+ * Bookmark `pageIndex` — 0-based, paragraphs.page здесь 1-based, поэтому
+ * сравнение через `bookmark.pageIndex + 1`. Если на конкретную страницу
+ * bookmark'а нет — пишем "Page N" как раньше (для страниц до первого
+ * bookmark или между bookmark'ами при разреженном outline).
+ */
+export function paragraphsToSections(
+  paragraphs: Array<{ page: number; text: string }>,
+  bookmarks: Array<{ title: string; pageIndex: number }> = [],
+): BookSection[] {
   const sections: BookSection[] = [];
   let current: BookSection | null = null;
   let lastPage = -1;
+  /* page (1-based) → bookmark.title для O(1) lookup. */
+  const bookmarkByPage = new Map<number, string>();
+  for (const b of bookmarks) bookmarkByPage.set(b.pageIndex + 1, b.title);
+
   for (const { page, text } of paragraphs) {
     if (page !== lastPage) {
-      current = { level: 1, title: `Page ${page}`, paragraphs: [] };
+      const bookmarkTitle = bookmarkByPage.get(page);
+      current = {
+        level: 1,
+        title: bookmarkTitle ?? `Page ${page}`,
+        paragraphs: [],
+      };
       sections.push(current);
       lastPage = page;
     }

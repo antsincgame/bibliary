@@ -53,6 +53,8 @@ export interface ImportFolderOptions {
   ocrPdfDpi?: number;
   /** DPI рендера страниц DJVU (default 400). */
   djvuRenderDpi?: number;
+  /** Hard cap на размер DJVU в MB. Default 500. */
+  djvuMaxFileSizeMb?: number;
   /** Включить Vision LLM extraction метаданных из обложки (через LM Studio). */
   visionMetaEnabled?: boolean;
   /** Включить онлайн lookup метаданных по ISBN (Open Library / Google Books). Default true. */

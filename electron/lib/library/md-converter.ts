@@ -487,6 +487,7 @@ export async function convertBookToMarkdown(
     ocrAccuracy,
     ocrPdfDpi,
     djvuRenderDpi,
+    djvuMaxBytes: opts.djvuMaxFileSizeMb ? opts.djvuMaxFileSizeMb * 1024 * 1024 : undefined,
     djvuOcrProvider: opts.djvuOcrProvider,
     ocrLanguages: opts.ocrLanguages,
     visionModelKey: opts.visionModelKey,

@@ -102,6 +102,9 @@ export const PreferencesSchema = z.object({
    */
   djvuOcrProvider: z.enum(["auto", "system", "vision-llm", "none"]).default("auto"),
   djvuRenderDpi: z.number().int().min(100).max(600).default(400),
+  /** Hard limit для размера DJVU файла (MB). Default 500 MB; архивные тома
+   * (Britannica, БСЭ) часто 800-2000 MB — поднять для них. Min 50, max 4096 MB. */
+  djvuMaxFileSizeMb: z.number().int().min(50).max(4096).default(500),
 
   // -- Vision-meta (локальная LM Studio multimodal модель для извлечения метаданных из обложек) --
   /** Ручной override modelKey vision-модели. Пусто = автоматический поиск среди загруженных. */

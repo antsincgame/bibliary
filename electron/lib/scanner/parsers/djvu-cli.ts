@@ -205,6 +205,71 @@ export async function getDjvuPageCount(filePath: string, signal?: AbortSignal): 
   return value;
 }
 
+/**
+ * DjVu outline (bookmarks): дерево глав встроенное в файл если автор оцифровки
+ * сделал TOC. `djvused -e "print-outline"` отдаёт S-expression формата:
+ *
+ *   (bookmarks
+ *     ("Глава 1" "#1")
+ *     ("Глава 2" "#15"
+ *       ("§ 2.1" "#16")
+ *       ("§ 2.2" "#22")))
+ *
+ * Где число после `#` — page index (1-based). Парсер flat-стайл —
+ * возвращает плоский список (вложенные подразделы тоже попадают, но без
+ * иерархии). Если outline отсутствует или пустой — возвращает [].
+ *
+ * Использование: ChapterDetection в parseDjvu может предпочесть эти
+ * page-границы регексам по тексту.
+ */
+export interface DjvuBookmark {
+  title: string;
+  pageIndex: number; /* 0-based для unify с runDjvutxtPage */
+}
+
+export async function getDjvuBookmarks(filePath: string, signal?: AbortSignal): Promise<DjvuBookmark[]> {
+  let stdout: Buffer;
+  try {
+    const tool = await resolveBinary("djvused");
+    const result = await runBinary(tool.binary, [filePath, "-e", "print-outline"], {
+      signal,
+      timeoutMs: DJVU_TIMEOUT_DJVUSED_MS,
+      watchdogName: "djvused-outline",
+      filePath,
+    });
+    stdout = result.stdout;
+  } catch {
+    /* outline missing / djvused unavailable — пустой список, не ошибка */
+    return [];
+  }
+
+  const text = stdout.toString("utf8").trim();
+  if (text.length === 0 || text === "()") return [];
+
+  /* Flat-extract pairs ("title" "#page") через regex. Подходит для большинства
+   * outline'ов; глубоко вложенные section'ы тоже попадут как flat записи —
+   * иерархия не важна для chapter-границ. */
+  const result: DjvuBookmark[] = [];
+  const re = /\("([^"]+)"\s+"#(\d+)"/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
+    const title = match[1].trim();
+    const oneBased = Number.parseInt(match[2], 10);
+    if (!Number.isFinite(oneBased) || oneBased <= 0) continue;
+    if (title.length === 0 || title.length > 200) continue;
+    result.push({ title, pageIndex: oneBased - 1 });
+  }
+  /* Сортируем по pageIndex и удаляем дубликаты (one bookmark per page). */
+  result.sort((a, b) => a.pageIndex - b.pageIndex);
+  const dedup: DjvuBookmark[] = [];
+  for (const b of result) {
+    if (dedup.length === 0 || dedup[dedup.length - 1].pageIndex !== b.pageIndex) {
+      dedup.push(b);
+    }
+  }
+  return dedup;
+}
+
 export async function runDdjvu(filePath: string, pageIndex: number, dpi: number, signal?: AbortSignal): Promise<Buffer> {
   const tool = await resolveBinary("ddjvu");
   const out = path.join(tmpdir(), `bibliary-djvu-${randomUUID()}.tif`);

@@ -95,6 +95,7 @@ export async function importBookFromFile(
       ocrAccuracy: opts.ocrAccuracy,
       ocrPdfDpi: opts.ocrPdfDpi,
       djvuRenderDpi: opts.djvuRenderDpi,
+      djvuMaxFileSizeMb: opts.djvuMaxFileSizeMb,
       visionMetaEnabled: opts.visionMetaEnabled,
       visionModelKey: opts.visionModelKey,
       metadataOnlineLookup: opts.metadataOnlineLookup,

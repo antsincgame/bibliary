@@ -93,6 +93,23 @@ export interface ParseOptions {
    * чтобы соответствовать настройкам "Модели".
    */
   visionModelKey?: string;
+  /**
+   * Optional override для жёсткого лимита размера DJVU (default 500 MB).
+   * Можно поднять для архивных томов (Британника, Большая советская
+   * энциклопедия и т.д.) через настройки. Min 50 MB, max 4 GB.
+   */
+  djvuMaxBytes?: number;
+  /**
+   * Optional callback для live-progress на per-page OCR. Вызывается ПЕРЕД
+   * каждой страницей с {pageIndex, totalPages, source: "text-layer"|"ocr-system"|"ocr-vision"}.
+   * Renderer может использовать для прогресс-бара в импорт-pane.
+   * No-op если caller не передал — никакого performance penalty.
+   */
+  onPageProgress?: (event: {
+    pageIndex: number;
+    totalPages: number;
+    source: "text-layer" | "ocr-system" | "ocr-vision";
+  }) => void;
   /** Caller-side abort. Honoured by long-running parsers (PDF OCR). */
   signal?: AbortSignal;
 }
