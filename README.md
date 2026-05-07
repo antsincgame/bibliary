@@ -2,7 +2,7 @@
 
 > Превращает коллекцию книг в датасет для дообучения LLM — через структурированный Markdown, смысловые чанки и Chroma-коллекции.
 
-**Платформа:** Windows / macOS / Linux · **Модели:** LM Studio (локально) · **Vector store:** Chroma
+**Платформа:** Windows / macOS · **Модели:** LM Studio (локально) · **Vector store:** Chroma
 
 ---
 
@@ -224,7 +224,7 @@ bibliary/
 | [LM Studio](https://lmstudio.ai/) | 0.3+ | Локальный инференс LLM |
 | [Chroma](https://www.trychroma.com/) | latest | Векторная база данных |
 | [uvx](https://docs.astral.sh/uv/) или Docker | любая | Запуск Chroma |
-| Windows / macOS / Linux | x64 / arm64 | Поддерживаемые платформы |
+| Windows / macOS | x64 / arm64 | Поддерживаемые платформы |
 | RAM | 8+ GB | Минимум; 16+ GB рекомендуется |
 
 **Рекомендуемое железо:** 16–32 GB RAM, GPU с 6+ GB VRAM (для S/M-class моделей в LM Studio).
@@ -372,11 +372,11 @@ tests/
 
 ## Известные ограничения
 
-- **Основная платформа — Windows x64** (portable .exe). Linux x64 — экспериментально.
+- **Поддерживаются Windows x64 и macOS** (arm64 + Intel x64 universal). Linux официально не поддерживается.
 - **LM Studio обязателен** — нет встроенного инференса.
 - **Chroma обязателен** — без него кристаллизация и поиск недоступны.
 - **OCR медленный** — сканированные PDF/DJVU с OCR: минуты на книгу.
-- **OCR на Linux** — системный OCR только Win/macOS; альтернатива — vision-LLM.
+- **Multi-language OCR**: Win использует Windows.Media.Ocr (single-lang per call, нужны language packs); macOS — Vision Framework (нативно multi-lang).
 
 ---
 

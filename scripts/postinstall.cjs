@@ -45,10 +45,11 @@ if (rebuildStatus !== 0) {
 }
 
 /* Step 3 — vendor binaries autosetup (best-effort).
- *           На macOS/Linux пытаемся подложить 7zip + DjVuLibre в vendor/<dir>/,
- *           если их там ещё нет. Падение этого шага НЕ ломает install:
- *           пользователь сможет дозапустить `npm run setup:*-{macos,linux}`
+ *           На macOS пытаемся подложить 7zip + DjVuLibre в vendor/darwin-<arch>/
+ *           через Homebrew, если их там ещё нет. Падение этого шага НЕ ломает
+ *           install: пользователь сможет дозапустить `npm run setup:*-macos`
  *           вручную, либо приложение работает на системных утилитах из PATH.
+ *           Windows: vendor binaries закоммичены в репо, autosetup не нужен.
  *
  *           Skip via env: `BIBLIARY_SKIP_VENDOR_AUTOSETUP=1 npm install`. */
 if (process.env.BIBLIARY_SKIP_VENDOR_AUTOSETUP !== "1") {
@@ -62,10 +63,9 @@ if (process.env.BIBLIARY_SKIP_VENDOR_AUTOSETUP !== "1") {
     console.log("[postinstall] Auto-running macOS vendor setup (best-effort)...");
     run(process.execPath, [require("node:path").join("scripts", "download-7zip-macos.cjs")]);
     run(process.execPath, [require("node:path").join("scripts", "download-djvulibre-macos.cjs")]);
-  } else if (platform === "linux" && !have7z) {
-    console.log("[postinstall] Linux vendor setup пропущен (требует sudo apt-get).");
-    console.log("[postinstall] Запустите вручную: npm run setup:7zip-linux && npm run setup:djvulibre-linux");
   }
+  /* Linux/other platforms: dev-режим работает но vendor binaries не
+     устанавливаются автоматически. Production билды только Win+macOS. */
 }
 
 process.exit(0);

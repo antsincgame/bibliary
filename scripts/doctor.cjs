@@ -50,7 +50,7 @@ else if (nodeMajor >= 18) warn(`Node.js ${process.versions.node} — подде�
 else fail(`Node.js ${process.versions.node} — слишком старый, нужен 18+`);
 
 const platformKey = `${process.platform}-${process.arch}`;
-const SUPPORTED = ["win32-x64", "darwin-arm64", "darwin-x64", "linux-x64"];
+const SUPPORTED = ["win32-x64", "darwin-arm64", "darwin-x64"];
 if (SUPPORTED.includes(platformKey)) ok(`Platform: ${platformKey}`);
 else fail(`Platform ${platformKey} не в списке поддерживаемых: ${SUPPORTED.join(", ")}`);
 
@@ -63,7 +63,8 @@ const exeSuffix = process.platform === "win32" ? ".exe" : "";
 const checks7z = path.join(ROOT, "vendor", "7zip", vendorDir, `7z${exeSuffix}`);
 if (fs.existsSync(checks7z)) ok(`7zip: ${checks7z}`);
 else if (process.platform === "win32") fail(`7zip отсутствует: ${checks7z} (запустить: npm run setup:7zip)`);
-else warn(`7zip отсутствует: ${checks7z}. Запустите: npm run setup:7zip-${process.platform === "darwin" ? "macos" : "linux"}, либо приложение упадёт обратно на системный 7z из PATH`);
+else if (process.platform === "darwin") warn(`7zip отсутствует: ${checks7z}. Запустите: npm run setup:7zip-macos, либо приложение упадёт обратно на системный 7z из PATH`);
+else warn(`7zip отсутствует: ${checks7z}. Платформа ${process.platform} официально не поддерживается; приложение полагается на 7z из PATH`);
 
 const NEEDED_DJVU = ["djvutxt", "ddjvu", "djvused"];
 let djvuFound = 0;
