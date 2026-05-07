@@ -87,7 +87,7 @@ test("[Г.2] migrations: legacy v7 DB мигрирует в v8 без потер
 
     applyMigrations(db);
 
-    assert.strictEqual(getUserVersion(db), 8);
+    assert.strictEqual(getUserVersion(db), 9);
     const cols = getColumns(db, "books").map((c) => c.name);
     assert.ok(cols.includes("chunker_provenance"), "должна появиться chunker_provenance");
     assert.ok(cols.includes("chunks_total"), "должна появиться chunks_total");
@@ -114,11 +114,11 @@ test("[Г.2] migrations: повторный applyMigrations на v8 — no-op (�
     const db = createLegacyV7Db(dbPath);
 
     applyMigrations(db);
-    assert.strictEqual(getUserVersion(db), 8);
+    assert.strictEqual(getUserVersion(db), 9);
 
     /* Второй прогон не должен бросать дубль-ALTER ошибку и менять версию. */
     applyMigrations(db);
-    assert.strictEqual(getUserVersion(db), 8);
+    assert.strictEqual(getUserVersion(db), 9);
 
     db.close();
   } finally {
@@ -144,6 +144,36 @@ test("[Г.2] migrations: chunks_total INTEGER принимает 0 и больш
     const large = db.prepare("SELECT chunks_total FROM books WHERE id=?").get("b-large") as { chunks_total: number };
     assert.strictEqual(zero.chunks_total, 0);
     assert.strictEqual(large.chunks_total, 100_000);
+
+    db.close();
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("[Г.2 v9] migrations: композитный индекс idx_books_status_id создан", async () => {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "bibliary-mig9-idx-"));
+  try {
+    const dbPath = path.join(tmp, "v9idx.db");
+    const db = createLegacyV7Db(dbPath);
+    applyMigrations(db);
+
+    /* Проверяем что композитный индекс присутствует через sqlite_master. */
+    const idx = db.prepare(`
+      SELECT name FROM sqlite_master
+      WHERE type = 'index' AND name = 'idx_books_status_id'
+    `).get() as { name: string } | undefined;
+    assert.ok(idx, "должен существовать idx_books_status_id");
+    assert.strictEqual(idx!.name, "idx_books_status_id");
+
+    /* Проверяем что query planner реально использует его для cursor query
+       streamBookIdsByStatus (WHERE status IN (...) AND id > ? ORDER BY id). */
+    const plan = db.prepare(`
+      EXPLAIN QUERY PLAN
+      SELECT id FROM books WHERE status IN ('imported','evaluated') AND id > 'x' ORDER BY id ASC LIMIT 10
+    `).all() as Array<{ detail: string }>;
+    const usingComposite = plan.some((row) => row.detail.includes("idx_books_status_id"));
+    assert.ok(usingComposite, `query planner должен выбрать idx_books_status_id; got: ${JSON.stringify(plan)}`);
 
     db.close();
   } finally {

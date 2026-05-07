@@ -207,4 +207,16 @@ export function applyMigrations(db: Database.Database): void {
     }
     db.pragma("user_version = 8");
   }
+
+  if (current < 9) {
+    /* v9 (2026-05): композитный индекс (status, id) для cursor-pagination в
+       streamBookIdsByStatus(). Запрос:
+         WHERE status IN (...) AND id > ? ORDER BY id ASC LIMIT N
+       До v9 query planner использовал idx_books_status (single column),
+       сортировка по id шла на полученных rows. На корпусах 10K+ книг это
+       O(n*log_n) на каждой страница bootstrap'а. Композитный индекс даёт
+       прямой ordered scan — O(log_n + page_size). */
+    db.exec("CREATE INDEX IF NOT EXISTS idx_books_status_id ON books(status, id)");
+    db.pragma("user_version = 9");
+  }
 }
