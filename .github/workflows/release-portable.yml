@@ -45,10 +45,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bibliary-windows-${{ github.sha }}
+          # copy-portable-dist.js кладёт `Bibliary X.Y.Z.exe` в корень проекта
+          # (а не в release/dist-portable/) — собираем оттуда + плюс fallback
+          # path с release/ на случай если future-builds change structure.
           path: |
-            release/dist-portable/**
-            !release/dist-portable/**/.gitkeep
+            Bibliary*.exe
+            release/Bibliary*.exe
           retention-days: 30
+          if-no-files-found: error
 
   # ─────────────────────────────────────────────────────────────────
   # macOS: DMG + ZIP (arm64 + x64 via universal build)
