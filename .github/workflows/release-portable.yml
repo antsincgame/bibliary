@@ -100,13 +100,18 @@ jobs:
         # пытается публиковать в GitHub Release требуя GH_TOKEN. Мы делаем
         # публикацию отдельным `publish-release` job'ом через softprops/action-gh-release.
         #
-        # `--config.mac.identity=null` при отсутствии CSC_LINK явно отключает
-        # code-signing (без этого electron-builder ищет default cert path и
-        # падает с `not a file`). На приложении без Apple Developer Program
-        # signing невозможен → ad-hoc билд (Gatekeeper попросит «Open Anyway»).
+        # `--config.mac.identity=-` (минус = ad-hoc подпись) при отсутствии CSC_LINK.
+        # Раньше использовали `=null` (без подписи), но на Apple Silicon (arm64)
+        # это привело к ошибке runtime: «Приложение повреждено и не может быть
+        # открыто», потому что macOS Sequoia+ требует минимум ad-hoc signature
+        # для arm64 binaries. Ad-hoc подпись бесплатна, не требует Apple Developer
+        # Program — нужна только чтобы macOS не считала app «поврежденным».
+        # Пользователь всё равно увидит Gatekeeper «not signed by identified
+        # developer» при первом запуске (xattr quarantine), но после
+        # `xattr -rd com.apple.quarantine` приложение откроется без проблем.
         run: |
           if [ -z "${CSC_LINK}" ]; then
-            npx electron-builder --mac --arm64 --publish never --config.mac.identity=null
+            npx electron-builder --mac --arm64 --publish never --config.mac.identity=-
           else
             npx electron-builder --mac --arm64 --publish never
           fi
