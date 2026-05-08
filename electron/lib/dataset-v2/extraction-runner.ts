@@ -68,7 +68,7 @@ export interface StartExtractionResult {
   bookTitle: string;
   totalChapters: number;
   processedChapters: number;
-  totalDelta: { chunks: number; accepted: number; skipped: number };
+  totalDelta: { chunks: number; accepted: number; skipped: number; deduped: number };
   warnings: string[];
 }
 
@@ -235,14 +235,14 @@ async function runExtractionInner(
      * украинский нативно. Если пользователь хочет специализацию — он явно
      * выбирает другую модель в Models page → readerModel/extractorModel. */
 
-    const stats = { chunks: 0, accepted: 0, skipped: 0 };
+    const stats = { chunks: 0, accepted: 0, skipped: 0, deduped: 0 };
     const warnings: string[] = [];
     let processed = 0;
 
     const { CHROMA_URL } = await import("../chroma/http-client.js");
     const { EMBEDDING_DIM } = await import("../scanner/embedding.js");
     const { ensureChromaCollection } = await import("../chroma/collection-config.js");
-    const { chromaUpsert, chromaDeleteByWhere, sanitizeMetadata } = await import("../chroma/points.js");
+    const { chromaUpsert, chromaDeleteByWhere, sanitizeMetadata, chromaQueryNearest } = await import("../chroma/points.js");
     console.log(`[extraction] Chroma: ${CHROMA_URL} → collection "${targetCollection}" (dim=${EMBEDDING_DIM})`);
 
     try {
@@ -339,6 +339,29 @@ async function runExtractionInner(
           warnings.push(`embed-failed: ${msg.slice(0, 120)}`);
           stats.skipped++;
           continue;
+        }
+        /* Concept-level dedup gate: если уже есть похожий concept в
+         * коллекции (cosine ≥ conceptDedupSimilarityThreshold, default 0.93)
+         * — пропускаем upsert. Vector переиспользуем (не embed дважды).
+         * Порог отдельный (более строгий) от uniqueness-evaluator: на ingest
+         * нет LLM-fallback'а в серой зоне, компенсируем строгостью. */
+        if (prefs.conceptDedupEnabled) {
+          try {
+            const neighbors = await chromaQueryNearest(targetCollection, vector, 1, { signal: ctrl.signal });
+            const top = neighbors[0]?.similarity ?? 0;
+            if (top >= prefs.conceptDedupSimilarityThreshold) {
+              console.log(`[extraction] ⊘ dedup skip "${targetCollection}" id=${delta.id} (cosine=${top.toFixed(3)})`);
+              stats.deduped++;
+              stats.skipped++;
+              continue;
+            }
+          } catch (err) {
+            /* Query упал — не блокируем upsert. Вычитаем graceful warn. */
+            const msg = err instanceof Error ? err.message : String(err);
+            if (!/not found|no records|empty/i.test(msg)) {
+              console.warn(`[extraction] dedup query failed:`, msg);
+            }
+          }
         }
         console.log(`[extraction] ✓ upsert → "${targetCollection}" id=${delta.id} domain=${delta.domain} tags=[${delta.tags.join(",")}]`);
         /* Chroma upsert: text концепта (essence) → documents[]; остальное →

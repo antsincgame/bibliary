@@ -16,7 +16,7 @@ export interface BatchExtractionResult {
   bookTitle: string;
   totalChapters: number;
   processedChapters: number;
-  totalDelta: { chunks: number; accepted: number; skipped: number };
+  totalDelta: { chunks: number; accepted: number; skipped: number; deduped: number };
   warnings: string[];
 }
 
@@ -61,6 +61,8 @@ export interface BatchRunnerDeps {
       conceptsExtracted?: number;
       /** Иt 8Г.2: общее число semantic chunks подано на extraction. */
       chunksTotal?: number;
+      /** Сколько концептов отбросил concept-level dedup gate. */
+      conceptsDeduped?: number;
       /** Иt 8Г.2: JSON-снимок chunker-провенанса (TEXT). */
       chunkerProvenance?: string | null;
       lastError?: string | null;
@@ -159,6 +161,7 @@ export async function runBatchExtraction(
         deps.setBookStatus(book.id, "indexed", {
           conceptsAccepted: r.totalDelta.accepted,
           conceptsExtracted: r.totalDelta.chunks,
+          conceptsDeduped: r.totalDelta.deduped,
           chunksTotal: r.totalDelta.chunks,
           chunkerProvenance,
           lastError: null,

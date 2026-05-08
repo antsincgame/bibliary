@@ -219,6 +219,43 @@ export const PreferencesSchema = z.object({
    */
   preferDjvuOverPdf: z.boolean().default(false),
 
+  // -- Uniqueness Evaluator (per-chapter idea novelty against Chroma corpus) --
+  /**
+   * Включить uniqueness-eval после quality-eval. Проходит по всем главам книги,
+   * извлекает 3-7 идей на главу через reader LLM, дедуплицирует внутри книги,
+   * сравнивает с существующей коллекцией Chroma. Стоит ~1-3 минуты на книгу
+   * (50 глав × 2с reader). Можно выключить если важна скорость.
+   */
+  uniquenessEvaluationEnabled: z.boolean().default(true),
+  /**
+   * Cosine similarity ≥ этого порога ⇒ идея считается DERIVATIVE без LLM-judge.
+   * Default 0.85 — баланс между recall и precision на e5-small эмбеддингах.
+   */
+  uniquenessSimilarityHigh: z.number().min(0.5).max(1).default(0.85),
+  /**
+   * Cosine similarity < этого порога ⇒ идея NOVEL без LLM-judge.
+   * Между low и high — серая зона, отдаётся reader LLM на verdict.
+   */
+  uniquenessSimilarityLow: z.number().min(0).max(0.95).default(0.65),
+  /** Hard cap на число идей, извлекаемых из одной главы. */
+  uniquenessIdeasPerChapterMax: z.number().int().min(2).max(15).default(7),
+  /** Сколько глав обрабатывать параллельно (LLM concurrency). */
+  uniquenessChapterParallel: z.number().int().min(1).max(8).default(2),
+  /**
+   * Within-book dedup: cosine ≥ этого ⇒ идеи в один кластер.
+   * Default 0.92 — only near-paraphrases collapse, distinct facts stay separate.
+   */
+  uniquenessMergeThreshold: z.number().min(0.7).max(1).default(0.92),
+  /** Включить concept-level dedup на этапе ingest (skip upsert если совпадение в Chroma). */
+  conceptDedupEnabled: z.boolean().default(true),
+  /**
+   * Отдельный (более строгий) порог для ingest-dedup: cosine ≥ этого ⇒ skip
+   * upsert. Выше чем uniquenessSimilarityHigh, потому что на ingest нет
+   * LLM-fallback'а в серой зоне (слишком дорого), компенсируем precision'ом.
+   * Default 0.93 — отсекаем только почти-точные дубликаты, не «та же тема».
+   */
+  conceptDedupSimilarityThreshold: z.number().min(0.8).max(1).default(0.93),
+
   // -- Onboarding wizard (Phase 3) --
   /** True если пользователь прошёл/skip-нул welcome wizard. Заменяет legacy localStorage. */
   onboardingDone: z.boolean().default(false),

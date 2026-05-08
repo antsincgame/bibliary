@@ -40,7 +40,8 @@ export type ModelActionKind =
   | "AUTO-LOAD-FAIL"           /* defaultAutoLoad упал */
   | "RESOLVE-PASSIVE-SKIP"     /* passive caller отказался триггерить autoLoad */
   | "EVALUATOR-DEFER-RESUME"   /* книга не оценена при cold-start, ждёт явной команды */
-  | "EVALUATOR-PICK-FAIL";     /* picker не смог выбрать модель */
+  | "EVALUATOR-PICK-FAIL"      /* picker не смог выбрать модель */
+  | "UNIQUENESS-JUDGE";        /* uniqueness-evaluator вызвал LLM judge для серой зоны */
 
 export interface ModelActionEvent {
   kind: ModelActionKind;

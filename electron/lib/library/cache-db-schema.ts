@@ -32,10 +32,18 @@ CREATE TABLE IF NOT EXISTS books (
   -- crystallizer
   concepts_extracted  INTEGER,
   concepts_accepted   INTEGER,
+  -- concepts_deduped: сколько концептов отбросил concept-level dedup gate
+  concepts_deduped    INTEGER,
   -- chunker provenance (Иt 8Г.2): JSON-string {model, chunkBytes, accepted, ts}
   -- chunks_total: общее число semantic chunks отправленных на extraction
   chunker_provenance  TEXT,
   chunks_total        INTEGER,
+  -- uniqueness evaluator (idea novelty vs Chroma corpus)
+  uniqueness_score        INTEGER,
+  uniqueness_novel_count  INTEGER,
+  uniqueness_total_ideas  INTEGER,
+  uniqueness_evaluated_at TEXT,
+  uniqueness_error        TEXT,
   -- lifecycle
   status              TEXT NOT NULL,
   last_error          TEXT,
@@ -83,6 +91,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS books_fts USING fts5(
  *            chunks_total = «всего semantic chunks подано в pipeline».
  *            chunker_provenance = JSON со снимком: модель chunker'а, средний
  *            размер chunk'а, дата операции — для дебага и провенанса извлечения.
+ *   v9 → v10: uniqueness_* columns + concepts_deduped (uniqueness evaluator).
  */
 export function applyMigrations(db: Database.Database): void {
   const row = db.prepare("PRAGMA user_version").get() as { user_version: number } | undefined;
@@ -218,5 +227,31 @@ export function applyMigrations(db: Database.Database): void {
        прямой ordered scan — O(log_n + page_size). */
     db.exec("CREATE INDEX IF NOT EXISTS idx_books_status_id ON books(status, id)");
     db.pragma("user_version = 9");
+  }
+
+  if (current < 10) {
+    /* v10 (2026-05): uniqueness evaluator + concept dedup tracking. ALTER ADD
+       COLUMN идемпотентно через table_info — для new DBs SCHEMA_SQL уже создал. */
+    const cols = db.pragma("table_info(books)") as Array<{ name: string }>;
+    const existing = new Set(cols.map((c) => c.name));
+    if (!existing.has("concepts_deduped")) {
+      db.exec("ALTER TABLE books ADD COLUMN concepts_deduped INTEGER");
+    }
+    if (!existing.has("uniqueness_score")) {
+      db.exec("ALTER TABLE books ADD COLUMN uniqueness_score INTEGER");
+    }
+    if (!existing.has("uniqueness_novel_count")) {
+      db.exec("ALTER TABLE books ADD COLUMN uniqueness_novel_count INTEGER");
+    }
+    if (!existing.has("uniqueness_total_ideas")) {
+      db.exec("ALTER TABLE books ADD COLUMN uniqueness_total_ideas INTEGER");
+    }
+    if (!existing.has("uniqueness_evaluated_at")) {
+      db.exec("ALTER TABLE books ADD COLUMN uniqueness_evaluated_at TEXT");
+    }
+    if (!existing.has("uniqueness_error")) {
+      db.exec("ALTER TABLE books ADD COLUMN uniqueness_error TEXT");
+    }
+    db.pragma("user_version = 10");
   }
 }

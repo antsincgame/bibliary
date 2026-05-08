@@ -103,7 +103,7 @@ export async function ensureChromaCollection(
   }
 
   if (existing?.id) {
-    setMapping(spec.name, existing.id);
+    setMapping(spec.name, existing.id, existing.metadata ?? undefined);
     const mismatch = diffHnswMetadata(desiredMetadata, existing.metadata);
     return { id: existing.id, created: false, hnswMismatch: mismatch };
   }
@@ -129,7 +129,7 @@ export async function ensureChromaCollection(
     throw new Error(`Chroma: create-collection "${spec.name}" returned no id`);
   }
 
-  setMapping(spec.name, response.id);
+  setMapping(spec.name, response.id, response.metadata ?? desiredMetadata);
 
   /* Семантика `created`:
      - `true` если probe (GET) НЕ нашёл коллекцию И POST вернул её без

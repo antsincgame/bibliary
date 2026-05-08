@@ -163,3 +163,23 @@ export async function embedQuery(text: string, model: string = DEFAULT_EMBED_MOD
   );
   return Array.from(out.data as Float32Array);
 }
+
+/**
+ * L2-normalize a vector in place semantics: returns a fresh array v / ||v||.
+ * Используется для пере-нормализации центроидов после арифметического mean
+ * нескольких уже-нормализованных эмбеддингов. Без этого центроид имеет
+ * ||v|| < 1, и cosine с Chroma-векторами получается заниженным (ложные
+ * NOVEL'ы в uniqueness-evaluator).
+ *
+ * Возвращает копию, чтобы не мутировать input. Если ||v||=0 (degenerate) —
+ * возвращает копию без изменений (защита от div-by-zero).
+ */
+export function l2Normalize(v: number[] | Float32Array): number[] {
+  let sumSq = 0;
+  for (let i = 0; i < v.length; i++) sumSq += v[i] * v[i];
+  const norm = Math.sqrt(sumSq);
+  if (norm === 0) return Array.from(v);
+  const out = new Array<number>(v.length);
+  for (let i = 0; i < v.length; i++) out[i] = v[i] / norm;
+  return out;
+}

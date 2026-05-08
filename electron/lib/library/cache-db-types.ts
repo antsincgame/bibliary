@@ -29,10 +29,16 @@ export interface BookRow {
   evaluated_at: string | null;
   concepts_extracted: number | null;
   concepts_accepted: number | null;
+  concepts_deduped: number | null;
   /** Иt 8Г.2: общее число semantic chunks подано на extraction. */
   chunks_total: number | null;
   /** Иt 8Г.2: JSON-снимок chunker-провенанса (TEXT). */
   chunker_provenance: string | null;
+  uniqueness_score: number | null;
+  uniqueness_novel_count: number | null;
+  uniqueness_total_ideas: number | null;
+  uniqueness_evaluated_at: string | null;
+  uniqueness_error: string | null;
   status: string;
   last_error: string | null;
   md_path: string;
@@ -75,8 +81,14 @@ export function rowToMeta(
     evaluatedAt: row.evaluated_at ?? undefined,
     conceptsExtracted: row.concepts_extracted ?? undefined,
     conceptsAccepted: row.concepts_accepted ?? undefined,
+    conceptsDeduped: row.concepts_deduped ?? undefined,
     chunksTotal: row.chunks_total ?? undefined,
     chunkerProvenance: row.chunker_provenance ?? undefined,
+    uniquenessScore: row.uniqueness_score ?? undefined,
+    uniquenessNovelCount: row.uniqueness_novel_count ?? undefined,
+    uniquenessTotalIdeas: row.uniqueness_total_ideas ?? undefined,
+    uniquenessEvaluatedAt: row.uniqueness_evaluated_at ?? undefined,
+    uniquenessError: row.uniqueness_error ?? undefined,
     status: row.status as BookStatus,
     lastError: row.last_error ?? undefined,
     mdPath: row.md_path,

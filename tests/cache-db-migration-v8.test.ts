@@ -87,10 +87,13 @@ test("[Г.2] migrations: legacy v7 DB мигрирует в v8 без потер
 
     applyMigrations(db);
 
-    assert.strictEqual(getUserVersion(db), 9);
+    /* Migrations apply ALL pending versions; v10 added uniqueness columns. */
+    assert.strictEqual(getUserVersion(db), 10);
     const cols = getColumns(db, "books").map((c) => c.name);
     assert.ok(cols.includes("chunker_provenance"), "должна появиться chunker_provenance");
     assert.ok(cols.includes("chunks_total"), "должна появиться chunks_total");
+    assert.ok(cols.includes("uniqueness_score"), "должна появиться uniqueness_score (v10)");
+    assert.ok(cols.includes("concepts_deduped"), "должна появиться concepts_deduped (v10)");
 
     /* Старая строка должна выжить + новые колонки = NULL. */
     const row = db.prepare("SELECT id, title, chunker_provenance, chunks_total FROM books WHERE id = ?").get("book-1") as {
@@ -114,11 +117,11 @@ test("[Г.2] migrations: повторный applyMigrations на v8 — no-op (�
     const db = createLegacyV7Db(dbPath);
 
     applyMigrations(db);
-    assert.strictEqual(getUserVersion(db), 9);
+    assert.strictEqual(getUserVersion(db), 10);
 
     /* Второй прогон не должен бросать дубль-ALTER ошибку и менять версию. */
     applyMigrations(db);
-    assert.strictEqual(getUserVersion(db), 9);
+    assert.strictEqual(getUserVersion(db), 10);
 
     db.close();
   } finally {

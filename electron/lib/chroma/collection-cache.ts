@@ -20,6 +20,7 @@ interface ChromaCollectionInfo {
 }
 
 const cache = new Map<string, string>();
+const metadataCache = new Map<string, Record<string, unknown>>();
 
 /**
  * Получить `collection_id` по имени. Если нет в кэше — fetch и сохранить.
@@ -37,24 +38,50 @@ export async function resolveCollectionId(name: string): Promise<string> {
     throw new Error(`Chroma: collection "${name}" has no id`);
   }
   cache.set(name, info.id);
+  if (info.metadata) metadataCache.set(name, info.metadata);
   return info.id;
+}
+
+/**
+ * Получить hnsw:space коллекции — нужен для distance→similarity конвертации
+ * в `chromaQueryNearest`. Кэшируется тем же fetch'ем, что и id. Default
+ * "cosine" при отсутствии метаданных (Bibliary всегда создаёт коллекции с
+ * `hnsw:space=cosine`, см. collection-config.ts).
+ */
+export async function getCollectionSpace(name: string): Promise<"cosine" | "l2" | "ip"> {
+  if (!metadataCache.has(name)) {
+    /* Прогреваем кэш: resolveCollectionId как побочка кладёт metadata. */
+    await resolveCollectionId(name);
+  }
+  const md = metadataCache.get(name);
+  const raw = md?.["hnsw:space"];
+  if (raw === "l2" || raw === "ip" || raw === "cosine") return raw;
+  return "cosine";
 }
 
 /** Удалить кэшированное mapping для имени. Вызывается после delete-collection. */
 export function invalidate(name: string): void {
   cache.delete(name);
+  metadataCache.delete(name);
 }
 
 /** Полностью очистить кэш. Используется в тестах и при app shutdown. */
 export function clearAll(): void {
   cache.clear();
+  metadataCache.clear();
 }
 
 /** Принудительно записать mapping (используется когда id уже известен из create-response). */
-export function setMapping(name: string, id: string): void {
+export function setMapping(name: string, id: string, metadata?: Record<string, unknown> | null): void {
   if (typeof name === "string" && typeof id === "string" && name.length > 0 && id.length > 0) {
     cache.set(name, id);
+    if (metadata) metadataCache.set(name, metadata);
   }
+}
+
+/** Только для тестов: явно прописать metadata коллекции (для chroma-query тестов). */
+export function _setMetadataForTesting(name: string, metadata: Record<string, unknown>): void {
+  metadataCache.set(name, metadata);
 }
 
 /** Только для тестов: snapshot текущего состояния. */

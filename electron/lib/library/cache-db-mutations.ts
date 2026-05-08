@@ -7,14 +7,16 @@ INSERT INTO books (
   word_count, chapter_count, original_format, source_archive, sphere,
   domain, quality_score, conceptual_density, originality, is_fiction_or_water,
   verdict_reason, evaluator_reasoning, evaluator_model, evaluated_at,
-  concepts_extracted, concepts_accepted, chunks_total, chunker_provenance,
+  concepts_extracted, concepts_accepted, concepts_deduped, chunks_total, chunker_provenance,
+  uniqueness_score, uniqueness_novel_count, uniqueness_total_ideas, uniqueness_evaluated_at, uniqueness_error,
   status, last_error, md_path
 ) VALUES (
   @id, @sha256, @title, @author, @title_ru, @author_ru, @title_en, @author_en, @year, @isbn, @publisher,
   @word_count, @chapter_count, @original_format, @source_archive, @sphere,
   @domain, @quality_score, @conceptual_density, @originality, @is_fiction_or_water,
   @verdict_reason, @evaluator_reasoning, @evaluator_model, @evaluated_at,
-  @concepts_extracted, @concepts_accepted, @chunks_total, @chunker_provenance,
+  @concepts_extracted, @concepts_accepted, @concepts_deduped, @chunks_total, @chunker_provenance,
+  @uniqueness_score, @uniqueness_novel_count, @uniqueness_total_ideas, @uniqueness_evaluated_at, @uniqueness_error,
   @status, @last_error, @md_path
 )
 ON CONFLICT(id) DO UPDATE SET
@@ -44,8 +46,14 @@ ON CONFLICT(id) DO UPDATE SET
   evaluated_at        = excluded.evaluated_at,
   concepts_extracted  = excluded.concepts_extracted,
   concepts_accepted   = excluded.concepts_accepted,
+  concepts_deduped    = excluded.concepts_deduped,
   chunks_total        = excluded.chunks_total,
   chunker_provenance  = excluded.chunker_provenance,
+  uniqueness_score        = excluded.uniqueness_score,
+  uniqueness_novel_count  = excluded.uniqueness_novel_count,
+  uniqueness_total_ideas  = excluded.uniqueness_total_ideas,
+  uniqueness_evaluated_at = excluded.uniqueness_evaluated_at,
+  uniqueness_error        = excluded.uniqueness_error,
   status              = excluded.status,
   last_error          = excluded.last_error,
   md_path             = excluded.md_path
@@ -100,8 +108,14 @@ export function upsertBook(meta: BookCatalogMeta, mdPath: string): void {
     evaluated_at: meta.evaluatedAt ?? null,
     concepts_extracted: meta.conceptsExtracted ?? null,
     concepts_accepted: meta.conceptsAccepted ?? null,
+    concepts_deduped: meta.conceptsDeduped ?? null,
     chunks_total: meta.chunksTotal ?? null,
     chunker_provenance: meta.chunkerProvenance ?? null,
+    uniqueness_score: meta.uniquenessScore ?? null,
+    uniqueness_novel_count: meta.uniquenessNovelCount ?? null,
+    uniqueness_total_ideas: meta.uniquenessTotalIdeas ?? null,
+    uniqueness_evaluated_at: meta.uniquenessEvaluatedAt ?? null,
+    uniqueness_error: meta.uniquenessError ?? null,
     status: meta.status,
     last_error: meta.lastError ?? null,
     md_path: mdPath,
@@ -159,6 +173,7 @@ export function setBookStatus(
   extras?: {
     conceptsAccepted?: number;
     conceptsExtracted?: number;
+    conceptsDeduped?: number;
     /** Иt 8Г.2: общее число semantic chunks (не «прошедших LLM», а всех). */
     chunksTotal?: number;
     /** Иt 8Г.2: JSON-снимок chunker-провенанса (TEXT). */
@@ -176,6 +191,10 @@ export function setBookStatus(
   if (typeof extras?.conceptsExtracted === "number") {
     fields.push("concepts_extracted = @concepts_extracted");
     params.concepts_extracted = extras.conceptsExtracted;
+  }
+  if (typeof extras?.conceptsDeduped === "number") {
+    fields.push("concepts_deduped = @concepts_deduped");
+    params.concepts_deduped = extras.conceptsDeduped;
   }
   if (typeof extras?.chunksTotal === "number") {
     fields.push("chunks_total = @chunks_total");

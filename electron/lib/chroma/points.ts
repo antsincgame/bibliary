@@ -8,7 +8,7 @@
  */
 
 import { chromaUrl, fetchChromaJson, CHROMA_TIMEOUT_MS } from "./http-client.js";
-import { resolveCollectionId } from "./collection-cache.js";
+import { resolveCollectionId, getCollectionSpace } from "./collection-cache.js";
 
 /**
  * Метаданные точки. Chroma принимает ТОЛЬКО скаляры (string|number|boolean).
@@ -169,6 +169,110 @@ export async function chromaCount(collectionName: string): Promise<number> {
     { method: "GET", timeoutMs: 5_000 },
   );
   return typeof n === "number" ? n : 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Nearest-neighbor query — для uniqueness-evaluator и concept-dedup.
+ * ───────────────────────────────────────────────────────────────────── */
+
+/**
+ * Преобразовать Chroma `distance` в cosine similarity ∈ [-1..1].
+ *  - cosine space: distance = 1 - cosineSimilarity → similarity = 1 - d
+ *  - l2 space: для нормализованных векторов ||a-b||² = 2·(1 - cosSim)
+ *              ⇒ cosSim = 1 - d/2 (Chroma возвращает squared-L2)
+ *  - ip space: distance = -dot, для нормализованных = -cosSim
+ *              ⇒ cosSim = -d
+ */
+export function chromaDistanceToCosine(distance: number, space: "cosine" | "l2" | "ip"): number {
+  if (!Number.isFinite(distance)) return 0;
+  if (space === "cosine") return 1 - distance;
+  if (space === "l2") return 1 - distance / 2;
+  return -distance; /* ip */
+}
+
+export interface ChromaNearestNeighbor {
+  id: string;
+  document: string;
+  metadata: Record<string, unknown>;
+  /** Уже-конвертированный cosine similarity ∈ [-1..1], 1 = идентичны. */
+  similarity: number;
+}
+
+interface ChromaQueryResponse {
+  ids?: string[][] | null;
+  distances?: number[][] | null;
+  documents?: (string | null)[][] | null;
+  metadatas?: (Record<string, unknown> | null)[][] | null;
+}
+
+/**
+ * Найти top-N ближайших точек к данному эмбеддингу. Возвращает результаты
+ * с уже-конвертированной cosine similarity (см. chromaDistanceToCosine).
+ *
+ * Внутри спрашиваем коллекцию о её `hnsw:space` (один раз через cache),
+ * чтобы корректно перевести distance → similarity вне зависимости от того,
+ * какая метрика выбрана при создании коллекции.
+ *
+ * Возвращает `[]` если коллекция пустая или query не вернул ничего.
+ */
+export async function chromaQueryNearest(
+  collectionName: string,
+  embedding: number[] | Float32Array,
+  n: number = 3,
+  options?: { signal?: AbortSignal; timeoutMs?: number; where?: Record<string, unknown> },
+): Promise<ChromaNearestNeighbor[]> {
+  if (n <= 0) return [];
+  const collectionId = await resolveCollectionId(collectionName);
+  const space = await getCollectionSpace(collectionName);
+
+  const queryEmbedding = embedding instanceof Float32Array ? Array.from(embedding) : Array.from(embedding);
+
+  const body: Record<string, unknown> = {
+    query_embeddings: [queryEmbedding],
+    n_results: n,
+    include: ["documents", "distances", "metadatas"],
+  };
+  if (options?.where && Object.keys(options.where).length > 0) {
+    body.where = options.where;
+  }
+
+  let response: ChromaQueryResponse;
+  try {
+    response = await fetchChromaJson<ChromaQueryResponse>(
+      chromaUrl(`/collections/${encodeURIComponent(collectionId)}/query`),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        timeoutMs: options?.timeoutMs ?? CHROMA_TIMEOUT_MS,
+        signal: options?.signal,
+      },
+    );
+  } catch (err) {
+    /* Пустая коллекция в некоторых версиях Chroma даёт HTTP 500 «no records».
+       Не пробрасываем — uniqueness-evaluator должен трактовать пустую
+       коллекцию как «всё NOVEL». */
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/no records|empty|not enough/i.test(msg)) return [];
+    throw err;
+  }
+
+  const ids = response.ids?.[0] ?? [];
+  const distances = response.distances?.[0] ?? [];
+  const documents = response.documents?.[0] ?? [];
+  const metadatas = response.metadatas?.[0] ?? [];
+
+  const out: ChromaNearestNeighbor[] = [];
+  for (let i = 0; i < ids.length; i++) {
+    const distance = typeof distances[i] === "number" ? (distances[i] as number) : 0;
+    out.push({
+      id: String(ids[i] ?? ""),
+      document: String(documents[i] ?? ""),
+      metadata: (metadatas[i] ?? {}) as Record<string, unknown>,
+      similarity: chromaDistanceToCosine(distance, space),
+    });
+  }
+  return out;
 }
 
 /* ─────────────────────────────────────────────────────────────────────

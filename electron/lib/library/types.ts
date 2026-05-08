@@ -132,6 +132,23 @@ export interface BookCatalogMeta {
   /** Иt 8Г.2: общее число semantic chunks отправленных на extraction
    *  (≥ conceptsExtracted: extracted = «прошли LLM», chunks_total = всего). */
   chunksTotal?: number;
+  // ── uniqueness evaluator outputs ──
+  /**
+   * 0..100 — доля уникальных идей книги по отношению к существующей Chroma-
+   * коллекции. `undefined` означает «оценка не проводилась» либо «не удалась»
+   * (ни одной идеи не извлечено), это НЕ то же самое что 0 (= полный плагиат).
+   */
+  uniquenessScore?: number;
+  /** Сколько кластеров идей оказались NOVEL (cosine < high порог либо LLM=DIFFERENT). */
+  uniquenessNovelCount?: number;
+  /** Всего уникальных кластеров идей внутри книги (после within-book dedup). */
+  uniquenessTotalIdeas?: number;
+  /** ISO-8601 timestamp uniqueness-оценки. */
+  uniquenessEvaluatedAt?: string;
+  /** Если процесс упал — сообщение для UI tooltip. */
+  uniquenessError?: string;
+  /** Сколько концептов было отброшено concept-level dedup'ом перед upsert. */
+  conceptsDeduped?: number;
   /** Иt 8Г.2: JSON-снимок провенанса чанкера для дебага и lineage:
    *  {model, chunkBytes, accepted, ts}. Хранится как TEXT в SQLite. */
   chunkerProvenance?: string;
