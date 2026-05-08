@@ -29,17 +29,6 @@ export interface RequestPolicy {
   circuitBreaker?: CircuitBreaker | null;
 }
 
-export const DEFAULT_POLICY: RequestPolicy = {
-  maxRetries: POLICY_MAX_RETRIES,
-  baseBackoffMs: POLICY_BASE_BACKOFF_MS,
-  perRequestTimeout: ({ expectedTokens, observedTps }) => {
-    const tps = Math.max(observedTps, POLICY_MIN_OBSERVED_TPS);
-    const dynamic = Math.ceil((expectedTokens / tps) * 1000) + POLICY_TIMEOUT_BUFFER_MS;
-    return Math.min(dynamic, POLICY_HARD_TIMEOUT_CAP_MS);
-  },
-  abortGraceMs: ABORT_GRACE_MS,
-};
-
 /**
  * Build a RequestPolicy from user preferences. Falls back to constants
  * for any field that's missing. Use this when calling withPolicy() from

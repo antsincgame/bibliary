@@ -31,7 +31,6 @@ export const DatasetRolesSchema = z.object({
   T3: RoleSchema,
 });
 
-export type DatasetRoleSpec = z.infer<typeof RoleSchema>;
 export type DatasetRoles = z.infer<typeof DatasetRolesSchema>;
 
 export type PromptFile = "dataset-roles";

@@ -11,7 +11,6 @@ export {
 } from "./checkpoint-store";
 export {
   withPolicy,
-  DEFAULT_POLICY,
   buildRequestPolicy,
   isAbortError,
   type RequestPolicy,

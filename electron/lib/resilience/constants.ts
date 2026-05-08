@@ -6,14 +6,7 @@
  */
 
 export const HEALTH_POLL_INTERVAL_MS = 5_000;
-export const READINESS_CHECK_INTERVAL_MS = 30_000;
 export const HEALTH_FAIL_THRESHOLD = 3;
-
-export const COOLDOWN_BASE_MS = 200;
-export const COOLDOWN_DEGRADED_MS = 800;
-
-export const TPS_DEGRADED_THRESHOLD = 5;
-export const TPS_CRITICAL_THRESHOLD = 2;
 
 export const ABORT_GRACE_MS = 1_500;
 export const SHUTDOWN_FLUSH_TIMEOUT_MS = 3_000;

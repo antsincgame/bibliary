@@ -79,11 +79,6 @@ export function setMapping(name: string, id: string, metadata?: Record<string, u
   }
 }
 
-/** Только для тестов: явно прописать metadata коллекции (для chroma-query тестов). */
-export function _setMetadataForTesting(name: string, metadata: Record<string, unknown>): void {
-  metadataCache.set(name, metadata);
-}
-
 /** Только для тестов: snapshot текущего состояния. */
 export function _snapshotForTesting(): Record<string, string> {
   return Object.fromEntries(cache.entries());

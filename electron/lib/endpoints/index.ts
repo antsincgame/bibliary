@@ -88,6 +88,3 @@ export function getLmStudioUrlSync(): string {
   return cache?.lmStudio || trim(ENV_LM_STUDIO_URL) || DEFAULT_LM_STUDIO_URL;
 }
 
-export function getChromaUrlSync(): string {
-  return cache?.chroma || trim(ENV_CHROMA_URL) || DEFAULT_CHROMA_URL;
-}

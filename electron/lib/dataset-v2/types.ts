@@ -44,10 +44,6 @@ export type AuraFlag =
   | "revision"        // Р — Разрушение мифов: опровергает default LLM knowledge
   | "causality";      // А — Причинно-следственная механика: скрытое "почему"
 
-export const AURA_FLAGS: readonly AuraFlag[] = [
-  "authorship", "specialization", "revision", "causality",
-] as const;
-
 /* ─────────────── Topology: Subject → Predicate → Object triple ─────────────── */
 
 /**
@@ -69,8 +65,6 @@ export const TopologyRelationSchema = z.object({
   ),
   object: z.string().min(2).max(120),
 });
-
-export type TopologyRelation = z.infer<typeof TopologyRelationSchema>;
 
 /* ─────────────── DeltaKnowledge — единый выходной тип ─────────────── */
 
@@ -103,17 +97,6 @@ export interface DeltaKnowledge extends z.infer<typeof DeltaKnowledgeSchema> {
   chapterIndex: number;
   acceptedAt: string;
 }
-
-/**
- * Legacy schema (без relations) — только для безопасного чтения старых
- * записей из Chroma. Новые записи ВСЕГДА должны проходить
- * `DeltaKnowledgeSchema` с обязательным `relations`.
- *
- * Использовать при миграции / экспорте старых датасетов.
- */
-export const DeltaKnowledgeLegacySchema = DeltaKnowledgeSchema.omit({ relations: true }).extend({
-  relations: z.array(TopologyRelationSchema).optional(),
-});
 
 /* ─────────────── Backward-compat: re-export assertValidCollectionName ─────────────── */
 
