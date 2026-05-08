@@ -42,35 +42,37 @@ jobs:
       - name: TypeScript check
         run: npm run typecheck
 
-      # Самые критичные тесты: грязные файлы + классификация + fallback.
+      # Самые критичные тесты: грязные файлы + классификация + delta + парсинг.
       # Если хотя бы они падают — PR не должен мержиться.
-      - name: Critical tests (dirty-world + classifier + fallback + delta + olympics + role-tuning + sdk-route)
+      # NB: olympics/role-load-config/with-model-fallback/illustration-semaphore
+      # удалены вместе с refactor 9 ролей → 3 задач (2026-05).
+      - name: Critical tests (dirty-world + classifier + delta + parsers)
         env:
           BIBLIARY_SKIP_OCR: '1'
         run: |
           node --import tsx --test \
             tests/ingest-dirty-world.test.ts \
-            tests/olympics-weights.test.ts \
-            tests/olympics-thinking-policy.test.ts \
-            tests/olympics-scorers.test.ts \
-            tests/olympics-lifecycle.test.ts \
-            tests/olympics-sdk-route.test.ts \
-            tests/role-load-config.test.ts \
-            tests/olympics-load-config-integration.test.ts \
             tests/folder-bundle.test.ts \
             tests/magic-bytes.test.ts \
-            tests/with-model-fallback.test.ts \
             tests/delta-extractor-prompt.test.ts \
             tests/lang-detector.test.ts \
             tests/parsers-html-edge.test.ts
 
-      # Дополнительные node:test suites (ModelPool, qdrant config, illustration semaphore).
-      - name: Extra unit suites (model-pool + qdrant-collection-config + illustration-semaphore)
+      # Дополнительные node:test suites: ModelPool + Chroma + cache-db + auto-config + uniqueness.
+      - name: Extra unit suites (model-pool + chroma + cache-db + auto-config + uniqueness)
         run: |
           node --import tsx --test \
             tests/model-pool.test.ts \
-            tests/qdrant-collection-config.test.ts \
-            tests/illustration-semaphore.test.ts
+            tests/chroma-collection-config.test.ts \
+            tests/chroma-collection-cache.test.ts \
+            tests/chroma-query-distance-conversion.test.ts \
+            tests/cache-db-roundtrip.test.ts \
+            tests/cache-db-migration-v8.test.ts \
+            tests/auto-config-tasks.test.ts \
+            tests/uniqueness-extract-ideas.test.ts \
+            tests/uniqueness-dedup-within-book.test.ts \
+            tests/uniqueness-judge-llm.test.ts \
+            tests/uniqueness-score-pipeline.test.ts
 
       # Полный test suite кроме env-зависимых (vision-meta требует LM Studio).
       # Best-effort: не блокирует merge.
