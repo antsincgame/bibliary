@@ -7,18 +7,19 @@
  *
  * Стратегия:
  *   1. Если уже запущен (heartbeat OK) — skip, пользователь рулит руками.
- *   2. Иначе пробуем `uvx chromadb run --path <userData>/chroma --port 8000`.
- *   3. Если `uvx` нет — fallback на `python -m chromadb.cli run` (если pip
- *      install chromadb когда-то делали).
- *   4. Если ничего нет — log warning, return null. Welcome Wizard покажет
- *      install hint.
+ *   2. Иначе пробуем `uvx chromadb run --path <userData>/chroma --port N`,
+ *      где N парсится из текущего CHROMA_URL (default 8000).
+ *   3. Если `uvx` нет — fallback на `chromadb` напрямую → `python -m chromadb.cli`.
+ *   4. Если ничего нет — throw с install hint. Welcome Wizard покажет error.
  *
- * Cleanup: child убивается через killChildTree в `before-quit`.
+ * Cleanup: child убивается через killChildTree в before-quit.
+ *
+ * **Concurrency:** одновременные вызовы (boot + IPC button) идут через
+ * один общий in-flight promise — гарантия что только один spawn активен.
  *
  * Конфиг:
- *   - prefs.chromaAutoSpawn (default true) — выключить можно если человек
- *     гоняет Chroma на удалённом сервере или через Docker
- *   - port = 8000 (CHROMA_URL по умолчанию)
+ *   - prefs.chromaAutoSpawn (default true) — выключатель
+ *   - port — берётся из CHROMA_URL (env / prefs.chromaUrl), не хардкодится
  *   - data path = <userData>/chroma — переживает переустановку app
  */
 
@@ -36,19 +37,39 @@ export interface ChromaSpawnResult {
 }
 
 export interface ChromaSpawnOptions {
-  /** Default 8000. */
-  port?: number;
   /** Куда сохранять Chroma data. Default: $userDataPath/chroma. */
   dataPath: string;
-  /** Heartbeat URL для проверки готовности. Default: http://localhost:<port>/api/v1/heartbeat */
+  /** Override port. Default: парсится из CHROMA_URL (опционально). */
+  port?: number;
+  /** Override heartbeat URL. Default: http://127.0.0.1:<port>/api/v1/heartbeat */
   heartbeatUrl?: string;
   /** Max wait for ready. Default 30000ms. */
   readyTimeoutMs?: number;
 }
 
 const READY_POLL_INTERVAL_MS = 500;
+const DEFAULT_CHROMA_PORT = 8000;
 
 let activeChild: ChildProcess | null = null;
+/* Inflight promise lock — concurrent calls вернут тот же result.
+ * Решает race между boot auto-spawn и UI button click. */
+let inflightSpawn: Promise<ChromaSpawnResult | null> | null = null;
+
+/**
+ * Парсит порт из URL. Если URL невалидный или port отсутствует, возвращает 8000.
+ * Используется callers (main.ts / chroma.ipc.ts) чтобы вытащить port из
+ * CHROMA_URL без дублирования логики.
+ */
+export function chromaPortFromUrl(urlStr: string | null | undefined): number {
+  if (!urlStr) return DEFAULT_CHROMA_PORT;
+  try {
+    const u = new URL(urlStr);
+    const port = u.port ? Number.parseInt(u.port, 10) : (u.protocol === "https:" ? 443 : 80);
+    return Number.isFinite(port) && port > 0 && port < 65_536 ? port : DEFAULT_CHROMA_PORT;
+  } catch {
+    return DEFAULT_CHROMA_PORT;
+  }
+}
 
 /**
  * Проверка работающего Chroma: GET /api/v1/heartbeat. Возвращает true
@@ -118,19 +139,45 @@ async function isCommandAvailable(cmd: string): Promise<boolean> {
 /**
  * Запустить Chroma как child process.
  *
- * @returns ChromaSpawnResult с promise `ready` который зарезолвится когда
- *   heartbeat начал отвечать. Если spawn провалился (нет uvx/python) —
- *   throws Error с install hint.
+ * Concurrent-safe: одновременные вызовы (boot + IPC button click) разделят
+ * один in-flight promise — никаких дублирующих spawn-ов / port conflict.
  *
- * Если Chroma уже запущена (heartbeat OK перед spawn) — return null.
- * Caller знает что не надо ничего kill'ить.
+ * @returns ChromaSpawnResult с promise `ready` (resolved когда heartbeat
+ *   начал отвечать). Если Chroma уже запущена (heartbeat OK перед spawn) —
+ *   return null. Если CLI не найден — throws с install hint.
  */
 export async function startEmbeddedChroma(opts: ChromaSpawnOptions): Promise<ChromaSpawnResult | null> {
-  const port = opts.port ?? 8000;
+  /* Если уже идёт spawn — присоединяемся к нему. Inflight promise чистится
+   * сам когда spawn завершается (resolved/rejected) через .finally(). */
+  if (inflightSpawn) {
+    return inflightSpawn;
+  }
+  /* Если предыдущий spawn успешно создал child и тот ещё жив — возвращаем
+   * без новых проверок (идемпотентность). */
+  if (activeChild && activeChild.exitCode === null && activeChild.signalCode === null) {
+    const port = opts.port ?? DEFAULT_CHROMA_PORT;
+    return {
+      child: activeChild,
+      port,
+      dataPath: opts.dataPath,
+      ready: Promise.resolve(),
+    };
+  }
+
+  inflightSpawn = doSpawn(opts).finally(() => {
+    inflightSpawn = null;
+  });
+  return inflightSpawn;
+}
+
+async function doSpawn(opts: ChromaSpawnOptions): Promise<ChromaSpawnResult | null> {
+  const port = opts.port ?? DEFAULT_CHROMA_PORT;
   const heartbeatUrl = opts.heartbeatUrl ?? `http://127.0.0.1:${port}/api/v1/heartbeat`;
   const readyTimeoutMs = opts.readyTimeoutMs ?? 30_000;
 
-  /* Уже запущен (пользователем вручную или Docker'ом)? Не дублируем. */
+  /* Уже запущен (пользователем вручную / Docker / предыдущим Bibliary
+   * который не успел корректно остановить child)? Не дублируем — это
+   * приведёт к port conflict. */
   if (await probeChroma(heartbeatUrl)) {
     console.log(`[chroma-spawn] Chroma уже отвечает на ${heartbeatUrl} — пропускаем spawn`);
     return null;
@@ -147,19 +194,20 @@ export async function startEmbeddedChroma(opts: ChromaSpawnOptions): Promise<Chr
     );
   }
 
-  console.log(`[chroma-spawn] starting: ${command.cmd} ${command.args.join(" ")}`);
+  console.log(`[chroma-spawn] starting: ${command.cmd} ${command.args.join(" ")} (port ${port})`);
 
   const child = spawn(command.cmd, command.args, {
     /* stdio = pipe — мы хотим читать stdout/stderr для логирования.
-     * detached false — child привязан к main process, kill при exit. */
+     * detached false (default) — child привязан к main process. */
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env },
   });
 
+  /* Регистрируем child в activeChild ДО любого await — если main process
+   * упадёт между spawn и first await, before-quit hook увидит его и убьёт. */
   activeChild = child;
 
-  /* Логируем stdout/stderr с префиксом для отладки. Прерываем после первого
-   * "ready" сообщения (после этого Chroma и так пишет много request logs). */
+  /* Логируем stdout/stderr с префиксом для отладки. */
   let firstStdoutLogged = false;
   child.stdout?.on("data", (buf: Buffer) => {
     const text = buf.toString("utf8").trim();
@@ -185,7 +233,8 @@ export async function startEmbeddedChroma(opts: ChromaSpawnOptions): Promise<Chr
     console.error("[chroma-spawn] spawn error:", err.message);
   });
 
-  /* Дождаться ready: poll heartbeat каждые 500ms до timeout. */
+  /* Дождаться ready: poll heartbeat каждые 500ms до timeout. Если child
+   * крашнется до ready — bail out с диагностикой. */
   const ready = (async () => {
     const startedAt = Date.now();
     while (Date.now() - startedAt < readyTimeoutMs) {
@@ -218,6 +267,8 @@ export async function stopEmbeddedChroma(): Promise<void> {
   if (!activeChild) return;
   const child = activeChild;
   activeChild = null;
+  /* Сбросить inflight тоже — на случай если quit пришёл во время spawn. */
+  inflightSpawn = null;
   console.log("[chroma-spawn] stopping child process");
   try {
     killChildTree(child, { gracefulMs: 3000 });
@@ -233,4 +284,10 @@ export async function stopEmbeddedChroma(): Promise<void> {
  */
 export function defaultChromaDataPath(userDataDir: string): string {
   return path.join(userDataDir, "chroma");
+}
+
+/* Test-only: сбросить module-level state между тестами. */
+export function _resetForTesting(): void {
+  activeChild = null;
+  inflightSpawn = null;
 }

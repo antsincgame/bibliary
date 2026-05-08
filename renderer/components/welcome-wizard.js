@@ -138,6 +138,11 @@ export function openWelcomeWizard(opts) {
 
     retryBtn.addEventListener("click", () => { void doProbe(); });
     wrap.appendChild(retryBtn);
+
+    /* Экспортируем доступ к doProbe через STATE — кнопка «Запустить
+     * Chroma автоматически» внутри renderConnCard сможет вызвать его
+     * после успешного spawn чтобы UI перерисовался без ручного клика. */
+    STATE.scheduleConnRecheck = () => { void doProbe(); };
     wrap.appendChild(
       el("p", { class: "ww-p ww-p-muted ww-conn-skip-note" }, t("ww.conn.skipNote"))
     );
@@ -190,39 +195,58 @@ export function openWelcomeWizard(opts) {
       card.appendChild(el("p", { class: "ww-conn-card-hint" }, t(hintKey)));
 
       /* Для Chroma: кнопка «Запустить автоматически» — пытается
-       * spawn'нуть child-процесс через uvx/python. Если получится,
-       * отрисуем cards заново через probeServices. */
+       * spawn'нуть child-процесс через uvx/python. Если получится —
+       * автоматически вызываем doProbe чтобы UI обновился без ручного
+       * клика «Перепроверить» (1.5с задержка чтобы Chroma успела
+       * поднять HTTP сервер после spawn). */
       if (kind === "ch") {
-        const autoBtn = el("button", {
+        const autoBtn = /** @type {HTMLButtonElement} */ (el("button", {
           class: "ww-conn-auto-btn",
           type: "button",
-        }, t("ww.conn.ch.autoStart"));
+        }, t("ww.conn.ch.autoStart")));
+        /* Single error slot — replace text, не аппендить новые <p> при
+         * повторных кликах. Создаём один раз, переиспользуем. */
+        const errSlot = el("p", { class: "ww-conn-card-error", hidden: "" }, "");
+        let inflight = false;
+
         autoBtn.addEventListener("click", async () => {
+          if (inflight) return; /* защита от двойного клика до disabled */
+          inflight = true;
           autoBtn.disabled = true;
           autoBtn.textContent = t("ww.conn.ch.autoStarting");
+          errSlot.hidden = true;
+          errSlot.textContent = "";
           try {
             const res = await window.api.chroma.startEmbedded();
             if (res.ok) {
               autoBtn.textContent = res.alreadyRunning
                 ? t("ww.conn.ch.autoAlready")
                 : t("ww.conn.ch.autoStarted");
-              /* Дать пользователю понять что нажать «Перепроверить» — Chroma
-               * требует ~1-2 сек чтобы поднять HTTP сервер после spawn. */
+              /* Auto-rerun probe через 1.5с чтобы UI сам перерисовался.
+               * doProbe is closure от buildConn — ссылка на него
+               * через STATE если он экспортирован, иначе symbol path. */
+              setTimeout(() => {
+                if (typeof STATE.scheduleConnRecheck === "function") {
+                  STATE.scheduleConnRecheck();
+                }
+              }, 1500);
             } else {
               autoBtn.disabled = false;
               autoBtn.textContent = t("ww.conn.ch.autoStart");
-              const errLine = el("p", { class: "ww-conn-card-error" }, res.reason ?? "spawn failed");
-              card.appendChild(errLine);
+              errSlot.textContent = res.reason ?? "spawn failed";
+              errSlot.hidden = false;
             }
           } catch (e) {
             autoBtn.disabled = false;
             autoBtn.textContent = t("ww.conn.ch.autoStart");
-            const errLine = el("p", { class: "ww-conn-card-error" },
-              e instanceof Error ? e.message : String(e));
-            card.appendChild(errLine);
+            errSlot.textContent = e instanceof Error ? e.message : String(e);
+            errSlot.hidden = false;
+          } finally {
+            inflight = false;
           }
         });
         card.appendChild(autoBtn);
+        card.appendChild(errSlot);
       }
     }
   }

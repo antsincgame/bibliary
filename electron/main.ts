@@ -206,14 +206,16 @@ if (!gotLock) {
     setChromaUrl(endpoints.chromaUrl);
 
     /* Auto-spawn Chroma как child process если pref включён И heartbeat
-       пуст. Не блокирующий: bootstrap идёт дальше пока Chroma поднимается
-       (renderer всё равно делает heartbeat polling через probeServices). */
+       пуст. Port берётся из endpoints.chromaUrl чтобы НЕ дублировать
+       hardcoded 8000 — если пользователь поменял chromaUrl на :9000,
+       мы spawn'имся на 9000 и UI heartbeat остаётся в sync.
+       Не блокирующий: bootstrap идёт дальше пока Chroma поднимается. */
     if (prefs.chromaAutoSpawn) {
-      void import("./lib/chroma/auto-spawn.js").then(async ({ startEmbeddedChroma, defaultChromaDataPath }) => {
+      void import("./lib/chroma/auto-spawn.js").then(async ({ startEmbeddedChroma, defaultChromaDataPath, chromaPortFromUrl }) => {
         try {
           const result = await startEmbeddedChroma({
             dataPath: defaultChromaDataPath(dataDir),
-            port: 8000,
+            port: chromaPortFromUrl(endpoints.chromaUrl),
           });
           if (result) {
             await result.ready;

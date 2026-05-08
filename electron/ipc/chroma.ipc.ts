@@ -198,12 +198,14 @@ export function registerChromaIpc(): void {
    */
   ipcMain.handle("chroma:start-embedded", async (): Promise<{ ok: boolean; reason?: string; alreadyRunning?: boolean }> => {
     try {
-      const { startEmbeddedChroma, defaultChromaDataPath } = await import("../lib/chroma/auto-spawn.js");
+      const { startEmbeddedChroma, defaultChromaDataPath, chromaPortFromUrl } = await import("../lib/chroma/auto-spawn.js");
       const { app } = await import("electron");
       const dataDir = process.env.BIBLIARY_DATA_DIR ?? app.getPath("userData");
+      /* Port из текущего CHROMA_URL — чтобы spawn совпадал с тем куда
+       * Bibliary будет ходить (HTTP client читает CHROMA_URL live). */
       const result = await startEmbeddedChroma({
         dataPath: defaultChromaDataPath(dataDir),
-        port: 8000,
+        port: chromaPortFromUrl(CHROMA_URL),
       });
       if (!result) {
         /* Уже запущена (heartbeat OK) — для UI это успех. */

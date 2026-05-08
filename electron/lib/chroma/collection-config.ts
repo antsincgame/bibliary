@@ -108,9 +108,10 @@ export async function ensureChromaCollection(
     return { id: existing.id, created: false, hnswMismatch: mismatch };
   }
 
-  /* Создание через POST с get_or_create:true для race-safety
-     (если параллельный процесс создал между probe и create). */
-  const created = await fetchChromaJson<ChromaCollectionResponse>(
+  /* Создание через POST с get_or_create:true для race-safety:
+     если параллельный процесс создал коллекцию между probe и нашим POST,
+     мы получим существующую вместо ошибки conflict. */
+  const response = await fetchChromaJson<ChromaCollectionResponse>(
     chromaUrl("/collections"),
     {
       method: "POST",
@@ -124,13 +125,24 @@ export async function ensureChromaCollection(
     },
   );
 
-  if (!created?.id) {
+  if (!response?.id) {
     throw new Error(`Chroma: create-collection "${spec.name}" returned no id`);
   }
 
-  setMapping(spec.name, created.id);
-  /* Если коллекция была get_or_create-найдена, metadata в ответе — её фактическая.
-     Если только что создана — будет совпадать с нашей. В любом случае проверим. */
-  const mismatch = diffHnswMetadata(desiredMetadata, created.metadata);
-  return { id: created.id, created: mismatch.length === 0, hnswMismatch: mismatch };
+  setMapping(spec.name, response.id);
+
+  /* Семантика `created`:
+     - `true` если probe (GET) НЕ нашёл коллекцию И POST вернул её без
+       hnswMismatch → почти наверняка мы её только что создали
+     - `false` если probe не нашёл, но POST вернул с другими hnsw — это
+       значит race-window: между probe и POST другой процесс/инстанс
+       создал коллекцию с другим config (мы её НЕ создавали)
+
+     Chroma API не отличает «создана сейчас» от «возвращена существующая»
+     в ответе POST с get_or_create — поэтому используем mismatch как
+     эвристику. Для UI-warning достаточно (`hnswMismatch` всегда точный),
+     `created` — best-effort hint, не строгая гарантия. */
+  const mismatch = diffHnswMetadata(desiredMetadata, response.metadata);
+  const wasCreatedByUs = mismatch.length === 0;
+  return { id: response.id, created: wasCreatedByUs, hnswMismatch: mismatch };
 }
