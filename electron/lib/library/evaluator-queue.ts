@@ -46,6 +46,7 @@ import { getImportScheduler } from "./import-task-scheduler.js";
 import { readPipelinePrefsOrNull } from "../preferences/store.js";
 import { withBookMdLock } from "./book-md-mutex.js";
 import { logModelAction } from "../llm/lmstudio-actions-log.js";
+import { runUniquenessStep } from "./evaluator-uniqueness-step.js";
 import type { BookCatalogMeta } from "./types.js";
 import type { EvaluationResult } from "./types.js";
 
@@ -735,46 +736,18 @@ async function evaluateOneInSlot(bookId: string, slot: SlotState): Promise<void>
     await persistFrontmatter(updated, meta.mdPath, md, result.reasoning);
     totalEvaluated += 1;
 
-    /* Uniqueness pass — идёт после quality, использует reader LLM (не evaluator),
-     * сравнивает идеи книги с существующей Chroma коллекцией. На abort или
-     * ошибку — graceful skip: quality результат уже сохранён выше, uniqueness
-     * не должен ломать pipeline. */
-    let unique: { score?: number; novelCount: number; totalIdeas: number; error?: string } = {
-      score: undefined, novelCount: 0, totalIdeas: 0,
-    };
-    try {
-      const prefs = await readPipelinePrefsOrNull();
-      if (prefs?.uniquenessEvaluationEnabled && !slotSignal.aborted) {
-        const { evaluateBookUniqueness } = await import("./uniqueness-evaluator.js");
-        const { DEFAULT_COLLECTION } = await import("../../ipc/dataset-v2-ipc-state.js");
-        const { getReaderModel } = await import("../llm/model-resolver.js");
-        const reader = await getReaderModel();
-        if (reader) {
-          unique = await evaluateBookUniqueness(chapters, {
-            modelKey: reader.modelKey,
-            targetCollection: DEFAULT_COLLECTION,
-            similarityHigh: prefs.uniquenessSimilarityHigh,
-            similarityLow: prefs.uniquenessSimilarityLow,
-            ideasPerChapterMax: prefs.uniquenessIdeasPerChapterMax,
-            chapterParallel: prefs.uniquenessChapterParallel,
-            mergeThreshold: prefs.uniquenessMergeThreshold,
-            signal: slotSignal,
-          });
-          const withUniqueness: BookCatalogMeta = {
-            ...updated,
-            uniquenessScore: unique.score,
-            uniquenessNovelCount: unique.novelCount,
-            uniquenessTotalIdeas: unique.totalIdeas,
-            uniquenessEvaluatedAt: new Date().toISOString(),
-            uniquenessError: unique.error,
-          };
-          upsertBook(withUniqueness, meta.mdPath);
-          await persistFrontmatter(withUniqueness, meta.mdPath, md, result.reasoning);
-        }
-      }
-    } catch (uErr) {
-      console.warn(`[evaluator-queue] uniqueness skipped:`, uErr instanceof Error ? uErr.message : uErr);
-    }
+    /* Uniqueness pass — отдельный модуль; никогда не throw'ает наружу,
+     * quality result уже сохранён выше — uniqueness не валит pipeline. */
+    await runUniquenessStep({
+      baseMeta: updated,
+      chapters,
+      mdPath: meta.mdPath,
+      md,
+      reasoning: result.reasoning,
+      signal: slotSignal,
+      persistFrontmatter,
+      upsertBook,
+    });
 
     emit({
       type: "evaluator.done",
