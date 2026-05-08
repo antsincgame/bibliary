@@ -177,9 +177,7 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
   ipcMain.handle(
     "dataset-v2:list-accepted",
     async (_e, collection?: string): Promise<{ total: number; byDomain: Record<string, number>; collection: string }> => {
-      const { chromaCount } = await import("../lib/chroma/points.js");
-      const { resolveCollectionId } = await import("../lib/chroma/collection-cache.js");
-      const { scrollChroma } = await import("../lib/chroma/scroll.js");
+      const { vectorCount, scrollVectors } = await import("../lib/vectordb/index.js");
       const targetCollection = collection ?? DEFAULT_COLLECTION;
       try {
         assertValidCollectionName(targetCollection);
@@ -188,7 +186,7 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
         return { total: 0, byDomain: {}, collection: targetCollection };
       }
       try {
-        const total = await chromaCount(targetCollection);
+        const total = await vectorCount(targetCollection);
         const byDomain: Record<string, number> = {};
 
         if (total > 50_000) {
@@ -197,13 +195,11 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
           );
         }
         if (total > 0 && total <= 50_000) {
-          const collectionId = await resolveCollectionId(targetCollection);
-          for await (const page of scrollChroma({
-            collectionId,
+          for await (const page of scrollVectors({
+            tableName: targetCollection,
             include: ["metadatas"],
             pageSize: 1000,
             maxItems: 50_000,
-            timeoutMs: 30_000,
           })) {
             for (const m of page.metadatas ?? []) {
               const d = (m && typeof m.domain === "string" ? m.domain : "unknown") as string;
@@ -215,7 +211,7 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
         return { total, byDomain, collection: targetCollection };
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        console.warn(`[dataset-v2:list-accepted] Chroma unavailable for ${targetCollection}: ${msg}`);
+        console.warn(`[dataset-v2:list-accepted] vectordb unavailable for ${targetCollection}: ${msg}`);
         return { total: 0, byDomain: {}, collection: targetCollection };
       }
     }
@@ -236,17 +232,13 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
         return false;
       }
       try {
-        const { chromaUrl, fetchChromaJson } = await import("../lib/chroma/http-client.js");
-        const { resolveCollectionId } = await import("../lib/chroma/collection-cache.js");
-        const collectionId = await resolveCollectionId(targetCollection);
-        await fetchChromaJson(chromaUrl(`/collections/${encodeURIComponent(collectionId)}/delete`), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ids: [String(conceptId)] }),
-        });
+        const { vectorDeleteByWhere } = await import("../lib/vectordb/index.js");
+        /* По id — single point delete. id хранится как первичная колонка
+         * в таблице, фильтр через filter.ts → SQL `id = '...'`. */
+        await vectorDeleteByWhere(targetCollection, { id: String(conceptId) });
         return true;
       } catch (e) {
-        console.warn(`[dataset-v2:reject-accepted] Chroma delete failed: ${e instanceof Error ? e.message : e}`);
+        console.warn(`[dataset-v2:reject-accepted] vectordb delete failed: ${e instanceof Error ? e.message : e}`);
         return false;
       }
     }
