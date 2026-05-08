@@ -37,8 +37,13 @@ let testDataDirOverride: string | null = null;
 
 export function setDataDirForTesting(dir: string | null): void {
   testDataDirOverride = dir;
-  /* Reset connection чтобы следующий getDb() пересоздал его в новой директории. */
-  state = null;
+  /* Reset connection чтобы следующий getDb() пересоздал его в новой
+   * директории. Закрываем явно — иначе на Windows file handles держат
+   * .lance/.lock файлы и `rm -r` валится с EBUSY на test cleanup. */
+  if (state) {
+    try { state.connection.close(); } catch { /* ignore */ }
+    state = null;
+  }
 }
 
 function resolveDataDir(): string {
@@ -95,12 +100,18 @@ export function getDataPath(): string {
 }
 
 /**
- * Закрыть connection. LanceDB Node SDK не имеет explicit `close()` —
- * connection держит open file handles, которые освободит GC. Мы зануляем
- * state-ссылку чтобы getDb()/initVectorDb() видели свежий старт.
+ * Закрыть connection и освободить native file handles. Lance держит
+ * open descriptors на .lance / .lock файлы, и без явного close() на
+ * Windows `rm -r` каталога валится с EBUSY (Linux-unlink при открытом
+ * fd работает, Windows — нет).
  *
- * Best-effort: никогда не throw'ает.
+ * Best-effort: никогда не throw'ает (close() в lancedb может бросить
+ * "already closed", это нормально).
  */
 export async function closeDb(): Promise<void> {
+  if (!state) return;
+  try {
+    state.connection.close();
+  } catch { /* already closed / ignore */ }
   state = null;
 }
