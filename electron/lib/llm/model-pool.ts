@@ -61,27 +61,9 @@ import { detectHardware } from "../hardware/profiler.js";
 import { globalLlmLock } from "./global-llm-lock.js";
 import * as telemetry from "../resilience/telemetry.js";
 import { classifyByVramMB, evictionPriority, type ModelWeight } from "./model-size-classifier.js";
-import { getRoleLoadConfig } from "./role-load-config.js";
-import type { ModelRole } from "./model-role-resolver.js";
 import { KeyedAsyncMutex } from "./async-mutex.js";
 import { logModelAction } from "./lmstudio-actions-log.js";
 
-/** Известные ModelRole — синхронизировано с model-role-resolver.ts. */
-const KNOWN_MODEL_ROLES: ReadonlySet<ModelRole> = new Set<ModelRole>([
-  "crystallizer", "vision_ocr", "vision_illustration", "evaluator",
-]);
-
-/**
- * Применяет дефолты из ROLE_LOAD_CONFIG к LoadOptions.
- *
- * Caller-передаваемые значения имеют приоритет (если caller указал
- * contextLength=8192, дефолт role не перезатирает). Это решает gap:
- * раньше ROLE_LOAD_CONFIG был объявлен но никем не использовался,
- * и каждая call-site сама дублировала magic numbers (gpuOffload, ttl).
- *
- * Только для ролей из KNOWN_MODEL_ROLES — сторонние строки role
- * (например "evaluator-prewarm", "ui-load", "test") не трогают opts.
- */
 /**
  * Default TTL (30 min) для моделей загруженных через pool. Страховка: если
  * Bibliary крэшнул/force-kill без graceful shutdown, LM Studio сам выгрузит
@@ -89,25 +71,15 @@ const KNOWN_MODEL_ROLES: ReadonlySet<ModelRole> = new Set<ModelRole>([
  */
 const DEFAULT_POOL_TTL_SEC = 1800;
 
-function applyRoleDefaults(role: string | undefined, opts: LoadOptions): LoadOptions {
-  if (!role || !KNOWN_MODEL_ROLES.has(role as ModelRole)) {
-    return { ...opts, ttlSec: opts.ttlSec ?? DEFAULT_POOL_TTL_SEC };
-  }
-  const cfg = getRoleLoadConfig(role as ModelRole);
-  return {
-    contextLength: opts.contextLength ?? cfg.contextLength,
-    ttlSec: opts.ttlSec ?? DEFAULT_POOL_TTL_SEC,
-    gpuOffload: opts.gpuOffload ?? mapGpuRatio(cfg.gpu?.ratio),
-  };
+/**
+ * Применяет дефолты ttl к LoadOptions. Раньше делал per-role context/gpu
+ * defaults через ROLE_LOAD_CONFIG (refactor 1.0.22 → удалено). Теперь
+ * caller сам передаёт contextLength/gpuOffload по своему усмотрению,
+ * pool лишь гарантирует ttl-страховку.
+ */
+function applyRoleDefaults(_role: string | undefined, opts: LoadOptions): LoadOptions {
+  return { ...opts, ttlSec: opts.ttlSec ?? DEFAULT_POOL_TTL_SEC };
 }
-
-function mapGpuRatio(ratio: LMSGpuRatio | undefined): "max" | number | undefined {
-  if (ratio === undefined) return undefined;
-  if (ratio === "off") return 0;
-  return ratio;
-}
-
-type LMSGpuRatio = "max" | "off" | number;
 
 /* ─── OOM detection helpers ─────────────────────────────────────────── */
 

@@ -7,7 +7,6 @@ import {
   type LoadedModelInfo,
 } from "../lmstudio-client.js";
 import { getModelPool } from "../lib/llm/model-pool.js";
-import { modelRoleResolver } from "../lib/llm/model-role-resolver.js";
 import {
   logModelAction,
   readActionsLog,
@@ -40,7 +39,7 @@ export function registerLmstudioIpc(): void {
         /* v1.0.7: invalidate cache ПЕРЕД возвратом, чтобы следующий resolve() увидел
            новую loaded модель сразу. До v1.0.7 invalidate стоял после return —
            недостижимый код (мёртвый), резолвер кешировал устаревший null. */
-        modelRoleResolver.invalidate();
+        /* model-resolver не имеет cache — invalidate не нужен. */
         if (info) return info;
         /* Pool сообщил об успешной загрузке, но listLoaded модель не нашёл —
            редкий race с user-driven unload. Возвращаем минимальный shape,
@@ -58,7 +57,6 @@ export function registerLmstudioIpc(): void {
     logModelAction("UNLOAD", { reason: "user clicked Unload button in Models page", meta: { identifier } });
     await unloadModel(identifier);
     await getModelPool().refresh();
-    modelRoleResolver.invalidate();
   });
 
   /* v1.0.7: новые endpoints для UI-доступа к структурному логу действий

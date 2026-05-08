@@ -142,33 +142,7 @@ export async function flushLibraryImports(timeoutMs: number, reason: string): Pr
     await new Promise((r) => setTimeout(r, 100));
   }
 
-  /* После активных импортов ждём illustration jobs (post-return fire-and-forget).
-     Без этого app может закрыться до записи illustrations.json в очередной книге.
-     Используем оставшееся время от timeoutMs (минимум 2 сек). */
-  try {
-    const { drainIllustrationJobs, getIllustrationSemaphore } = await import("../lib/library/illustration-semaphore.js");
-    const status = getIllustrationSemaphore().getStatus();
-    if (status.active > 0 || status.queued > 0) {
-      const remainingMs = Math.max(2000, timeoutMs - (Date.now() - startedAt));
-      const drainStart = Date.now();
-      const drainPromise = drainIllustrationJobs();
-      const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, remainingMs));
-      await Promise.race([drainPromise, timeoutPromise]);
-      const elapsed = Date.now() - drainStart;
-      const finalStatus = getIllustrationSemaphore().getStatus();
-      if (finalStatus.active > 0 || finalStatus.queued > 0) {
-        await logger.write({
-          importId: "shutdown",
-          level: "warn",
-          category: "import.crash",
-          message: `flushLibraryImports: ${finalStatus.active} illustration jobs still running after ${elapsed}ms drain`,
-        });
-      }
-    }
-  } catch (e) {
-    /* Не падаем — drain best-effort. */
-    console.warn("[library.ipc] drainIllustrationJobs error:", e);
-  }
+  /* refactor 1.0.22: illustration feature удалён — drain больше не нужен. */
 
   return true;
 }

@@ -7,11 +7,9 @@ import { invalidateEndpointsCache, getEndpoints } from "../lib/endpoints/index.j
 import { setChromaUrl } from "../lib/chroma/http-client.js";
 import { refreshLmStudioClient } from "../lmstudio-client.js";
 import { syncMarkerEnvFromPrefs } from "../lib/library/marker-sidecar.js";
-import { modelRoleResolver } from "../lib/llm/model-role-resolver.js";
 import { applyImportSchedulerPrefs } from "../lib/library/import-task-scheduler.js";
 import { applyEvaluatorPrefs } from "../lib/library/evaluator-queue.js";
 import { applyHeavyLaneRateLimiterPrefs } from "../lib/llm/heavy-lane-rate-limiter.js";
-import { applyIllustrationSemaphorePrefs } from "../lib/library/illustration-semaphore.js";
 
 /**
  * Whitelist полей, входящих в «профиль моделей» (export/import).
@@ -96,9 +94,7 @@ export function applyRuntimeSideEffects(prefs: Preferences): void {
   /* Sync Marker feature flag to ENV so marker-sidecar.ts can read it
      synchronously without an async preferences store dependency. */
   syncMarkerEnvFromPrefs(prefs.useMarkerExtractor);
-  /* Role resolver caches resolved models for `modelRoleCacheTtlMs` —
-     invalidate now so changes to model keys and fallbacks are visible on next IPC call. */
-  modelRoleResolver.invalidate();
+  /* model-resolver не имеет cache (refactor 1.0.22) — invalidate не нужен. */
   /* Smart Import Pipeline: Settings = single source of truth.
      applyRuntimeSideEffects распространяет изменения на живые singletons.
      parserPoolSize / illustrationParallelism / converterCacheMaxBytes /
@@ -113,7 +109,7 @@ export function applyRuntimeSideEffects(prefs: Preferences): void {
   });
   applyEvaluatorPrefs({ evaluatorSlots: prefs.evaluatorSlots });
   applyHeavyLaneRateLimiterPrefs({ visionOcrRpm: prefs.visionOcrRpm });
-  applyIllustrationSemaphorePrefs({ illustrationParallelBooks: prefs.illustrationParallelBooks });
+  /* refactor 1.0.22: illustration feature удалён. */
 }
 
 export function registerPreferencesIpc(): void {

@@ -32,8 +32,6 @@ import {
 } from "../lib/library/evaluator-queue.js";
 import { resolveCatalogSidecarPaths } from "../lib/library/storage-contract.js";
 import { withBookMdLock } from "../lib/library/book-md-mutex.js";
-import { processIllustrations } from "../lib/library/illustration-worker.js";
-import { runIllustrationJob } from "../lib/library/illustration-semaphore.js";
 import { getBlobsRoot } from "../lib/library/library-store.js";
 import { resolveLibraryRoot } from "../lib/library/paths.js";
 import * as path from "path";
@@ -202,65 +200,4 @@ export function registerLibraryEvaluatorIpc(): void {
     }
   );
 
-  /**
-   * On-demand AI illustration enrichment (MVP v1.0.1).
-   *
-   * Runs `vision_illustration` model on a book's `illustrations.json`,
-   * writing back descriptions and quality scores. User-triggered from
-   * catalog -- NOT auto-called during import (see import-book.ts).
-   *
-   * Accepts a single bookId or an array. Returns aggregate stats.
-   */
-  ipcMain.handle(
-    "library:enrich-illustrations",
-    async (_e, payload: unknown): Promise<{
-      ok: boolean;
-      processed: number;
-      alreadyDone: number;
-      skipped: number;
-      errors: number;
-      bookCount: number;
-      reason?: string;
-    }> => {
-      const bookIds: string[] = Array.isArray(payload)
-        ? payload.filter((x): x is string => typeof x === "string")
-        : typeof payload === "string"
-          ? [payload]
-          : [];
-
-      if (bookIds.length === 0) {
-        return { ok: false, processed: 0, alreadyDone: 0, skipped: 0, errors: 0, bookCount: 0, reason: "no bookIds provided" };
-      }
-
-      const libraryRoot = resolveLibraryRoot();
-      const blobsRoot = getBlobsRoot(libraryRoot);
-      const totals = { processed: 0, alreadyDone: 0, skipped: 0, errors: 0 };
-
-      for (const bookId of bookIds) {
-        const meta = getBookById(bookId);
-        if (!meta) { totals.errors++; continue; }
-        try {
-          const sidecars = await resolveCatalogSidecarPaths(meta);
-          const bookDir = path.dirname(meta.mdPath);
-          const stats = await runIllustrationJob(() =>
-            processIllustrations(bookDir, blobsRoot, undefined, undefined, {
-              mdPath: meta.mdPath,
-              illustrationsPath: sidecars.illustrationsPath,
-              bookTitle: meta.title,
-              bookId: meta.id,
-            }),
-          );
-          totals.processed += stats.processed;
-          totals.alreadyDone += stats.alreadyDone;
-          totals.skipped += stats.skipped;
-          totals.errors += stats.errors;
-        } catch (err) {
-          console.error(`[enrich-illustrations] ${bookId} failed:`, err);
-          totals.errors++;
-        }
-      }
-
-      return { ok: true, ...totals, bookCount: bookIds.length };
-    },
-  );
 }

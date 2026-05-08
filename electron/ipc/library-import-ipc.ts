@@ -52,7 +52,6 @@ import {
   broadcastImportProgress,
 } from "./library-ipc-state.js";
 import { beginImport as beginAdaptive, endImport as endAdaptive } from "../lib/library/adaptive-bootstrap.js";
-import { detectRoleCollisions } from "../lib/llm/role-collision-detector.js";
 
 /**
  * Auto-pause evaluator во время импорта (v0.11.13, 2026-05-04).
@@ -193,11 +192,7 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
       const logFile = await logger.startSession(importId);
       const prefs = await readImportPrefs();
       const pipelinePrefs = await readPipelinePrefsOrNull().catch(() => null);
-      const roleSnapshot = detectRoleCollisions({
-        evaluatorModel: pipelinePrefs?.evaluatorModel,
-        visionModelKey: prefs.visionModelKey,
-        extractorModel: pipelinePrefs?.extractorModel,
-      });
+      /* refactor 1.0.22: detectRoleCollisions удалён (3 модели вместо 9 ролей). */
       await logger.write({
         importId, level: "info", category: "import.start",
         message: `Importing folder ${folder}`,
@@ -205,17 +200,8 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
           folder, scanArchives: args.scanArchives === true, ocrEnabled: args.ocrEnabled === true, maxDepth: args.maxDepth, logFile,
           djvuOcrProvider: prefs.djvuOcrProvider, ocrLanguages: prefs.ocrLanguages,
           visionMetaEnabled: prefs.visionMetaEnabled, visionModelKey: prefs.visionModelKey,
-          modelRoles: roleSnapshot.roles,
-          collisions: roleSnapshot.collisions,
         },
       });
-      if (roleSnapshot.warning) {
-        await logger.write({
-          importId, level: "warn", category: "model.collision",
-          message: roleSnapshot.warning,
-          details: { collisions: roleSnapshot.collisions },
-        });
-      }
       let endStatus: "ok" | "failed" | "cancelled" = "ok";
       /* v0.11.13: Auto-pause evaluator на ВЕСЬ импорт (не после N книг).
          Раньше evaluator конкурировал с vision-meta/vision-illustration за
@@ -334,11 +320,7 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
       const logFile = await logger.startSession(importId);
       const prefs = await readImportPrefs();
       const pipelinePrefs = await readPipelinePrefsOrNull().catch(() => null);
-      const roleSnapshot = detectRoleCollisions({
-        evaluatorModel: pipelinePrefs?.evaluatorModel,
-        visionModelKey: prefs.visionModelKey,
-        extractorModel: pipelinePrefs?.extractorModel,
-      });
+      /* refactor 1.0.22: detectRoleCollisions удалён (3 модели вместо 9 ролей). */
       await logger.write({
         importId, level: "info", category: "import.start",
         message: `Importing ${paths.length} files`,
@@ -346,17 +328,8 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
           fileCount: paths.length, scanArchives: args.scanArchives === true, ocrEnabled: args.ocrEnabled === true, logFile,
           djvuOcrProvider: prefs.djvuOcrProvider, ocrLanguages: prefs.ocrLanguages,
           visionMetaEnabled: prefs.visionMetaEnabled, visionModelKey: prefs.visionModelKey,
-          modelRoles: roleSnapshot.roles,
-          collisions: roleSnapshot.collisions,
         },
       });
-      if (roleSnapshot.warning) {
-        await logger.write({
-          importId, level: "warn", category: "model.collision",
-          message: roleSnapshot.warning,
-          details: { collisions: roleSnapshot.collisions },
-        });
-      }
       const onVisionMetaEvent = (e: { phase: "start" | "success" | "failed"; bookFile: string; message?: string; durationMs?: number; meta?: unknown }) => {
         const cat = e.phase === "start" ? "vision.start" : e.phase === "success" ? "vision.success" : "vision.failed";
         const lvl = e.phase === "failed" ? "warn" : "info";
