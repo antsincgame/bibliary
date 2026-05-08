@@ -490,7 +490,7 @@ export async function convertBookToMarkdown(
     djvuMaxBytes: opts.djvuMaxFileSizeMb ? opts.djvuMaxFileSizeMb * 1024 * 1024 : undefined,
     djvuOcrProvider: opts.djvuOcrProvider,
     ocrLanguages: opts.ocrLanguages,
-    visionModelKey: opts.visionModelKey,
+    visionOcrModel: opts.visionOcrModel,
     signal: opts.signal,
   });
   let allRepairs = repairParseResultAllStrategies(parsed);
@@ -515,7 +515,7 @@ export async function convertBookToMarkdown(
       djvuRenderDpi,
       djvuOcrProvider: opts.djvuOcrProvider,
       ocrLanguages: opts.ocrLanguages,
-      visionModelKey: opts.visionModelKey,
+      visionOcrModel: opts.visionOcrModel,
       signal: opts.signal,
     });
     allRepairs = repairParseResultAllStrategies(parsed);

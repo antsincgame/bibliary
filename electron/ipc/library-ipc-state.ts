@@ -51,8 +51,7 @@ export async function readImportPrefs(): Promise<{
   ocrAccuracy: "fast" | "accurate";
   ocrPdfDpi: number;
   djvuRenderDpi: number;
-  visionMetaEnabled: boolean;
-  visionModelKey?: string;
+  visionOcrModel?: string;
   metadataOnlineLookup: boolean;
 }> {
   try {
@@ -65,8 +64,7 @@ export async function readImportPrefs(): Promise<{
       ocrAccuracy: prefs.ocrAccuracy,
       ocrPdfDpi: prefs.ocrPdfDpi,
       djvuRenderDpi: prefs.djvuRenderDpi,
-      visionMetaEnabled: prefs.visionMetaEnabled === true,
-      visionModelKey: prefs.visionModelKey?.trim() || undefined,
+      visionOcrModel: prefs.visionOcrModel?.trim() || undefined,
       metadataOnlineLookup: prefs.metadataOnlineLookup !== false,
     };
   } catch {
@@ -77,8 +75,7 @@ export async function readImportPrefs(): Promise<{
       ocrAccuracy: "accurate",
       ocrPdfDpi: 400,
       djvuRenderDpi: 400,
-      visionMetaEnabled: false,
-      visionModelKey: undefined,
+      visionOcrModel: undefined,
       metadataOnlineLookup: true,
     };
   }

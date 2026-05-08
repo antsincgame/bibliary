@@ -199,7 +199,7 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
         details: {
           folder, scanArchives: args.scanArchives === true, ocrEnabled: args.ocrEnabled === true, maxDepth: args.maxDepth, logFile,
           djvuOcrProvider: prefs.djvuOcrProvider, ocrLanguages: prefs.ocrLanguages,
-          visionMetaEnabled: prefs.visionMetaEnabled, visionModelKey: prefs.visionModelKey,
+          visionOcrModel: prefs.visionOcrModel,
         },
       });
       let endStatus: "ok" | "failed" | "cancelled" = "ok";
@@ -221,8 +221,8 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
           ocrAccuracy: prefs.ocrAccuracy,
           ocrPdfDpi: prefs.ocrPdfDpi,
           djvuRenderDpi: prefs.djvuRenderDpi,
-          visionMetaEnabled: prefs.visionMetaEnabled,
-          visionModelKey: prefs.visionModelKey,
+          
+          visionOcrModel: prefs.visionOcrModel,
           metadataOnlineLookup: prefs.metadataOnlineLookup,
           onProgress: (evt) => broadcastImportProgress(getMainWindow, importId, evt),
           onVisionMetaEvent: (e) => {
@@ -327,7 +327,7 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
         details: {
           fileCount: paths.length, scanArchives: args.scanArchives === true, ocrEnabled: args.ocrEnabled === true, logFile,
           djvuOcrProvider: prefs.djvuOcrProvider, ocrLanguages: prefs.ocrLanguages,
-          visionMetaEnabled: prefs.visionMetaEnabled, visionModelKey: prefs.visionModelKey,
+          visionOcrModel: prefs.visionOcrModel,
         },
       });
       const onVisionMetaEvent = (e: { phase: "start" | "success" | "failed"; bookFile: string; message?: string; durationMs?: number; meta?: unknown }) => {
@@ -364,8 +364,8 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
               ocrAccuracy: prefs.ocrAccuracy,
               ocrPdfDpi: prefs.ocrPdfDpi,
               djvuRenderDpi: prefs.djvuRenderDpi,
-              visionMetaEnabled: prefs.visionMetaEnabled,
-              visionModelKey: prefs.visionModelKey,
+              
+              visionOcrModel: prefs.visionOcrModel,
               metadataOnlineLookup: prefs.metadataOnlineLookup,
               onVisionMetaEvent,
             });

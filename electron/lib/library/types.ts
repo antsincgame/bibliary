@@ -225,7 +225,7 @@ export interface ConvertOptions {
    */
   visionMetaEnabled?: boolean;
   /** Override modelKey vision-модели. Пусто = автодетект среди загруженных. */
-  visionModelKey?: string;
+  visionOcrModel?: string;
   /** Логгер для отчёта о прогрессе vision-meta вызова. */
   onVisionMetaEvent?: (event: { phase: "start" | "success" | "failed"; message?: string; durationMs?: number; meta?: unknown }) => void;
   /**

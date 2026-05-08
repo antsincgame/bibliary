@@ -87,12 +87,11 @@ export interface ParseOptions {
   /** Render DPI used by ddjvu page rasterisation. */
   djvuRenderDpi?: number;
   /**
-   * Явно выбранный modelKey для vision-OCR (preferences.visionModelKey).
+   * Явно выбранный modelKey для vision-OCR (preferences.visionOcrModel).
    * Пробрасывается в `recognizeWithVisionLlm`. Если пусто — vision-OCR
-   * сам резолвит модель через `modelRoleResolver.resolve("vision_ocr")`,
-   * чтобы соответствовать настройкам "Модели".
+   * сам резолвит модель через `getVisionOcrModel()`.
    */
-  visionModelKey?: string;
+  visionOcrModel?: string;
   /**
    * Optional override для жёсткого лимита размера DJVU (default 500 MB).
    * Можно поднять для архивных томов (Британника, Большая советская

@@ -82,7 +82,7 @@ export async function importBookFromFile(
   }
 
   /* Парсинг + Markdown — sha передаём как precomputed, чтобы не читать файл
-     второй раз. Pref'ы (djvuOcrProvider/ocrLanguages/visionMetaEnabled/visionModelKey)
+     второй раз. Pref'ы (djvuOcrProvider/ocrLanguages/visionMetaEnabled/visionOcrModel)
      пробрасываются из IPC слоя — без них локальный Vision LLM не работает на импорте. */
   let convResult;
   try {
@@ -97,7 +97,7 @@ export async function importBookFromFile(
       djvuRenderDpi: opts.djvuRenderDpi,
       djvuMaxFileSizeMb: opts.djvuMaxFileSizeMb,
       visionMetaEnabled: opts.visionMetaEnabled,
-      visionModelKey: opts.visionModelKey,
+      visionOcrModel: opts.visionOcrModel,
       metadataOnlineLookup: opts.metadataOnlineLookup,
       onVisionMetaEvent: opts.onVisionMetaEvent
         ? (e) => opts.onVisionMetaEvent!({ ...e, bookFile: path.basename(absPath) })

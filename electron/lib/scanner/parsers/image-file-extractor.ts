@@ -94,7 +94,7 @@ export function createImageFileExtractor(filePath: string): TextExtractor {
       const result = await recognizeWithVisionLlm(buffer, {
         languages: opts.languages,
         signal: opts.signal,
-        modelKey: opts.visionModelKey,
+        modelKey: opts.visionOcrModel,
       });
       const text = result.text.trim();
       if (!text) {

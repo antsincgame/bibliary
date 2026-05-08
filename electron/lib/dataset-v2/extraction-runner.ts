@@ -221,7 +221,7 @@ async function runExtractionInner(
       ocrPdfDpi: prefs.ocrPdfDpi,
       djvuOcrProvider: prefs.djvuOcrProvider,
       djvuRenderDpi: prefs.djvuRenderDpi,
-      visionModelKey: prefs.visionModelKey,
+      visionOcrModel: prefs.visionOcrModel,
       signal: ctrl.signal,
     });
     const totalChapters = parsed.sections.length;

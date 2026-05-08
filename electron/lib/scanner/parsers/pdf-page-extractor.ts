@@ -89,7 +89,7 @@ export function createPdfPageExtractor(
       const result = await recognizeWithVisionLlm(pageBuffer, {
         languages: opts.languages,
         signal: opts.signal,
-        modelKey: opts.visionModelKey,
+        modelKey: opts.visionOcrModel,
       });
       const text = result.text.trim();
       if (!text) {

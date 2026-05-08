@@ -60,7 +60,7 @@ export interface ImportFolderOptions {
   /** Включить онлайн lookup метаданных по ISBN (Open Library / Google Books). Default true. */
   metadataOnlineLookup?: boolean;
   /** Override modelKey vision-модели в LM Studio. Пусто = автодетект. */
-  visionModelKey?: string;
+  visionOcrModel?: string;
   /**
    * Колбэк vision-meta событий — для логирования в IPC слой.
    * Импорт каждой книги может вызвать start/success/failed.

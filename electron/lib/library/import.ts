@@ -464,7 +464,7 @@ async function runImportTaskWithTimeout(
         djvuOcrProvider: opts.djvuOcrProvider,
         ocrLanguages: opts.ocrLanguages,
         visionMetaEnabled: opts.visionMetaEnabled,
-        visionModelKey: opts.visionModelKey,
+        visionOcrModel: opts.visionOcrModel,
         onVisionMetaEvent: opts.onVisionMetaEvent,
         importRoot: opts.importRoot,
       }),

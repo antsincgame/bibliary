@@ -390,7 +390,7 @@ export async function parsePdfMain(filePath: string, opts: ParseOptions = {}): P
      Vision-OCR обёрнут в scheduler heavy lane (см. Иt 8В MAIN.1.1) — даже
      при scanned PDF на 500 страниц heavy-очередь не разнесёт VRAM. */
   if (allParagraphs.length === 0) {
-    const visionConfigured = Boolean(opts.visionModelKey);
+    const visionConfigured = Boolean(opts.visionOcrModel);
     if (opts.ocrEnabled && (isOcrSupported() || visionConfigured)) {
       let ocrAppliedPages = 0;
       let visionAppliedPages = 0;
@@ -405,7 +405,7 @@ export async function parsePdfMain(filePath: string, opts: ParseOptions = {}): P
           const cascade = await runExtractionCascade(extractor, filePath, {
             languages: opts.ocrLanguages,
             signal: opts.signal,
-            visionModelKey: opts.visionModelKey,
+            visionOcrModel: opts.visionOcrModel,
           });
           const txt = cascade.attempt?.text.trim() ?? "";
           if (!txt) {

@@ -133,7 +133,7 @@ async function parseDjvu(filePath: string, opts: ParseOptions = {}): Promise<Par
       if (result.sections.length > 0) return result;
       warnings.push("system OCR returned no text — falling back to vision-llm");
     }
-    const visionAvailable = await hasVisionOcrModel(opts.visionModelKey);
+    const visionAvailable = await hasVisionOcrModel(opts.visionOcrModel);
     if (visionAvailable) {
       return ocrDjvuPages(filePath, baseName, "vision-llm", opts, warnings);
     }
@@ -310,7 +310,7 @@ async function ocrDjvuPages(
             languages: langsToTry,
             signal: opts.signal,
             mimeType: "image/png",
-            modelKey: opts.visionModelKey,
+            modelKey: opts.visionOcrModel,
           })
           : await recognizeImageBuffer(
             new Uint8Array(pngBuffer.buffer, pngBuffer.byteOffset, pngBuffer.byteLength),

@@ -21,12 +21,9 @@ import { applyHeavyLaneRateLimiterPrefs } from "../lib/llm/heavy-lane-rate-limit
  * подключение к LM Studio или менять размер chunk'ов.
  */
 const PROFILE_KEYS = [
-  "extractorModel", "extractorModelFallbacks",
-  "evaluatorModel", "evaluatorModelFallbacks",
-  "translatorModel", "translatorModelFallbacks", "translatorTargetLang",
-  "ukrainianSpecialistModel", "ukrainianSpecialistModelFallbacks",
-  "langDetectorModel", "langDetectorModelFallbacks",
-  "visionModelKey", "visionModelFallbacks",
+  "readerModel",
+  "extractorModel",
+  "visionOcrModel",
 ] as const satisfies readonly (keyof Preferences)[];
 
 /** Тип профиля: только whitelisted ключи. */

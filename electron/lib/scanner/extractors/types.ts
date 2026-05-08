@@ -44,7 +44,7 @@ export interface ExtractOptions {
   /** Caller-side abort. Все Tier'ы должны его уважать. */
   signal?: AbortSignal;
   /** Conditional vision модель (override role resolver). */
-  visionModelKey?: string;
+  visionOcrModel?: string;
   /** Принудительно отключить какой-то Tier (например, "только Tier 0+1, без LLM"). */
   disabledTiers?: ReadonlyArray<0 | 1 | 2>;
 }

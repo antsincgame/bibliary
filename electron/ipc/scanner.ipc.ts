@@ -134,7 +134,7 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
       ocrPdfDpi: prefs.ocrPdfDpi,
       djvuOcrProvider: prefs.djvuOcrProvider,
       djvuRenderDpi: prefs.djvuRenderDpi,
-      visionModelKey: prefs.visionModelKey,
+      visionOcrModel: prefs.visionOcrModel,
     });
     const chunks = chunkBook(parsed, filePath);
     return {
@@ -190,7 +190,6 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
           chunkerOptions: args.chunkerOptions,
           upsertBatch: prefs.ingestUpsertBatch,
           maxBookChars: prefs.maxBookChars,
-          translateNonRussian: prefs.translateNonRussianBooks,
           parseOptions: {
             ocrEnabled: ocrWanted && (isOcrSupported() || prefs.djvuOcrProvider !== "system"),
             ocrLanguages: prefs.ocrLanguages,
@@ -198,7 +197,7 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
             ocrPdfDpi: prefs.ocrPdfDpi,
             djvuOcrProvider: prefs.djvuOcrProvider,
             djvuRenderDpi: prefs.djvuRenderDpi,
-            visionModelKey: prefs.visionModelKey,
+            visionOcrModel: prefs.visionOcrModel,
             signal: ctrl.signal,
           },
           onProgress: (p: IngestProgress) => {
@@ -321,7 +320,6 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
           signal: ctrl.signal,
           upsertBatch: prefs.ingestUpsertBatch,
           maxBookChars: prefs.maxBookChars,
-          translateNonRussian: prefs.translateNonRussianBooks,
           parseOptions: { signal: ctrl.signal },
           onProgress: (p: IngestProgress) => send("scanner:ingest-progress", { ingestId, ...p }),
         });

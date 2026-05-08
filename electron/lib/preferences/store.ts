@@ -106,17 +106,6 @@ export const PreferencesSchema = z.object({
    * (Britannica, БСЭ) часто 800-2000 MB — поднять для них. Min 50, max 4096 MB. */
   djvuMaxFileSizeMb: z.number().int().min(50).max(4096).default(500),
 
-  // -- Vision-meta (локальная LM Studio multimodal модель для извлечения метаданных из обложек) --
-  /** Ручной override modelKey vision-модели. Пусто = автоматический поиск среди загруженных. */
-  visionModelKey: z.string().default(""),
-  /**
-   * Включить vision-meta (LLM-анализ обложки).
-   * Default true — дополняет parsed metadata + ISBN lookup данными с обложки.
-   * Требует vision-capable модель в LM Studio (llava, qwen-vl, minicpm-v и пр.).
-   * Gracefully no-ops если vision-модель не загружена.
-   */
-  visionMetaEnabled: z.boolean().default(true),
-
   // -- Metadata online lookup (ISBN → Open Library / Google Books) --
   /**
    * Включить онлайн-lookup метаданных по ISBN через Open Library и Google Books.
@@ -168,58 +157,6 @@ export const PreferencesSchema = z.object({
    */
   visionOcrModel: z.string().default(""),
 
-  // -- Legacy keys (deprecated, kept for migration). Удалятся в следующей мажорке. --
-  /** @deprecated → readerModel. Migration auto-mapping применяется при load. */
-  evaluatorModel: z.string().default(""),
-  /**
-   * Smart-fallback для evaluator: если preferred модель не загружена в LM Studio
-   * И CSV fallbacks тоже не подходят — picker возьмёт ЛЮБУЮ загруженную LLM
-   * (с скорингом по эвристикам), вместо того чтобы помечать книгу `failed`.
-   * Default: false — строгий режим, уважает явный выбор модели пользователем.
-   * Включать только если хочешь "оценивать любой загруженной LLM когда preferred недоступна".
-   */
-  evaluatorAllowFallback: z.boolean().default(false),
-  // -- Per-role fallback chains (CSV modelKey1,modelKey2,...) --
-  extractorModelFallbacks: z.string().default(""),
-  evaluatorModelFallbacks: z.string().default(""),
-  /** Fallback chain для vision-ролей (CSV modelKey1,modelKey2,...). */
-  visionModelFallbacks: z.string().default(""),
-
-  // -- Language-specialist roles --
-  /** Модель, которая хорошо работает с украинским (Aya, Llama-3-uk, Qwen-uk и т.п.). Пусто = не используется. */
-  ukrainianSpecialistModel: z.string().default(""),
-  ukrainianSpecialistModelFallbacks: z.string().default(""),
-  /** Малая модель для определения языка текста (ISO-639-1). Пусто = не используется. */
-  langDetectorModel: z.string().default(""),
-  langDetectorModelFallbacks: z.string().default(""),
-  /** Модель-переводчик: укр/любой → русский или английский. Пусто = не используется. */
-  translatorModel: z.string().default(""),
-  translatorModelFallbacks: z.string().default(""),
-  /** Целевой язык переводчика: "ru" (default) или "en". */
-  translatorTargetLang: z.enum(["ru", "en"]).default("ru"),
-  /** Авто-переводить книги на украинском (и схожих языках) при ingest. */
-  translateNonRussianBooks: z.boolean().default(true),
-
-  // -- Layout Assistant (LLM пост-обработка book.md) --
-  /**
-   * Включить LLM-верстальщика. Когда `true` — после импорта book.md
-   * прогоняется через layout-assistant queue (см. layout-assistant-queue.ts):
-   * модель размечает заголовки, dot-leader ToC, удаляет OCR-junk.
-   * Default `true` — включён из коробки; ручной запуск из reader доступен всегда.
-   */
-  layoutAssistantEnabled: z.boolean().default(true),
-  /** LM Studio модель для layout_assistant роли. Пусто = первая загруженная. */
-  layoutAssistantModel: z.string().default(""),
-  /** CSV fallback chain для layout_assistant. */
-  layoutAssistantModelFallbacks: z.string().default(""),
-
-  // -- Model role resolver --
-  /**
-   * TTL кэша resolved role → modelKey в memory. 0 = no cache (всегда заново).
-   * Default 30 секунд — баланс между производительностью и реактивностью.
-   */
-  modelRoleCacheTtlMs: z.number().int().min(0).default(30_000),
-
   // ==========================================================================
   // Smart Import Pipeline (Иt 8Б library-fortress, 2026-05-01)
   //
@@ -265,20 +202,6 @@ export const PreferencesSchema = z.object({
   visionOcrRpm: z.number().int().min(1).max(600).default(60),
 
   // -- Illustration worker --
-  /**
-   * Внутренний параллелизм описания иллюстраций per-book. Default 4.
-   * До Иt 8Б был hardcoded VISION_PARALLELISM в illustration-worker.ts.
-   */
-  illustrationParallelism: z.number().int().min(1).max(16).default(4),
-
-  /**
-   * Иt 8В.MEDIUM.10: книги, импортируемые параллельно через illustration-worker
-   * (semaphore по bookId). Раньше было только env `BIBLIARY_ILLUSTRATION_PARALLEL_BOOKS`,
-   * теперь Settings = single source of truth (приказ Царя об отказе от env).
-   * 1 = строго последовательно (для слабых машин), 2 = default, до 16 для мощных.
-   */
-  illustrationParallelBooks: z.number().int().min(1).max(16).default(2),
-
   // -- Converter cache --
   /**
    * Максимальный размер converter cache (data/converters-cache/) в байтах.
@@ -408,13 +331,20 @@ export class FsPreferencesStore {
 
   async getAll(): Promise<Preferences> {
     const overrides = await this.readOverrides();
-    const result = { ...DEFAULTS, ...overrides };
+    const merged = { ...DEFAULTS, ...overrides } as Preferences & Record<string, unknown>;
 
-    if (!result.visionModelKey) {
-      result.visionModelKey = await this.migrateLegacyVisionKey();
+    /* Migration shim (refactor 1.0.22): legacy keys → new keys. Применяется
+     * только если новый key пуст, чтобы пользовательский явный выбор
+     * не перетирался. Старые keys валидируются Zod как unknown — игнорируются. */
+    const legacy = merged as Record<string, unknown>;
+    if (!merged.readerModel && typeof legacy.evaluatorModel === "string") {
+      merged.readerModel = String(legacy.evaluatorModel);
+    }
+    if (!merged.visionOcrModel && typeof legacy.visionModelKey === "string") {
+      merged.visionOcrModel = String(legacy.visionModelKey);
     }
 
-    return result;
+    return merged as Preferences;
   }
 
   async get<K extends keyof Preferences>(key: K): Promise<Preferences[K]> {
@@ -445,21 +375,6 @@ export class FsPreferencesStore {
 
   invalidate(): void {
     this.cache = null;
-  }
-
-  /**
-   * Migration: read legacy split vision pref keys from raw JSON (bypassing Zod)
-   * and return the first non-empty one as the unified visionModelKey.
-   */
-  private async migrateLegacyVisionKey(): Promise<string> {
-    try {
-      const raw = await fs.readFile(this.file, "utf8");
-      const json = JSON.parse(raw) as { prefs?: Record<string, unknown> };
-      const p = json?.prefs ?? {};
-      return String(p.visionIllustrationModel || p.visionMetaModel || p.visionOcrModel || "");
-    } catch {
-      return "";
-    }
   }
 
   private async readOverrides(): Promise<Partial<Preferences>> {

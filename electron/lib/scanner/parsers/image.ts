@@ -16,7 +16,7 @@ async function parseImage(filePath: string, opts: ParseOptions = {}): Promise<Pa
   const baseName = path.basename(filePath, path.extname(filePath));
 
   /* Без OS OCR и без vision-LLM модели — нечем парсить изображение. */
-  const visionConfigured = Boolean(opts.visionModelKey);
+  const visionConfigured = Boolean(opts.visionOcrModel);
   if (!isOcrSupported() && !visionConfigured) {
     return {
       metadata: {
@@ -52,7 +52,7 @@ async function parseImage(filePath: string, opts: ParseOptions = {}): Promise<Pa
   const cascade = await runExtractionCascade(extractor, filePath, {
     languages: opts.ocrLanguages,
     signal: opts.signal,
-    visionModelKey: opts.visionModelKey,
+    visionOcrModel: opts.visionOcrModel,
   });
 
   const text = cascade.attempt?.text.trim() ?? "";
