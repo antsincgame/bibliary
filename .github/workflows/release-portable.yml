@@ -109,8 +109,17 @@ jobs:
         # Пользователь всё равно увидит Gatekeeper «not signed by identified
         # developer» при первом запуске (xattr quarantine), но после
         # `xattr -rd com.apple.quarantine` приложение откроется без проблем.
+        #
+        # КРИТИЧНО: `unset CSC_LINK CSC_KEY_PASSWORD` в no-secret branch.
+        # GitHub Actions при `secrets.CSC_LINK` отсутствующем секрете подставляет
+        # пустую строку, а electron-builder 26.8.x использует chooseNotNull
+        # с проверкой `== null` (НЕ `isEmpty`) — пустая строка проходит как
+        # «валидный путь», electron-builder делает `path.resolve(projectDir, "")` =
+        # projectDir и падает с «<projectDir> not a file». См. v1.0.19-1.0.22:
+        # все эти релизы упали именно так, .dmg никогда не дошёл до Releases.
         run: |
           if [ -z "${CSC_LINK}" ]; then
+            unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
             npx electron-builder --mac --arm64 --publish never --config.mac.identity=-
           else
             npx electron-builder --mac --arm64 --publish never
