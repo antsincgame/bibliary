@@ -106,6 +106,52 @@ function extractParamCount(m: LoadedModelInfo): number | null {
 }
 
 /**
+ * Эвристическая оценка VRAM/RAM в GB. Ровно для UI-warning'а: «3 модели
+ * займут ~24 GB — не все поместятся на 16 GB». Фактическое потребление
+ * зависит от quantization, context length и activations — это lower-bound.
+ *
+ * Формула: B-params × bytes-per-param. По умолчанию Q4_K_M (~0.5 byte/param).
+ * Q8 = 1 byte, F16 = 2 bytes, Q5 ≈ 0.625, Q3 ≈ 0.4. Плюс +20% активации.
+ */
+export function estimateModelVramGb(m: LoadedModelInfo): number | null {
+  const params = extractParamCount(m);
+  if (params === null) return null;
+  const quant = (m.quantization || "").toLowerCase();
+  let bytesPerParam = 0.5; /* Q4 default — самый частый */
+  if (quant.includes("q8") || quant.includes("8bit")) bytesPerParam = 1.0;
+  else if (quant.includes("f16") || quant.includes("fp16") || quant.includes("16bit")) bytesPerParam = 2.0;
+  else if (quant.includes("f32") || quant.includes("32bit")) bytesPerParam = 4.0;
+  else if (quant.includes("q5")) bytesPerParam = 0.625;
+  else if (quant.includes("q3")) bytesPerParam = 0.4;
+  else if (quant.includes("q2")) bytesPerParam = 0.3;
+  const baseGb = (params * bytesPerParam * 1024) / 1024; /* params in B → MB → GB */
+  /* Activations + KV cache headroom: ~20%. */
+  return Math.round(baseGb * 1.2 * 10) / 10;
+}
+
+/**
+ * Сумма estimated VRAM для 3 назначенных моделей. Дубли (один modelKey на
+ * несколько задач — например vision-only) не считаются дважды.
+ */
+export function totalVramEstimateGb(
+  result: AutoConfigResult,
+  loaded: LoadedModelInfo[],
+): number {
+  const uniqueKeys = new Set<string>();
+  for (const key of [result.assignments.reader, result.assignments.extractor, result.assignments["vision-ocr"]]) {
+    if (key) uniqueKeys.add(key);
+  }
+  let total = 0;
+  for (const key of uniqueKeys) {
+    const m = loaded.find((x) => x.modelKey === key);
+    if (!m) continue;
+    const est = estimateModelVramGb(m);
+    if (est !== null) total += est;
+  }
+  return Math.round(total * 10) / 10;
+}
+
+/**
  * Главная функция: распределяет 0..N загруженных моделей по 3 задачам.
  *
  * Алгоритм:

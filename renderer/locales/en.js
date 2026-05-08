@@ -809,4 +809,12 @@ export default {
   "models.btn.autoConfigure.busy": "Configuring…",
   "models.btn.autoConfigure.doneTitle": "Auto-configuration applied",
   "models.btn.autoConfigure.errorTitle": "Auto-configuration failed",
+
+  "models.autoConfigure.vramEstimate": "Estimated VRAM/RAM: ~{gb} GB total. Models will load on demand if it does not fit at once.",
+  "models.autoConfigure.preloadNow": "Preload now",
+  "models.autoConfigure.lazyLoad": "Load on demand",
+  "models.autoConfigure.preloading": "Preloading…",
+  "models.autoConfigure.preloadDone": "All models preloaded",
+  "models.autoConfigure.preloadPartial": "Preload partially failed",
+  "models.autoConfigure.nothingToPreload": "Nothing to preload — no models assigned.",
 };

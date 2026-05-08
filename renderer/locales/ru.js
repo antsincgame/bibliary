@@ -823,4 +823,12 @@ export default {
   "models.btn.autoConfigure.busy": "Настраиваем…",
   "models.btn.autoConfigure.doneTitle": "Авто-настройка применена",
   "models.btn.autoConfigure.errorTitle": "Авто-настройка не удалась",
+
+  "models.autoConfigure.vramEstimate": "Оценка VRAM/RAM: ~{gb} ГБ всего. Модели подгрузятся по требованию, если все три сразу не поместятся.",
+  "models.autoConfigure.preloadNow": "Загрузить сейчас",
+  "models.autoConfigure.lazyLoad": "По требованию",
+  "models.autoConfigure.preloading": "Загружаем…",
+  "models.autoConfigure.preloadDone": "Все модели загружены",
+  "models.autoConfigure.preloadPartial": "Часть моделей не загрузилась",
+  "models.autoConfigure.nothingToPreload": "Нечего загружать — ни одна модель не назначена.",
 };

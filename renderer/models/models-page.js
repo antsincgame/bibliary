@@ -50,16 +50,39 @@ function buildLayout() {
             try {
               const res = await window.api.lmstudio.autoConfigureModels();
               if (res.ok) {
-                /* UI feedback: краткая сводка какие назначения сделаны. */
+                /* Краткая сводка + VRAM estimate + опциональный preload. */
                 const lines = res.reasons.map((r) =>
                   `${r.task}: ${r.modelKey ?? "—"} (${r.reason})`,
                 );
-                const { showAlert } = await import("../components/ui-dialog.js");
-                await showAlert(lines.join("\n"), {
+                const vramLine = res.estimatedVramGb > 0
+                  ? "\n\n" + t("models.autoConfigure.vramEstimate", { gb: String(res.estimatedVramGb) })
+                  : "";
+                const message = lines.join("\n") + vramLine;
+                const { showConfirm } = await import("../components/ui-dialog.js");
+                /* Confirm: «загрузить сейчас?». OK → preload, Cancel → lazy. */
+                const wantsPreload = await showConfirm(message, {
                   title: t("models.btn.autoConfigure.doneTitle"),
+                  okText: t("models.autoConfigure.preloadNow"),
+                  cancelText: t("models.autoConfigure.lazyLoad"),
                 });
-                /* Re-render Models page чтобы select'ы показали новые prefs. */
+                /* Re-render select'ы независимо. */
                 await refreshAll();
+                if (wantsPreload) {
+                  btn.textContent = t("models.autoConfigure.preloading");
+                  const preloadRes = await window.api.lmstudio.preloadAssignedModels();
+                  const { showAlert } = await import("../components/ui-dialog.js");
+                  const summary = preloadRes.results.map((r) => {
+                    const sec = (r.durationMs / 1000).toFixed(1);
+                    if (r.ok) return `✓ ${r.task}: ${r.modelKey} (${sec}s)`;
+                    return `✗ ${r.task}: ${r.modelKey} — ${r.error ?? "failed"}`;
+                  }).join("\n");
+                  await showAlert(summary || t("models.autoConfigure.nothingToPreload"), {
+                    title: preloadRes.ok
+                      ? t("models.autoConfigure.preloadDone")
+                      : t("models.autoConfigure.preloadPartial"),
+                  });
+                  await refreshAll();
+                }
               } else {
                 const { showAlert } = await import("../components/ui-dialog.js");
                 await showAlert(res.error ?? "auto-configure failed", {

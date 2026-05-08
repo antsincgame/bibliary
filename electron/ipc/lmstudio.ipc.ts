@@ -74,7 +74,7 @@ export function registerLmstudioIpc(): void {
   /**
    * `models:auto-configure` — heuristic auto-pick reader/extractor/vision-ocr
    * из текущих loaded моделей и запись в preferences. Возвращает что было
-   * назначено + reasons для UI feedback.
+   * назначено + reasons + estimated VRAM для UI warning.
    */
   ipcMain.handle("models:auto-configure", async (): Promise<{
     ok: boolean;
@@ -82,10 +82,11 @@ export function registerLmstudioIpc(): void {
     assignments: { reader: string | null; extractor: string | null; "vision-ocr": string | null };
     reasons: Array<{ task: string; modelKey: string | null; reason: string }>;
     saved: { readerModel?: string; extractorModel?: string; visionOcrModel?: string };
+    estimatedVramGb: number;
   }> => {
     try {
       const { listLoaded } = await import("../lmstudio-client.js");
-      const { autoConfigureTasks, toPreferenceUpdates } = await import("../lib/llm/auto-config.js");
+      const { autoConfigureTasks, toPreferenceUpdates, totalVramEstimateGb } = await import("../lib/llm/auto-config.js");
       const { getPreferencesStore } = await import("../lib/preferences/store.js");
 
       const loaded = await listLoaded();
@@ -104,6 +105,7 @@ export function registerLmstudioIpc(): void {
         assignments: result.assignments,
         reasons: result.reasons,
         saved: updates,
+        estimatedVramGb: totalVramEstimateGb(result, loaded),
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -113,7 +115,58 @@ export function registerLmstudioIpc(): void {
         assignments: { reader: null, extractor: null, "vision-ocr": null },
         reasons: [],
         saved: {},
+        estimatedVramGb: 0,
       };
     }
+  });
+
+  /**
+   * `models:preload-assigned` — последовательно прогревает все назначенные
+   * модели через ModelPool.acquire (использует SDK под капотом). Если VRAM
+   * не хватает — pool.acquire эвиктит LRU автоматически. Это означает что
+   * preload может НЕ оставить все 3 модели в памяти одновременно — они
+   * будут грузиться по требованию и эвиктиться по TTL.
+   *
+   * Возвращает массив {task, modelKey, ok, error?} — UI показывает прогресс.
+   */
+  ipcMain.handle("models:preload-assigned", async (): Promise<{
+    ok: boolean;
+    results: Array<{ task: string; modelKey: string; ok: boolean; error?: string; durationMs: number }>;
+  }> => {
+    const { getPreferencesStore } = await import("../lib/preferences/store.js");
+    const { getModelPool } = await import("../lib/llm/model-pool.js");
+    const prefs = await getPreferencesStore().getAll();
+
+    /* Порядок: extractor → reader → vision-ocr. Главная модель грузится
+     * первой, чтобы при VRAM-pressure она точно поместилась. */
+    const queue: Array<{ task: string; modelKey: string }> = [];
+    const ext = String((prefs as Record<string, unknown>).extractorModel || "").trim();
+    const reader = String((prefs as Record<string, unknown>).readerModel || "").trim();
+    const vision = String((prefs as Record<string, unknown>).visionOcrModel || "").trim();
+    if (ext) queue.push({ task: "extractor", modelKey: ext });
+    if (reader && reader !== ext) queue.push({ task: "reader", modelKey: reader });
+    if (vision && vision !== ext && vision !== reader) queue.push({ task: "vision-ocr", modelKey: vision });
+
+    const results: Array<{ task: string; modelKey: string; ok: boolean; error?: string; durationMs: number }> = [];
+    const pool = getModelPool();
+    for (const { task, modelKey } of queue) {
+      const start = Date.now();
+      try {
+        /* acquire + immediate release — модель загружена, refCount=0, ttl
+         * запущен. После TTL pool сам выгрузит если никто не использует. */
+        const handle = await pool.acquire(modelKey, { role: task, ttlSec: 1800 });
+        handle.release();
+        results.push({ task, modelKey, ok: true, durationMs: Date.now() - start });
+      } catch (e) {
+        results.push({
+          task,
+          modelKey,
+          ok: false,
+          error: e instanceof Error ? e.message : String(e),
+          durationMs: Date.now() - start,
+        });
+      }
+    }
+    return { ok: results.every((r) => r.ok), results };
   });
 }

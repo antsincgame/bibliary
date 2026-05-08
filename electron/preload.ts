@@ -227,7 +227,17 @@ contextBridge.exposeInMainWorld("api", {
       assignments: { reader: string | null; extractor: string | null; "vision-ocr": string | null };
       reasons: Array<{ task: string; modelKey: string | null; reason: string }>;
       saved: { readerModel?: string; extractorModel?: string; visionOcrModel?: string };
+      estimatedVramGb: number;
     }> => ipcRenderer.invoke("models:auto-configure"),
+    /**
+     * Прогреть назначенные модели через ModelPool (SDK loadModel + LRU
+     * eviction под капотом). Последовательно грузит extractor → reader →
+     * vision. Возвращает per-model status для UI прогресса.
+     */
+    preloadAssignedModels: (): Promise<{
+      ok: boolean;
+      results: Array<{ task: string; modelKey: string; ok: boolean; error?: string; durationMs: number }>;
+    }> => ipcRenderer.invoke("models:preload-assigned"),
   },
 
   resilience: {
