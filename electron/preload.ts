@@ -216,6 +216,18 @@ contextBridge.exposeInMainWorld("api", {
     getActionsLog: (maxLines?: number): Promise<string> =>
       ipcRenderer.invoke("lmstudio:get-actions-log", maxLines),
     clearActionsLog: (): Promise<boolean> => ipcRenderer.invoke("lmstudio:clear-actions-log"),
+    /**
+     * Heuristic auto-configuration: распределяет loaded модели по 3 задачам
+     * (reader/extractor/vision-ocr) на основе vision capability + reasoning
+     * markers + размера. Сохраняет в preferences. Возвращает reasons для UI.
+     */
+    autoConfigureModels: (): Promise<{
+      ok: boolean;
+      error?: string;
+      assignments: { reader: string | null; extractor: string | null; "vision-ocr": string | null };
+      reasons: Array<{ task: string; modelKey: string | null; reason: string }>;
+      saved: { readerModel?: string; extractorModel?: string; visionOcrModel?: string };
+    }> => ipcRenderer.invoke("models:auto-configure"),
   },
 
   resilience: {

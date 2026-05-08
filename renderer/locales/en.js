@@ -803,4 +803,10 @@ export default {
   "models.task.extractor.hint": "Big reasoning model for dataset crystallization. Recommend 14B+ thinking.",
   "models.task.visionOcr.label": "Vision OCR (DJVU/PDF scans)",
   "models.task.visionOcr.hint": "Optional. Vision-capable model for image-only books. Recommend Qwen2.5-VL-7B+.",
+
+  "models.btn.autoConfigure": "Auto-configure",
+  "models.btn.autoConfigure.tooltip": "Heuristically pick reader/extractor/vision-ocr from loaded models (size + reasoning markers + vision capability).",
+  "models.btn.autoConfigure.busy": "Configuring…",
+  "models.btn.autoConfigure.doneTitle": "Auto-configuration applied",
+  "models.btn.autoConfigure.errorTitle": "Auto-configuration failed",
 };

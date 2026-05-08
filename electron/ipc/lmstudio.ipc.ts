@@ -70,4 +70,50 @@ export function registerLmstudioIpc(): void {
     await clearActionsLog();
     return true;
   });
+
+  /**
+   * `models:auto-configure` — heuristic auto-pick reader/extractor/vision-ocr
+   * из текущих loaded моделей и запись в preferences. Возвращает что было
+   * назначено + reasons для UI feedback.
+   */
+  ipcMain.handle("models:auto-configure", async (): Promise<{
+    ok: boolean;
+    error?: string;
+    assignments: { reader: string | null; extractor: string | null; "vision-ocr": string | null };
+    reasons: Array<{ task: string; modelKey: string | null; reason: string }>;
+    saved: { readerModel?: string; extractorModel?: string; visionOcrModel?: string };
+  }> => {
+    try {
+      const { listLoaded } = await import("../lmstudio-client.js");
+      const { autoConfigureTasks, toPreferenceUpdates } = await import("../lib/llm/auto-config.js");
+      const { getPreferencesStore } = await import("../lib/preferences/store.js");
+
+      const loaded = await listLoaded();
+      const result = autoConfigureTasks(loaded);
+      const updates = toPreferenceUpdates(result);
+
+      /* Сохраняем только non-null назначения. Если какая-то задача = null
+       * (например vision-ocr когда нет vision модели) — оставляем существующий
+       * pref как есть, не перетираем пустотой. */
+      if (Object.keys(updates).length > 0) {
+        await getPreferencesStore().set(updates);
+      }
+
+      return {
+        ok: true,
+        assignments: result.assignments,
+        reasons: result.reasons,
+        saved: updates,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        ok: false,
+        error: msg,
+        assignments: { reader: null, extractor: null, "vision-ocr": null },
+        reasons: [],
+        saved: {},
+      };
+    }
+  });
 }

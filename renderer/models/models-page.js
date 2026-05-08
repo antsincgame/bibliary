@@ -33,6 +33,51 @@ function buildLayout() {
           btn.addEventListener("click", () => void refreshAll());
           return btn;
         })(),
+        (() => {
+          /* «Авто-настройка» — heuristic auto-pick задач из загруженных
+           * моделей. Один клик распределяет reader/extractor/vision-ocr
+           * через эвристику в auto-config.ts (vision capability + reasoning
+           * markers + размер) и записывает в preferences. */
+          const btn = el("button", {
+            class: "btn btn-ghost btn-sm mp-autoconfig-btn",
+            type: "button",
+            title: t("models.btn.autoConfigure.tooltip"),
+          }, t("models.btn.autoConfigure"));
+          btn.addEventListener("click", async () => {
+            btn.disabled = true;
+            const orig = btn.textContent;
+            btn.textContent = t("models.btn.autoConfigure.busy");
+            try {
+              const res = await window.api.lmstudio.autoConfigureModels();
+              if (res.ok) {
+                /* UI feedback: краткая сводка какие назначения сделаны. */
+                const lines = res.reasons.map((r) =>
+                  `${r.task}: ${r.modelKey ?? "—"} (${r.reason})`,
+                );
+                const { showAlert } = await import("../components/ui-dialog.js");
+                await showAlert(lines.join("\n"), {
+                  title: t("models.btn.autoConfigure.doneTitle"),
+                });
+                /* Re-render Models page чтобы select'ы показали новые prefs. */
+                await refreshAll();
+              } else {
+                const { showAlert } = await import("../components/ui-dialog.js");
+                await showAlert(res.error ?? "auto-configure failed", {
+                  title: t("models.btn.autoConfigure.errorTitle"),
+                });
+              }
+            } catch (e) {
+              const { showAlert } = await import("../components/ui-dialog.js");
+              await showAlert(e instanceof Error ? e.message : String(e), {
+                title: t("models.btn.autoConfigure.errorTitle"),
+              });
+            } finally {
+              btn.disabled = false;
+              btn.textContent = orig;
+            }
+          });
+          return btn;
+        })(),
       ]),
       el("p", { class: "mp-header-sub" }, t("models.header.sub_compact")),
     ]),

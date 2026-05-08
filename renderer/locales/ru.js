@@ -817,4 +817,10 @@ export default {
   "models.task.extractor.hint": "Большая reasoning-модель для генерации датасета. Рекомендуем 14B+ thinking.",
   "models.task.visionOcr.label": "Vision OCR (DJVU/PDF сканы)",
   "models.task.visionOcr.hint": "Опционально. Vision-модель для image-only книг. Рекомендуем Qwen2.5-VL-7B+.",
+
+  "models.btn.autoConfigure": "Авто-настройка",
+  "models.btn.autoConfigure.tooltip": "Эвристически распределить reader/extractor/vision-ocr по загруженным моделям (размер + reasoning маркеры + vision capability).",
+  "models.btn.autoConfigure.busy": "Настраиваем…",
+  "models.btn.autoConfigure.doneTitle": "Авто-настройка применена",
+  "models.btn.autoConfigure.errorTitle": "Авто-настройка не удалась",
 };
