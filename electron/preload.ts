@@ -63,6 +63,12 @@ interface LibraryBookMeta {
   verdictReason?: string;
   evaluatorModel?: string;
   evaluatedAt?: string;
+  /** 0..100 — доля уникальных идей по сравнению с Chroma корпусом. undefined = не оценено. */
+  uniquenessScore?: number;
+  uniquenessNovelCount?: number;
+  uniquenessTotalIdeas?: number;
+  uniquenessEvaluatedAt?: string;
+  uniquenessError?: string;
   importedAt: string;
   originalFile: string;
   sourceArchive?: string;
@@ -116,6 +122,10 @@ function createSmokeLibraryHarness(): {
         domain: "cybernetics",
         wordCount: 12000,
         qualityScore: 92,
+        uniquenessScore: 78,
+        uniquenessNovelCount: 14,
+        uniquenessTotalIdeas: 18,
+        uniquenessEvaluatedAt: now,
         status: "evaluated",
         tags: ["cybernetics", "systems", "prediction"],
         isFictionOrWater: false,

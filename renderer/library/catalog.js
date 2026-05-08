@@ -8,7 +8,7 @@ import { showAlert, showConfirm } from "../components/ui-dialog.js";
 import { buildCollectionPicker } from "../components/collection-picker.js";
 import { CATALOG, STATE } from "./state.js";
 import { filterCatalog as filterCatalogPure, qualityClass, statusClass } from "./catalog-filter.js";
-import { fmtWords, fmtQuality } from "./format.js";
+import { fmtWords, fmtQuality, fmtUniqueness } from "./format.js";
 import { guardAndCrystallize, cancelBatchExtraction } from "./batch-actions.js";
 import { openBook } from "./reader.js";
 import { openTagCloudModal } from "./tag-cloud.js";
@@ -221,7 +221,7 @@ export function renderCatalogTable(root) {
       ? `${t("library.catalog.empty.title")} — ${t("library.catalog.empty.body")}`
       : t("library.catalog.empty.filtered");
     tbody.appendChild(el("tr", { class: "lib-catalog-empty-row" }, [
-      el("td", { colspan: "9", class: "lib-empty-cell" }, msg),
+      el("td", { colspan: "10", class: "lib-empty-cell" }, msg),
     ]));
     updateLoadMoreButton(root);
     return;
@@ -238,6 +238,20 @@ export function renderCatalogTable(root) {
       if (sEl) sEl.textContent = t("library.catalog.summary.selected", { n: String(CATALOG.selected.size) });
     });
     const q = typeof row.qualityScore === "number" ? row.qualityScore : null;
+    const u = typeof row.uniquenessScore === "number" ? row.uniquenessScore : null;
+    /* Tooltip раскрывает счётчики и причину undefined (если uniquenessError). */
+    const uTooltip = (() => {
+      if (u !== null && typeof row.uniquenessTotalIdeas === "number") {
+        return t("library.catalog.uniqueness.tooltip", {
+          novel: String(row.uniquenessNovelCount ?? 0),
+          total: String(row.uniquenessTotalIdeas),
+        });
+      }
+      if (typeof row.uniquenessError === "string" && row.uniquenessError) {
+        return t("library.catalog.uniqueness.error", { reason: row.uniquenessError });
+      }
+      return t("library.catalog.uniqueness.notEvaluated");
+    })();
     /* Title / author: locale-aware зеркала (display-meta). */
     const displayTitle = displayBookTitle(row);
     const titleCell = el("td", {
@@ -279,6 +293,10 @@ export function renderCatalogTable(root) {
       el("td", { class: "lib-catalog-cell-domain" }, row.domain || ""),
       el("td", { class: "lib-catalog-cell-words" }, fmtWords(row.wordCount)),
       el("td", { class: "lib-catalog-cell-quality" }, q !== null ? fmtQuality(q) : "—"),
+      el("td", {
+        class: `lib-catalog-cell-uniqueness ${u === null ? "lib-catalog-cell-uniqueness-na" : ""}`,
+        title: uTooltip,
+      }, u !== null ? fmtUniqueness(u) : "—"),
       statusCell,
     ]);
     tbody.appendChild(tr);
@@ -433,6 +451,10 @@ export function buildCatalogTable() {
       el("th", { class: "lib-catalog-th lib-catalog-th-domain" }, t("library.catalog.col.domain")),
       el("th", { class: "lib-catalog-th lib-catalog-th-words" }, t("library.catalog.col.words")),
       el("th", { class: "lib-catalog-th lib-catalog-th-quality" }, t("library.catalog.col.quality")),
+      el("th", {
+        class: "lib-catalog-th lib-catalog-th-uniqueness",
+        title: t("library.catalog.col.uniqueness.tooltip"),
+      }, t("library.catalog.col.uniqueness")),
       el("th", { class: "lib-catalog-th lib-catalog-th-status" }, t("library.catalog.col.status")),
     ]),
   ]);

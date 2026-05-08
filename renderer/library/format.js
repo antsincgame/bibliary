@@ -33,6 +33,15 @@ export function fmtQuality(n) {
 }
 
 /**
+ * Уникальность 0..100. undefined → "—" (НЕ 0 — это «оценка не проводилась»,
+ * не «100% плагиат»). Возвращает строку для отображения в ячейке таблицы.
+ */
+export function fmtUniqueness(n) {
+  if (typeof n !== "number" || !Number.isFinite(n)) return "—";
+  return String(Math.round(n));
+}
+
+/**
  * Адаптивные единицы измерения для search-card download progress.
  * 0 → "0 B", <1KB → "N B", <1MB → "N.N KB", иначе → "N.N MB".
  */
