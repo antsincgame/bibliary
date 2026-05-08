@@ -168,7 +168,7 @@ export async function embedQuery(text: string, model: string = DEFAULT_EMBED_MOD
  * L2-normalize a vector in place semantics: returns a fresh array v / ||v||.
  * Используется для пере-нормализации центроидов после арифметического mean
  * нескольких уже-нормализованных эмбеддингов. Без этого центроид имеет
- * ||v|| < 1, и cosine с Chroma-векторами получается заниженным (ложные
+ * ||v|| < 1, и cosine с vectordb-векторами получается заниженным (ложные
  * NOVEL'ы в uniqueness-evaluator).
  *
  * Возвращает копию, чтобы не мутировать input. Если ||v||=0 (degenerate) —

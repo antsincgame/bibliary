@@ -23,7 +23,7 @@ async function maybeTranslateNonRussian(
  *   1. parse(file) → ParseResult (sections + metadata)
  *   2. chunk(parsed) → BookChunk[]
  *   3. для каждого chunk: embed("passage: …") → Float32 vector
- *   4. batch upsert в Chroma (32 chunks за раз)
+ *   4. batch upsert в vectordb (32 chunks за раз)
  *   5. progress: ScannerStateStore.markProgress
  *   6. resume: пропускаем chunkId уже processedChunkIds
  *
@@ -73,7 +73,7 @@ const DEFAULT_UPSERT_BATCH = 32;
 const DEFAULT_MAX_BOOK_CHARS = 5_000_000;
 
 /**
- * Создать коллекцию в Chroma с tuned HNSW (M=24, construction_ef=128) для
+ * Создать коллекцию в vectordb с tuned HNSW (M=24, construction_ef=128) для
  * мультиязычных книжных корпусов. Идемпотентно: повторный вызов для
  * существующей коллекции = no-op.
  *

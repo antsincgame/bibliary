@@ -11,7 +11,7 @@ function api() { return /** @type {any} */ (window).api; }
 
 /**
  * Iter 14.1 (2026-05-04): настройки сильно упрощены.
- * Только базовые URL (LM Studio + Chroma) — остальное живёт в Zod-дефолтах
+ * Только базовые URL (LM Studio + vectordb) — остальное живёт в Zod-дефолтах
  * (electron/lib/preferences/store.ts) и работает «из коробки».
  */
 
@@ -316,7 +316,7 @@ function render(root) {
 
 /**
  * Кнопка «Сжечь библиотеку» — destructive операция (удаляет ВСЁ под
- * data/library/, bibliary-cache.db и Chroma коллекции bibliary-*).
+ * data/library/, bibliary-cache.db и vectordb коллекции bibliary-*).
  * Защищена двойным confirm.
  */
 function buildBurnLibraryBtn() {
@@ -348,10 +348,10 @@ function buildBurnLibraryBtn() {
       const summary = t("settings.burnLibrary.done", {
         files: String(r.removedFiles ?? 0),
         dirs: String(r.removedDirs ?? 0),
-        chroma: String(r.chromaCleaned ?? 0),
+        chroma: String(r.vectorCollectionsCleaned ?? 0),
       });
-      const errs = Array.isArray(r.chromaErrors) && r.chromaErrors.length > 0
-        ? "\n\nChroma warnings:\n" + r.chromaErrors.slice(0, 5).join("\n")
+      const errs = Array.isArray(r.vectorCollectionsErrors) && r.vectorCollectionsErrors.length > 0
+        ? "\n\nVectorDB warnings:\n" + r.vectorCollectionsErrors.slice(0, 5).join("\n")
         : "";
       await showAlert(summary + errs);
     } catch (e) {

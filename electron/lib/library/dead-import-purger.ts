@@ -17,7 +17,7 @@
  *     sidecars), проверяет байты через `detectIncompleteFile`. Только при
  *     `valid: false` → удаляет.
  *   - Удаление: `deleteBook(id)` (cache-db) + best-effort удаление sidecar
- *     файлов и пустого bookDir. CAS-блобы и Chroma НЕ трогает (orphan-cleanup
+ *     файлов и пустого bookDir. CAS-блобы и vectordb НЕ трогает (orphan-cleanup
  *     отдельная задача — уже есть в `library:burn-library` пути; здесь
  *     не дублируем чтобы не задерживать sweep).
  *   - Идемпотентно: повторный вызов на чистой DB → `{ scanned: 0, purged: 0 }`.

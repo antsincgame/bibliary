@@ -9,8 +9,9 @@
  *   4. IPC end-to-end: `library.catalog` отвечает структурой { rows, total } даже на пустой БД.
  *   5. Переключение маршрутов (sidebar `data-route="library"`) меняет активный pane.
  *
- * Тест НЕ требует LM Studio / Qdrant -- работает в полностью изолированной
+ * Тест НЕ требует LM Studio / vector store -- работает в полностью изолированной
  * tmp-папке. На каждый запуск создаётся свой userData, своя SQLite-БД.
+ * LanceDB embedded стартует на новом mkdtemp dataDir автоматически в boot.
  *
  * Чтобы запустить:
  *   1. npm run electron:compile  (один раз, или после правок electron/*)

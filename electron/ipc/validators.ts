@@ -1,13 +1,13 @@
 /**
  * Zod-based validators for IPC inputs that touch the filesystem or
- * Chroma. Centralised so every handler uses identical guards.
+ * vectordb. Centralised so every handler uses identical guards.
  *
  * Goals:
  *   - Prevent path traversal (renderer compromise -> escape userData/cwd)
- *   - Prevent Chroma collection-name injection (URL path manipulation)
+ *   - Prevent vectordb collection-name injection (URL path manipulation)
  *   - Prevent IPC payloads larger than expected (DoS via giant strings)
  *
- * Usage in an ipcMain.handle (см. `scanner.ipc.ts`, `chroma.ipc.ts`, `library.ipc.ts`):
+ * Usage in an ipcMain.handle (см. `scanner.ipc.ts`, `vectordb.ipc.ts`, `library.ipc.ts`):
  *
  *   ipcMain.handle("scanner:start-ingest", async (_e, raw) => {
  *     const args = StartIngestArgsSchema.parse(raw); // throws on bad input
@@ -19,10 +19,10 @@ import * as path from "path";
 import { z } from "zod";
 
 /**
- * Chroma collection name. Mirrors Chroma's own constraint:
+ * vectordb collection name. Mirrors vectordb's own constraint:
  * 1-255 chars, only [A-Za-z0-9_-]. Rejecting anything else avoids
  * URL-encoding surprises in `/collections/${name}/...` template literals
- * across chroma.ipc / scanner.ipc / dataset-v2.ipc.
+ * across vectordb.ipc / scanner.ipc / dataset-v2.ipc.
  */
 export const CollectionNameSchema = z
   .string()

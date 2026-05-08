@@ -58,21 +58,20 @@ jobs:
             tests/lang-detector.test.ts \
             tests/parsers-html-edge.test.ts
 
-      # Дополнительные node:test suites: ModelPool + Chroma + cache-db + auto-config + uniqueness.
-      - name: Extra unit suites (model-pool + chroma + cache-db + auto-config + uniqueness)
+      # Дополнительные node:test suites: ModelPool + vectordb + cache-db + auto-config + uniqueness.
+      - name: Extra unit suites (model-pool + vectordb + cache-db + auto-config + uniqueness)
         run: |
           node --import tsx --test \
             tests/model-pool.test.ts \
-            tests/chroma-collection-config.test.ts \
-            tests/chroma-collection-cache.test.ts \
-            tests/chroma-query-distance-conversion.test.ts \
+            tests/vectordb-filter.test.ts \
+            tests/vectordb-roundtrip.test.ts \
             tests/cache-db-roundtrip.test.ts \
             tests/cache-db-migration-v8.test.ts \
             tests/auto-config-tasks.test.ts \
             tests/uniqueness-extract-ideas.test.ts \
             tests/uniqueness-dedup-within-book.test.ts \
             tests/uniqueness-judge-llm.test.ts \
-            tests/uniqueness-score-pipeline.test.ts
+            tests/evaluator-uniqueness-step.test.ts
 
       # Полный test suite кроме env-зависимых (vision-meta требует LM Studio).
       # Best-effort: не блокирует merge.

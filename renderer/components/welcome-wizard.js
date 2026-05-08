@@ -9,7 +9,7 @@ const STEP_COUNT = 4;
 /**
  * Onboarding wizard v3 — 4 шага:
  *   0 Hero       → приветствие
- *   1 Connect    → health-check LM Studio + Chroma с visible feedback
+ *   1 Connect    → health-check LM Studio + vectordb с visible feedback
  *   2 Setup      → hardware-info + инструкция «настройте модели вручную в Models».
  *                  Выбор моделей — задача страницы Models, не wizard'а.
  *   3 Done       → persist в preferences (onboardingDone) + 3 action-карточки
@@ -140,7 +140,7 @@ export function openWelcomeWizard(opts) {
     wrap.appendChild(retryBtn);
 
     /* Экспортируем доступ к doProbe через STATE — кнопка «Запустить
-     * Chroma автоматически» внутри renderConnCard сможет вызвать его
+     * vectordb автоматически» внутри renderConnCard сможет вызвать его
      * после успешного spawn чтобы UI перерисовался без ручного клика. */
     STATE.scheduleConnRecheck = () => { void doProbe(); };
     wrap.appendChild(

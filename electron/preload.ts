@@ -64,7 +64,7 @@ interface LibraryBookMeta {
   verdictReason?: string;
   evaluatorModel?: string;
   evaluatedAt?: string;
-  /** 0..100 — доля уникальных идей по сравнению с Chroma корпусом. undefined = не оценено. */
+  /** 0..100 — доля уникальных идей по сравнению с накопленным vectordb корпусом. undefined = не оценено. */
   uniquenessScore?: number;
   uniquenessNovelCount?: number;
   uniquenessTotalIdeas?: number;

@@ -366,7 +366,7 @@ export function registerDatasetV2Ipc(getMainWindow: () => BrowserWindow | null):
   });
 
   /**
-   * dataset-v2:export-dataset — read accepted concepts from Chroma collection
+   * dataset-v2:export-dataset — read accepted concepts from vectordb collection
    * and emit train.jsonl + val.jsonl + meta.json + README.md in chosen format.
    * Pure template-based (no LLM call), so it runs in seconds even for large
    * collections and never blocks LM Studio.

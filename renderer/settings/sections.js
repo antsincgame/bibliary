@@ -10,7 +10,7 @@
  *   rows?: number;
  *   options?: string[];
  *   placeholder?: string;
- *   probe?: "lmstudio"|"chroma";
+ *   probe?: "lmstudio";
  *   labelKey: string;
  * }} SettingsField
  *

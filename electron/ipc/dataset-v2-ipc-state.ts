@@ -8,7 +8,7 @@
  *   - `activeBatches` — registry batch abort controllers
  *   - `abortAllDatasetV2` — shutdown helper для main.ts
  *   - `killAllSynthChildren` — back-compat no-op (синтез теперь in-process)
- *   - `DEFAULT_COLLECTION` — fallback Chroma collection name
+ *   - `DEFAULT_COLLECTION` — fallback vectordb collection name
  */
 
 import { abortAllExtractionJobs } from "../lib/dataset-v2/coordinator-pipeline.js";

@@ -59,17 +59,11 @@ const ALLOWED_OPEN_SCHEMES = ["http:", "https:", "lmstudio:"];
 
 /**
  * Probe для in-process LanceDB: проверяем что connection открыт и
- * можно перечислить tables. Заменяет HTTP-heartbeat Chroma. Всегда
- * быстрый (millisecond-level) — не нужен timeout как в chroma-эре.
- *
- * Поле response называется `chroma` для back-compat с renderer'ом —
- * Welcome Wizard рендерит status badge по этому ключу. В Phase 4 поле
- * переименуется в `vectordb`.
+ * можно перечислить tables. Всегда быстрый (millisecond-level), нет
+ * network round-trip'ов.
  */
-async function probeChroma(): Promise<{ online: boolean; version?: string; url: string }> {
-  /* `url` пустой — embedded LanceDB не имеет network endpoint'а.
-   * Renderer Wizard в текущем UI рендерит url как tooltip; пустая
-   * строка = "(local)". Phase 4 переписывает Wizard step. */
+async function probeVectorDb(): Promise<{ online: boolean; version?: string; url: string }> {
+  /* `url` пустой — embedded LanceDB не имеет network endpoint'а. */
   try {
     await listCollections();
     return { online: true, version: "lancedb-embedded", url: "" };
@@ -94,16 +88,16 @@ export function registerSystemIpc(): void {
     "system:probe-services",
     async (): Promise<{
       lmStudio: { online: boolean; version?: string; url: string };
-      chroma: { online: boolean; version?: string; url: string };
+      vectordb: { online: boolean; version?: string; url: string };
     }> => {
       const { lmStudioUrl } = await getEndpoints();
-      const [lmStatus, chromaStatus] = await Promise.all([
+      const [lmStatus, vectorStatus] = await Promise.all([
         getServerStatus(),
-        probeChroma(),
+        probeVectorDb(),
       ]);
       return {
         lmStudio: { ...lmStatus, url: lmStudioUrl },
-        chroma: chromaStatus,
+        vectordb: vectorStatus,
       };
     }
   );

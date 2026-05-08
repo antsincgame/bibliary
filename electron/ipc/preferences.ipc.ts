@@ -15,7 +15,7 @@ import { applyHeavyLaneRateLimiterPrefs } from "../lib/llm/heavy-lane-rate-limit
  *
  * Что входит: только модели по ролям + цепочки fallback'ов + связанный
  * флажок translatorTargetLang (нужен для корректной интерпретации translator-роли).
- * Что НЕ входит: URL'ы (lmStudioUrl/chromaUrl), RAG-параметры, OCR, watchdog —
+ * Что НЕ входит: URL'ы (lmStudioUrl), RAG-параметры, OCR, watchdog —
  * это «среда», а не «профиль ролей». Импорт профиля не должен ломать
  * подключение к LM Studio или менять размер chunk'ов.
  */
@@ -80,7 +80,7 @@ export function applyRuntimeSideEffects(prefs: Preferences): void {
     stale: prefs.lockStaleMs,
   });
   /* LM Studio URL changes: invalidate endpoints cache + drop cached SDK
-     client so следующий вызов пересоздаёт против нового URL. Chroma URL
+     client so следующий вызов пересоздаёт против нового URL. vectordb URL
      ушёл — vector store теперь in-process LanceDB, нет HTTP binding'а
      для refresh'а. */
   invalidateEndpointsCache();

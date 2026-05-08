@@ -14,7 +14,7 @@ import { readPipelinePrefsOrNull } from "../preferences/store.js";
 import type { BookCatalogMeta, ConvertedChapter } from "./types.js";
 
 export interface RunUniquenessStepArgs {
-  /** Метаданные книги после quality-eval (передаётся в Chroma как baseline). */
+  /** Метаданные книги после quality-eval (передаётся в vectordb как baseline). */
   baseMeta: BookCatalogMeta;
   /** Главы книги (parsed из book.md). */
   chapters: ConvertedChapter[];
@@ -24,7 +24,7 @@ export interface RunUniquenessStepArgs {
   md: string;
   /** Reasoning от evaluator'а — попадает в Evaluator Reasoning section. */
   reasoning: string | null | undefined;
-  /** Slot abort signal — должен прокинуться в LLM/Chroma вызовы. */
+  /** Slot abort signal — должен прокинуться в LLM/vectordb вызовы. */
   signal: AbortSignal;
   /** Persist callback — реальный wrapper над frontmatter writer. */
   persistFrontmatter: (

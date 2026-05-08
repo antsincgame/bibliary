@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * Collection Picker -- reusable component for selecting (and creating)
- * Chroma collections. Used by Library top-bar and (later in Iter 6)
+ * vectordb collections. Used by Library top-bar and (later in Iter 6)
  * by Crystallizer to pick a thematic target collection.
  *
  * Visual: HUD-style native <select> + "+" button matching the existing

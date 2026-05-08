@@ -333,7 +333,7 @@ export function registerLibraryCatalogIpc(): void {
           );
         }
 
-        /* Иt 8Е.1: cascade Chroma cleanup (hybrid стратегия).
+        /* Иt 8Е.1: cascade vectordb cleanup (hybrid стратегия).
            Этап 1 (sync, быстро): удалить точки книги из активной коллекции
            если она передана из renderer. Это покрывает 90% случаев —
            пользователь обычно работает с одной коллекцией.
@@ -343,7 +343,7 @@ export function registerLibraryCatalogIpc(): void {
            bookSourcePath fallback не нужен — bookId стабильнее (выживает
            перемещение файла). */
         /* Vector store cleanup. LanceDB API не возвращает count удалённых
-         * rows из delete API (Chroma это делал) — мы оставляем поле для
+         * rows из delete API (vectordb это делал) — мы оставляем поле для
          * back-compat в response shape, но всегда ставим 0. UI этим
          * полем рендерит footer "Cleaned X vectors", после Phase 4
          * это поле уйдёт в пользу collectionCleaned (true/false). */
@@ -421,7 +421,7 @@ export function registerLibraryCatalogIpc(): void {
    *   - .blobs/ (CAS-storage иллюстраций)
    *   - .import/ (state-журналы импорта, locks)
    *   - bibliary-cache.db (+ -wal, -shm) — закрываем хэндл ДО rm
-   *   - все Chroma коллекции с префиксом "bibliary-" (best-effort, non-fatal)
+   *   - все vectordb коллекции с префиксом "bibliary-" (best-effort, non-fatal)
    *
    * Сбрасывает all in-process кэши: near-dup, revision-dedup. Cache-DB
    * откроется заново лениво при следующем запросе (свежая, пустая).

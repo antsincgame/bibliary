@@ -3004,7 +3004,7 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
 
 /* Phase 7: hint-баннер на вкладке "Прямая индексация" (бывший RAG Ingest) —
    объясняет чем эта вкладка отличается от "Импорта", чтобы пользователь
-   не путался: Импорт = каталог + SQLite, Прямая индексация = scanner.startIngest → Chroma. */
+   не путался: Импорт = каталог + SQLite, Прямая индексация = scanner.startIngest → vectordb. */
 .lib-browse-hint {
   margin: 12px 0;
   padding: 10px 14px;

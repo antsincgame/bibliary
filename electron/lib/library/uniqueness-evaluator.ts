@@ -1,11 +1,11 @@
 /**
  * Uniqueness Evaluator — оценка книги на наличие УНИКАЛЬНЫХ идей по сравнению
- * с уже накопленным корпусом в Chroma.
+ * с уже накопленным корпусом в vectordb.
  *
  * Текущий quality-evaluator оценивает книгу как объект (структура, density,
  * originality по описанию). Он не знает: «эту книгу уже читали раньше в
  * другом источнике?». Без этого две книги по одной теме оба пройдут с
- * близкими score'ами, при ingest вторая забьёт Chroma дубликатами концептов
+ * близкими score'ами, при ingest вторая забьёт vectordb дубликатами концептов
  * первой — датасет загрязняется.
  *
  * Pipeline (4 фазы):
@@ -16,7 +16,7 @@
  *
  * Эмбеддинги идей (multilingual-e5-small, 384-dim) уже L2-нормализованы.
  * Центроиды кластеров пере-нормализуем после mean (см. l2Normalize), иначе
- * cosine с Chroma-векторами получается заниженным.
+ * cosine с vectordb-векторами получается заниженным.
  *
  * Никогда не throw'ает: caller получает либо score, либо `undefined` +
  * `error` — uniqueness не должен ломать import pipeline.
@@ -59,7 +59,7 @@ export interface UniquenessResult {
 export interface EvaluateBookUniquenessOptions {
   /** Какую LLM использовать для extract+judge. Если не задана — caller должен передать. */
   modelKey: string;
-  /** Имя Chroma коллекции для cross-library check. */
+  /** Имя vectordb коллекции для cross-library check. */
   targetCollection: string;
   /** Cosine ≥ high ⇒ DERIVATIVE без LLM-judge. */
   similarityHigh: number;
@@ -227,7 +227,7 @@ function meanVector(vectors: number[][]): number[] {
  * присоединяет к ближайшему кластеру если sim ≥ threshold, иначе создаёт
  * новый. Центроид пересчитывается как arithmetic mean всех векторов кластера
  * И ОБЯЗАТЕЛЬНО L2-перенормализуется (без этого ||centroid|| < 1, и cosine с
- * Chroma-векторами получается заниженным — false NOVEL'ы в Phase 3).
+ * vectordb-векторами получается заниженным — false NOVEL'ы в Phase 3).
  */
 export async function dedupeIdeasWithinBook(
   ideas: BookIdea[],

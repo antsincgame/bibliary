@@ -1,6 +1,6 @@
 /**
  * concept-loader — единый источник правды для чтения принятых концептов
- * из Chroma. Контракт metadata зафиксирован здесь, чтобы export, synth и любой
+ * из vectordb. Контракт metadata зафиксирован здесь, чтобы export, synth и любой
  * будущий потребитель не уходили в дрейф между собой.
  *
  * Поля metadata (после Stage 4 пайплайна v2):
@@ -10,21 +10,21 @@
  *   applicability  — где применять (опционально)
  *   chapterContext — для какого тематического узла главы это
  *   domain         — предметная область (всегда есть)
- *   tagsCsv        — `"|tag1|tag2|"` (Chroma не поддерживает array metadata)
+ *   tagsCsv        — `"|tag1|tag2|"` (vectordb не поддерживает array metadata)
  *   bookSourcePath — исходник книги
  *   bookTitle      — название (если установлено)
  *
  * Legacy-совместимость: если попадётся старая точка с `principle/explanation`,
  * она тоже распознаётся (essence ← principle, proof ← explanation).
  *
- * Note: текст чанка (если есть) приходит в Chroma в `documents[]`, не в metadata —
+ * Note: текст чанка (если есть) приходит в vectordb в `documents[]`, не в metadata —
  * для legacy совместимости проверяем оба места.
  */
 
 import { scrollVectors } from "../vectordb/index.js";
 
 /** Размер страницы scroll-запросов (точек за один HTTP) — наследие
- * Chroma; для in-process LanceDB менее критично, но сохраняем чтобы
+ * vectordb; для in-process LanceDB менее критично, но сохраняем чтобы
  * не плодить argument churn. */
 const SCROLL_PAGE_SIZE = 256;
 

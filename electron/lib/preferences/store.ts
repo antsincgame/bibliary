@@ -17,7 +17,7 @@ import { writeJsonAtomic, withFileLock } from "../resilience";
 // ---------------------------------------------------------------------------
 
 export const PreferencesSchema = z.object({
-  // -- Chroma search threshold (cosine score 0..1) --
+  // -- vectordb search threshold (cosine score 0..1) --
   searchScoreThreshold: z.number().min(0).max(1).default(0.55),
 
   // -- Scanner / Ingest --
@@ -215,11 +215,11 @@ export const PreferencesSchema = z.object({
    */
   preferDjvuOverPdf: z.boolean().default(false),
 
-  // -- Uniqueness Evaluator (per-chapter idea novelty against Chroma corpus) --
+  // -- Uniqueness Evaluator (per-chapter idea novelty against vectordb corpus) --
   /**
    * Включить uniqueness-eval после quality-eval. Проходит по всем главам книги,
    * извлекает 3-7 идей на главу через reader LLM, дедуплицирует внутри книги,
-   * сравнивает с существующей коллекцией Chroma. Стоит ~1-3 минуты на книгу
+   * сравнивает с существующей коллекцией vectordb. Стоит ~1-3 минуты на книгу
    * (50 глав × 2с reader). Можно выключить если важна скорость.
    */
   uniquenessEvaluationEnabled: z.boolean().default(true),
