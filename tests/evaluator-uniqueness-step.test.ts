@@ -24,8 +24,12 @@ import { closeCacheDb } from "../electron/lib/library/cache-db.ts";
 import { _resetLibraryRootCache } from "../electron/lib/library/paths.ts";
 import { initPreferencesStore as initPrefs, getPreferencesStore } from "../electron/lib/preferences/store.ts";
 import { _setResolverDepsForTesting, _resetResolverForTesting } from "../electron/lib/llm/model-resolver.ts";
-import { setMapping, clearAll } from "../electron/lib/chroma/collection-cache.ts";
-import { setupMockFetch, jsonResponse } from "./helpers/mock-fetch.js";
+import {
+  initVectorDb,
+  closeDb,
+  setDataDirForTesting,
+  ensureCollection,
+} from "../electron/lib/vectordb/index.ts";
 import type { BookCatalogMeta, ConvertedChapter } from "../electron/lib/library/types.ts";
 
 interface Sandbox {
@@ -48,6 +52,9 @@ async function makeSandbox(uniquenessEnabled: boolean): Promise<Sandbox> {
   initPrefs(dataDir);
   await getPreferencesStore().ensureDefaults();
   await getPreferencesStore().set({ uniquenessEvaluationEnabled: uniquenessEnabled });
+  /* Real in-process LanceDB на mkdtemp dataDir — заменяет chroma HTTP mock. */
+  setDataDirForTesting(dataDir);
+  await initVectorDb({ dataDir });
 
   return {
     cleanup: async () => {
@@ -55,7 +62,8 @@ async function makeSandbox(uniquenessEnabled: boolean): Promise<Sandbox> {
       _resetLibraryRootCache();
       _resetResolverForTesting();
       _resetUniquenessDepsForTesting();
-      clearAll();
+      await closeDb();
+      setDataDirForTesting(null);
       for (const k of Object.keys(prev) as (keyof typeof prev)[]) {
         if (prev[k] === undefined) delete process.env[k];
         else process.env[k] = prev[k];
@@ -154,15 +162,9 @@ test("[uniqueness-step] success → upsertBook + persistFrontmatter с uniquenes
       return v;
     },
   });
-  /* Mock Chroma — empty collection → all NOVEL */
-  clearAll();
-  setMapping("delta-knowledge", "id-1", { "hnsw:space": "cosine" });
-  const mock = setupMockFetch((req) => {
-    if (req.method === "POST" && req.url.endsWith("/query")) {
-      return new Response("no records", { status: 500 });
-    }
-    return jsonResponse({ id: "id-1", name: "delta-knowledge", metadata: { "hnsw:space": "cosine" } });
-  });
+  /* Empty LanceDB collection → vectorQueryNearest вернёт 0 neighbors →
+   * все идеи трактуются как NOVEL → score=100. */
+  await ensureCollection({ name: "delta-knowledge", distance: "cosine" });
 
   let upsertedMeta: BookCatalogMeta | null = null;
   let persistCalls = 0;
@@ -181,7 +183,6 @@ test("[uniqueness-step] success → upsertBook + persistFrontmatter с uniquenes
     assert.ok(upsertedMeta!.uniquenessEvaluatedAt);
     assert.equal(persistCalls, 1);
   } finally {
-    mock.restore();
     await sb.cleanup();
   }
 });
@@ -196,8 +197,7 @@ test("[uniqueness-step] LLM throws → swallow, не throw наружу", async 
     callLlm: async () => { throw new Error("LLM crashed"); },
     embed: async () => new Array(384).fill(0).map((_, i) => (i === 0 ? 1 : 0)),
   });
-  clearAll();
-  setMapping("delta-knowledge", "id-1", { "hnsw:space": "cosine" });
+  await ensureCollection({ name: "delta-knowledge", distance: "cosine" });
 
   const ctrl = new AbortController();
   try {

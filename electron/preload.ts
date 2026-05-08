@@ -22,20 +22,21 @@ interface ServerStatus {
   version?: string;
 }
 
-interface ChromaCollectionsListItem {
+interface VectorDbCollectionsListItem {
   name: string;
   pointsCount: number;
   status: string;
 }
 
-interface ChromaCollectionInfo {
+interface VectorDbCollectionInfo {
   name: string;
   pointsCount: number;
   status: string;
   metadata?: Record<string, unknown> | null;
 }
 
-interface ChromaHeartbeatInfo {
+interface VectorDbHeartbeatInfo {
+  /** Always empty in v2.0+: vectordb is in-process, no network endpoint. */
   url: string;
   online: boolean;
   version?: string;
@@ -190,27 +191,26 @@ if (smokeLibrary !== null) {
 contextBridge.exposeInMainWorld("api", {
   smokeMode: smokeLibrary !== null,
 
-  getCollections: (): Promise<string[]> => ipcRenderer.invoke("chroma:collections"),
+  getCollections: (): Promise<string[]> => ipcRenderer.invoke("vectordb:collections"),
 
-  chroma: {
-    listDetailed: (): Promise<ChromaCollectionsListItem[]> =>
-      ipcRenderer.invoke("chroma:collections-detailed"),
-    info: (name: string): Promise<ChromaCollectionInfo | null> =>
-      ipcRenderer.invoke("chroma:collection-info", name),
+  vectordb: {
+    listDetailed: (): Promise<VectorDbCollectionsListItem[]> =>
+      ipcRenderer.invoke("vectordb:collections-detailed"),
+    info: (name: string): Promise<VectorDbCollectionInfo | null> =>
+      ipcRenderer.invoke("vectordb:collection-info", name),
     create: (
       args: {
         name: string;
+        /** Distance metric. "ip" поддерживается для back-compat: маппится в "dot". */
         distance?: "cosine" | "l2" | "ip";
       }
-    ): Promise<{ ok: boolean; error?: string; hnswMismatch?: string[] }> =>
-      ipcRenderer.invoke("chroma:create-collection", args),
+    ): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke("vectordb:create-collection", args),
     remove: (name: string): Promise<{ ok: boolean; error?: string }> =>
-      ipcRenderer.invoke("chroma:delete-collection", name),
-    heartbeat: (): Promise<ChromaHeartbeatInfo> => ipcRenderer.invoke("chroma:heartbeat"),
-    /** Manually spawn embedded Chroma child process. Idempotent: если уже
-     * запущена (heartbeat OK) → `{ok: true, alreadyRunning: true}`. */
-    startEmbedded: (): Promise<{ ok: boolean; reason?: string; alreadyRunning?: boolean }> =>
-      ipcRenderer.invoke("chroma:start-embedded"),
+      ipcRenderer.invoke("vectordb:delete-collection", name),
+    /** Probe для status badge. In-process LanceDB всегда online —
+     * этот канал нужен только для UI который ожидает heartbeat shape. */
+    heartbeat: (): Promise<VectorDbHeartbeatInfo> => ipcRenderer.invoke("vectordb:heartbeat"),
   },
 
   lmstudio: {
@@ -341,7 +341,7 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.invoke("system:hardware-info", { force: force === true }),
     probeServices: (): Promise<{
       lmStudio: { online: boolean; version?: string; url: string };
-      chroma: { online: boolean; version?: string; url: string };
+      vectordb: { online: boolean; version?: string; url: string };
     }> => ipcRenderer.invoke("system:probe-services"),
     openExternal: (url: string): Promise<{ ok: boolean; reason?: string }> =>
       ipcRenderer.invoke("system:open-external", url),
@@ -660,11 +660,11 @@ contextBridge.exposeInMainWorld("api", {
     deleteBook: (
       bookId: string,
       deleteFiles?: boolean,
-      /* Cascade Chroma cleanup: активная коллекция в renderer для sync-удаления
-         точек этой книги до возврата. Если undefined — только background
-         full-scan. */
+      /* Cascade vectordb cleanup: активная коллекция в renderer для
+         sync-удаления точек этой книги до возврата. Если undefined —
+         только background full-scan. */
       activeCollection?: string,
-    ): Promise<{ ok: boolean; reason?: string; chromaCleaned?: number; chromaBackgroundScheduled?: boolean }> =>
+    ): Promise<{ ok: boolean; reason?: string; vectorBackgroundScheduled?: boolean }> =>
       smokeLibrary
         ? Promise.resolve({ ok: true }).then((res) => {
           smokeLibrary.rows = smokeLibrary.rows.filter((row) => row.id !== bookId);
@@ -682,7 +682,7 @@ contextBridge.exposeInMainWorld("api", {
         ? Promise.resolve({ scanned: 0, ingested: 0, skipped: 0, pruned: 0, errors: [] })
         : ipcRenderer.invoke("library:rebuild-cache"),
     /* Iter 13.2 (P6, dev-mode): "Сжечь библиотеку" — снести все файлы под
-       data/library/, bibliary-cache.db (+ wal/shm), Chroma коллекции
+       data/library/, bibliary-cache.db (+ wal/shm), vectordb коллекции
        bibliary-*. Кэш-DB откроется заново лениво. */
     burnAll: (): Promise<{
       ok: boolean;
@@ -690,8 +690,8 @@ contextBridge.exposeInMainWorld("api", {
       libraryRoot: string;
       removedFiles: number;
       removedDirs: number;
-      chromaCleaned: number;
-      chromaErrors: string[];
+      vectorCollectionsCleaned: number;
+      vectorCollectionsErrors: string[];
     }> =>
       smokeLibrary
         ? Promise.resolve({
@@ -699,8 +699,8 @@ contextBridge.exposeInMainWorld("api", {
           libraryRoot: "(smoke)",
           removedFiles: 0,
           removedDirs: 0,
-          chromaCleaned: 0,
-          chromaErrors: [],
+          vectorCollectionsCleaned: 0,
+          vectorCollectionsErrors: [],
         }).then((r) => {
           smokeLibrary.rows = [];
           return r;

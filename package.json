@@ -1,9 +1,9 @@
 {
   "name": "bibliary",
-  "version": "1.1.2",
+  "version": "2.0.0",
   "type": "module",
   "main": "dist-electron/main.js",
-  "description": "Local book library → structured Markdown → Chroma vector collections → ChatML JSONL fine-tuning datasets",
+  "description": "Local book library → structured Markdown → embedded LanceDB vector collections → ChatML JSONL fine-tuning datasets",
   "engines": {
     "node": ">=18"
   },
@@ -34,7 +34,6 @@
     "test:e2e:1000-electron": "node scripts/run-electron-node.cjs scripts/e2e-1000-random-sample.ts",
     "dataset:synth": "tsx scripts/dataset-synth.ts",
     "dataset:probe-model": "tsx scripts/probe-evaluator-pick.ts",
-    "concepts:export": "tsx scripts/concepts-export.ts",
     "test": "npm run test:rebuild-native && node --import tsx --test tests/*.test.ts",
     "test:unit": "npm run test:rebuild-native && node --import tsx --test tests/*.test.ts",
     "test:rebuild-native": "node scripts/ensure-sqlite-abi.cjs --target=node",

@@ -58,9 +58,10 @@ export const PreferencesSchema = z.object({
   searchPerSourceLimit: z.number().int().min(1).max(50).default(20),
   downloadMaxRetries: z.number().int().min(1).max(10).default(3),
 
-  // -- Chroma (vector DB) --
-  chromaTimeoutMs: z.number().int().min(1000).max(60_000).default(8000),
-  chromaSearchLimit: z.number().int().min(1).max(100).default(12),
+  // -- Vector DB (in-process LanceDB) --
+  /** Сколько результатов выводить в search UI. Не влияет на upsert/queryNearest
+   * самой LanceDB — только на размер списка в renderer'е. */
+  vectordbSearchLimit: z.number().int().min(1).max(100).default(12),
 
   // -- UI --
   /* refreshIntervalMs / toastTtlMs / spinDurationMs удалены 2026-05-01:
@@ -130,11 +131,6 @@ export const PreferencesSchema = z.object({
   // -- Connectivity (external service URLs) --
   /** Empty string = use env var or built-in default. Validation: no trailing slash. */
   lmStudioUrl: z.string().regex(/^$|^https?:\/\/[^\s/$.?#].[^\s]*[^/]$/i, "must be a URL without trailing slash, or empty for default").default(""),
-  chromaUrl: z.string().regex(/^$|^https?:\/\/[^\s/$.?#].[^\s]*[^/]$/i, "must be a URL without trailing slash, or empty for default").default(""),
-  /** Auto-spawn Chroma при старте Bibliary (через uvx/python). Default true.
-   * Выключить если Chroma запускается отдельно (Docker, удалённый сервер,
-   * системный launchctl). */
-  chromaAutoSpawn: z.boolean().default(true),
 
   // -- Selected models per task (упрощено с 9 ролей до 3 задач, 2026-05) --
   /**
@@ -387,6 +383,13 @@ export class FsPreferencesStore {
     }
     if (!merged.visionOcrModel && typeof legacy.visionModelKey === "string") {
       merged.visionOcrModel = String(legacy.visionModelKey);
+    }
+    /* Migration shim (Phase 4 vectordb): legacy chroma* → vectordb* equivalent
+     * + drop fully-deprecated keys. Read-only — pruning старых ключей из
+     * persisted prefs.json произойдёт при следующем set() автоматически
+     * (PreferencesSchema.partial() отбросит unknown keys). */
+    if (typeof legacy.chromaSearchLimit === "number" && merged.vectordbSearchLimit === DEFAULTS.vectordbSearchLimit) {
+      merged.vectordbSearchLimit = legacy.chromaSearchLimit as number;
     }
 
     return merged as Preferences;

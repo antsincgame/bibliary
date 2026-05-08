@@ -146,7 +146,7 @@ function showAboutDialog(): void {
     detail: [
       `Version ${app.getVersion()}`,
       "",
-      "Local book library → structured Markdown → Chroma vector collections → ChatML JSONL fine-tuning datasets.",
+      "Local book library → structured Markdown → embedded LanceDB vector collections → ChatML JSONL fine-tuning datasets.",
       "",
       `Electron ${process.versions.electron}`,
       `Node ${process.versions.node}`,

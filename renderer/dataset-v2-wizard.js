@@ -47,7 +47,7 @@ function mountCollectionPicker(root) {
       if (!name) return;
       try {
         const api = /** @type {any} */ (window).api;
-        await api.chroma.remove(name);
+        await api.vectordb.remove(name);
         await STATE.refs.collectionPicker?.refresh();
       } catch (e) {
         await showAlert(t("library.collection.delete.failed", {
@@ -65,7 +65,7 @@ function mountCollectionPicker(root) {
     createCollection: async (name) => {
       try {
         const r = /** @type {{ ok?: boolean; error?: string } | null} */ (
-          await window.api.chroma.create({ name })
+          await window.api.vectordb.create({ name })
         );
         return r && r.ok !== false
           ? { ok: true }

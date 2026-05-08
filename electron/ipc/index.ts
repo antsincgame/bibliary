@@ -4,7 +4,7 @@
 
 import type { BrowserWindow } from "electron";
 
-import { registerChromaIpc } from "./chroma.ipc.js";
+import { registerVectorDbIpc } from "./vectordb.ipc.js";
 import { registerLmstudioIpc } from "./lmstudio.ipc.js";
 import { registerSystemIpc } from "./system.ipc.js";
 import { registerScannerIpc, abortAllIngests } from "./scanner.ipc.js";
@@ -42,7 +42,7 @@ export function registerAllIpcHandlers(getMainWindow: () => BrowserWindow | null
     }
   };
 
-  safeRegister("chroma", () => registerChromaIpc());
+  safeRegister("vectordb", () => registerVectorDbIpc());
   safeRegister("lmstudio", () => registerLmstudioIpc());
   safeRegister("system", () => registerSystemIpc());
   safeRegister("scanner", () => registerScannerIpc(getMainWindow));

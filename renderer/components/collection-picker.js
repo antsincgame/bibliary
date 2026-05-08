@@ -101,23 +101,6 @@ export function buildCollectionPicker(opts) {
     root.appendChild(deleteBtn);
   }
 
-  /* "Open Chroma API" — у Chroma нет полноценного дашборда (как у Chroma), но
-     можно открыть REST API root в браузере для отладки. URL читаем из
-     preferences.chromaUrl, fallback http://localhost:8000. */
-  const dashBtn = el(
-    "button",
-    {
-      type: "button",
-      class: "coll-picker-btn coll-picker-btn-dash",
-      title: t("library.collection.openDashboard.title"),
-      "aria-label": t("library.collection.openDashboard"),
-    },
-    "\u29C9"
-  );
-  dashBtn.addEventListener("click", () => {
-    void openChromaApi();
-  });
-  root.appendChild(dashBtn);
 
   /** @type {string[]} */
   let cached = [];
@@ -164,12 +147,12 @@ export function buildCollectionPicker(opts) {
       try {
         const result = await opts.createCollection(name);
         if (!result.ok) {
-          await offerDashboardFallback(result.error || "unknown");
+          await showAlert(t("library.collection.create.failed", { error: result.error || "unknown" }));
           return;
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        await offerDashboardFallback(msg);
+        await showAlert(t("library.collection.create.failed", { error: msg }));
         return;
       }
     }
@@ -209,42 +192,3 @@ export function buildCollectionPicker(opts) {
   };
 }
 
-/**
- * Спросить пользователя про fallback на Chroma API и открыть в браузере.
- * Используется когда автоматическое создание коллекции упало.
- * @param {string} errorMsg
- */
-async function offerDashboardFallback(errorMsg) {
-  const msg = t("library.collection.create.openDashboardConfirm", { error: errorMsg });
-  if (!(await showConfirm(msg))) return;
-  await openChromaApi();
-}
-
-/**
- * Открыть Chroma REST API root в системном браузере. У Chroma нет
- * полноценного дашборда (как у Chroma), но root URL отдаёт API info /
- * документацию для отладки. URL читаем из preferences.chromaUrl, иначе
- * localhost:8000. Идём через preload (system.openExternal), чтобы не
- * зависеть от webContents.setWindowOpenHandler и CSP.
- */
-async function openChromaApi() {
-  let baseUrl = "http://localhost:8000";
-  try {
-    const api = /** @type {any} */ (window).api;
-    const prefs = await api?.preferences?.getAll?.();
-    if (prefs?.chromaUrl && typeof prefs.chromaUrl === "string" && prefs.chromaUrl.trim()) {
-      baseUrl = prefs.chromaUrl.trim().replace(/\/+$/, "");
-    }
-  } catch (_e) { /* tolerate: pref read non-critical */ }
-  /* Chroma корневой path отдаёт статус/info; /api/v1/heartbeat для смока. */
-  const url = baseUrl;
-  try {
-    const api = /** @type {any} */ (window).api;
-    if (typeof api?.system?.openExternal === "function") {
-      await api.system.openExternal(url);
-      return;
-    }
-  } catch (_e) { /* tolerate: fall through to direct open */ }
-  try { window.open(url, "_blank", "noopener,noreferrer"); }
-  catch (_e) { await showAlert(`Откройте в браузере: ${url}`); }
-}

@@ -274,7 +274,7 @@ export function registerLibraryCatalogIpc(): void {
       /** Иt 8Е.1 (hybrid cascade): активная коллекция в renderer (если выбрана).
        *  Sync-удаление точек этой книги ДО возврата (быстро, ~50ms). */
       activeCollection?: string;
-    }): Promise<{ ok: boolean; reason?: string; chromaCleaned?: number; chromaBackgroundScheduled?: boolean; filesRemoved?: number; dirsRemoved?: number }> => {
+    }): Promise<{ ok: boolean; reason?: string; vectorBackgroundScheduled?: boolean; filesRemoved?: number; dirsRemoved?: number }> => {
       if (!args || typeof args.bookId !== "string") return { ok: false, reason: "bookId required" };
       const meta = getBookById(args.bookId);
       if (!meta) return { ok: false, reason: "not-found" };
@@ -347,8 +347,7 @@ export function registerLibraryCatalogIpc(): void {
          * back-compat в response shape, но всегда ставим 0. UI этим
          * полем рендерит footer "Cleaned X vectors", после Phase 4
          * это поле уйдёт в пользу collectionCleaned (true/false). */
-        let chromaCleaned = 0;
-        let chromaBackgroundScheduled = false;
+        let vectorBackgroundScheduled = false;
         try {
           const { vectorDeleteByWhere, listCollections } = await import("../lib/vectordb/index.js");
           if (args.activeCollection) {
@@ -370,14 +369,14 @@ export function registerLibraryCatalogIpc(): void {
               console.warn("[library:delete-book] background full-scan failed:", bgErr);
             }
           })();
-          chromaBackgroundScheduled = true;
-        } catch (chromaErr) {
+          vectorBackgroundScheduled = true;
+        } catch (vectorErr) {
           /* vectordb недоступна — не блокируем delete-book (книга и так удалена
              из SQLite). Просто warning. */
-          console.warn("[library:delete-book] vectordb cascade cleanup failed (non-fatal):", chromaErr);
+          console.warn("[library:delete-book] vectordb cascade cleanup failed (non-fatal):", vectorErr);
         }
 
-        return { ok: true, chromaCleaned, chromaBackgroundScheduled, filesRemoved, dirsRemoved };
+        return { ok: true, vectorBackgroundScheduled, filesRemoved, dirsRemoved };
       } catch (e) {
         return { ok: false, reason: e instanceof Error ? e.message : String(e), filesRemoved, dirsRemoved };
       }
@@ -440,8 +439,8 @@ export function registerLibraryCatalogIpc(): void {
       libraryRoot: string;
       removedFiles: number;
       removedDirs: number;
-      chromaCleaned: number;
-      chromaErrors: string[];
+      vectorCollectionsCleaned: number;
+      vectorCollectionsErrors: string[];
     }> => {
       const root = resolveLibraryRoot();
       const dbPath = getCacheDbPath();
@@ -467,8 +466,8 @@ export function registerLibraryCatalogIpc(): void {
         resetNearDupCache();
         resetRevisionDedupCache();
 
-        let chromaCleaned = 0;
-        const chromaErrors: string[] = [];
+        let vectorCollectionsCleaned = 0;
+        const vectorCollectionsErrors: string[] = [];
         try {
           const { listCollections, deleteCollection } = await import("../lib/vectordb/index.js");
           const allCollections = await listCollections();
@@ -476,13 +475,13 @@ export function registerLibraryCatalogIpc(): void {
           for (const collection of names) {
             try {
               await deleteCollection(collection);
-              chromaCleaned += 1;
+              vectorCollectionsCleaned += 1;
             } catch (err) {
-              chromaErrors.push(`${collection}: ${err instanceof Error ? err.message : String(err)}`);
+              vectorCollectionsErrors.push(`${collection}: ${err instanceof Error ? err.message : String(err)}`);
             }
           }
-        } catch (chromaErr) {
-          chromaErrors.push(chromaErr instanceof Error ? chromaErr.message : String(chromaErr));
+        } catch (vectorErr) {
+          vectorCollectionsErrors.push(vectorErr instanceof Error ? vectorErr.message : String(vectorErr));
         }
 
         return {
@@ -490,8 +489,8 @@ export function registerLibraryCatalogIpc(): void {
           libraryRoot: root,
           removedFiles,
           removedDirs,
-          chromaCleaned,
-          chromaErrors,
+          vectorCollectionsCleaned,
+          vectorCollectionsErrors,
         };
       } catch (e) {
         return {
@@ -500,8 +499,8 @@ export function registerLibraryCatalogIpc(): void {
           libraryRoot: root,
           removedFiles,
           removedDirs,
-          chromaCleaned: 0,
-          chromaErrors: [],
+          vectorCollectionsCleaned: 0,
+          vectorCollectionsErrors: [],
         };
       }
     }
