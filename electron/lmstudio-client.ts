@@ -157,11 +157,8 @@ export interface DownloadedModelInfo {
 /**
  * Информация о загруженной в LM Studio модели. Поля `vision` и
  * `trainedForToolUse` — эвристика по `modelKey` (LM Studio SDK не предоставляет
- * флагов capabilities), используется в model-role-resolver для capability
- * filtering ролей `vision_meta` / `vision_ocr` / `agent`.
- *
- * Эти поля optional — добавлены в v3.4 (Models page rebuild). Старые consumers
- * без их использования продолжают работать без изменений.
+ * флагов capabilities). Используется в auto-config (`electron/lib/llm/auto-config.ts`)
+ * для эвристического распределения reader/extractor/vision-ocr задач.
  */
 export interface LoadedModelInfo {
   identifier: string;

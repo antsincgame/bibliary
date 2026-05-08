@@ -1,6 +1,6 @@
 /**
- * Integration test для Iter 7 — scheduler observability в evaluator-queue
- * и illustration-worker.
+ * Integration test для Iter 7 — scheduler observability в evaluator-queue.
+ * (illustration-worker удалён вместе с refactor 9 ролей → 3 задач 2026-05.)
  *
  * Проверяем что getSnapshot() корректно отражает состояние lanes — это то,
  * что pipeline-status-widget показывает в UI.

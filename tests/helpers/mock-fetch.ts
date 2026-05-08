@@ -1,20 +1,21 @@
 /**
  * Test helper: in-memory mock for `globalThis.fetch`.
  *
- * Раньше эта логика дублировалась в `tests/qdrant-collection-config.test.ts`,
- * `tests/olympics-sdk-route.test.ts`, `tests/olympics-lifecycle.test.ts` —
- * по 30+ строк save/restore + decode body + collect calls в каждом.
+ * Используется в chroma-* и uniqueness-* тестах для перехвата HTTP-вызовов
+ * без реального Chroma-сервера. Записывает каждый call (URL/method/body/
+ * headers) в массив для проверок + возвращает любой Response через
+ * пользовательский responder.
  *
- * Использование:
+ * Пример:
  *
  *   const mock = setupMockFetch((req) => {
  *     if (req.method === "GET") return new Response("not found", { status: 404 });
- *     return jsonResponse({ result: { acknowledged: true } });
+ *     return jsonResponse({ id: "abc", name: "test-coll" });
  *   });
  *
  *   try {
- *     await ensureQdrantCollection({...});
- *     expect(mock.calls.length).toBe(2);
+ *     await ensureChromaCollection({ name: "test-coll" });
+ *     assert.equal(mock.calls.length, 2);
  *   } finally {
  *     mock.restore();
  *   }
@@ -95,16 +96,6 @@ export function jsonResponse(data: unknown, status = 200): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
-}
-
-/** Удобство: текстовый ответ с заданным status (default 200). */
-export function textResponse(text: string, status = 200): Response {
-  return new Response(text, { status });
-}
-
-/** Удобство: 404 not found. */
-export function notFoundResponse(message = "not found"): Response {
-  return new Response(message, { status: 404 });
 }
 
 /** Внутреннее: нормализовать HeadersInit к плоскому объекту lowercase keys. */

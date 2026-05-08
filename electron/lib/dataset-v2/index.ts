@@ -1,7 +1,6 @@
 export type {
   SemanticChunk,
   ChapterMemory,
-  AuraFlag,
   DeltaKnowledge,
 } from "./types.js";
 export { DeltaKnowledgeSchema, assertValidCollectionName } from "./types.js";

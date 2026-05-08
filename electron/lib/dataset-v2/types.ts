@@ -35,15 +35,6 @@ export interface ChapterMemory {
   lastThesis: string;
 }
 
-/* ─────────────── AURA filter flags ─────────────── */
-
-/** A.У.Р.А. — четыре критерия уникальности знания. Min 2 из 4 для прохождения. */
-export type AuraFlag =
-  | "authorship"      // A — Авторский концепт: новая модель/формула/классификация
-  | "specialization"  // У — Узкая специализация: deep technical/scientific nuances
-  | "revision"        // Р — Разрушение мифов: опровергает default LLM knowledge
-  | "causality";      // А — Причинно-следственная механика: скрытое "почему"
-
 /* ─────────────── Topology: Subject → Predicate → Object triple ─────────────── */
 
 /**

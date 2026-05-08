@@ -26,6 +26,10 @@ const config: KnipConfig = {
     "electron/main.ts",
     "electron/preload.ts",
 
+    /* Worker thread — загружается через `new Worker(__dirname/pdf-worker.js)`
+       из pdf-worker-host.ts, knip не видит динамическую path-резолюцию. */
+    "electron/lib/scanner/parsers/pdf-worker.ts",
+
     /* Scripts вызываемые из package.json (test:e2e:*, dataset:*, и т.д.) */
     "scripts/*.ts",
     "scripts/*.cjs",
@@ -33,6 +37,20 @@ const config: KnipConfig = {
     /* Все тесты */
     "tests/**/*.test.ts",
     "tests/smoke/*.test.ts",
+  ],
+
+  ignoreDependencies: [
+    /* 7z-bin / 7zip-bin резолвятся динамически:
+       `for (const pkg of ["7z-bin", "7zip-bin"]) require(pkg)` —
+       knip видит только литерал require(), не итерацию. */
+    "7z-bin",
+    "7zip-bin",
+    /* `marked` импортируется в renderer/markdown.js через прямой path
+       `../node_modules/marked/lib/marked.esm.js` (renderer не TS, не в project). */
+    "marked",
+    /* `esbuild` требуется только в scripts/bench-djvu.cjs — manual benchmark,
+       не в CI. Доступен транзитивно через electron-builder и др. */
+    "esbuild",
   ],
 
   project: [

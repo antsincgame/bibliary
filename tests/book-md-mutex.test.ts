@@ -1,9 +1,10 @@
 /**
  * Иt 8Г.1 — book-md-mutex: per-bookId сериализация + AbortSignal + cleanup.
  *
- * Регрессионная защита от lost-update между evaluator и illustration-worker
- * (Inquisitor разведка подтвердила реальную гонку — см. shape комментария
- * в book-md-mutex.ts).
+ * Регрессионная защита от lost-update при конкурирующих writer'ах одного
+ * book.md (raw text + frontmatter). Изначально была между evaluator и
+ * illustration-worker (последний удалён в 2026-05); сейчас актуально для
+ * любого пайплайна который пишет тот же mdPath с разных scheduler lanes.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -147,7 +148,7 @@ test("[Г.1] withBookMdLock: regression lost-update — последовател
   const illustrationRMW = withBookMdLock("book-1", async () => {
     const snapshot = sharedDoc;
     await wait(5);
-    /* «illustration-worker» обновляет body alt-text, frontmatter не меняет */
+    /* Параллельный writer'ы обновляет body, frontmatter не меняет */
     sharedDoc = snapshot.replace("body:initial", "body:enriched");
   });
 
