@@ -147,13 +147,29 @@ export const PreferencesSchema = z.object({
    * системный launchctl). */
   chromaAutoSpawn: z.boolean().default(true),
 
-  // -- Selected models per role --
-  /** Модель LM Studio для extractor (Crystallizer). Пусто = первая загруженная. */
+  // -- Selected models per task (упрощено с 9 ролей до 3 задач, 2026-05) --
+  /**
+   * Reader model — small fast LLM для evaluation книг и других light tasks.
+   * Рекомендация: 3-7B instruct-tuned, например Qwen2.5-3B / Llama-3-8B.
+   * Пусто = fallback на первую загруженную модель в LM Studio.
+   */
+  readerModel: z.string().default(""),
+  /**
+   * Extractor model — big reasoning LLM для concept extraction (datasets).
+   * Рекомендация: 14B+ reasoning-tuned (Qwen3-14B-Thinking, GLM-4.7-Air-Reasoning).
+   * Пусто = fallback на первую загруженную модель.
+   */
   extractorModel: z.string().default(""),
   /**
-   * Модель LM Studio для evaluator (book pre-flight). Пусто = pickEvaluatorModel
-   * выберет лучшую автоматически (curated tags + heuristics в book-evaluator.ts).
+   * Vision OCR model — optional vision-capable LLM для OCR DJVU/PDF без
+   * text-layer (когда `djvuOcrProvider === "vision-llm"`).
+   * Рекомендация: Qwen2.5-VL-7B+ или подобная multimodal модель.
+   * Пусто = system OCR (Win.Media.Ocr / macOS Vision Framework).
    */
+  visionOcrModel: z.string().default(""),
+
+  // -- Legacy keys (deprecated, kept for migration). Удалятся в следующей мажорке. --
+  /** @deprecated → readerModel. Migration auto-mapping применяется при load. */
   evaluatorModel: z.string().default(""),
   /**
    * Smart-fallback для evaluator: если preferred модель не загружена в LM Studio
