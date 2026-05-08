@@ -312,12 +312,6 @@ export default {
   "library.import.evaluator.tooltip.slots": "Сколько книг оценивать одновременно. Больше = быстрее, но больше нагрузка на VRAM.",
   "library.catalog.btn.prioritize": "В приоритет",
   "library.catalog.btn.reevaluate": "Переоценить",
-  "library.catalog.btn.enrichIllustrations": "AI: описать иллюстрации",
-  "library.catalog.tooltip.enrichIllustrations": "Запустить vision_illustration модель на illustrations.json выбранных книг (запишет описания и оценки качества)",
-  "library.catalog.confirm.enrichIllustrationsTitle": "Обогатить иллюстрации через AI",
-  "library.catalog.confirm.enrichIllustrations": "Запустить AI-обогащение иллюстраций для {n} книг(и)? Требуется vision_illustration модель в LM Studio.",
-  "library.catalog.toast.enrichDone": "Обогащение завершено — обработано: {processed}, уже было: {already}, пропущено: {skipped}, ошибок: {errors}",
-  "library.catalog.enrichIllustrations.failed": "Обогащение не удалось: {reason}",
   "library.catalog.btn.reparse": "Перепарсить",
   "library.catalog.tooltip.prioritize": "Перенести выбранные книги в начало очереди оценки",
   "library.catalog.tooltip.selectAll": "Выделить все книги, попавшие в текущий фильтр",
@@ -587,14 +581,6 @@ export default {
   "models.card.loaded": "Загруженные модели (в памяти)",
   "models.card.downloaded": "Скачанные модели",
   "models.card.loading": "Загружается…",
-  "models.role.crystallizer.label": "Кристаллизатор",
-  "models.role.crystallizer.help": "Достаёт из книг факты и заметки для базы знаний.",
-  "models.role.vision_ocr.label": "OCR по изображению",
-  "models.role.vision_ocr.help": "Превращает фото страниц в текст при сканировании.",
-  "models.role.vision_illustration.label": "Иллюстрации",
-  "models.role.vision_illustration.help": "Описывает схемы, рисунки и диаграммы книги для семантической индексации изображений.",
-  "models.role.evaluator.label": "Оценщик книг",
-  "models.role.evaluator.help": "Решает, добавлять ли книгу в вашу библиотеку.",
   "models.role.current": "сейчас",
   "models.role.auto": "Авто (лучшая из загруженных)",
   "models.role.none": "нет подходящей модели",
@@ -741,8 +727,6 @@ export default {
   "settings.parserPoolSize": "Размер parser pool (0 = авто = CPU-1, max 4)",
   "settings.evaluatorSlots": "Параллельные слоты evaluator (LLM-оценка книг)",
   "settings.visionOcrRpm": "Vision-OCR: запросов в минуту per-model (DDoS-защита)",
-  "settings.illustrationParallelism": "Описание иллюстраций: параллелизм per-book",
-  "settings.illustrationParallelBooks": "Описание иллюстраций: параллельных книг (semaphore)",
   "settings.converterCacheMaxBytes": "Converter cache: лимит в байтах (0 = без лимита)",
   "settings.preferDjvuOverPdf": "При дубликате DJVU+PDF предпочитать DJVU (по умолчанию: PDF)",
   "models.advanced.summary": "⚙ Дополнительные настройки",
@@ -826,4 +810,11 @@ export default {
 
 
 
+
+  "models.task.reader.label": "Reader (оценка книги)",
+  "models.task.reader.hint": "Малая быстрая модель для оценки качества. Рекомендуем 3-7B instruct.",
+  "models.task.extractor.label": "Extractor (извлечение концептов)",
+  "models.task.extractor.hint": "Большая reasoning-модель для генерации датасета. Рекомендуем 14B+ thinking.",
+  "models.task.visionOcr.label": "Vision OCR (DJVU/PDF сканы)",
+  "models.task.visionOcr.hint": "Опционально. Vision-модель для image-only книг. Рекомендуем Qwen2.5-VL-7B+.",
 };

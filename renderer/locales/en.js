@@ -312,12 +312,6 @@ export default {
   "library.import.evaluator.tooltip.slots": "How many books to evaluate in parallel. Higher = faster but more VRAM load.",
   "library.catalog.btn.prioritize": "Prioritize",
   "library.catalog.btn.reevaluate": "Re-evaluate",
-  "library.catalog.btn.enrichIllustrations": "AI Enrich Illustrations",
-  "library.catalog.tooltip.enrichIllustrations": "Run vision_illustration model on selected books' illustrations.json (writes descriptions and quality scores)",
-  "library.catalog.confirm.enrichIllustrationsTitle": "Enrich illustrations with AI",
-  "library.catalog.confirm.enrichIllustrations": "Run AI enrichment on illustrations of {n} book(s)? Requires vision_illustration model in LM Studio.",
-  "library.catalog.toast.enrichDone": "Enrichment done — processed: {processed}, already done: {already}, skipped: {skipped}, errors: {errors}",
-  "library.catalog.enrichIllustrations.failed": "Enrichment failed: {reason}",
   "library.catalog.btn.reparse": "Re-parse",
   "library.catalog.tooltip.prioritize": "Move selected books to the head of the evaluation queue",
   "library.catalog.tooltip.selectAll": "Select every book that matches the current filters",
@@ -589,14 +583,6 @@ export default {
   "models.card.loaded": "Loaded models (in memory)",
   "models.card.downloaded": "Downloaded models",
   "models.card.loading": "Loading…",
-  "models.role.crystallizer.label": "Crystallizer",
-  "models.role.crystallizer.help": "Pulls structured notes and key facts from books.",
-  "models.role.vision_ocr.label": "Image OCR",
-  "models.role.vision_ocr.help": "Turns page photos into text when scanning.",
-  "models.role.vision_illustration.label": "Illustrations",
-  "models.role.vision_illustration.help": "Describes figures, diagrams, and drawings for semantic image indexing.",
-  "models.role.evaluator.label": "Book Evaluator",
-  "models.role.evaluator.help": "Decides if a book should enter your library.",
   "models.role.current": "current",
   "models.role.auto": "Auto (pick best loaded model)",
   "models.role.none": "no suitable model",
@@ -754,8 +740,6 @@ export default {
   "settings.parserPoolSize": "Parser pool size (0 = auto = CPU-1, max 4)",
   "settings.evaluatorSlots": "Evaluator parallel slots (LLM book scoring)",
   "settings.visionOcrRpm": "Vision-OCR: requests per minute per model (DDoS guard)",
-  "settings.illustrationParallelism": "Illustration descriptions: parallelism per book",
-  "settings.illustrationParallelBooks": "Illustration descriptions: parallel books (semaphore)",
   "settings.converterCacheMaxBytes": "Converter cache: max bytes (0 = unlimited)",
   "settings.preferDjvuOverPdf": "Prefer DJVU over PDF when both exist (default: PDF wins)",
   "settings.section.connectivity": "Connectivity",
@@ -812,4 +796,11 @@ export default {
 
 
 
+
+  "models.task.reader.label": "Reader (book evaluation)",
+  "models.task.reader.hint": "Small fast model for quality scoring. Recommend 3-7B instruct.",
+  "models.task.extractor.label": "Extractor (concept extraction)",
+  "models.task.extractor.hint": "Big reasoning model for dataset crystallization. Recommend 14B+ thinking.",
+  "models.task.visionOcr.label": "Vision OCR (DJVU/PDF scans)",
+  "models.task.visionOcr.hint": "Optional. Vision-capable model for image-only books. Recommend Qwen2.5-VL-7B+.",
 };

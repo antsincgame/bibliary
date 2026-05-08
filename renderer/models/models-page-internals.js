@@ -10,12 +10,14 @@ import { t } from "../i18n.js";
 export const REFRESH_MS = 8000;
 export const TOAST_TTL_MS = 5000;
 
-/** Роли, отображаемые на странице моделей. */
-export const PIPELINE_ROLES = [
-  "crystallizer",
-  "evaluator",
-  "vision_ocr",
-  "vision_illustration",
+/**
+ * Tasks отображаемые на странице моделей (refactor 1.0.22 — было 4 ролей,
+ * теперь 3 task'а, см. electron/lib/llm/model-resolver.ts).
+ */
+export const PIPELINE_TASKS = [
+  { task: "reader", prefKey: "readerModel", label: "models.task.reader.label", hint: "models.task.reader.hint" },
+  { task: "extractor", prefKey: "extractorModel", label: "models.task.extractor.label", hint: "models.task.extractor.hint" },
+  { task: "vision-ocr", prefKey: "visionOcrModel", label: "models.task.visionOcr.label", hint: "models.task.visionOcr.hint" },
 ];
 
 /**

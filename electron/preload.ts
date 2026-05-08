@@ -356,18 +356,6 @@ contextBridge.exposeInMainWorld("api", {
     }> => ipcRenderer.invoke("preferences:apply-profile", profile),
   },
 
-  modelRoles: {
-    list: (roles?: string[]): Promise<Array<{
-      role: string;
-      prefKey: string;
-      fallbackKey: string | null;
-      required: string[];
-      preferred: string[];
-      resolved: { modelKey: string; source: string; usedFallback?: boolean } | null;
-      prefValue: string;
-    }>> => ipcRenderer.invoke("model-roles:list", roles ? { roles } : {}),
-  },
-
   scanner: {
     probeFolder: (): Promise<Array<{ absPath: string; fileName: string; ext: string; sizeBytes: number; mtimeMs: number }>> =>
       ipcRenderer.invoke("scanner:probe-folder"),
@@ -695,23 +683,6 @@ contextBridge.exposeInMainWorld("api", {
       smokeLibrary ? Promise.resolve({ queued: smokeLibrary.rows.length }) : ipcRenderer.invoke("library:reevaluate-all"),
     reparseBook: (bookId: string): Promise<{ ok: boolean; chapters?: number; reason?: string }> =>
       smokeLibrary ? Promise.resolve({ ok: true, chapters: 1 }) : ipcRenderer.invoke("library:reparse-book", bookId),
-    /**
-     * On-demand AI illustration enrichment (MVP v1.0.1). User-triggered from
-     * catalog -- runs `vision_illustration` model on selected books'
-     * illustrations.json files, writing back descriptions and scores.
-     */
-    enrichIllustrations: (bookIds: string[]): Promise<{
-      ok: boolean;
-      processed: number;
-      alreadyDone: number;
-      skipped: number;
-      errors: number;
-      bookCount: number;
-      reason?: string;
-    }> =>
-      smokeLibrary
-        ? Promise.resolve({ ok: true, processed: 0, alreadyDone: 0, skipped: bookIds.length, errors: 0, bookCount: bookIds.length })
-        : ipcRenderer.invoke("library:enrich-illustrations", bookIds),
     /**
      * v1.0.2: Sweep dead imports (incomplete-torrent files filled with 0xFF/0x00).
      * Manually triggered from catalog UI. Returns summary for toast display.

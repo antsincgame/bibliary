@@ -38,11 +38,6 @@ import {
   getEvaluatorSlotCount,
 } from "../electron/lib/library/evaluator-queue.ts";
 
-import {
-  applyIllustrationSemaphorePrefs,
-  getIllustrationSemaphore,
-} from "../electron/lib/library/illustration-semaphore.ts";
-
 import { CrossFormatPreDedup } from "../electron/lib/library/cross-format-prededup.ts";
 
 let tmpDir: string;
@@ -67,8 +62,6 @@ describe("[Settings 8Б] PreferencesSchema contains all Smart Import Pipeline ke
     "parserPoolSize",
     "evaluatorSlots",
     "visionOcrRpm",
-    "illustrationParallelism",
-    "illustrationParallelBooks",
     "converterCacheMaxBytes",
     "preferDjvuOverPdf",
   ];
@@ -84,8 +77,6 @@ describe("[Settings 8Б] PreferencesSchema contains all Smart Import Pipeline ke
     assert.equal(defaults.parserPoolSize, 0);
     assert.equal(defaults.evaluatorSlots, 2);
     assert.equal(defaults.visionOcrRpm, 60);
-    assert.equal(defaults.illustrationParallelism, 4);
-    assert.equal(defaults.illustrationParallelBooks, 2);
     assert.equal(defaults.converterCacheMaxBytes, 5 * 1024 * 1024 * 1024);
     assert.equal(defaults.preferDjvuOverPdf, false);
   });
@@ -200,32 +191,6 @@ describe("[Settings 8В] applyEvaluatorPrefs propagates evaluatorSlots to live w
    не актуальны. MOBI/AZW/AZW3/PDB/PRC/CHM теперь парсятся pure-JS через
    palm-mobi.ts (PalmDoc LZ77) и chm.ts (7zip → composite-html). */
 
-/* ── IllustrationSemaphore: applyIllustrationSemaphorePrefs управляет capacity (Иt 8В.MEDIUM.10) ── */
-
-describe("[Settings 8В] applyIllustrationSemaphorePrefs propagates illustrationParallelBooks", () => {
-  test("apply меняет shared semaphore capacity", () => {
-    const sem = getIllustrationSemaphore();
-    const before = sem.getStatus().capacity;
-    const target = before === 5 ? 7 : 5;
-    applyIllustrationSemaphorePrefs({ illustrationParallelBooks: target });
-    assert.equal(sem.getStatus().capacity, target);
-    /* Восстанавливаем — другие тесты могут зависеть. */
-    applyIllustrationSemaphorePrefs({ illustrationParallelBooks: before });
-    assert.equal(sem.getStatus().capacity, before);
-  });
-
-  test("undefined / 0 / отрицательные значения — no-op (валидация >= 1)", () => {
-    const sem = getIllustrationSemaphore();
-    const before = sem.getStatus().capacity;
-    applyIllustrationSemaphorePrefs({});
-    assert.equal(sem.getStatus().capacity, before, "пустой объект не должен трогать capacity");
-    applyIllustrationSemaphorePrefs({ illustrationParallelBooks: 0 });
-    assert.equal(sem.getStatus().capacity, before, "0 < 1 — игнор");
-    applyIllustrationSemaphorePrefs({ illustrationParallelBooks: -2 });
-    assert.equal(sem.getStatus().capacity, before, "отрицательное — игнор");
-  });
-});
-
 /* ── Иt 8В.CRITICAL.2 anti-regression: env-переменные пайплайна должны быть удалены ── */
 
 describe("[Settings 8В] CRITICAL.2 — pipeline env-переменные не читаются (anti-regression)", () => {
@@ -247,7 +212,6 @@ describe("[Settings 8В] CRITICAL.2 — pipeline env-переменные не �
       "electron/lib/library/evaluator-queue.ts",
       "electron/lib/llm/heavy-lane-rate-limiter.ts",
       "electron/lib/library/import.ts",
-      "electron/lib/library/illustration-semaphore.ts",
       "electron/lib/scanner/converters/cache.ts",
     ];
     for (const src of sources) {

@@ -17,7 +17,7 @@ import {
   ctx,
   errMsg,
   showToast,
-  PIPELINE_ROLES,
+  PIPELINE_TASKS,
 } from "./models-page-internals.js";
 import { mountPipelineStatusWidget } from "./pipeline-status-widget.js";
 
@@ -25,13 +25,6 @@ import { mountPipelineStatusWidget } from "./pipeline-status-widget.js";
    повторный buildHwStrip (idempotent) не плодил дублирующие подписки на IPC.
    При new mount старый unmount вызывается, новый сохраняется. */
 let pipelineWidgetUnmount = /** @type {(() => void) | null} */ (null);
-
-const ROLE_META = {
-  crystallizer:         { labelKey: "models.role.crystallizer.label",         helpKey: "models.role.crystallizer.help" },
-  evaluator:            { labelKey: "models.role.evaluator.label",            helpKey: "models.role.evaluator.help" },
-  vision_ocr:           { labelKey: "models.role.vision_ocr.label",           helpKey: "models.role.vision_ocr.help" },
-  vision_illustration:  { labelKey: "models.role.vision_illustration.label",  helpKey: "models.role.vision_illustration.help" },
-};
 
 export async function refreshHardware(force = false) {
   if (!ctx.pageRoot) return;
@@ -65,14 +58,23 @@ export function renderHardwareStrip() {
 export async function refresh() {
   if (!ctx.pageRoot) return;
   try {
-    const [status, loaded, downloaded, roleMap] = await Promise.all([
+    const [status, loaded, downloaded, prefs] = await Promise.all([
       window.api.lmstudio.status(),
       window.api.lmstudio.listLoaded(),
       window.api.lmstudio.listDownloaded(),
-      window.api.modelRoles.list(PIPELINE_ROLES),
+      window.api.preferences.getAll(),
     ]);
+    /* refactor 1.0.22: 3 task'а вместо 4 ролей. Строим taskMap локально
+     * из PIPELINE_TASKS + текущих prefs (никакого IPC role-resolver). */
+    const taskMap = PIPELINE_TASKS.map((t) => ({
+      role: t.task,
+      prefKey: t.prefKey,
+      labelKey: t.label,
+      helpKey: t.hint,
+      prefValue: typeof prefs?.[t.prefKey] === "string" ? prefs[t.prefKey] : "",
+    }));
     renderStatus(status);
-    renderRoles(roleMap, loaded, downloaded);
+    renderRoles(taskMap, loaded, downloaded);
     renderHardwareStrip();
   } catch (e) {
     showToast(t("models.toast.refresh_failed", { msg: errMsg(e) }));
@@ -119,9 +121,10 @@ function renderRoles(roleMap, loaded, downloaded) {
 
   for (const entry of roleMap) {
     const role = /** @type {string} */ (entry.role);
-    const meta = ROLE_META[role] ?? { labelKey: null, helpKey: null };
-    const label = meta.labelKey ? t(meta.labelKey) : role;
-    const help = meta.helpKey ? t(meta.helpKey) : "";
+    const labelKey = /** @type {string|undefined} */ (entry.labelKey);
+    const helpKey = /** @type {string|undefined} */ (entry.helpKey);
+    const label = labelKey ? t(labelKey) : role;
+    const help = helpKey ? t(helpKey) : "";
 
     const prefVal = entry.prefValue ?? "";
     const select = el("select", { class: "mp-role-select" });
