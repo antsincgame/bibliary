@@ -78,6 +78,11 @@ export function detectLatinCyrillicConfusion(text: string): ConfusionResult {
 
   let homoglyphTokens = 0;
   let digitSubstitutions = 0;
+  /* v1.1.2 Bug #4: mixed-script tokens — слова с ≥2 кириллических И ≥1
+     латинской буквой (любой, не только из homoglyph-списка), исключая
+     i/I (украинский whitelist). Ловит случаи типа `бdня`, `пgaшcт` где
+     OCR подставил случайные latin chars, не входящие в LATIN_HOMOGLYPHS. */
+  let mixedScriptTokens = 0;
 
   // Regex for digit-substitution: a Cyrillic char adjacent to a digit adjacent to a letter
   const DIGIT_SUB_RE = /[\u0400-\u04ff][0-9]+[a-zA-Z\u0400-\u04ff]|[a-zA-Z\u0400-\u04ff][0-9]+[\u0400-\u04ff]/u;
@@ -86,14 +91,24 @@ export function detectLatinCyrillicConfusion(text: string): ConfusionResult {
     // Count Cyrillic chars (excluding digits, Latin, punctuation)
     let cyrillicCount = 0;
     let suspiciousLatinCount = 0;
+    let anyLatinCount = 0;
     for (const ch of token) {
       const code = ch.charCodeAt(0);
       if (code >= 0x0400 && code <= 0x04ff) cyrillicCount++;
       else if (LATIN_HOMOGLYPHS.has(ch)) suspiciousLatinCount++;
+      if (
+        ((code >= 0x41 && code <= 0x5a) || (code >= 0x61 && code <= 0x7a))
+        && code !== 0x49 /* I */
+        && code !== 0x69 /* i */
+      ) {
+        anyLatinCount++;
+      }
     }
 
     if (cyrillicCount >= 3 && suspiciousLatinCount >= 1) {
       homoglyphTokens++;
+    } else if (cyrillicCount >= 2 && anyLatinCount >= 1) {
+      mixedScriptTokens++;
     }
 
     if (DIGIT_SUB_RE.test(token)) {
@@ -130,9 +145,16 @@ export function detectLatinCyrillicConfusion(text: string): ConfusionResult {
     : 0;
   const charFreqAnomaly = totalCyrillic > 50 && charRatio > 0.05 && charRatio < 0.40;
 
-  const weightedCount = homoglyphTokens + digitSubstitutions * 2;
+  /* Adaptive abs threshold: для коротких текстов (одна страница, <50 токенов)
+     достаточно 3 weighted hits — не ждём пока наберётся 5. Для длинных
+     текстов 5 остаётся (это абсолютный signal что OCR systemically broken).
+     mixedScriptTokens добавляются с весом 1 — менее уверенный сигнал чем
+     homoglyph (закрытый список) или digitSub (структурный), но всё ещё
+     значимый при системной подмене. */
+  const weightedCount = homoglyphTokens + digitSubstitutions * 2 + mixedScriptTokens;
+  const absThreshold = sampleTokens < 50 ? 3 : 5;
   const isConfused =
-    weightedCount >= 5 ||
+    weightedCount >= absThreshold ||
     (sampleTokens > 0 && weightedCount / sampleTokens > 0.03) ||
     charFreqAnomaly;
 

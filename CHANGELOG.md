@@ -4,6 +4,29 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] — 2026-05-08
+
+**Импорт и оценка: DjVu-главы, OCR-каша, surrogate под контекст, явный UI прогресса.**
+
+### Fixed
+- **Evaluator / LM Studio**: surrogate обрезается под `n_ctx` загруженной модели
+  (резерв под system + JSON), чтобы не падать с HTTP 400 `n_keep ≥ n_ctx` на
+  больших книгах. Warning в `book.warnings`, лог `EVALUATOR-SURROGATE-TRUNCATE`
+  в `lmstudio-actions.log`.
+- **DjVu `chapterCount = 1`**: при наличии outline — построение секций через
+  per-page `djvutxt` + `paragraphsToSections` с закладками; без outline —
+  эвристическое расщепление по маркерам «Глава / Розділ / Chapter / Часть / …»
+  для длинного текста.
+- **DjVu text layer / русский OCR**: перед приёмом полного text-layer проверка
+  `detectLatinCyrillicConfusion`; при срабатывании — переход в OCR-каскад.
+  Усилен детектор: mixed-script токены (латиница + кириллица в одном слове,
+  кроме whitelist `i/I`), адаптивный абсолютный порог для коротких страниц.
+
+### Changed
+- **Import UI**: панель оценки показывает очередь + счётчики Evaluated / Failed,
+  периодическое обновление статуса (~2 с), подсветка `is-active` во время
+  работы эвалюатора; уточнены tooltips «Added» и панели (импорт ≠ LLM-оценка).
+
 ## [1.0.12] — 2026-05-06
 
 **SOTA Олимпиада: hallucination calibration, diversity fixtures, hierarchical OCR scoring.**

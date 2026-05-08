@@ -233,13 +233,25 @@ export function buildImportPane(deps) {
   };
   updateImportUiState();
   /* Интервал самоочищается если body вышел из документа (безопаснее чем
-     DOMNodeRemoved, который не срабатывает при удалении родителя). */
+     DOMNodeRemoved, который не срабатывает при удалении родителя).
+
+     v1.1.2 (Phase C): добавлен periodic refresh evaluator-панели каждые ~2с
+     (4 тика по 500мс). До этого refreshEvaluatorState вызывался только при
+     mount'е renderImport — пользователь не видел real-time прогресса
+     evaluator'а после импорта (queue падает с 21→0, но число замораживалось
+     на 21 пока вкладку не переоткроют). Теперь evaluator-counter живой. */
+  let evaluatorTickCounter = 0;
   const cancelPoller = setInterval(() => {
     if (!document.contains(body)) {
       clearInterval(cancelPoller);
       return;
     }
     updateImportUiState();
+    evaluatorTickCounter++;
+    if (evaluatorTickCounter >= 4) {
+      evaluatorTickCounter = 0;
+      void refreshEvaluatorState(body);
+    }
   }, 500);
 
   return el("div", { class: "lib-pane lib-pane-import" }, [body]);

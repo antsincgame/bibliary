@@ -5317,6 +5317,7 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   padding: 12px 16px;
   position: relative;
   border-radius: 2px;
+  transition: border-color 240ms ease, box-shadow 240ms ease;
 }
 .lib-evaluator-panel::before {
   content: "// EVALUATOR.QUEUE";
@@ -5330,11 +5331,46 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   color: var(--cyan);
   letter-spacing: 0.18em;
 }
+.lib-evaluator-panel.is-active {
+  border-color: rgba(0, 240, 255, 0.55);
+  box-shadow: 0 0 14px rgba(0, 240, 255, 0.18);
+  animation: lib-evaluator-pulse 1800ms ease-in-out infinite;
+}
+@keyframes lib-evaluator-pulse {
+  0%, 100% { box-shadow: 0 0 10px rgba(0, 240, 255, 0.14); }
+  50%      { box-shadow: 0 0 16px rgba(0, 240, 255, 0.30); }
+}
 .lib-evaluator-title { display: none; /* heading is now in pseudo-element */ }
 .lib-evaluator-state {
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--neon-emerald);
+}
+.lib-evaluator-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.62);
+}
+.lib-evaluator-meta-label {
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.lib-evaluator-meta-sep {
+  color: rgba(0, 240, 255, 0.32);
+}
+.lib-evaluator-queue-value,
+.lib-evaluator-evaluated-value,
+.lib-evaluator-failed-value {
+  font-weight: 700;
+  color: var(--neon-emerald);
+}
+.lib-evaluator-failed-value {
+  color: rgba(255, 90, 110, 0.85);
 }
 
 /* ───── Book Reader ───── */

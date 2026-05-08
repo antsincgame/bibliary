@@ -30,9 +30,59 @@ import { isAbortError } from "../resilience/lm-request-policy.js";
 import { getImportScheduler } from "./import-task-scheduler.js";
 import { logModelAction } from "../llm/lmstudio-actions-log.js";
 import { runUniquenessStep } from "./evaluator-uniqueness-step.js";
+import { getModelContext } from "../token/overflow-guard.js";
 import type { BookCatalogMeta, EvaluationResult } from "./types.js";
 import type { EvaluatorEvent } from "./evaluator-queue.js";
 import type { PickEvaluatorModelOptions } from "./book-evaluator.js";
+
+/**
+ * v1.1.2 surrogate truncate — защита от LM Studio HTTP 400
+ * `n_keep >= n_ctx`. До этого фикса большие книги (Polars ~111k слов)
+ * генерировали surrogate ~11k токенов, а evaluator-модель часто загружена
+ * с n_ctx=4096 — запрос валился без оценки.
+ *
+ * Стратегия: после сборки surrogate + metadata hints оцениваем размер
+ * в токенах char-heuristic (3.0 chars/token для mixed Cyr/Lat), если
+ * превышает доступный budget модели — обрезаем по границе слова и
+ * приписываем технический маркер. Truncation отражается в warnings,
+ * чтобы пользователь видел что оценка проводилась по урезанному тексту.
+ *
+ * Conservative fallback (4096) применяется когда `getModelContext`
+ * не знает n_ctx модели (она загружена не через model-pool, либо до
+ * этой сессии). Это старое поведение «грузим как есть, надеемся».
+ *
+ * RESERVED_TOKENS покрывает system prompt (~1500 для Chief Epistemologist)
+ * + JSON output reserve (~1000) + structured output overhead. */
+const TOKEN_ESTIMATE_CHARS_PER_TOKEN = 3.0;
+const SURROGATE_RESERVED_TOKENS = 2500;
+const SURROGATE_SAFETY_FACTOR = 0.9;
+const SURROGATE_FALLBACK_NCTX = 4096;
+
+interface SurrogateBudgetResult {
+  /** Готовый текст для evaluator (truncated если нужно). */
+  text: string;
+  /** Если truncate был применён — описание для warnings. */
+  truncationWarning: string | null;
+}
+
+function applySurrogateTokenBudget(text: string, modelKey: string): SurrogateBudgetResult {
+  const ctx = getModelContext(modelKey) ?? SURROGATE_FALLBACK_NCTX;
+  const tokenBudget = Math.max(
+    500,
+    Math.floor(ctx * SURROGATE_SAFETY_FACTOR) - SURROGATE_RESERVED_TOKENS,
+  );
+  const estimatedTokens = Math.ceil(text.length / TOKEN_ESTIMATE_CHARS_PER_TOKEN);
+  if (estimatedTokens <= tokenBudget) {
+    return { text, truncationWarning: null };
+  }
+  const targetChars = Math.max(1, Math.floor(tokenBudget * TOKEN_ESTIMATE_CHARS_PER_TOKEN));
+  const head = text.slice(0, targetChars);
+  const lastSpace = head.lastIndexOf(" ");
+  const cutAt = lastSpace > targetChars * 0.95 ? lastSpace : targetChars;
+  const truncated = `${head.slice(0, cutAt).trimEnd()}\n\n[...surrogate truncated to fit model context window (n_ctx=${ctx})...]`;
+  const truncationWarning = `surrogate truncated: ~${estimatedTokens}→~${tokenBudget} tokens (model n_ctx=${ctx})`;
+  return { text: truncated, truncationWarning };
+}
 
 /** Per-slot mutable state — owned and reset by evaluator-queue. */
 export interface SlotState {
@@ -154,7 +204,7 @@ export async function evaluateOneInSlot(
 
     /* 2b. Pre-scan: regex hints for author/year from frontmatter + filename + full text. */
     const metaHints = extractMetadataHints(md, meta);
-    const surrogateWithHints = metaHints.length > 0
+    let surrogateWithHints = metaHints.length > 0
       ? `# METADATA HINTS (from filename, frontmatter, and text scan — use these as strong clues)\n${metaHints.join("\n")}\n\n${surrogate.surrogate}`
       : surrogate.surrogate;
 
@@ -212,6 +262,27 @@ export async function evaluateOneInSlot(
           `evaluator: preferred "${evaluatorPrefs.preferred}" not loaded — using "${model}" as fallback`,
         ],
       };
+    }
+
+    /* 3b. v1.1.2: truncate surrogate под n_ctx модели. До этого фикса большие
+       книги (≥ ~2k слов на surrogate × 3 toks/word) валили LM Studio с HTTP 400
+       n_keep ≥ n_ctx. Теперь ориентируемся на зарегистрированный n_ctx
+       (overflow-guard) либо safe fallback 4096. Truncation отражается в
+       warnings, чтобы пользователь видел что оценка проводилась по
+       обрезанному surrogate. */
+    const surrogateBudget = applySurrogateTokenBudget(surrogateWithHints, model);
+    if (surrogateBudget.truncationWarning) {
+      surrogateWithHints = surrogateBudget.text;
+      meta = {
+        ...meta,
+        warnings: [...(meta.warnings ?? []), surrogateBudget.truncationWarning],
+      };
+      logModelAction("EVALUATOR-SURROGATE-TRUNCATE", {
+        role: "evaluator",
+        modelKey: model,
+        reason: surrogateBudget.truncationWarning,
+        meta: { bookId, title: slot.title ?? meta.title },
+      });
     }
 
     /* 4. LLM call. Используем signal этого слота — параллельные слоты

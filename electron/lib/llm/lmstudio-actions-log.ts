@@ -41,6 +41,7 @@ export type ModelActionKind =
   | "RESOLVE-PASSIVE-SKIP"     /* passive caller отказался триггерить autoLoad */
   | "EVALUATOR-DEFER-RESUME"   /* книга не оценена при cold-start, ждёт явной команды */
   | "EVALUATOR-PICK-FAIL"      /* picker не смог выбрать модель */
+  | "EVALUATOR-SURROGATE-TRUNCATE" /* surrogate обрезан под n_ctx модели (v1.1.2 fix) */
   | "UNIQUENESS-JUDGE";        /* uniqueness-evaluator вызвал LLM judge для серой зоны */
 
 export interface ModelActionEvent {

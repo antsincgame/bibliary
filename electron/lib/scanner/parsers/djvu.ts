@@ -57,12 +57,30 @@ async function parseDjvu(filePath: string, opts: ParseOptions = {}): Promise<Par
   }
 
   if (isQualityText(text)) {
-    const sections = textToSections(text);
-    return {
-      metadata: { title: guessTitleFromText(text) || baseName, warnings },
-      sections,
-      rawCharCount: text.length,
-    };
+    /* v1.1.2 Bug #4 fix: проверяем text-layer на Latin-Cyrillic confusion ДО
+       того как считать его пригодным. Без этой проверки FineReader/ABBYY OCR
+       без cyrillic language pack даёт текст с homoglyph-кашей (Latin p вместо
+       Cyrillic р, digit subs типа `06pa3y`), который проходит letter-ratio
+       check, попадает в книгу, а потом evaluator получает мусор и ставит
+       quality_score близкий к 0. Path 2 (per-page OCR) уже делает эту
+       проверку — здесь добавляем симметрично. */
+    const confusion = detectLatinCyrillicConfusion(text);
+    if (!confusion.isConfused) {
+      /* Bug #2 fix: если у DjVu есть outline (bookmarks) — построить
+         главы по нему через per-page extraction (правильные chapter
+         anchors). Иначе текст распиливается на одну гигантскую секцию
+         и chapterCount=1, что блокирует surrogate-builder и эвалюатор. */
+      const sections = await sectionsFromTextOrOutline(filePath, text, opts.signal, warnings);
+      return {
+        metadata: { title: guessTitleFromText(text) || baseName, warnings },
+        sections,
+        rawCharCount: text.length,
+      };
+    }
+    warnings.push(
+      `DJVU text layer flagged as Latin-Cyrillic confused ` +
+      `(homoglyphTokens=${confusion.homoglyphTokens}, digitSubs=${confusion.digitSubstitutions}) — falling through to OCR`,
+    );
   }
 
   const provider = opts.djvuOcrProvider ?? "auto";
@@ -408,7 +426,126 @@ function textToSections(text: string): BookSection[] {
     }
     current.paragraphs.push(block.replace(/\n/g, " "));
   }
-  return sections.filter((s) => s.paragraphs.length > 0);
+  const cleaned = sections.filter((s) => s.paragraphs.length > 0);
+  /* Bug #2 fallback: если ни один блок не выглядел как heading, мы получаем
+     ровно одну "Section 1" со всем текстом. Это убивает surrogate-builder:
+     pickNodalChapterIndices исключает first/last → нет nodal slices, оценка
+     эпистемолога теряет узловые срезы. Пробуем расщепить по сильным
+     bibliographic markers ("Глава 1", "Chapter 1", "Часть N", "Раздел N"). */
+  if (cleaned.length <= 1 && text.length > 5_000) {
+    const split = splitByChapterMarkers(text);
+    if (split.length >= 3) return split;
+  }
+  return cleaned;
+}
+
+/**
+ * v1.1.2 Bug #2 fix — heuristic split for DjVu text layer without outline.
+ *
+ * Ищем устойчивые маркеры начала главы:
+ *   - "Глава N" / "ГЛАВА N" (русский)
+ *   - "Розділ N" / "РОЗДІЛ N" (украинский)
+ *   - "Chapter N" / "CHAPTER N" (английский)
+ *   - "Часть N" / "Часть N" / "Part N"
+ *   - "§N" / "§ N" (учебники математики/физики)
+ *
+ * Маркер должен быть в начале строки (после `\n`), за ним номер 1-3 цифры
+ * либо римская цифра. Это ловит большинство учебников и монографий.
+ *
+ * Если нашлось ≥ 2 маркера — режем текст по ним. Иначе возвращаем пустой
+ * массив, caller использует исходный textToSections fallback.
+ */
+function splitByChapterMarkers(text: string): BookSection[] {
+  const marker = /^[ \t]*((?:ГЛАВА|Глава|Розділ|РОЗДІЛ|Chapter|CHAPTER|Часть|ЧАСТЬ|Part|PART|Раздел|РАЗДЕЛ)\s+(?:[IVXLCDM]+|\d{1,3})[.\s:].{0,200})$/gmu;
+  const positions: { idx: number; title: string }[] = [];
+  let match;
+  while ((match = marker.exec(text)) !== null) {
+    positions.push({ idx: match.index, title: match[1].trim() });
+    if (positions.length > 200) break;
+  }
+  if (positions.length < 2) return [];
+
+  const sections: BookSection[] = [];
+  for (let i = 0; i < positions.length; i++) {
+    const start = positions[i].idx;
+    const end = i + 1 < positions.length ? positions[i + 1].idx : text.length;
+    const body = text.slice(start, end);
+    const lineEnd = body.indexOf("\n");
+    const headLine = lineEnd > 0 ? body.slice(0, lineEnd) : body;
+    const rest = lineEnd > 0 ? body.slice(lineEnd + 1) : "";
+    const paragraphs = rest
+      .split(/\n\s*\n/)
+      .map((p) => cleanParagraph(p).replace(/\n/g, " "))
+      .filter((p) => p.length > 0);
+    if (paragraphs.length === 0) continue;
+    sections.push({
+      level: 1,
+      title: headLine.trim() || positions[i].title,
+      paragraphs,
+    });
+  }
+  return sections;
+}
+
+/**
+ * v1.1.2 Bug #2 — если у DjVu есть outline, всегда строим главы по нему
+ * через per-page extraction. Path 1 (full-doc djvutxt) одной строкой не
+ * может привязать text → page → bookmark, поэтому в этом случае мы
+ * перевызываем djvutxt per-page и склеиваем уже с правильными anchors.
+ *
+ * Если outline пуст или его не удалось получить — fallback на текстовый
+ * `textToSections` (с heuristic-расщеплением по chapter markers).
+ */
+async function sectionsFromTextOrOutline(
+  filePath: string,
+  fullText: string,
+  signal: AbortSignal | undefined,
+  warnings: string[],
+): Promise<BookSection[]> {
+  let bookmarks: Awaited<ReturnType<typeof getDjvuBookmarks>> = [];
+  try {
+    bookmarks = await getDjvuBookmarks(filePath, signal);
+  } catch {
+    /* outline не критичен — fallback на text-based sectioning */
+  }
+  if (bookmarks.length === 0) {
+    return textToSections(fullText);
+  }
+
+  /* Outline есть — пробуем построить sections per-page чтобы привязать
+     bookmarks к страницам. Если per-page extraction провалился (например,
+     djvutxt --page=N не работает на этом файле), деградируем на
+     text-based sectioning, чтобы хоть что-то отдать. */
+  let pageCount = 0;
+  try {
+    pageCount = await getDjvuPageCount(filePath, signal);
+  } catch {
+    return textToSections(fullText);
+  }
+  if (pageCount <= 1) return textToSections(fullText);
+
+  const paragraphs: Array<{ page: number; text: string }> = [];
+  for (let page = 0; page < pageCount; page++) {
+    if (signal?.aborted) break;
+    let pageText = "";
+    try {
+      pageText = await runDjvutxtPage(filePath, page, signal);
+    } catch {
+      continue;
+    }
+    if (!pageText) continue;
+    const blocks = pageText
+      .split(/\n{2,}/)
+      .map((line) => cleanParagraph(line))
+      .filter((line) => line.length > 0);
+    for (const block of blocks) {
+      paragraphs.push({ page: page + 1, text: block });
+    }
+  }
+  if (paragraphs.length === 0) return textToSections(fullText);
+
+  warnings.push(`DjVu outline used: ${bookmarks.length} bookmark(s) → MD chapter anchors`);
+  return paragraphsToSections(paragraphs, bookmarks);
 }
 
 /** Экспорт для регрессионных тестов (Iter 14.5: вертикальный текст).
