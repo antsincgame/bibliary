@@ -44,6 +44,26 @@ export const SECTIONS = Object.freeze([
       { key: "chromaUrl", type: "url", labelKey: "settings.chromaUrl", placeholder: "http://localhost:8000", probe: "chroma" },
     ],
   },
+  /* Uniqueness Evaluator — единственная advanced-секция, восстановленная после
+   * Iter 14.1 simplification. Дефолты Zod schema работают «из коробки», но
+   * пользователи с нестандартным железом / корпусом могут хотеть тюнить пороги
+   * и параллелизм. Все поля имеют sensible defaults — изменять не обязательно. */
+  {
+    id: "uniqueness",
+    titleKey: "settings.section.uniqueness",
+    descriptionKey: "settings.section.uniqueness.desc",
+    icon: "U",
+    fields: [
+      { key: "uniquenessEvaluationEnabled", type: "bool", labelKey: "settings.uniquenessEvaluationEnabled" },
+      { key: "uniquenessChapterParallel", type: "int", min: 1, max: 8, step: 1, labelKey: "settings.uniquenessChapterParallel" },
+      { key: "uniquenessIdeasPerChapterMax", type: "int", min: 2, max: 15, step: 1, labelKey: "settings.uniquenessIdeasPerChapterMax" },
+      { key: "uniquenessSimilarityHigh", type: "float", min: 0.5, max: 1, step: 0.01, labelKey: "settings.uniquenessSimilarityHigh" },
+      { key: "uniquenessSimilarityLow", type: "float", min: 0, max: 0.95, step: 0.01, labelKey: "settings.uniquenessSimilarityLow" },
+      { key: "uniquenessMergeThreshold", type: "float", min: 0.7, max: 1, step: 0.01, labelKey: "settings.uniquenessMergeThreshold" },
+      { key: "conceptDedupEnabled", type: "bool", labelKey: "settings.conceptDedupEnabled" },
+      { key: "conceptDedupSimilarityThreshold", type: "float", min: 0.8, max: 1, step: 0.01, labelKey: "settings.conceptDedupSimilarityThreshold" },
+    ],
+  },
 ]);
 
 export function getSectionMeta(sectionId) {

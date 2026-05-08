@@ -3527,6 +3527,22 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   width: 100%;
   max-width: 880px;
 }
+.settings-panels-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: stretch;
+  margin: 0 auto;
+  width: 100%;
+  max-width: 880px;
+}
+.settings-panels-stack .settings-panel { width: 100%; }
+.settings-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--cyan);
+}
 .settings-panel-header {
   margin-bottom: 12px;
 }

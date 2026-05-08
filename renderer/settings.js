@@ -132,10 +132,59 @@ function buildUrlField(field, root) {
   return wrapFieldCard(field, [input, testBtn, resetBtn, status], t("settings.url.hint"));
 }
 
+function buildBoolField(field, root) {
+  const value = STATE.prefs[field.key] === true;
+  const dflt = STATE.defaults[field.key] === true;
+  const checkbox = el("input", {
+    type: "checkbox",
+    class: "settings-checkbox",
+    ...(value ? { checked: "checked" } : {}),
+  });
+  /** @type {HTMLInputElement} */(checkbox).checked = value;
+  checkbox.addEventListener("change", () => {
+    STATE.prefs[field.key] = /** @type {HTMLInputElement} */(checkbox).checked;
+    STATE.dirty = true;
+    updateSaveUi(root);
+  });
+  const resetBtn = buildResetBtn(field.key, dflt, () => {
+    /** @type {HTMLInputElement} */(checkbox).checked = STATE.defaults[field.key] === true;
+  }, value === dflt, root);
+  return wrapFieldCard(field, [checkbox, resetBtn], "");
+}
+
+function buildNumberField(field, root) {
+  const isInt = field.type === "int";
+  const dflt = STATE.defaults[field.key];
+  const value = STATE.prefs[field.key] ?? dflt;
+  const input = el("input", {
+    type: "number",
+    class: "settings-input",
+    value: String(value),
+    ...(field.min !== undefined ? { min: String(field.min) } : {}),
+    ...(field.max !== undefined ? { max: String(field.max) } : {}),
+    ...(field.step !== undefined ? { step: String(field.step) } : {}),
+  });
+  input.addEventListener("input", () => {
+    const raw = /** @type {HTMLInputElement} */(input).value;
+    const parsed = isInt ? parseInt(raw, 10) : parseFloat(raw);
+    if (Number.isFinite(parsed)) {
+      STATE.prefs[field.key] = parsed;
+      STATE.dirty = true;
+      updateSaveUi(root);
+    }
+  });
+  const resetBtn = buildResetBtn(field.key, dflt, () => {
+    /** @type {HTMLInputElement} */(input).value = String(dflt);
+  }, value === dflt, root);
+  const range = field.min !== undefined && field.max !== undefined
+    ? `${field.min} … ${field.max}` : "";
+  return wrapFieldCard(field, [input, resetBtn], range);
+}
+
 function buildField(field, root) {
   if (field.type === "url") return buildUrlField(field, root);
-  /* В упрощённом UI остался только тип "url"; остальные типы доступны
-     через Zod schema, но в настройки не выносятся. */
+  if (field.type === "bool") return buildBoolField(field, root);
+  if (field.type === "int" || field.type === "float") return buildNumberField(field, root);
   throw new Error(`[settings] unexpected field type for "${field.key}": ${field.type}`);
 }
 
@@ -206,14 +255,22 @@ function buildFieldsStack(root, fields) {
 }
 
 function renderPanelContent(root) {
-  const panel = el("section", { class: "settings-panel settings-panel-solo" });
-  const current = SECTIONS[0];
-  panel.appendChild(el("div", { class: "settings-panel-header" }, [
-    el("h2", { class: "settings-panel-title" }, t(current.titleKey)),
-    el("p", { class: "settings-panel-subtitle" }, optionalT(current.descriptionKey)),
-  ]));
-  panel.appendChild(buildFieldsStack(root, current.fields));
-  return panel;
+  /* Один общий контейнер, секции рендерятся последовательно.
+     `panel-solo` оставлен на первой секции для backward-compat стилей. */
+  const container = el("div", { class: "settings-panels-stack" });
+  for (let i = 0; i < SECTIONS.length; i++) {
+    const section = SECTIONS[i];
+    const panel = el("section", {
+      class: i === 0 ? "settings-panel settings-panel-solo" : "settings-panel",
+    });
+    panel.appendChild(el("div", { class: "settings-panel-header" }, [
+      el("h2", { class: "settings-panel-title" }, t(section.titleKey)),
+      el("p", { class: "settings-panel-subtitle" }, optionalT(section.descriptionKey)),
+    ]));
+    panel.appendChild(buildFieldsStack(root, section.fields));
+    container.appendChild(panel);
+  }
+  return container;
 }
 
 function render(root) {
