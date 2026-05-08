@@ -1,14 +1,16 @@
 import { ipcMain } from "electron";
+
 import {
-  fetchChromaJson,
-  chromaUrl,
-  CHROMA_URL,
-} from "../lib/chroma/http-client.js";
-import { ensureChromaCollection } from "../lib/chroma/collection-config.js";
-import { resolveCollectionId, invalidate as invalidateCache, setMapping } from "../lib/chroma/collection-cache.js";
+  ensureCollection,
+  listCollections,
+  getCollectionInfo,
+  deleteCollection,
+  vectorCount,
+  collectionExists,
+} from "../lib/vectordb/index.js";
 import { CollectionNameSchema, parseOrThrow } from "./validators.js";
 
-interface CollectionInfo {
+interface CollectionInfoUI {
   name: string;
   pointsCount: number;
   status: string;
@@ -21,39 +23,30 @@ interface CollectionsListItem {
   status: string;
 }
 
-interface ChromaCollectionResponse {
-  id: string;
-  name: string;
-  metadata?: Record<string, unknown> | null;
-}
-
 /**
- * IPC слой для Chroma vector store.
+ * IPC слой для in-process LanceDB vector store.
+ *
+ * **Channel names сохранены как `chroma:*`** на этой фазе миграции —
+ * renderer (Settings UI / Welcome Wizard / Collection picker) меняется
+ * в Phase 4 одним консолидированным PR'ом. Внутренности при этом уже
+ * работают через `vectordb/*` (in-process LanceDB) без HTTP / child-process.
  *
  * Каналы:
- *   chroma:collections           — list collection names (string[])
- *   chroma:collections-detailed  — list with point counts (CollectionsListItem[])
- *   chroma:collection-info       — single collection details (CollectionInfo | null)
- *   chroma:create-collection     — idempotent create через ensureChromaCollection
- *   chroma:delete-collection     — DELETE + invalidate name→id cache
- *   chroma:heartbeat             — простой ping для status badge
+ *   chroma:collections           — список имён коллекций (string[])
+ *   chroma:collections-detailed  — список с countRows (CollectionsListItem[])
+ *   chroma:collection-info       — детали одной коллекции
+ *   chroma:create-collection     — идемпотентный ensureCollection
+ *   chroma:delete-collection     — drop table + idempotent
+ *   chroma:heartbeat             — vectordb всегда online (collections count)
+ *   chroma:start-embedded        — back-compat no-op (LanceDB всегда в-процессе)
  *
- * `chroma:cluster-info` НЕ ДОБАВЛЕН (был qdrant:cluster-info) — Chroma это
- * single-node key-value хранилище, peer/raft/replica state нет смысла показывать.
- * heartbeat достаточен для UI online-индикатора.
+ * `chroma:cluster-info` НЕ ДОБАВЛЕН — single-node embedded store.
  */
 export function registerChromaIpc(): void {
   ipcMain.handle("chroma:collections", async (): Promise<string[]> => {
     try {
-      const data = await fetchChromaJson<ChromaCollectionResponse[]>(chromaUrl("/collections"));
-      const names: string[] = [];
-      for (const c of data ?? []) {
-        if (c?.id && c?.name) {
-          setMapping(c.name, c.id);
-          names.push(c.name);
-        }
-      }
-      return names.sort((a, b) => a.localeCompare(b));
+      const names = await listCollections();
+      return [...names].sort((a, b) => a.localeCompare(b));
     } catch (e) {
       console.error("[chroma:collections]", e instanceof Error ? e.message : e);
       return [];
@@ -62,26 +55,20 @@ export function registerChromaIpc(): void {
 
   ipcMain.handle("chroma:collections-detailed", async (): Promise<CollectionsListItem[]> => {
     try {
-      const data = await fetchChromaJson<ChromaCollectionResponse[]>(chromaUrl("/collections"));
+      const names = await listCollections();
       const items: CollectionsListItem[] = [];
-      /* Fan-out per-collection /count в parallel — Chroma не отдаёт счётчик
-         в общем list endpoint'е (в отличие от Chroma). */
+      /* fan-out per-collection countRows. Дешевле чем chroma-эра HTTP fan-out
+       * потому что in-process — миллисекунды на коллекцию. */
       await Promise.all(
-        (data ?? []).map(async (c) => {
-          if (!c?.id || !c?.name) return;
-          setMapping(c.name, c.id);
+        names.map(async (name) => {
           let pointsCount = 0;
           let status = "ok";
           try {
-            const n = await fetchChromaJson<number>(
-              chromaUrl(`/collections/${encodeURIComponent(c.id)}/count`),
-              { timeoutMs: 5_000 },
-            );
-            pointsCount = typeof n === "number" ? n : 0;
+            pointsCount = await vectorCount(name);
           } catch {
             status = "error";
           }
-          items.push({ name: c.name, pointsCount, status });
+          items.push({ name, pointsCount, status });
         }),
       );
       return items.sort((a, b) => a.name.localeCompare(b.name));
@@ -91,24 +78,16 @@ export function registerChromaIpc(): void {
     }
   });
 
-  ipcMain.handle("chroma:collection-info", async (_e, name: string): Promise<CollectionInfo | null> => {
+  ipcMain.handle("chroma:collection-info", async (_e, name: string): Promise<CollectionInfoUI | null> => {
     if (typeof name !== "string" || !name) return null;
     try {
-      const info = await fetchChromaJson<ChromaCollectionResponse>(
-        chromaUrl(`/collections/${encodeURIComponent(name)}`),
-      );
-      if (!info?.id) return null;
-      setMapping(info.name, info.id);
-      let pointsCount = 0;
-      try {
-        const n = await fetchChromaJson<number>(chromaUrl(`/collections/${encodeURIComponent(info.id)}/count`));
-        pointsCount = typeof n === "number" ? n : 0;
-      } catch { /* count failed — return 0 */ }
+      const info = await getCollectionInfo(name);
+      if (!info) return null;
       return {
         name: info.name,
-        pointsCount,
+        pointsCount: info.rowCount,
         status: "ok",
-        metadata: info.metadata ?? null,
+        metadata: info.hasVectorIndex ? { hasVectorIndex: true } : null,
       };
     } catch (e) {
       console.error("[chroma:collection-info]", e instanceof Error ? e.message : e);
@@ -122,7 +101,8 @@ export function registerChromaIpc(): void {
       _e,
       args: {
         name: string;
-        /** Distance metric. Chroma values: cosine | l2 | ip. Default cosine. */
+        /** Distance metric. Default cosine. l2/ip оставлены для back-compat
+         * с UI dropdown'ом, в LanceDB маппится в "cosine"/"l2"/"dot". */
         distance?: "cosine" | "l2" | "ip";
       },
     ): Promise<{ ok: boolean; error?: string; hnswMismatch?: string[] }> => {
@@ -133,12 +113,15 @@ export function registerChromaIpc(): void {
         return { ok: false, error: e instanceof Error ? e.message : String(e) };
       }
       try {
-        const result = await ensureChromaCollection({
+        await ensureCollection({
           name: args.name,
-          distance: args.distance ?? "cosine",
-          hnsw: { m: 24, construction_ef: 128 },
+          distance: args.distance === "ip" ? "dot" : (args.distance ?? "cosine"),
+          hnsw: { m: 24, constructionEf: 128 },
         });
-        return { ok: true, hnswMismatch: result.hnswMismatch.length > 0 ? result.hnswMismatch : undefined };
+        /* hnswMismatch концепт из chroma больше не релевантен — schema/index
+         * параметры применяются строго при первом ensureCollection, дальше
+         * не сравниваются. Возвращаем undefined для UI back-compat. */
+        return { ok: true };
       } catch (e) {
         return { ok: false, error: e instanceof Error ? e.message : String(e) };
       }
@@ -154,10 +137,7 @@ export function registerChromaIpc(): void {
         return { ok: false, error: e instanceof Error ? e.message : String(e) };
       }
       try {
-        await fetchChromaJson(chromaUrl(`/collections/${encodeURIComponent(name)}`), {
-          method: "DELETE",
-        });
-        invalidateCache(name);
+        await deleteCollection(name);
         return { ok: true };
       } catch (e) {
         return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -168,57 +148,29 @@ export function registerChromaIpc(): void {
   ipcMain.handle(
     "chroma:heartbeat",
     async (): Promise<{ url: string; online: boolean; version?: string; collectionsCount: number }> => {
+      /* In-process LanceDB всегда online — connection открыт в boot. Поле
+       * `url` пустое (back-compat для renderer'а который рендерил его как
+       * tooltip; в Phase 4 переименуется и tooltip уйдёт). */
       try {
-        await fetchChromaJson(chromaUrl("/heartbeat"), { timeoutMs: 3_000 });
-        let version: string | undefined;
-        let collectionsCount = 0;
-        try {
-          const v = await fetchChromaJson<unknown>(chromaUrl("/version"), { timeoutMs: 3_000 });
-          if (typeof v === "string") version = v;
-          else if (v && typeof v === "object" && typeof (v as { version?: string }).version === "string") {
-            version = (v as { version: string }).version;
-          }
-        } catch { /* version optional */ }
-        try {
-          const list = await fetchChromaJson<ChromaCollectionResponse[]>(chromaUrl("/collections"), { timeoutMs: 3_000 });
-          collectionsCount = (list ?? []).length;
-        } catch { /* collections list optional */ }
-        return { url: CHROMA_URL, online: true, version, collectionsCount };
-      } catch {
-        return { url: CHROMA_URL, online: false, collectionsCount: 0 };
+        const names = await listCollections();
+        return { url: "", online: true, version: "lancedb-embedded", collectionsCount: names.length };
+      } catch (e) {
+        console.error("[chroma:heartbeat]", e instanceof Error ? e.message : e);
+        return { url: "", online: false, collectionsCount: 0 };
       }
     },
   );
 
   /**
-   * `chroma:start-embedded` — manual trigger из Welcome Wizard UI.
-   * Полезен когда auto-spawn выключен (chromaAutoSpawn=false) или не сработал
-   * (uvx/python отсутствовали в момент boot, но пользователь установил их
-   * после). Идемпотентно: если Chroma уже запущена — return уже-OK статус.
+   * `chroma:start-embedded` — back-compat no-op. В chroma-эре трayлся
+   * `uvx chromadb run` как child-process. С LanceDB embedded такой шаг
+   * не нужен — connection открывается на boot. Возвращаем `alreadyRunning:true`
+   * чтобы Welcome Wizard UI отрендерил [OK] статус без cosmetic ошибки.
    */
   ipcMain.handle("chroma:start-embedded", async (): Promise<{ ok: boolean; reason?: string; alreadyRunning?: boolean }> => {
-    try {
-      const { startEmbeddedChroma, defaultChromaDataPath, chromaPortFromUrl } = await import("../lib/chroma/auto-spawn.js");
-      const { app } = await import("electron");
-      const dataDir = process.env.BIBLIARY_DATA_DIR ?? app.getPath("userData");
-      /* Port из текущего CHROMA_URL — чтобы spawn совпадал с тем куда
-       * Bibliary будет ходить (HTTP client читает CHROMA_URL live). */
-      const result = await startEmbeddedChroma({
-        dataPath: defaultChromaDataPath(dataDir),
-        port: chromaPortFromUrl(CHROMA_URL),
-      });
-      if (!result) {
-        /* Уже запущена (heartbeat OK) — для UI это успех. */
-        return { ok: true, alreadyRunning: true };
-      }
-      await result.ready;
-      return { ok: true };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { ok: false, reason: msg };
-    }
+    return { ok: true, alreadyRunning: true };
   });
 
-  /* Helper, used internally by other IPC handlers — exposed via export of name→id cache. */
-  void resolveCollectionId; /* silence unused-import if not used directly here */
+  /* silence unused import, used only for type-checker assurance */
+  void collectionExists;
 }

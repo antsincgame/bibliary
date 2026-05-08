@@ -3,8 +3,7 @@ import { BrowserWindow, dialog, ipcMain } from "electron";
 import { getPreferencesStore, DEFAULTS, type Preferences } from "../lib/preferences/store.js";
 import { configureWatchdog } from "../lib/resilience/lmstudio-watchdog.js";
 import { configureFileLockDefaults } from "../lib/resilience/index.js";
-import { invalidateEndpointsCache, getEndpoints } from "../lib/endpoints/index.js";
-import { setChromaUrl } from "../lib/chroma/http-client.js";
+import { invalidateEndpointsCache } from "../lib/endpoints/index.js";
 import { refreshLmStudioClient } from "../lmstudio-client.js";
 import { syncMarkerEnvFromPrefs } from "../lib/library/marker-sidecar.js";
 import { applyImportSchedulerPrefs } from "../lib/library/import-task-scheduler.js";
@@ -80,13 +79,11 @@ export function applyRuntimeSideEffects(prefs: Preferences): void {
     retries: prefs.lockRetries,
     stale: prefs.lockStaleMs,
   });
-  /* URL changes: invalidate the endpoint cache, then refresh the live
-     binding in chroma/http-client and drop the cached LM Studio SDK
-     client so the next call rebuilds against the new URL. */
+  /* LM Studio URL changes: invalidate endpoints cache + drop cached SDK
+     client so следующий вызов пересоздаёт против нового URL. Chroma URL
+     ушёл — vector store теперь in-process LanceDB, нет HTTP binding'а
+     для refresh'а. */
   invalidateEndpointsCache();
-  void getEndpoints()
-    .then(({ chromaUrl }) => setChromaUrl(chromaUrl))
-    .catch((err) => console.error("[preferences/applyRuntimeSideEffects] setChromaUrl failed:", err));
   refreshLmStudioClient();
   /* Sync Marker feature flag to ENV so marker-sidecar.ts can read it
      synchronously without an async preferences store dependency. */

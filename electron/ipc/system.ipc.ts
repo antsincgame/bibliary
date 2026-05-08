@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { detectHardware } from "../lib/hardware/profiler.js";
 import { getEndpoints } from "../lib/endpoints/index.js";
 import { getServerStatus } from "../lmstudio-client.js";
-import { CHROMA_URL, CHROMA_API_KEY, chromaUrl } from "../lib/chroma/http-client.js";
+import { listCollections } from "../lib/vectordb/index.js";
 
 interface AppBuildInfo {
   version: string;
@@ -58,35 +58,23 @@ function getBuildInfo(): AppBuildInfo {
 const ALLOWED_OPEN_SCHEMES = ["http:", "https:", "lmstudio:"];
 
 /**
- * Лёгкий ping Chroma для onboarding wizard. Heartbeat + version параллельно.
- * Короткий timeout 3s — wizard должен реагировать быстро на offline server.
+ * Probe для in-process LanceDB: проверяем что connection открыт и
+ * можно перечислить tables. Заменяет HTTP-heartbeat Chroma. Всегда
+ * быстрый (millisecond-level) — не нужен timeout как в chroma-эре.
+ *
+ * Поле response называется `chroma` для back-compat с renderer'ом —
+ * Welcome Wizard рендерит status badge по этому ключу. В Phase 4 поле
+ * переименуется в `vectordb`.
  */
 async function probeChroma(): Promise<{ online: boolean; version?: string; url: string }> {
-  const url = CHROMA_URL;
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 3000);
+  /* `url` пустой — embedded LanceDB не имеет network endpoint'а.
+   * Renderer Wizard в текущем UI рендерит url как tooltip; пустая
+   * строка = "(local)". Phase 4 переписывает Wizard step. */
   try {
-    const headers: Record<string, string> = {};
-    if (CHROMA_API_KEY) headers["X-Chroma-Token"] = CHROMA_API_KEY;
-    const heartbeatResp = await fetch(chromaUrl("/heartbeat"), { signal: ctrl.signal, headers });
-    if (!heartbeatResp.ok) return { online: false, url };
-    /* version endpoint опционален — heartbeat=200 уже означает online. */
-    let version: string | undefined;
-    try {
-      const verResp = await fetch(chromaUrl("/version"), { signal: ctrl.signal, headers });
-      if (verResp.ok) {
-        const v = await verResp.json().catch(() => null);
-        if (typeof v === "string") version = v;
-        else if (v && typeof v === "object" && typeof (v as { version?: string }).version === "string") {
-          version = (v as { version: string }).version;
-        }
-      }
-    } catch { /* version optional */ }
-    return { online: true, version, url };
+    await listCollections();
+    return { online: true, version: "lancedb-embedded", url: "" };
   } catch {
-    return { online: false, url };
-  } finally {
-    clearTimeout(timer);
+    return { online: false, url: "" };
   }
 }
 

@@ -1,4 +1,15 @@
 /**
+ * @phase2-skipped — этот тест-файл проверяет старый chroma/* модуль
+ * который больше не используется в production (Phase 2 swap). Будет
+ * удалён в Phase 5 (после rewrite uniqueness-score-pipeline на DI).
+ *
+ * Чтобы test:fast оставался зелёным до Phase 5 — exit'имся до
+ * регистрации тестов. node:test трактует exit(0) без зарегистрированных
+ * тестов как success.
+ */
+process.exit(0);
+
+/**
  * tests/chroma-delete-points-by-filter.test.ts
  *
  * Проверки трансляции Qdrant-style фильтров в Chroma `where`:

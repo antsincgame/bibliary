@@ -55,9 +55,17 @@ export async function runUniquenessStep(args: RunUniquenessStepArgs): Promise<vo
     const reader = await getReaderModel();
     if (!reader) return; /* нет загруженной модели — пропускаем без warning */
 
+    /* Fix-while-touching (Phase 2): раньше тут был хардкод DEFAULT_COLLECTION
+     * без оглядки на пользовательскую конфигурацию dataset-v2. Если юзер
+     * extract'ит в `marketing-concepts`, а uniqueness читает `delta-knowledge`
+     * — score становится бессмысленным (сравниваем с чужим корпусом).
+     * Теперь читаем из prefs.uniquenessTargetCollection; пустая строка
+     * fallback'ится на DEFAULT_COLLECTION (= back-compat поведение). */
+    const targetCollection = prefs.uniquenessTargetCollection?.trim() || DEFAULT_COLLECTION;
+
     const unique = await evaluateBookUniqueness(args.chapters, {
       modelKey: reader.modelKey,
-      targetCollection: DEFAULT_COLLECTION,
+      targetCollection,
       similarityHigh: prefs.uniquenessSimilarityHigh,
       similarityLow: prefs.uniquenessSimilarityLow,
       ideasPerChapterMax: prefs.uniquenessIdeasPerChapterMax,

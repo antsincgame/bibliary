@@ -11,7 +11,7 @@
  * Pipeline (4 фазы):
  *   1. extractIdeasPerChapter   — reader LLM выдаёт 3-7 ключевых идей на главу
  *   2. dedupeIdeasWithinBook    — greedy clustering по cosine ≥ merge threshold
- *   3. cross-library novelty    — chromaQueryNearest, серая зона → LLM judge
+ *   3. cross-library novelty    — vectorQueryNearest, серая зона → LLM judge
  *   4. score                    — round(100 × novel / total), undefined при total=0
  *
  * Эмбеддинги идей (multilingual-e5-small, 384-dim) уже L2-нормализованы.
@@ -24,7 +24,7 @@
 
 import { chatWithPolicy } from "../../lmstudio-client.js";
 import { embedPassage, l2Normalize } from "../embedder/shared.js";
-import { chromaQueryNearest, type ChromaNearestNeighbor } from "../chroma/points.js";
+import { vectorQueryNearest, type VectorNearestNeighbor } from "../vectordb/index.js";
 import { parseReasoningResponse, stripProseReasoning } from "./reasoning-parser.js";
 import { logModelAction } from "../llm/lmstudio-actions-log.js";
 import type { ConvertedChapter } from "./types.js";
@@ -302,7 +302,7 @@ interface RawVerdict {
  */
 export async function judgeIdeaSameness(
   idea: BookIdea,
-  neighbors: ChromaNearestNeighbor[],
+  neighbors: VectorNearestNeighbor[],
   modelKey: string,
   signal?: AbortSignal,
 ): Promise<"SAME" | "DIFFERENT"> {
@@ -405,14 +405,14 @@ export async function evaluateBookUniqueness(
     for (const cluster of clusters) {
       if (opts.signal?.aborted) throw new Error("uniqueness aborted");
 
-      let neighbors: ChromaNearestNeighbor[] = [];
+      let neighbors: VectorNearestNeighbor[] = [];
       try {
-        neighbors = await chromaQueryNearest(opts.targetCollection, cluster.centroid, 3, { signal: opts.signal });
+        neighbors = await vectorQueryNearest(opts.targetCollection, cluster.centroid, 3, { signal: opts.signal });
       } catch (err) {
-        /* Коллекция отсутствует / Chroma недоступна → трактуем как пустую. */
+        /* Коллекция отсутствует / vectordb недоступна → трактуем как пустую. */
         const msg = err instanceof Error ? err.message : String(err);
-        if (!/not found|no records|empty/i.test(msg)) {
-          console.warn(`[uniqueness] chromaQueryNearest failed:`, msg);
+        if (!/does not exist|no records|empty/i.test(msg)) {
+          console.warn(`[uniqueness] vectorQueryNearest failed:`, msg);
         }
         neighbors = [];
       }

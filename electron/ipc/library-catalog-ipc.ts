@@ -342,24 +342,26 @@ export function registerLibraryCatalogIpc(): void {
            Оба этапа используют bookId фильтр (Иt 8Г.3 payload + индекс).
            bookSourcePath fallback не нужен — bookId стабильнее (выживает
            перемещение файла). */
+        /* Vector store cleanup. LanceDB API не возвращает count удалённых
+         * rows из delete API (Chroma это делал) — мы оставляем поле для
+         * back-compat в response shape, но всегда ставим 0. UI этим
+         * полем рендерит footer "Cleaned X vectors", после Phase 4
+         * это поле уйдёт в пользу collectionCleaned (true/false). */
         let chromaCleaned = 0;
         let chromaBackgroundScheduled = false;
         try {
-          const { chromaDeleteByWhere } = await import("../lib/chroma/points.js");
+          const { vectorDeleteByWhere, listCollections } = await import("../lib/vectordb/index.js");
           if (args.activeCollection) {
-            const r = await chromaDeleteByWhere(args.activeCollection, { bookId: args.bookId });
-            chromaCleaned = r.deleted;
+            await vectorDeleteByWhere(args.activeCollection, { bookId: args.bookId });
           }
           /* Background full scan для orphan-vector cleanup во всех остальных коллекциях. */
           void (async () => {
             try {
-              const { chromaUrl, fetchChromaJson } = await import("../lib/chroma/http-client.js");
-              const collections = await fetchChromaJson<Array<{ name: string }>>(chromaUrl("/collections"));
-              const names = (collections ?? []).map((c) => c.name);
+              const names = await listCollections();
               for (const collection of names) {
                 if (collection === args.activeCollection) continue;
                 try {
-                  await chromaDeleteByWhere(collection, { bookId: args.bookId });
+                  await vectorDeleteByWhere(collection, { bookId: args.bookId });
                 } catch (innerErr) {
                   console.warn(`[library:delete-book] background cleanup failed for "${collection}":`, innerErr);
                 }
@@ -370,9 +372,9 @@ export function registerLibraryCatalogIpc(): void {
           })();
           chromaBackgroundScheduled = true;
         } catch (chromaErr) {
-          /* Chroma unreachable — не блокируем delete-book (книга и так удалена
+          /* vectordb недоступна — не блокируем delete-book (книга и так удалена
              из SQLite). Просто warning. */
-          console.warn("[library:delete-book] Chroma cascade cleanup failed (non-fatal):", chromaErr);
+          console.warn("[library:delete-book] vectordb cascade cleanup failed (non-fatal):", chromaErr);
         }
 
         return { ok: true, chromaCleaned, chromaBackgroundScheduled, filesRemoved, dirsRemoved };
@@ -468,24 +470,17 @@ export function registerLibraryCatalogIpc(): void {
         let chromaCleaned = 0;
         const chromaErrors: string[] = [];
         try {
-          const { chromaUrl, fetchChromaJson } = await import("../lib/chroma/http-client.js");
-          const { invalidate, clearAll } = await import("../lib/chroma/collection-cache.js");
-          const collections = await fetchChromaJson<Array<{ name: string }>>(chromaUrl("/collections"));
-          const names = (collections ?? [])
-            .map((c) => c.name)
-            .filter((n) => typeof n === "string" && n.startsWith("bibliary-"));
+          const { listCollections, deleteCollection } = await import("../lib/vectordb/index.js");
+          const allCollections = await listCollections();
+          const names = allCollections.filter((n) => typeof n === "string" && n.startsWith("bibliary-"));
           for (const collection of names) {
             try {
-              await fetchChromaJson(chromaUrl(`/collections/${encodeURIComponent(collection)}`), {
-                method: "DELETE",
-              });
-              invalidate(collection);
+              await deleteCollection(collection);
               chromaCleaned += 1;
             } catch (err) {
               chromaErrors.push(`${collection}: ${err instanceof Error ? err.message : String(err)}`);
             }
           }
-          clearAll();
         } catch (chromaErr) {
           chromaErrors.push(chromaErr instanceof Error ? chromaErr.message : String(chromaErr));
         }

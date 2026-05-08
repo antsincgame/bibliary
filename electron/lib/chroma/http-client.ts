@@ -7,7 +7,12 @@
  * Не имеет глобального состояния. Конфигурация — через ENV или per-call параметры.
  */
 
-import { DEFAULT_CHROMA_URL } from "../endpoints/index.js";
+/* Phase 2 (миграция на LanceDB): chroma/ модуль сохраняется только для
+ * `scripts/concepts-export.ts` — bridge-import инструмент Phase 0 backup'а.
+ * `endpoints/index.ts` больше не экспортирует DEFAULT_CHROMA_URL (chroma URL
+ * как концепция ушла), поэтому inline'им дефолт прямо тут. Phase 4 удаляет
+ * этот файл целиком. */
+const DEFAULT_CHROMA_URL = "http://localhost:8000";
 
 /**
  * Live-binding URL export. Set initially from env (and updated by

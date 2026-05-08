@@ -246,7 +246,15 @@ export const PreferencesSchema = z.object({
    * Default 0.92 — only near-paraphrases collapse, distinct facts stay separate.
    */
   uniquenessMergeThreshold: z.number().min(0.7).max(1).default(0.92),
-  /** Включить concept-level dedup на этапе ingest (skip upsert если совпадение в Chroma). */
+  /**
+   * Имя коллекции, против которой uniqueness evaluator проверяет novelty.
+   * Пусто = fallback на dataset-v2 DEFAULT_COLLECTION (default ingest target).
+   * Если пользователь использует кастомную коллекцию для extraction,
+   * сюда нужно прописать то же имя — иначе uniqueness считает novelty
+   * против чужого корпуса и score становится бессмысленным.
+   */
+  uniquenessTargetCollection: z.string().default(""),
+  /** Включить concept-level dedup на этапе ingest (skip upsert если совпадение в коллекции). */
   conceptDedupEnabled: z.boolean().default(true),
   /**
    * Отдельный (более строгий) порог для ingest-dedup: cosine ≥ этого ⇒ skip

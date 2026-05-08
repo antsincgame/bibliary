@@ -21,9 +21,12 @@
  * для legacy совместимости проверяем оба места.
  */
 
-import { resolveCollectionId } from "../chroma/collection-cache.js";
-import { scrollChroma } from "../chroma/scroll.js";
-import { SCROLL_PAGE_SIZE } from "../chroma/http-client.js";
+import { scrollVectors } from "../vectordb/index.js";
+
+/** Размер страницы scroll-запросов (точек за один HTTP) — наследие
+ * Chroma; для in-process LanceDB менее критично, но сохраняем чтобы
+ * не плодить argument churn. */
+const SCROLL_PAGE_SIZE = 256;
 
 export interface AcceptedConcept {
   id: string;
@@ -39,21 +42,21 @@ export interface AcceptedConcept {
 }
 
 /**
- * Внутреннее представление точки Chroma — id плюс metadata.
+ * Внутреннее представление точки vectordb — id плюс metadata.
  * Document (текст) не нужен concept-loader'у: всё семантически важное
  * хранится в metadata. Если concept приходит из старой коллекции, где
  * `text` лежал в payload — поднимем его в `essence`.
  */
-interface ChromaConceptPoint {
+interface VectorConceptPoint {
   id: string;
   metadata: Record<string, unknown> | null;
 }
 
 /**
- * Преобразовать сырую точку Chroma в AcceptedConcept либо вернуть null,
+ * Преобразовать сырую точку vectordb в AcceptedConcept либо вернуть null,
  * если metadata не содержит обязательных полей (essence + domain).
  */
-export function parseConceptPoint(point: ChromaConceptPoint): AcceptedConcept | null {
+export function parseConceptPoint(point: VectorConceptPoint): AcceptedConcept | null {
   const p = point.metadata ?? {};
   /* essence — основной ключ; principle — legacy-схема Iter 5/6. */
   const essence = String(p.essence ?? p.principle ?? "").trim();
@@ -111,7 +114,7 @@ export interface IterAcceptedOptions {
 }
 
 /**
- * Стримит принятые концепты страницами Chroma get. Не загружает всё в RAM.
+ * Стримит принятые концепты страницами vectordb scroll. Не загружает всё в RAM.
  * Сразу пропускает точки с пустыми обязательными полями.
  */
 export async function* iterAcceptedConcepts(
@@ -119,15 +122,13 @@ export async function* iterAcceptedConcepts(
   options: IterAcceptedOptions = {},
 ): AsyncGenerator<AcceptedConcept> {
   const { limit, pageSize = SCROLL_PAGE_SIZE, signal } = options;
-  const collectionId = await resolveCollectionId(collection);
 
   let yielded = 0;
-  for await (const page of scrollChroma({
-    collectionId,
+  for await (const page of scrollVectors({
+    tableName: collection,
     include: ["metadatas"],
     pageSize,
     maxItems: limit ?? 1_000_000,
-    timeoutMs: 60_000,
     signal,
   })) {
     if (signal?.aborted) return;
