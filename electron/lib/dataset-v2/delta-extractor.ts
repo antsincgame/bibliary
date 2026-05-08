@@ -15,7 +15,6 @@ import { DeltaKnowledgeSchema, type ChapterMemory, type DeltaKnowledge, type Sem
 import { ALLOWED_DOMAINS } from "./crystallizer-constants.js";
 import { isAbortError } from "../resilience/lm-request-policy.js";
 import { extractJsonFromReasoning, extractJsonObjectFromReasoning } from "./reasoning-decoder.js";
-import { withModelFallback } from "../llm/with-model-fallback.js";
 
 export type LlmCallResult = string | { content: string; reasoningContent?: string };
 
@@ -412,65 +411,12 @@ export async function extractDeltaKnowledge(args: DeltaExtractArgs): Promise<Del
   const accepted: DeltaKnowledge[] = [];
   const allWarnings: string[] = [];
 
-  const useCrossModel =
-    Array.isArray(args.extractModelChain) &&
-    args.extractModelChain.length > 1 &&
-    typeof args.getLlmForModel === "function";
+  /* Cross-model fallback chain удалён в refactor 1.0.22: одна extractorModel
+   * на всё. Если модель плохо справляется — пользователь меняет её через UI. */
 
   for (const chunk of args.chunks) {
     if (args.signal?.aborted) throw new Error("aborted: delta extraction cancelled");
-    let result: ChunkResult;
-    if (useCrossModel) {
-      const chain = args.extractModelChain!;
-      const getLlm = args.getLlmForModel!;
-      const fb = await withModelFallback<ChunkResult>({
-        role: "crystallizer",
-        models: chain,
-        signal: args.signal,
-        task: async (modelKey) =>
-          extractOneChunkWithLlm(
-            chunk,
-            args.chapterThesis,
-            memory,
-            template,
-            getLlm(modelKey),
-            args.callbacks.onEvent,
-          ),
-        isAcceptable: (r) => r.delta !== null,
-      });
-      if (fb.modelKey && fb.result) {
-        const extra: string[] = [];
-        if (fb.attempts.length > 1) {
-          extra.push(
-            `cross-model-fallback: accepted with "${fb.modelKey}" after ${fb.attempts.length - 1} prior model(s)`,
-          );
-        }
-        result = { ...fb.result, warnings: [...fb.result.warnings, ...extra] };
-      } else {
-        const last = [...fb.attempts].reverse().find((a) => a.result !== undefined);
-        const base: ChunkResult = last?.result ?? {
-          chunk,
-          delta: null,
-          raw: "",
-          warnings: [],
-        };
-        const notes = fb.attempts.map((a) => {
-          if (a.error) return `model "${a.modelKey}": ${a.error}`;
-          if (a.rejectedByPredicate) return `model "${a.modelKey}": no accepted delta after same-model retries`;
-          return "";
-        }).filter(Boolean);
-        result = {
-          ...base,
-          warnings: [
-            ...base.warnings,
-            ...(fb.attempts.length > 1 ? [`cross-model-fallback: exhausted ${fb.attempts.length} model(s)`] : []),
-            ...notes,
-          ],
-        };
-      }
-    } else {
-      result = await extractOneChunk(chunk, args.chapterThesis, memory, template, args.callbacks);
-    }
+    const result = await extractOneChunk(chunk, args.chapterThesis, memory, template, args.callbacks);
     perChunk.push(result);
     if (result.delta) accepted.push(result.delta);
     allWarnings.push(...result.warnings.map((w) => `chunk-${chunk.partN}: ${w}`));

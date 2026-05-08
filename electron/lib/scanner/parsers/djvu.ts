@@ -163,8 +163,8 @@ async function parseDjvu(filePath: string, opts: ParseOptions = {}): Promise<Par
 async function hasVisionOcrModel(preferredKey?: string): Promise<boolean> {
   try {
     if (preferredKey?.trim()) return true;
-    const { modelRoleResolver } = await import("../../llm/model-role-resolver.js");
-    const resolved = await modelRoleResolver.resolve("vision_ocr");
+    const { getVisionOcrModel } = await import("../../llm/model-resolver.js");
+    const resolved = await getVisionOcrModel();
     return resolved !== null;
   } catch {
     return false;

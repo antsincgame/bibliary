@@ -14,7 +14,7 @@
  */
 
 import { getLmStudioUrl } from "../endpoints/index.js";
-import { modelRoleResolver } from "../llm/model-role-resolver.js";
+import { getExtractorModel } from "../llm/model-resolver.js";
 import { getImportScheduler } from "./import-task-scheduler.js";
 import {
   buildTextMetaResponseFormat,
@@ -76,17 +76,17 @@ export async function extractTextMetaFromBookText(
     return { ok: false, error: "text sample too short", warnings };
   }
 
-  /* Резолвим crystallizer модель (та же что для извлечения знаний). */
+  /* Резолвим extractor модель (та же что для concept extraction в datasets). */
   let modelKey: string;
   try {
-    const resolved = await modelRoleResolver.resolve("crystallizer");
+    const resolved = await getExtractorModel();
     if (!resolved?.modelKey) {
-      return { ok: false, error: "no crystallizer model loaded in LM Studio", warnings };
+      return { ok: false, error: "no extractor model available in LM Studio", warnings };
     }
     modelKey = resolved.modelKey;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, error: `role resolver failed: ${msg}`, warnings };
+    return { ok: false, error: `model resolver failed: ${msg}`, warnings };
   }
 
   const sample = bookTextSample.slice(0, TEXT_META_CONFIG.sampleChars);

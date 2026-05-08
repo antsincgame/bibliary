@@ -83,15 +83,14 @@ async function defaultReadEvaluatorPrefs(): Promise<EvaluatorPrefs> {
   try {
     const prefs = await readPipelinePrefsOrNull();
     if (!prefs) return { allowFallback: true };
-    const preferred = prefs.evaluatorModel?.trim() || undefined;
-    const fallbacks = (prefs.evaluatorModelFallbacks ?? "")
-      .split(/[\s,;]+/)
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-    /* allowFallback по умолчанию true — пользователь не должен застревать
-       на "Ошибка" из-за того что забыл загрузить конкретную модель. */
-    const allowFallback = prefs.evaluatorAllowFallback ?? true;
-    return { preferred, fallbacks, allowFallback };
+    /* refactor 1.0.22: evaluatorModel → readerModel (small fast model для
+       evaluation). Fallback chain удалён — одна модель. evaluatorAllowFallback
+       тоже удалён, теперь всегда true (пользователь не должен застревать). */
+    const readerKey = (prefs as Record<string, unknown>).readerModel;
+    const preferred = typeof readerKey === "string" && readerKey.trim().length > 0
+      ? readerKey.trim()
+      : undefined;
+    return { preferred, fallbacks: [], allowFallback: true };
   } catch {
     /* PreferencesStore не инициализирован (например, в юнит-тестах без
        initPreferencesStore) — поведение как раньше: чистый auto-pick. */

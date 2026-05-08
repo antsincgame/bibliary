@@ -20,7 +20,7 @@
  */
 
 import { getLmStudioUrl } from "../endpoints/index.js";
-import { modelRoleResolver } from "./model-role-resolver.js";
+import { getVisionOcrModel } from "./model-resolver.js";
 import { getHeavyLaneRateLimiter } from "./heavy-lane-rate-limiter.js";
 import { getModelPool } from "./model-pool.js";
 import { getImportScheduler } from "../library/import-task-scheduler.js";
@@ -50,7 +50,7 @@ export async function recognizeWithVisionLlm(
   let modelKey = opts.modelKey?.trim() || undefined;
   if (!modelKey) {
     try {
-      const resolved = await modelRoleResolver.resolve("vision_ocr");
+      const resolved = await getVisionOcrModel();
       if (resolved?.modelKey) modelKey = resolved.modelKey;
     } catch { /* resolver not ready */ }
   }

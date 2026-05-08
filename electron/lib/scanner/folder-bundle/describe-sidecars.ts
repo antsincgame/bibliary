@@ -144,9 +144,9 @@ async function defaultDescribeImage(absPath: string): Promise<string | null> {
 
 async function defaultDescribeText(text: string, kind: "code" | "html-site"): Promise<string | null> {
   try {
-    const { modelRoleResolver } = await import("../../llm/model-role-resolver.js");
+    const { getExtractorModel } = await import("../../llm/model-resolver.js");
     const { chatWithPolicy } = await import("../../../lmstudio-client.js");
-    const role = await modelRoleResolver.resolve("crystallizer");
+    const role = await getExtractorModel();
     if (!role) return null;
 
     const system = kind === "code"

@@ -25,8 +25,7 @@ import { extractChapterThesis } from "./delta-extractor.js";
 import { embedPassage } from "../embedder/shared.js";
 import { chatWithPolicy, PROFILE } from "../../lmstudio-client.js";
 import { getPreferencesStore } from "../preferences/store.js";
-import { resolveCrystallizerModelKey, resolveCrystallizerForLanguage } from "../llm/model-role-resolver.js";
-import { filterOrderedCandidatesAgainstLoaded } from "../llm/with-model-fallback.js";
+import { getExtractorModel } from "../llm/model-resolver.js";
 import { coordinator } from "../resilience/batch-coordinator.js";
 import {
   trackExtractionJob,
@@ -179,39 +178,37 @@ async function runExtractionInner(
   });
 
   const emitWithJob = (event: Record<string, unknown>): void => emit({ jobId, ...event });
-  /* Цепочка выбора:
+  /* Выбор модели:
        1. явный override от UI (args.extractModel)
-       2. prefs.extractorModel + fallback chain (через role-resolver)
+       2. prefs.extractorModel (через model-resolver, fallback на первую
+          загруженную в LM Studio)
        3. PROFILE.BIG.key как последний рубеж */
   let extractModel = args.extractModel;
   if (!extractModel) {
     try {
-      const resolved = await resolveCrystallizerModelKey();
+      const resolved = await getExtractorModel();
       if (resolved?.modelKey) extractModel = resolved.modelKey;
     } catch (e) {
-      console.warn(`[extraction] role-resolver failed, falling back to PROFILE.BIG: ${e instanceof Error ? e.message : e}`);
+      console.warn(`[extraction] model-resolver failed, falling back to PROFILE.BIG: ${e instanceof Error ? e.message : e}`);
     }
   }
   if (!extractModel) extractModel = PROFILE.BIG.key;
 
-  let llm = makeLlm(extractModel, ctrl.signal);
+  const llm = makeLlm(extractModel, ctrl.signal);
 
   emitWithJob({ stage: "config", phase: "info", extractModel, targetCollection });
 
   const prefs = await getPreferencesStore().getAll();
-  let rawDeltaChain = buildDeltaExtractorModelChain(extractModel, prefs.extractorModelFallbacks ?? "");
-  let extractionDeltaModelChain = await filterOrderedCandidatesAgainstLoaded("crystallizer", rawDeltaChain);
+  /* Цепочка моделей упразднена в refactor 1.0.22: одна extractorModel на всё
+   * (без language routing, без cross-model fallback). Если модель не справилась —
+   * пользователь явно меняет её через Models page. */
+  const extractionDeltaModelChain: string[] = [extractModel];
   emitWithJob({
     stage: "config",
     phase: "delta-models",
     extractModel,
     extractModelChain: extractionDeltaModelChain,
-    rawDeltaChain,
-    deltaCrossModel: extractionDeltaModelChain.length > 1,
   });
-  console.log(
-    `[extraction] delta model chain (${extractionDeltaModelChain.length}): ${extractionDeltaModelChain.join(" → ")}`,
-  );
 
   try {
     emitWithJob({ stage: "parse", phase: "start", bookSourcePath: args.bookSourcePath });
@@ -232,37 +229,11 @@ async function runExtractionInner(
     console.log(`[extraction] parsed "${parsed.metadata.title}" — ${totalChapters} chapters, range ${range.from}..${range.to}`);
     emitWithJob({ stage: "parse", phase: "done", bookTitle: parsed.metadata.title, totalChapters });
 
-    /* Language router: для украинских книг переключаемся на ukrainian_specialist
-     * если пользователь его настроил. Делаем это ПОСЛЕ parseBook потому что
-     * detectedLang известен только теперь. UI override (args.extractModel) имеет
-     * приоритет — не перетираем явный выбор пользователя. */
-    if (!args.extractModel && parsed.metadata.language) {
-      const langAware = await resolveCrystallizerForLanguage(parsed.metadata.language);
-      if (langAware?.modelKey && langAware.modelKey !== extractModel) {
-        const previous = extractModel;
-        extractModel = langAware.modelKey;
-        llm = makeLlm(extractModel, ctrl.signal);
-        const ukFallbacks = parsed.metadata.language === "uk"
-          ? String(prefs.ukrainianSpecialistModelFallbacks ?? "").trim()
-          : "";
-        rawDeltaChain = buildDeltaExtractorModelChain(
-          extractModel,
-          ukFallbacks || (prefs.extractorModelFallbacks ?? ""),
-        );
-        extractionDeltaModelChain = await filterOrderedCandidatesAgainstLoaded("crystallizer", rawDeltaChain);
-        console.log(
-          `[extraction] language router: lang="${parsed.metadata.language}" → switched "${previous}" → "${extractModel}"`,
-        );
-        emitWithJob({
-          stage: "config",
-          phase: "language-override",
-          language: parsed.metadata.language,
-          previousModel: previous,
-          extractModel,
-          extractModelChain: extractionDeltaModelChain,
-        });
-      }
-    }
+    /* Language router (украинский specialist) удалён в refactor 1.0.22:
+     * одна extractorModel для всех языков. multilingual-e5 в embedder и
+     * современные мультиязычные LLM (Qwen, Llama 3, Mistral) обрабатывают
+     * украинский нативно. Если пользователь хочет специализацию — он явно
+     * выбирает другую модель в Models page → readerModel/extractorModel. */
 
     const stats = { chunks: 0, accepted: 0, skipped: 0 };
     const warnings: string[] = [];
