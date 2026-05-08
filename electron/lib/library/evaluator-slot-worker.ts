@@ -1,0 +1,344 @@
+/**
+ * Evaluator slot worker — основной body одной evaluation в slot'е.
+ *
+ * Вынесено из `evaluator-queue.ts` (раньше inline-функция `evaluateOneInSlot`
+ * на ~280 строк внутри 885-строчного god-object'а). Контракт чистый:
+ *   - Принимает bookId + slot + deps (всё внешнее — через injected deps).
+ *   - Никаких side-effect'ов на module-level state evaluator-queue (счётчики
+ *     totalEvaluated/totalFailed мутируются через callback'и `incrementEvaluated`
+ *     / `incrementFailed`).
+ *   - Никогда не throw'ает наружу — все ошибки идут в emit + cache-db status.
+ *
+ * Pipeline:
+ *   1. Загрузить markdown + распарсить главы
+ *   2. Построить Structural Surrogate (TOC + intro/outro + nodal slices)
+ *   3. Подобрать модель (modelOverride > preferred from prefs > pickEvaluatorModel)
+ *   4. LLM вызов через scheduler.enqueue("medium") для observability
+ *   5. Persist quality result в cache-db + frontmatter
+ *   6. Uniqueness step (отдельный модуль, graceful skip)
+ *   7. Emit `evaluator.done`
+ *
+ * Все retry/abort/error paths сохранены 1-в-1 с оригиналом — контракт UI
+ * (events на renderer) и persistence не меняется.
+ */
+
+import { getBookById, upsertBook } from "./cache-db.js";
+import { buildSurrogate } from "./surrogate-builder.js";
+import { parseBookMarkdownChapters } from "./md-converter.js";
+import { extractMetadataHints } from "./evaluator-persist.js";
+import { isAbortError } from "../resilience/lm-request-policy.js";
+import { getImportScheduler } from "./import-task-scheduler.js";
+import { logModelAction } from "../llm/lmstudio-actions-log.js";
+import { runUniquenessStep } from "./evaluator-uniqueness-step.js";
+import type { BookCatalogMeta, EvaluationResult } from "./types.js";
+import type { EvaluatorEvent } from "./evaluator-queue.js";
+import type { PickEvaluatorModelOptions } from "./book-evaluator.js";
+
+/** Per-slot mutable state — owned and reset by evaluator-queue. */
+export interface SlotState {
+  active: boolean;
+  bookId: string | null;
+  title: string | null;
+  controller: AbortController | null;
+}
+
+/** Dependencies + callbacks injected by evaluator-queue. */
+export interface SlotWorkerDeps {
+  /** Read book.md from disk (DI hook for tests). */
+  readFile: (mdPath: string) => Promise<string>;
+  /** Run quality evaluator LLM call. */
+  evaluateBook: (
+    surrogate: string,
+    opts: { model: string; signal: AbortSignal },
+  ) => Promise<EvaluationResult>;
+  /** Resolve model from preferred/fallbacks/auto-load. */
+  pickEvaluatorModel: (opts: PickEvaluatorModelOptions) => Promise<string | null>;
+  /** Read evaluator-related prefs (preferred model, fallbacks, allowFallback). */
+  readEvaluatorPrefs: () => Promise<{
+    preferred?: string;
+    fallbacks?: string[];
+    allowFallback: boolean;
+  }>;
+
+  /** Emit lifecycle event to subscribers (single source of EventEmitter). */
+  emit: (event: EvaluatorEvent) => void;
+  /** Append a warning to meta.warnings if not already present. */
+  appendWarning: (meta: BookCatalogMeta, warning: string) => string[];
+  /** Persist `meta` to frontmatter atomically (with book-md mutex). */
+  persistFrontmatter: (
+    meta: BookCatalogMeta,
+    mdPath: string,
+    md: string,
+    reasoning?: string | null,
+  ) => Promise<void>;
+  /** Classify error message as retryable (network blip, circuit open, ...). */
+  isRetryableEvaluatorIssue: (message: string) => boolean;
+  /** Push book back to queue with status=imported + warning. */
+  deferEvaluationRetry: (
+    meta: BookCatalogMeta & { mdPath: string },
+    md: string,
+    reason: string,
+    bookId: string,
+    title: string | null,
+  ) => Promise<void>;
+  /** Pause the queue (called from catch when retry path runs out). */
+  pauseEvaluator: () => void;
+
+  /**
+   * Read-and-clear per-book autoLoad permission. v1.0.7 contract:
+   * cold-start resume не должен грузить модель с диска без явного запроса.
+   */
+  consumeAutoLoadAllowed: (bookId: string) => boolean;
+  /** Get current modelOverride (set via setEvaluatorModel IPC). */
+  getModelOverride: () => string | null;
+  /** Bump totalEvaluated counter shown in EvaluatorStatus. */
+  incrementEvaluated: () => void;
+  /** Bump totalFailed counter shown in EvaluatorStatus. */
+  incrementFailed: () => void;
+}
+
+/**
+ * Один прогон evaluation для книги в данном slot'е. Idempotent на повторе:
+ * при `meta.status !== "imported"` — skip (защита от race с rerun).
+ */
+export async function evaluateOneInSlot(
+  bookId: string,
+  slot: SlotState,
+  deps: SlotWorkerDeps,
+): Promise<void> {
+  /* Считываем + СРАЗУ удаляем разрешение на autoLoad (одноразовое).
+     Если книга вернётся в очередь через deferEvaluationRetry — она
+     попадёт уже без права грузить с диска (что и нужно для cold-start). */
+  const allowAutoLoadForThisBook = deps.consumeAutoLoadAllowed(bookId);
+
+  let meta = getBookById(bookId);
+  if (!meta) {
+    deps.emit({ type: "evaluator.skipped", bookId, error: "book not in cache-db" });
+    return;
+  }
+  /* Уже оценена? Тогда пропускаем (на случай race). */
+  if (meta.status !== "imported") {
+    deps.emit({ type: "evaluator.skipped", bookId, title: meta.title });
+    return;
+  }
+
+  slot.bookId = bookId;
+  slot.title = meta.titleEn ?? meta.title;
+  slot.controller = new AbortController();
+  deps.emit({ type: "evaluator.started", bookId, title: slot.title });
+
+  /* Mark as evaluating -- защита от двойного запуска при rerun. */
+  upsertBook({ ...meta, status: "evaluating" }, meta.mdPath);
+
+  try {
+    /* 1. Загрузить markdown. */
+    const md = await deps.readFile(meta.mdPath);
+    const chapters = parseBookMarkdownChapters(md);
+    if (chapters.length === 0) {
+      const reason = "evaluator: no chapters parsed from book.md";
+      const failed: BookCatalogMeta = {
+        ...meta,
+        status: "failed",
+        lastError: reason,
+        warnings: deps.appendWarning(meta, reason),
+      };
+      upsertBook(failed, meta.mdPath);
+      await deps.persistFrontmatter(failed, meta.mdPath, md);
+      deps.incrementFailed();
+      deps.emit({ type: "evaluator.failed", bookId, title: slot.title, error: "no chapters" });
+      return;
+    }
+
+    /* 2. Surrogate. */
+    const surrogate = buildSurrogate(chapters);
+
+    /* 2b. Pre-scan: regex hints for author/year from frontmatter + filename + full text. */
+    const metaHints = extractMetadataHints(md, meta);
+    const surrogateWithHints = metaHints.length > 0
+      ? `# METADATA HINTS (from filename, frontmatter, and text scan — use these as strong clues)\n${metaHints.join("\n")}\n\n${surrogate.surrogate}`
+      : surrogate.surrogate;
+
+    /* 3. Pick model. Приоритеты:
+         a) `modelOverride` (выставленный через `setEvaluatorModel`) — явный
+            runtime override из IPC.
+         b) `prefs.evaluatorModel` + CSV fallbacks из Settings → Models —
+            то, что выбрал пользователь в UI.
+         c) Авто-загрузка через ModelPool (pool.acquire): если preferred/fallback
+            модель не в VRAM — pool загрузит её, предварительно выгрузив ненужные
+            модели (makeRoom/eviction). Pool безопасно управляет VRAM.
+         d) Чистый auto-pick — только если ни a, ни b, ни c не сработали. */
+    const evaluatorPrefs = await deps.readEvaluatorPrefs();
+    /* allowAnyLoadedFallback: если preferred задан → false: не подменяем на
+       произвольную LLM, а загружаем нужную (если разрешено флагом). */
+    const allowFallback = evaluatorPrefs.allowFallback;
+    const allowAnyLoadedFallbackEffective = evaluatorPrefs.preferred ? false : allowFallback;
+    const model = deps.getModelOverride() ?? (await deps.pickEvaluatorModel({
+      preferred: evaluatorPrefs.preferred,
+      fallbacks: evaluatorPrefs.fallbacks,
+      allowAutoLoad: allowAutoLoadForThisBook,
+      allowAnyLoadedFallback: allowAnyLoadedFallbackEffective,
+    }));
+    if (!model) {
+      const reason = evaluatorPrefs.preferred
+        ? `evaluator: preferred model "${evaluatorPrefs.preferred}" not loaded in LM Studio — load it or clear evaluatorModel in Settings → Models`
+        : "evaluator: no LLM loaded in LM Studio";
+      if (!allowAutoLoadForThisBook) {
+        /* Cold-start resume: явно не грузим модель с диска. Логируем
+           для прозрачности — пользователь увидит в Models page → "Логи". */
+        logModelAction("EVALUATOR-DEFER-RESUME", {
+          role: "evaluator",
+          modelKey: evaluatorPrefs.preferred,
+          reason: "cold-start resume — autoLoad disabled to avoid autonomous VRAM grab",
+          meta: { bookId, title: slot.title ?? meta.title },
+        });
+      } else {
+        logModelAction("EVALUATOR-PICK-FAIL", {
+          role: "evaluator",
+          modelKey: evaluatorPrefs.preferred,
+          reason,
+          meta: { bookId },
+        });
+      }
+      await deps.deferEvaluationRetry(meta, md, reason, bookId, slot.title);
+      return;
+    }
+    /* Если picker подменил preferred на любую loaded LLM — добавим в warnings
+       прозрачную трассу, чтобы юзер видел почему оценка от другой модели. */
+    if (evaluatorPrefs.preferred && model !== evaluatorPrefs.preferred) {
+      meta = {
+        ...meta,
+        warnings: [
+          ...(meta.warnings ?? []),
+          `evaluator: preferred "${evaluatorPrefs.preferred}" not loaded — using "${model}" as fallback`,
+        ],
+      };
+    }
+
+    /* 4. LLM call. Используем signal этого слота — параллельные слоты
+       имеют независимые AbortController'ы, cancel одного не валит других.
+
+       Iter 7: оборачиваем вызов в scheduler.enqueue("medium") для observability —
+       UI widget видит счётчик medium-lane (running/queued) во время evaluation. */
+    const slotSignal = slot.controller!.signal;
+    const result = await getImportScheduler().enqueue("medium", () =>
+      deps.evaluateBook(surrogateWithHints, { model, signal: slotSignal }),
+    );
+    if (!result.evaluation) {
+      const reason = result.warnings.join("; ") || "evaluation returned null";
+      if (deps.isRetryableEvaluatorIssue(reason)) {
+        await deps.deferEvaluationRetry(meta, md, reason, bookId, slot.title);
+        return;
+      }
+      const failed: BookCatalogMeta = {
+        ...meta,
+        status: "failed",
+        lastError: reason,
+        evaluatorModel: result.model || model,
+        evaluatorReasoning: result.reasoning ?? undefined,
+        evaluatedAt: new Date().toISOString(),
+        warnings: [...(meta.warnings ?? []), ...result.warnings],
+      };
+      upsertBook(failed, meta.mdPath);
+      await deps.persistFrontmatter(failed, meta.mdPath, md, result.reasoning);
+      deps.incrementFailed();
+      deps.emit({
+        type: "evaluator.failed", bookId, title: slot.title,
+        error: result.warnings.join("; ") || "evaluation returned null",
+        warnings: result.warnings,
+      });
+      return;
+    }
+
+    /* 5. Build updated meta. */
+    const ev = result.evaluation;
+    const updated: BookCatalogMeta = {
+      ...meta,
+      titleRu: ev.title_ru,
+      authorRu: ev.author_ru,
+      titleEn: ev.title_en,
+      authorEn: ev.author_en,
+      year: ev.year ?? meta.year,
+      domain: ev.domain,
+      tags: ev.tags,
+      tagsRu: ev.tags_ru,
+      qualityScore: ev.quality_score,
+      conceptualDensity: ev.conceptual_density,
+      originality: ev.originality,
+      isFictionOrWater: ev.is_fiction_or_water,
+      verdictReason: ev.verdict_reason,
+      evaluatorReasoning: result.reasoning ?? undefined,
+      evaluatorModel: result.model,
+      evaluatedAt: new Date().toISOString(),
+      status: "evaluated",
+      warnings: result.warnings.length > 0 ? [...(meta.warnings ?? []), ...result.warnings] : meta.warnings,
+    };
+    upsertBook(updated, meta.mdPath);
+    await deps.persistFrontmatter(updated, meta.mdPath, md, result.reasoning);
+    deps.incrementEvaluated();
+
+    /* 6. Uniqueness pass — отдельный модуль; никогда не throw'ает наружу,
+     * quality result уже сохранён выше — uniqueness не валит pipeline. */
+    await runUniquenessStep({
+      baseMeta: updated,
+      chapters,
+      mdPath: meta.mdPath,
+      md,
+      reasoning: result.reasoning,
+      signal: slotSignal,
+      persistFrontmatter: deps.persistFrontmatter,
+      upsertBook,
+    });
+
+    /* 7. Emit done. */
+    deps.emit({
+      type: "evaluator.done",
+      bookId,
+      title: ev.title_en,
+      qualityScore: ev.quality_score,
+      isFictionOrWater: ev.is_fiction_or_water,
+      warnings: result.warnings.length > 0 ? result.warnings : undefined,
+    });
+  } catch (err) {
+    /* Сверяем abort через единый helper (проверяет ABORT_SENTINEL или
+       /aborted/i) -- консистентно с lm-request-policy. */
+    const msg = err instanceof Error ? err.message : String(err);
+    if (isAbortError(err) || slot.controller?.signal.aborted) {
+      upsertBook({ ...meta, status: "imported" }, meta.mdPath);
+      deps.emit({ type: "evaluator.skipped", bookId, title: slot.title, error: "aborted" });
+    } else {
+      if (deps.isRetryableEvaluatorIssue(msg)) {
+        try {
+          const md = await deps.readFile(meta.mdPath);
+          await deps.deferEvaluationRetry(meta, md, msg, bookId, slot.title);
+        } catch {
+          const warning = `evaluator deferred: ${msg}`;
+          upsertBook({
+            ...meta,
+            status: "imported",
+            lastError: warning,
+            warnings: deps.appendWarning(meta, warning),
+          }, meta.mdPath);
+          deps.pauseEvaluator();
+          deps.emit({ type: "evaluator.skipped", bookId, title: slot.title, error: warning });
+        }
+        return;
+      }
+      const reason = `evaluator: ${msg}`;
+      const failed: BookCatalogMeta = {
+        ...meta,
+        status: "failed",
+        lastError: reason,
+        warnings: deps.appendWarning(meta, reason),
+      };
+      upsertBook(failed, meta.mdPath);
+      try {
+        const md = await deps.readFile(meta.mdPath);
+        await deps.persistFrontmatter(failed, meta.mdPath, md);
+      } catch {
+        /* tolerate */
+      }
+      deps.incrementFailed();
+      deps.emit({ type: "evaluator.failed", bookId, title: slot.title, error: msg });
+    }
+  }
+}
