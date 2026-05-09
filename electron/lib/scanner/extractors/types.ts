@@ -23,6 +23,17 @@
 
 import type { OcrEngine } from "./ocr-cache.js";
 
+/**
+ * Tier numbering:
+ *   0  — text-layer (free, native parser output).
+ *   1a — tesseract (cheap, CPU + bundled tessdata, cross-platform incl. Linux).
+ *   1b — system-ocr (Windows.Media.Ocr / macOS Vision, OS-only, free).
+ *   2  — vision-llm (expensive, GPU, multimodal LLM).
+ *
+ * Tier 1a/1b представлены одним числом 1 в этой структуре — cascade-runner
+ * различает их через поле `engine`. Это сохраняет совместимость с уже
+ * сериализованными в `book.md` warning'ами `tier 1 (system-ocr)`.
+ */
 export interface ExtractionAttempt {
   tier: 0 | 1 | 2;
   engine: OcrEngine;
@@ -53,17 +64,31 @@ export interface ExtractOptions {
  * Контракт Tier-экстрактора.
  *
  * Реализации:
- *   - DjvuTextLayerExtractor (Tier 0) — обёртка над djvutxt.
- *   - SystemOcrExtractor (Tier 1) — обёртка над @napi-rs/system-ocr.
- *   - VisionLlmExtractor (Tier 2) — обёртка над recognizeWithVisionLlm.
+ *   - PdfPageExtractor — Tier 1a (tesseract) + 1b (system-ocr) + 2 (vision-llm).
+ *   - ImageFileExtractor — Tier 1a + 1b + 2.
+ *   - DjVu parser НЕ использует cascade (свой собственный путь, см. parsers/djvu.ts).
  *
- * Конкретные реализации появляются по мере подключения форматов.
- * Этот файл декларирует только контракт.
+ * Все методы optional — экстрактор реализует только применимые тиры.
+ * Cascade Runner пропускает тиры с `undefined` методом.
  */
 export interface TextExtractor {
   /** Tier 0 — бесплатно, без LLM. Возвращает null если не применим к файлу. */
   tryTextLayer?(srcPath: string, opts: ExtractOptions): Promise<ExtractionAttempt | null>;
-  /** Tier 1 — дёшево, без LLM (только OS OCR). */
+  /**
+   * Tier 1a — Tesseract.js (CPU, bundled rus/ukr/eng tessdata).
+   *
+   * Главная мотивация — solid Cyrillic на Win/Mac:
+   *   - Windows.Media.Ocr использует ТОЛЬКО первый язык в preferredLangs;
+   *     при mixed-language input (`["en","ru"]`) даёт latin homoglyphs для
+   *     русских букв ("06pa3y" вместо "образу") — баг #4 для DjVu.
+   *   - macOS Vision Framework multi-lang, но Tesseract стабильнее на
+   *     типичных книжных сканах с цифровыми артефактами.
+   *
+   * ~3s/page, без GPU. Возвращает null если bundled tessdata не найдено
+   * (`isTesseractAvailable() === false`).
+   */
+  tryTesseract?(srcPath: string, opts: ExtractOptions): Promise<ExtractionAttempt | null>;
+  /** Tier 1b — OS OCR (Windows.Media.Ocr / macOS Vision Framework). */
   tryOsOcr?(srcPath: string, opts: ExtractOptions): Promise<ExtractionAttempt | null>;
   /** Tier 2 — дорого, vision-LLM. Используется только когда Tier 0/1 не справились. */
   tryVisionLlm?(srcPath: string, opts: ExtractOptions): Promise<ExtractionAttempt | null>;

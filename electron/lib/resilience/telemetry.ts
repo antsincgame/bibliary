@@ -86,7 +86,7 @@ export type TelemetryEvent =
        * анализа (никаких автокорректировок).
        */
       type: "ocr.quality_drift";
-      engine: "text-layer" | "system-ocr" | "vision-llm";
+      engine: "text-layer" | "tesseract" | "system-ocr" | "vision-llm";
       baselineMean: number;
       recentMean: number;
       driftRatio: number;

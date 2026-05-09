@@ -31,7 +31,13 @@ import { promises as fs, existsSync } from "fs";
 import * as path from "path";
 import { createHash } from "crypto";
 
-export type OcrEngine = "text-layer" | "system-ocr" | "vision-llm";
+/**
+ * Tier-1a "tesseract" добавлен в PR #2 (Tier-1a Tesseract.js for solid Cyrillic OCR).
+ * Cascade order: text-layer → tesseract → system-ocr → vision-llm.
+ * Cache key включает engine, поэтому новый литерал не пересекается со старыми
+ * записями (system-ocr / vision-llm) — re-import пересчитывает Tesseract отдельно.
+ */
+export type OcrEngine = "text-layer" | "tesseract" | "system-ocr" | "vision-llm";
 
 export interface OcrCacheEntry {
   engine: OcrEngine;

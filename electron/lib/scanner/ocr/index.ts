@@ -1,12 +1,19 @@
 /**
- * Phase 6.0 -- OS-native OCR service.
+ * OS-native OCR service (Tier 1b в Universal Cascade).
  *
  * Wraps `@napi-rs/system-ocr` (Windows.Media.Ocr on Windows, Vision Framework
- * on macOS) and `@napi-rs/canvas` for PDF page rasterisation. No bundled
- * binaries, no Tesseract, no Python -- only OS-provided engines.
+ * on macOS) and `@napi-rs/canvas` for PDF page rasterisation.
  *
- * On Linux: gracefully unsupported (no system OCR API). UI must check
- * `isOcrSupported()` before exposing the toggle.
+ * **Этот модуль покрывает ТОЛЬКО Tier 1b (system-ocr).** Tier 1a (Tesseract.js
+ * + bundled tessdata) живёт в соседнем `tesseract.ts` и подключается параллельно
+ * через `cascade-runner.ts` (см. PR #2). Tesseract решает проблему mixed-language
+ * Cyrillic (Win.Media.Ocr берёт только первый язык — даёт latin homoglyphs).
+ * system-ocr остаётся как Tier 1b для случаев когда Tesseract отсутствует
+ * (custom build без vendor/tessdata) или когда документ моноязычный (нет
+ * 280ms init overhead).
+ *
+ * Платформы: Windows + macOS (продуктовый таргет). Если `isOcrSupported()` =
+ * false — Tier 1b пропускается, cascade идёт через Tesseract / vision-LLM.
  *
  * Real upstream API (verified against node_modules/@napi-rs/system-ocr/index.d.ts):
  *   recognize(image, accuracy?, preferredLangs?, signal?): Promise<{ text, confidence }>

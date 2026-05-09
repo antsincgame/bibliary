@@ -2,6 +2,7 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import { cleanParagraph, looksLikeHeading, type BookParser, type ParseOptions, type ParseResult, type BookSection } from "./types.js";
 import { isOcrSupported, rasterisePdfPages } from "../ocr/index.js";
+import { isTesseractAvailable } from "../ocr/tesseract.js";
 import { parsePdfInWorker, isWorkerPdfEnabled } from "./pdf-worker-host.js";
 import { getPdfjsStandardFontDataUrl, getPdfjsCMapUrl } from "../pdfjs-node.js";
 import { isLowValueBookTitle, pickBestBookTitle } from "../../library/title-heuristics.js";
@@ -391,8 +392,14 @@ export async function parsePdfMain(filePath: string, opts: ParseOptions = {}): P
      при scanned PDF на 500 страниц heavy-очередь не разнесёт VRAM. */
   if (allParagraphs.length === 0) {
     const visionConfigured = Boolean(opts.visionOcrModel);
-    if (opts.ocrEnabled && (isOcrSupported() || visionConfigured)) {
+    /* Tier 1a Tesseract — добавлен в PR #2: bundled rus/ukr/eng даёт solid
+       Cyrillic без vision-LLM (Win.Media.Ocr с mixed-language input берёт
+       только первый язык, даёт latin homoglyphs для русского — баг #4 в DjVu).
+       Условие расширено: cascade запускается, если ХОТЯ БЫ ОДИН tier доступен. */
+    const tesseractAvail = isTesseractAvailable();
+    if (opts.ocrEnabled && (isOcrSupported() || tesseractAvail || visionConfigured)) {
       let ocrAppliedPages = 0;
+      let tesseractAppliedPages = 0;
       let visionAppliedPages = 0;
       let failedPages = 0;
       const pageWarnings: string[] = [];
@@ -422,16 +429,18 @@ export async function parsePdfMain(filePath: string, opts: ParseOptions = {}): P
             totalChars += para.length;
           }
           ocrAppliedPages++;
-          if (cascade.attempt?.engine === "vision-llm") visionAppliedPages++;
+          if (cascade.attempt?.engine === "tesseract") tesseractAppliedPages++;
+          else if (cascade.attempt?.engine === "vision-llm") visionAppliedPages++;
         }
       } catch (err) {
         warnings.push(`OCR failed: ${(err as Error).message.slice(0, 200)}`);
       }
 
       if (ocrAppliedPages > 0) {
+        const tessTag = tesseractAppliedPages > 0 ? `, ${tesseractAppliedPages} via Tesseract` : "";
         const visionTag = visionAppliedPages > 0 ? `, ${visionAppliedPages} via vision-LLM` : "";
         warnings.push(
-          `OCR applied to ${ocrAppliedPages} page(s)${visionTag} -- text reconstructed from images`,
+          `OCR applied to ${ocrAppliedPages} page(s)${tessTag}${visionTag} -- text reconstructed from images`,
         );
       } else if (failedPages > 0) {
         warnings.push("OCR ran but produced no text (poor image quality?)");
@@ -445,7 +454,7 @@ export async function parsePdfMain(filePath: string, opts: ParseOptions = {}): P
       }
     } else {
       const reason = opts.ocrEnabled
-        ? "OCR not supported on this OS (requires Windows or macOS) and no vision-LLM model configured"
+        ? "Tesseract bundled tessdata not found, OS OCR unsupported, and no vision-LLM model configured"
         : "OCR not enabled (turn it on in Settings to recognise scanned PDFs)";
       warnings.push(`no text extracted (likely a scanned/image PDF — ${reason})`);
     }

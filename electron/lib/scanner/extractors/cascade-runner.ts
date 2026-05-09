@@ -1,17 +1,27 @@
 /**
- * Cascade Runner — оркестратор Tier 0 → 1 → 2.
+ * Cascade Runner — оркестратор Tier 0 → 1a → 1b → 2.
  *
  * АЛГОРИТМ:
- *   1. Tier 0 (text-layer): попробовать. Если quality >= acceptableQuality — принять, остановить.
- *   2. Tier 1 (system-ocr): попробовать. Если quality >= acceptableQuality — принять, остановить.
- *   3. Tier 2 (vision-llm): попробовать. Принять любой результат.
+ *   1. Tier 0  (text-layer): попробовать. Если quality >= acceptableQuality — принять, остановить.
+ *   2. Tier 1a (tesseract):  попробовать. Если quality >= acceptableQuality — принять, остановить.
+ *   3. Tier 1b (system-ocr): попробовать. Если quality >= acceptableQuality — принять, остановить.
+ *   4. Tier 2  (vision-llm): попробовать. Принять любой результат.
  *
- *   Если все три отдали null или мусор < threshold — вернуть лучшее из имеющегося
+ *   Если все четыре отдали null или мусор < threshold — вернуть лучшее из имеющегося
  *   (по quality score) с warnings, либо null если вообще ничего.
  *
  *   Tier пропускается если:
  *     - extractor не реализует соответствующий метод (typeof undefined)
  *     - opts.disabledTiers содержит этот tier
+ *
+ * ПОЧЕМУ Tesseract ПЕРЕД system-ocr (PR #2 Tier-1a):
+ *   - Win/Mac: solid Cyrillic. Windows.Media.Ocr берёт ТОЛЬКО первый язык
+ *     из preferredLangs — при mixed-language `["en","ru"]` выдаёт latin
+ *     homoglyphs для русских букв ("06pa3y" вместо "образу"). Tesseract
+ *     нативно multi-language и стабильно даёт solid Cyrillic из коробки.
+ *   - Tier 1b system-ocr остаётся как fallback (быстрее на коротких
+ *     документах, нет 280ms init overhead).
+ *   - vision-llm — только когда оба CPU-tier'а провалились (heavy GPU lane).
  *
  * ИНТЕГРАЦИЯ С КЕШЕМ:
  *   Если opts.fileSha256 + opts.pageIndex заданы — Runner проверяет ocr-cache
@@ -49,12 +59,17 @@ export async function runExtractionCascade(
   const disabled = new Set<number>(opts.disabledTiers ?? []);
   const attempts: ExtractionAttempt[] = [];
 
+  /* Tier 1a (tesseract) и 1b (system-ocr) оба представлены числом 1 в
+     ExtractionAttempt.tier — disabledTiers продолжает фильтровать обоих
+     одной записью `1` (backward-compat для caller'ов). Различение
+     происходит через поле `engine`. */
   const tiers: Array<{
     tier: 0 | 1 | 2;
     engine: OcrEngine;
     method?: TextExtractor["tryTextLayer"];
   }> = [
     { tier: 0, engine: "text-layer", method: extractor.tryTextLayer?.bind(extractor) },
+    { tier: 1, engine: "tesseract",  method: extractor.tryTesseract?.bind(extractor) },
     { tier: 1, engine: "system-ocr", method: extractor.tryOsOcr?.bind(extractor) },
     { tier: 2, engine: "vision-llm", method: extractor.tryVisionLlm?.bind(extractor) },
   ];

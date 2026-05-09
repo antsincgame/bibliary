@@ -8,6 +8,7 @@
 import * as path from "path";
 import { promises as fs } from "fs";
 import { isOcrSupported } from "../ocr/index.js";
+import { isTesseractAvailable } from "../ocr/tesseract.js";
 import { cleanParagraph, type BookParser, type ParseOptions, type ParseResult } from "./types.js";
 import { runExtractionCascade } from "../extractors/cascade-runner.js";
 import { createImageFileExtractor } from "./image-file-extractor.js";
@@ -15,13 +16,15 @@ import { createImageFileExtractor } from "./image-file-extractor.js";
 async function parseImage(filePath: string, opts: ParseOptions = {}): Promise<ParseResult> {
   const baseName = path.basename(filePath, path.extname(filePath));
 
-  /* Без OS OCR и без vision-LLM модели — нечем парсить изображение. */
+  /* Без любого OCR-провайдера (Tesseract / OS / vision-LLM) — нечем парсить.
+     Tesseract — bundled cross-platform OCR (PR #2 Tier-1a), доступен везде
+     где лежит vendor/tessdata/. */
   const visionConfigured = Boolean(opts.visionOcrModel);
-  if (!isOcrSupported() && !visionConfigured) {
+  if (!isTesseractAvailable() && !isOcrSupported() && !visionConfigured) {
     return {
       metadata: {
         title: baseName,
-        warnings: ["Image OCR is unavailable: OS OCR not supported and no vision-LLM model configured."],
+        warnings: ["Image OCR is unavailable: Tesseract tessdata missing, OS OCR unsupported, no vision-LLM model configured."],
       },
       sections: [],
       rawCharCount: 0,
@@ -76,10 +79,13 @@ async function parseImage(filePath: string, opts: ParseOptions = {}): Promise<Pa
     .map((p) => cleanParagraph(p))
     .filter((p) => p.length > 0);
 
-  /* Annotate какой engine выдал текст — полезно для трассировки в book.md. */
-  const engineWarning = cascade.attempt?.engine === "vision-llm"
-    ? ["text recovered via vision-LLM (system OCR unavailable or low quality)"]
-    : [];
+  /* Annotate какой engine выдал текст — полезно для трассировки в book.md.
+     Tesseract молчит (это ожидаемый Tier 1a, не «нестандартный путь»). */
+  const engine = cascade.attempt?.engine;
+  const engineWarning =
+    engine === "vision-llm" ? ["text recovered via vision-LLM (Tier 1a/1b unavailable or low quality)"] :
+    engine === "tesseract" ? ["text recovered via Tesseract.js (Tier 1a, bundled rus/ukr/eng)"] :
+    [];
 
   return {
     metadata: {

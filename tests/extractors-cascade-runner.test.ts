@@ -21,13 +21,24 @@ import type {
 
 interface CallLog {
   tier0Calls: number;
+  /** Tier 1a — Tesseract (PR #2). Default 0; backward-compat для существующих тестов. */
+  tier1aCalls: number;
   tier1Calls: number;
   tier2Calls: number;
 }
 
+const emptyLog = (): CallLog => ({
+  tier0Calls: 0,
+  tier1aCalls: 0,
+  tier1Calls: 0,
+  tier2Calls: 0,
+});
+
 function makeMockExtractor(
   results: Partial<{
     tier0: ExtractionAttempt | null | "throw";
+    /** Tier 1a — Tesseract (PR #2). Optional чтобы старые тесты не меняли. */
+    tier1a?: ExtractionAttempt | null | "throw";
     tier1: ExtractionAttempt | null | "throw";
     tier2: ExtractionAttempt | null | "throw";
   }>,
@@ -40,6 +51,13 @@ function makeMockExtractor(
           log.tier0Calls += 1;
           if (results.tier0 === "throw") throw new Error("tier0 boom");
           return results.tier0;
+        },
+    tryTesseract: results.tier1a === undefined
+      ? undefined
+      : async () => {
+          log.tier1aCalls += 1;
+          if (results.tier1a === "throw") throw new Error("tier1a boom");
+          return results.tier1a;
         },
     tryOsOcr: results.tier1 === undefined
       ? undefined
@@ -60,7 +78,7 @@ function makeMockExtractor(
 
 describe("Cascade Runner — happy paths", () => {
   it("Tier 0 quality >= threshold → останавливается, Tier 1/2 не вызываются", async () => {
-    const log: CallLog = { tier0Calls: 0, tier1Calls: 0, tier2Calls: 0 };
+    const log: CallLog = emptyLog();
     const ex = makeMockExtractor({
       tier0: { tier: 0, engine: "text-layer", quality: 0.9, text: "good", warnings: [] },
       tier1: { tier: 1, engine: "system-ocr", quality: 0.9, text: "n/a", warnings: [] },
@@ -77,7 +95,7 @@ describe("Cascade Runner — happy paths", () => {
   });
 
   it("Tier 0 не справился → Tier 1 вызывается; Tier 1 ОК → Tier 2 не вызывается", async () => {
-    const log: CallLog = { tier0Calls: 0, tier1Calls: 0, tier2Calls: 0 };
+    const log: CallLog = emptyLog();
     const ex = makeMockExtractor({
       tier0: { tier: 0, engine: "text-layer", quality: 0.2, text: "noise", warnings: [] },
       tier1: { tier: 1, engine: "system-ocr", quality: 0.7, text: "ocr ok", warnings: [] },
@@ -93,7 +111,7 @@ describe("Cascade Runner — happy paths", () => {
   });
 
   it("Tier 0 и Tier 1 не справились → Tier 2 принимается", async () => {
-    const log: CallLog = { tier0Calls: 0, tier1Calls: 0, tier2Calls: 0 };
+    const log: CallLog = emptyLog();
     const ex = makeMockExtractor({
       tier0: null,
       tier1: { tier: 1, engine: "system-ocr", quality: 0.3, text: "weak", warnings: [] },
@@ -109,7 +127,7 @@ describe("Cascade Runner — happy paths", () => {
 
 describe("Cascade Runner — error paths", () => {
   it("Tier бросил исключение → следующий Tier пробуется", async () => {
-    const log: CallLog = { tier0Calls: 0, tier1Calls: 0, tier2Calls: 0 };
+    const log: CallLog = emptyLog();
     const ex = makeMockExtractor({
       tier0: "throw",
       tier1: { tier: 1, engine: "system-ocr", quality: 0.8, text: "saved", warnings: [] },
@@ -125,7 +143,7 @@ describe("Cascade Runner — error paths", () => {
   });
 
   it("все Tier'ы вернули мусор → выбирает лучшее из имеющегося", async () => {
-    const log: CallLog = { tier0Calls: 0, tier1Calls: 0, tier2Calls: 0 };
+    const log: CallLog = emptyLog();
     const ex = makeMockExtractor({
       tier0: { tier: 0, engine: "text-layer", quality: 0.1, text: "a", warnings: [] },
       tier1: { tier: 1, engine: "system-ocr", quality: 0.4, text: "b", warnings: [] },
@@ -141,7 +159,7 @@ describe("Cascade Runner — error paths", () => {
   });
 
   it("все Tier'ы вернули null → result.attempt === null", async () => {
-    const log: CallLog = { tier0Calls: 0, tier1Calls: 0, tier2Calls: 0 };
+    const log: CallLog = emptyLog();
     const ex = makeMockExtractor({ tier0: null, tier1: null, tier2: null }, log);
 
     const result = await runExtractionCascade(ex, "file.djvu");
@@ -153,7 +171,7 @@ describe("Cascade Runner — error paths", () => {
 
 describe("Cascade Runner — disabledTiers", () => {
   it("disabledTiers=[2] → Tier 2 пропускается даже если 0/1 не справились", async () => {
-    const log: CallLog = { tier0Calls: 0, tier1Calls: 0, tier2Calls: 0 };
+    const log: CallLog = emptyLog();
     const ex = makeMockExtractor({
       tier0: { tier: 0, engine: "text-layer", quality: 0.1, text: "weak", warnings: [] },
       tier1: { tier: 1, engine: "system-ocr", quality: 0.2, text: "weak", warnings: [] },
@@ -168,7 +186,7 @@ describe("Cascade Runner — disabledTiers", () => {
   });
 
   it("disabledTiers=[0, 1] → только Tier 2 пытается", async () => {
-    const log: CallLog = { tier0Calls: 0, tier1Calls: 0, tier2Calls: 0 };
+    const log: CallLog = emptyLog();
     const ex = makeMockExtractor({
       tier0: { tier: 0, engine: "text-layer", quality: 0.9, text: "ignored", warnings: [] },
       tier1: { tier: 1, engine: "system-ocr", quality: 0.9, text: "ignored", warnings: [] },
@@ -184,9 +202,79 @@ describe("Cascade Runner — disabledTiers", () => {
   });
 });
 
+describe("Cascade Runner — Tier 1a Tesseract (PR #2)", () => {
+  it("Tier 0 не справился → Tier 1a Tesseract вызывается ДО Tier 1b system-ocr", async () => {
+    const log: CallLog = emptyLog();
+    const ex = makeMockExtractor({
+      tier0: { tier: 0, engine: "text-layer", quality: 0.2, text: "weak", warnings: [] },
+      tier1a: { tier: 1, engine: "tesseract", quality: 0.8, text: "tess ok", warnings: [] },
+      tier1: { tier: 1, engine: "system-ocr", quality: 0.9, text: "should-not-call", warnings: [] },
+      tier2: { tier: 2, engine: "vision-llm", quality: 0.95, text: "n/a", warnings: [] },
+    }, log);
+
+    const result = await runExtractionCascade(ex, "file.djvu");
+
+    expect(result.attempt?.engine).toBe("tesseract");
+    expect(result.attempt?.text).toBe("tess ok");
+    expect(log.tier1aCalls).toBe(1);
+    expect(log.tier1Calls).toBe(0);
+    expect(log.tier2Calls).toBe(0);
+  });
+
+  it("Tier 1a без tessdata (null) → cascade переходит к Tier 1b system-ocr", async () => {
+    const log: CallLog = emptyLog();
+    const ex = makeMockExtractor({
+      tier0: null,
+      tier1a: null,
+      tier1: { tier: 1, engine: "system-ocr", quality: 0.7, text: "system ok", warnings: [] },
+      tier2: { tier: 2, engine: "vision-llm", quality: 0.9, text: "n/a", warnings: [] },
+    }, log);
+
+    const result = await runExtractionCascade(ex, "file.djvu");
+
+    expect(result.attempt?.engine).toBe("system-ocr");
+    expect(log.tier1aCalls).toBe(1);
+    expect(log.tier1Calls).toBe(1);
+    expect(log.tier2Calls).toBe(0);
+  });
+
+  it("Tier 1a слабый → Tier 1b также слабый → Tier 2 принимает", async () => {
+    const log: CallLog = emptyLog();
+    const ex = makeMockExtractor({
+      tier0: null,
+      tier1a: { tier: 1, engine: "tesseract", quality: 0.3, text: "weak tess", warnings: [] },
+      tier1: { tier: 1, engine: "system-ocr", quality: 0.4, text: "weak sys", warnings: [] },
+      tier2: { tier: 2, engine: "vision-llm", quality: 0.9, text: "vision ok", warnings: [] },
+    }, log);
+
+    const result = await runExtractionCascade(ex, "file.djvu");
+
+    expect(result.attempt?.engine).toBe("vision-llm");
+    expect(log.tier1aCalls).toBe(1);
+    expect(log.tier1Calls).toBe(1);
+    expect(log.tier2Calls).toBe(1);
+  });
+
+  it("disabledTiers=[1] фильтрует ОБА Tier 1a и Tier 1b (один числовой tier)", async () => {
+    const log: CallLog = emptyLog();
+    const ex = makeMockExtractor({
+      tier0: { tier: 0, engine: "text-layer", quality: 0.1, text: "weak", warnings: [] },
+      tier1a: { tier: 1, engine: "tesseract", quality: 0.9, text: "would-help", warnings: [] },
+      tier1: { tier: 1, engine: "system-ocr", quality: 0.9, text: "would-help", warnings: [] },
+      tier2: { tier: 2, engine: "vision-llm", quality: 0.95, text: "fallback", warnings: [] },
+    }, log);
+
+    const result = await runExtractionCascade(ex, "file.djvu", { disabledTiers: [1] });
+
+    expect(log.tier1aCalls).toBe(0);
+    expect(log.tier1Calls).toBe(0);
+    expect(result.attempt?.engine).toBe("vision-llm");
+  });
+});
+
 describe("Cascade Runner — abort", () => {
   it("AbortSignal прерывает цепочку между Tier'ами", async () => {
-    const log: CallLog = { tier0Calls: 0, tier1Calls: 0, tier2Calls: 0 };
+    const log: CallLog = emptyLog();
     const ctl = new AbortController();
     const ex = makeMockExtractor({
       tier0: { tier: 0, engine: "text-layer", quality: 0.2, text: "weak", warnings: [] },
