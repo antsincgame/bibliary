@@ -348,7 +348,7 @@ function buildBurnLibraryBtn() {
       const summary = t("settings.burnLibrary.done", {
         files: String(r.removedFiles ?? 0),
         dirs: String(r.removedDirs ?? 0),
-        chroma: String(r.vectorCollectionsCleaned ?? 0),
+        vectordb: String(r.vectorCollectionsCleaned ?? 0),
       });
       const errs = Array.isArray(r.vectorCollectionsErrors) && r.vectorCollectionsErrors.length > 0
         ? "\n\nVectorDB warnings:\n" + r.vectorCollectionsErrors.slice(0, 5).join("\n")

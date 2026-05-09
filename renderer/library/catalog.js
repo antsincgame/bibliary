@@ -732,7 +732,7 @@ export function buildCatalogBottomBar(root, deps) {
         await showAlert(t("library.catalog.burnAll.done", {
           files: String(r.removedFiles ?? 0),
           dirs: String(r.removedDirs ?? 0),
-          chroma: String(r.vectorCollectionsCleaned ?? 0),
+          vectordb: String(r.vectorCollectionsCleaned ?? 0),
         }));
       } catch (e) {
         await showAlert(t("library.catalog.burnAll.failed", { reason: e instanceof Error ? e.message : String(e) }));

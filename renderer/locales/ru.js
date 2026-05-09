@@ -228,7 +228,7 @@ export default {
   "library.catalog.confirm.burnAll2": "Точно? Последний шанс отменить.",
   "library.catalog.burnAll.running": "Сжигаю…",
   "library.catalog.burnAll.failed": "Не удалось сжечь библиотеку: {reason}",
-  "library.catalog.burnAll.done": "Сожжено: {files} файлов, {dirs} папок, {chroma} векторных коллекций.",
+  "library.catalog.burnAll.done": "Сожжено: {files} файлов, {dirs} папок, {vectordb} векторных коллекций.",
   "library.reader.cover.clickHint": "Кликните, чтобы увеличить",
   "library.reader.cover.close": "Закрыть",
   "library.reader.empty.body": "Markdown-конвертация не дала осмысленного текста. Откройте оригинал или попробуйте переимпорт.",
@@ -722,7 +722,7 @@ export default {
   "settings.burnLibrary.confirm2": "Точно? Последний шанс отменить.\n\nЧерез 5 секунд библиотеки не будет.",
   "settings.burnLibrary.running": "Сжигаю…",
   "settings.burnLibrary.failed": "Не удалось сжечь библиотеку",
-  "settings.burnLibrary.done": "Сожжено: {files} файлов, {dirs} папок, {chroma} векторных коллекций. Можно тестировать импорт.",
+  "settings.burnLibrary.done": "Сожжено: {files} файлов, {dirs} папок, {vectordb} векторных коллекций. Можно тестировать импорт.",
   /* v1.0.11 (2026-05-06): settings.customDisciplines.* удалены — feature deprecated. */
   "settings.section.ingest": "Библиотека и поиск",
   "settings.section.ingest.desc": "Лимиты и параллелизм импорта и онлайн-поиска.",

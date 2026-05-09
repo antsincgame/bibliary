@@ -228,7 +228,7 @@ export default {
   "library.catalog.confirm.burnAll2": "Are you sure? Last chance to cancel.",
   "library.catalog.burnAll.running": "Burning\u2026",
   "library.catalog.burnAll.failed": "Failed to burn library: {reason}",
-  "library.catalog.burnAll.done": "Burned: {files} files, {dirs} folders, {chroma} vector collections.",
+  "library.catalog.burnAll.done": "Burned: {files} files, {dirs} folders, {vectordb} vector collections.",
   "library.reader.cover.clickHint": "Click to enlarge",
   "library.reader.cover.close": "Close",
   "library.reader.empty.body": "Markdown conversion produced no meaningful text. Open the original or try re-importing.",
@@ -724,7 +724,7 @@ export default {
   "settings.burnLibrary.confirm2": "Really? Last chance to cancel.\n\nIn 5 seconds the library is gone.",
   "settings.burnLibrary.running": "Burning…",
   "settings.burnLibrary.failed": "Burn library failed",
-  "settings.burnLibrary.done": "Burned: {files} files, {dirs} dirs, {chroma} vector collections. Ready for import testing.",
+  "settings.burnLibrary.done": "Burned: {files} files, {dirs} dirs, {vectordb} vector collections. Ready for import testing.",
   /* v1.0.11 (2026-05-06): settings.customDisciplines.* removed — feature deprecated. */
   "settings.section.ingest": "Library & Search",
   "settings.section.ingest.desc": "Limits and parallelism for import and online search.",

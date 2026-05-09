@@ -13,6 +13,16 @@ import type { MenuItemConstructorOptions } from "electron";
 
 const APP_NAME = "Bibliary";
 
+/**
+ * Win/Linux: без мнемоник (&) Chromium часто трактует одиночный Alt как
+ * «меню» и перехватывает клавишу до системного Alt+Shift / Alt+Ctrl
+ * переключения раскладки (Electron #17418, #28088; обход как в nativefier#768).
+ * На macOS символ `&` в подписях не используется — оставляем обычный текст.
+ */
+function topBarLabel(isMac: boolean, plain: string, winLinuxMnemonic: string): string {
+  return isMac ? plain : winLinuxMnemonic;
+}
+
 function buildMacAppMenu(): MenuItemConstructorOptions {
   return {
     label: APP_NAME,
@@ -51,7 +61,7 @@ function buildFileMenu(isMac: boolean): MenuItemConstructorOptions {
     { type: "separator" },
     isMac ? { role: "close" } : { role: "quit" },
   ];
-  return { label: "File", submenu };
+  return { label: topBarLabel(isMac, "File", "&File"), submenu };
 }
 
 function buildEditMenu(isMac: boolean): MenuItemConstructorOptions {
@@ -77,12 +87,12 @@ function buildEditMenu(isMac: boolean): MenuItemConstructorOptions {
   } else {
     base.push({ role: "delete" }, { type: "separator" }, { role: "selectAll" });
   }
-  return { label: "Edit", submenu: base };
+  return { label: topBarLabel(isMac, "Edit", "&Edit"), submenu: base };
 }
 
-function buildViewMenu(): MenuItemConstructorOptions {
+function buildViewMenu(isMac: boolean): MenuItemConstructorOptions {
   return {
-    label: "View",
+    label: topBarLabel(isMac, "View", "&View"),
     submenu: [
       { role: "reload" },
       { role: "forceReload" },
@@ -109,12 +119,13 @@ function buildWindowMenu(isMac: boolean): MenuItemConstructorOptions {
   } else {
     submenu.push({ role: "close" });
   }
-  return { label: "Window", submenu };
+  return { label: topBarLabel(isMac, "Window", "&Window"), submenu };
 }
 
-function buildHelpMenu(): MenuItemConstructorOptions {
+function buildHelpMenu(isMac: boolean): MenuItemConstructorOptions {
   return {
     role: "help",
+    ...(!isMac ? { label: "&Help" } : {}),
     submenu: [
       {
         label: "Documentation",
@@ -177,9 +188,9 @@ export function buildApplicationMenu(): Menu {
   template.push(
     buildFileMenu(isMac),
     buildEditMenu(isMac),
-    buildViewMenu(),
+    buildViewMenu(isMac),
     buildWindowMenu(isMac),
-    buildHelpMenu(),
+    buildHelpMenu(isMac),
   );
   return Menu.buildFromTemplate(template);
 }
