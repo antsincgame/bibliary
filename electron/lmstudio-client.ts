@@ -175,7 +175,8 @@ let cachedClient: LMStudioClient | null = null;
 
 function getClient(): LMStudioClient {
   if (!cachedClient) {
-    cachedClient = new LMStudioClient({ baseUrl: lmStudioWsUrl() });
+    const wsUrl = ipv4FallbackUrl ?? lmStudioWsUrl();
+    cachedClient = new LMStudioClient({ baseUrl: wsUrl });
   }
   return cachedClient;
 }
@@ -193,6 +194,7 @@ export function refreshLmStudioClient(): void {
     cachedClient[Symbol.asyncDispose]?.().catch(() => {});
   }
   cachedClient = null;
+  ipv4FallbackUrl = null;
 }
 
 function dropClient(): void {
@@ -203,6 +205,31 @@ function dropClient(): void {
 }
 
 const SDK_TIMEOUT_MS = 8_000;
+
+/**
+ * Track whether we already discovered that localhost needs IPv4 fallback.
+ * Once the fallback succeeds we cache the resolved URL so we don't
+ * re-probe on every SDK call. Reset on `refreshLmStudioClient` (user
+ * changed URL in Settings) or after a successful primary attempt.
+ */
+let ipv4FallbackUrl: string | null = null;
+
+function isLocalhostUrl(url: string): boolean {
+  try { return new URL(url).hostname === "localhost"; } catch { return false; }
+}
+
+function makeIpv4Url(url: string): string | null {
+  try {
+    const u = new URL(url);
+    if (u.hostname !== "localhost") return null;
+    u.hostname = "127.0.0.1";
+    return u.toString().replace(/\/$/, "");
+  } catch { return null; }
+}
+
+function isRetryableConnectionError(msg: string): boolean {
+  return /ECONNREFUSED|disconnect|WebSocket|timeout/i.test(msg);
+}
 
 async function withSdk<T>(operation: (client: LMStudioClient) => Promise<T>, fallback: T): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -215,13 +242,50 @@ async function withSdk<T>(operation: (client: LMStudioClient) => Promise<T>, fal
       }),
     ]);
     if (timer) clearTimeout(timer);
+    if (ipv4FallbackUrl) {
+      ipv4FallbackUrl = null;
+    }
     return result;
   } catch (e) {
     if (timer) clearTimeout(timer);
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[lmstudio-client]", msg);
-    if (msg.includes("ECONNREFUSED") || msg.includes("disconnect") || msg.includes("WebSocket") || msg.includes("timeout")) {
+
+    if (isRetryableConnectionError(msg)) {
       dropClient();
+
+      /* IPv4 fallback: on Windows, localhost often resolves to ::1 (IPv6)
+         while LM Studio listens on 0.0.0.0 (IPv4 only). When the primary
+         ws://localhost:PORT fails with ECONNREFUSED/timeout, we retry once
+         with ws://127.0.0.1:PORT. If that succeeds we cache the fallback
+         URL so all subsequent SDK calls go there directly. */
+      const httpUrl = lmStudioHttpUrl();
+      if (!ipv4FallbackUrl && isLocalhostUrl(httpUrl)) {
+        const wsIpv4 = makeIpv4Url(lmStudioWsUrl());
+        if (wsIpv4) {
+          console.warn("[lmstudio-client] IPv4 fallback: trying", wsIpv4);
+          cachedClient = new LMStudioClient({ baseUrl: wsIpv4 });
+          let timer2: ReturnType<typeof setTimeout> | null = null;
+          try {
+            const r2 = await Promise.race([
+              operation(cachedClient),
+              new Promise<never>((_, rej) => {
+                timer2 = setTimeout(() => rej(new Error("LM Studio SDK timeout (IPv4 fallback)")), SDK_TIMEOUT_MS);
+                timer2.unref();
+              }),
+            ]);
+            if (timer2) clearTimeout(timer2);
+            ipv4FallbackUrl = wsIpv4;
+            console.warn("[lmstudio-client] IPv4 fallback succeeded — caching", wsIpv4);
+            return r2;
+          } catch (e2) {
+            if (timer2) clearTimeout(timer2);
+            const msg2 = e2 instanceof Error ? e2.message : String(e2);
+            console.error("[lmstudio-client] IPv4 fallback also failed:", msg2);
+            dropClient();
+          }
+        }
+      }
     }
     return fallback;
   }

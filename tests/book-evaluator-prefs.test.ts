@@ -102,3 +102,38 @@ test("[book-evaluator] allowAutoLoad=true, top not loaded → loadModel вызы
   assert.equal(r, "qwen3.6-35b-a3b");
   assert.equal(loadedKey, "qwen3.6-35b-a3b", "loadModel был вызван явно");
 });
+
+/* Regression 2026-05-09: пользовательский выбор > эвристика скоринга.
+   В Settings: readerModel = "gpt-oss-20b". В LM Studio загружена ДРУГАЯ
+   модель "qwen3.6-27b" (более жирная, top по скорингу). Раньше picker
+   подменял preferred на загруженный топ. Теперь должен пытаться
+   загрузить ИМЕННО preferred. */
+test("[book-evaluator] preferred задан + другая загружена + allowAutoLoad=true → грузим preferred, НЕ подменяем", async () => {
+  let loadedKey = "";
+  const r = await pickEvaluatorModel({
+    preferred: "gpt-oss-20b",
+    allowAutoLoad: true,
+    listLoadedImpl: makeListLoaded(["qwen3.6-27b"]),
+    listDownloadedImpl: makeListDownloaded(["gpt-oss-20b", "qwen3.6-27b"]),
+    loadModelImpl: async (k) => { loadedKey = k; return { modelKey: k, identifier: k }; },
+  });
+  assert.equal(r, "gpt-oss-20b", "должен вернуть preferred, а не подменённую загруженную модель");
+  assert.equal(loadedKey, "gpt-oss-20b", "loadModel вызван именно для preferred");
+});
+
+test("[book-evaluator] preferred + allowAutoLoad=true но загрузка fail → fallback на loaded top (last resort)", async () => {
+  let attemptedLoad = "";
+  const r = await pickEvaluatorModel({
+    preferred: "ghost-model",
+    allowAutoLoad: true,
+    listLoadedImpl: makeListLoaded(["qwen3.6-27b"]),
+    listDownloadedImpl: makeListDownloaded(["qwen3.6-27b"]),
+    loadModelImpl: async (k) => {
+      attemptedLoad = k;
+      if (k === "ghost-model") throw new Error("model not found on disk");
+      return { modelKey: k, identifier: k };
+    },
+  });
+  assert.equal(attemptedLoad, "ghost-model", "сначала попытка загрузить preferred");
+  assert.equal(r, "qwen3.6-27b", "при неудаче — fallback на loaded top");
+});

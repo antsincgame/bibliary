@@ -489,6 +489,18 @@ function isRetryableEvaluatorIssue(message: string): boolean {
   return /no LLM loaded|preferred model .* not loaded|Circuit "lmstudio" is OPEN|service degraded|ECONNREFUSED|fetch failed|timeout|LM Studio call failed|empty response|no JSON/i.test(message);
 }
 
+/**
+ * Consecutive "no model" retries across ALL slots. Used for adaptive
+ * backoff: after N consecutive no-model defers we schedule a delayed
+ * retry instead of burning CPU in a tight loop. Resets to 0 on any
+ * successful evaluation (see incrementEvaluated callback below).
+ */
+let consecutiveNoModelDefers = 0;
+const DEFER_BACKOFF_BASE_MS = 5_000;
+const DEFER_MAX_BACKOFF_MS = 60_000;
+const DEFER_PAUSE_THRESHOLD = 10;
+let deferRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
 async function deferEvaluationRetry(
   meta: BookCatalogMeta & { mdPath: string },
   md: string,
@@ -505,8 +517,33 @@ async function deferEvaluationRetry(
   };
   upsertBook(deferred, meta.mdPath);
   await persistFrontmatter(deferred, meta.mdPath, md);
-  pauseEvaluator();
+
+  consecutiveNoModelDefers++;
   emit({ type: "evaluator.skipped", bookId, title: title ?? meta.title, error: warning });
+
+  if (consecutiveNoModelDefers >= DEFER_PAUSE_THRESHOLD) {
+    console.warn(`[evaluator-queue] ${consecutiveNoModelDefers} consecutive no-model defers — pausing evaluator`);
+    pauseEvaluator();
+    return;
+  }
+
+  /* Exponential backoff retry: re-enqueue all imported books after delay.
+     Avoids tight loop when LM Studio is temporarily down. */
+  if (!deferRetryTimer) {
+    const delay = Math.min(
+      DEFER_MAX_BACKOFF_MS,
+      DEFER_BACKOFF_BASE_MS * Math.pow(2, consecutiveNoModelDefers - 1),
+    );
+    console.warn(`[evaluator-queue] defer retry in ${delay}ms (attempt ${consecutiveNoModelDefers})`);
+    deferRetryTimer = setTimeout(() => {
+      deferRetryTimer = null;
+      if (paused.value) return;
+      void enqueuePendingImportedBooks()
+        .then(() => scheduleAvailableSlots())
+        .catch((err) => console.error("[evaluator-queue/deferRetry]", err));
+    }, delay);
+    deferRetryTimer.unref();
+  }
 }
 
 /**
@@ -573,7 +610,7 @@ function buildSlotWorkerDeps(): SlotWorkerDeps {
       return allowed;
     },
     getModelOverride: () => modelOverride,
-    incrementEvaluated: () => { totalEvaluated += 1; },
+    incrementEvaluated: () => { totalEvaluated += 1; consecutiveNoModelDefers = 0; },
     incrementFailed: () => { totalFailed += 1; },
   };
 }
@@ -603,6 +640,8 @@ export function _resetEvaluatorForTests(): void {
   totalEvaluated = 0;
   totalFailed = 0;
   modelOverride = null;
+  consecutiveNoModelDefers = 0;
+  if (deferRetryTimer) { clearTimeout(deferRetryTimer); deferRetryTimer = null; }
   /* Unit tests enqueue synthetic ids without a real catalog. Disable lazy
      bootstrap after reset; tests that need DB bootstrap call bootstrapEvaluatorQueue()
      explicitly. Production never calls this helper. */

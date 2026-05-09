@@ -228,6 +228,25 @@ async function pickEvaluatorModelUnsafe(
     return null;
   }
 
+  /* 2.6 Preferred задан + allowAutoLoad=true: ПЫТАЕМСЯ ЗАГРУЗИТЬ ИМЕННО
+     preferred через model-pool. Юзерский выбор > эвристика скоринга.
+     Без этой ветки: если в VRAM уже сидит ДРУГАЯ модель (например, более
+     "жирная" qwen3.6-27b с тегом flagship), скоринг ниже подменяет
+     preferred на этот загруженный топ — пользователь выбирал gpt-oss-20b
+     в Settings, а evaluator незаметно использует qwen3.6-27b.
+
+     При неудаче загрузки (нет на диске, OOM, отказ pool) — падаем
+     в скоринг как last-resort fallback. */
+  if (preferred && allowAutoLoad) {
+    try {
+      const handle = await loadModelFn(preferred, { ttlSec: 900, gpuOffload: "max" });
+      return handle.modelKey;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[book-evaluator] failed to load preferred "${preferred}": ${msg} — falling through to scoring`);
+    }
+  }
+
   /* Дальше — авто-выбор. Ограничиваемся только loaded моделями, если
      allowAutoLoad=false: НИКАКОЙ незаметной догрузки чужих моделей. */
   const downloaded = allowAutoLoad ? await listDownloadedFn() : [];
