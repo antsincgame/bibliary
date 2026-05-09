@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { detectHardware } from "../lib/hardware/profiler.js";
 import { getEndpoints } from "../lib/endpoints/index.js";
 import { getServerStatus } from "../lmstudio-client.js";
-import { CHROMA_URL, CHROMA_API_KEY, chromaUrl } from "../lib/chroma/http-client.js";
+import { listCollections } from "../lib/vectordb/index.js";
 
 interface AppBuildInfo {
   version: string;
@@ -58,35 +58,17 @@ function getBuildInfo(): AppBuildInfo {
 const ALLOWED_OPEN_SCHEMES = ["http:", "https:", "lmstudio:"];
 
 /**
- * Лёгкий ping Chroma для onboarding wizard. Heartbeat + version параллельно.
- * Короткий timeout 3s — wizard должен реагировать быстро на offline server.
+ * Probe для in-process LanceDB: проверяем что connection открыт и
+ * можно перечислить tables. Всегда быстрый (millisecond-level), нет
+ * network round-trip'ов.
  */
-async function probeChroma(): Promise<{ online: boolean; version?: string; url: string }> {
-  const url = CHROMA_URL;
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 3000);
+async function probeVectorDb(): Promise<{ online: boolean; version?: string; url: string }> {
+  /* `url` пустой — embedded LanceDB не имеет network endpoint'а. */
   try {
-    const headers: Record<string, string> = {};
-    if (CHROMA_API_KEY) headers["X-Chroma-Token"] = CHROMA_API_KEY;
-    const heartbeatResp = await fetch(chromaUrl("/heartbeat"), { signal: ctrl.signal, headers });
-    if (!heartbeatResp.ok) return { online: false, url };
-    /* version endpoint опционален — heartbeat=200 уже означает online. */
-    let version: string | undefined;
-    try {
-      const verResp = await fetch(chromaUrl("/version"), { signal: ctrl.signal, headers });
-      if (verResp.ok) {
-        const v = await verResp.json().catch(() => null);
-        if (typeof v === "string") version = v;
-        else if (v && typeof v === "object" && typeof (v as { version?: string }).version === "string") {
-          version = (v as { version: string }).version;
-        }
-      }
-    } catch { /* version optional */ }
-    return { online: true, version, url };
+    await listCollections();
+    return { online: true, version: "lancedb-embedded", url: "" };
   } catch {
-    return { online: false, url };
-  } finally {
-    clearTimeout(timer);
+    return { online: false, url: "" };
   }
 }
 
@@ -106,16 +88,16 @@ export function registerSystemIpc(): void {
     "system:probe-services",
     async (): Promise<{
       lmStudio: { online: boolean; version?: string; url: string };
-      chroma: { online: boolean; version?: string; url: string };
+      vectordb: { online: boolean; version?: string; url: string };
     }> => {
       const { lmStudioUrl } = await getEndpoints();
-      const [lmStatus, chromaStatus] = await Promise.all([
+      const [lmStatus, vectorStatus] = await Promise.all([
         getServerStatus(),
-        probeChroma(),
+        probeVectorDb(),
       ]);
       return {
         lmStudio: { ...lmStatus, url: lmStudioUrl },
-        chroma: chromaStatus,
+        vectordb: vectorStatus,
       };
     }
   );

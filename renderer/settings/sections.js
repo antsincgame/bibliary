@@ -10,7 +10,7 @@
  *   rows?: number;
  *   options?: string[];
  *   placeholder?: string;
- *   probe?: "lmstudio"|"chroma";
+ *   probe?: "lmstudio";
  *   labelKey: string;
  * }} SettingsField
  *
@@ -41,7 +41,6 @@ export const SECTIONS = Object.freeze([
     icon: "MAIN",
     fields: [
       { key: "lmStudioUrl", type: "url", labelKey: "settings.lmStudioUrl", placeholder: "http://localhost:1234", probe: "lmstudio" },
-      { key: "chromaUrl", type: "url", labelKey: "settings.chromaUrl", placeholder: "http://localhost:8000", probe: "chroma" },
     ],
   },
   /* Uniqueness Evaluator — единственная advanced-секция, восстановленная после

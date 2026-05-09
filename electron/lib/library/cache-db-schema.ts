@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS books (
   -- chunks_total: общее число semantic chunks отправленных на extraction
   chunker_provenance  TEXT,
   chunks_total        INTEGER,
-  -- uniqueness evaluator (idea novelty vs Chroma corpus)
+  -- uniqueness evaluator (idea novelty vs vectordb corpus)
   uniqueness_score        INTEGER,
   uniqueness_novel_count  INTEGER,
   uniqueness_total_ideas  INTEGER,

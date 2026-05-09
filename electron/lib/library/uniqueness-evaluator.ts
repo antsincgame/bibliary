@@ -1,22 +1,22 @@
 /**
  * Uniqueness Evaluator — оценка книги на наличие УНИКАЛЬНЫХ идей по сравнению
- * с уже накопленным корпусом в Chroma.
+ * с уже накопленным корпусом в vectordb.
  *
  * Текущий quality-evaluator оценивает книгу как объект (структура, density,
  * originality по описанию). Он не знает: «эту книгу уже читали раньше в
  * другом источнике?». Без этого две книги по одной теме оба пройдут с
- * близкими score'ами, при ingest вторая забьёт Chroma дубликатами концептов
+ * близкими score'ами, при ingest вторая забьёт vectordb дубликатами концептов
  * первой — датасет загрязняется.
  *
  * Pipeline (4 фазы):
  *   1. extractIdeasPerChapter   — reader LLM выдаёт 3-7 ключевых идей на главу
  *   2. dedupeIdeasWithinBook    — greedy clustering по cosine ≥ merge threshold
- *   3. cross-library novelty    — chromaQueryNearest, серая зона → LLM judge
+ *   3. cross-library novelty    — vectorQueryNearest, серая зона → LLM judge
  *   4. score                    — round(100 × novel / total), undefined при total=0
  *
  * Эмбеддинги идей (multilingual-e5-small, 384-dim) уже L2-нормализованы.
  * Центроиды кластеров пере-нормализуем после mean (см. l2Normalize), иначе
- * cosine с Chroma-векторами получается заниженным.
+ * cosine с vectordb-векторами получается заниженным.
  *
  * Никогда не throw'ает: caller получает либо score, либо `undefined` +
  * `error` — uniqueness не должен ломать import pipeline.
@@ -24,7 +24,7 @@
 
 import { chatWithPolicy } from "../../lmstudio-client.js";
 import { embedPassage, l2Normalize } from "../embedder/shared.js";
-import { chromaQueryNearest, type ChromaNearestNeighbor } from "../chroma/points.js";
+import { vectorQueryNearest, type VectorNearestNeighbor } from "../vectordb/index.js";
 import { parseReasoningResponse, stripProseReasoning } from "./reasoning-parser.js";
 import { logModelAction } from "../llm/lmstudio-actions-log.js";
 import type { ConvertedChapter } from "./types.js";
@@ -59,7 +59,7 @@ export interface UniquenessResult {
 export interface EvaluateBookUniquenessOptions {
   /** Какую LLM использовать для extract+judge. Если не задана — caller должен передать. */
   modelKey: string;
-  /** Имя Chroma коллекции для cross-library check. */
+  /** Имя vectordb коллекции для cross-library check. */
   targetCollection: string;
   /** Cosine ≥ high ⇒ DERIVATIVE без LLM-judge. */
   similarityHigh: number;
@@ -227,7 +227,7 @@ function meanVector(vectors: number[][]): number[] {
  * присоединяет к ближайшему кластеру если sim ≥ threshold, иначе создаёт
  * новый. Центроид пересчитывается как arithmetic mean всех векторов кластера
  * И ОБЯЗАТЕЛЬНО L2-перенормализуется (без этого ||centroid|| < 1, и cosine с
- * Chroma-векторами получается заниженным — false NOVEL'ы в Phase 3).
+ * vectordb-векторами получается заниженным — false NOVEL'ы в Phase 3).
  */
 export async function dedupeIdeasWithinBook(
   ideas: BookIdea[],
@@ -302,7 +302,7 @@ interface RawVerdict {
  */
 export async function judgeIdeaSameness(
   idea: BookIdea,
-  neighbors: ChromaNearestNeighbor[],
+  neighbors: VectorNearestNeighbor[],
   modelKey: string,
   signal?: AbortSignal,
 ): Promise<"SAME" | "DIFFERENT"> {
@@ -405,14 +405,14 @@ export async function evaluateBookUniqueness(
     for (const cluster of clusters) {
       if (opts.signal?.aborted) throw new Error("uniqueness aborted");
 
-      let neighbors: ChromaNearestNeighbor[] = [];
+      let neighbors: VectorNearestNeighbor[] = [];
       try {
-        neighbors = await chromaQueryNearest(opts.targetCollection, cluster.centroid, 3, { signal: opts.signal });
+        neighbors = await vectorQueryNearest(opts.targetCollection, cluster.centroid, 3, { signal: opts.signal });
       } catch (err) {
-        /* Коллекция отсутствует / Chroma недоступна → трактуем как пустую. */
+        /* Коллекция отсутствует / vectordb недоступна → трактуем как пустую. */
         const msg = err instanceof Error ? err.message : String(err);
-        if (!/not found|no records|empty/i.test(msg)) {
-          console.warn(`[uniqueness] chromaQueryNearest failed:`, msg);
+        if (!/does not exist|no records|empty/i.test(msg)) {
+          console.warn(`[uniqueness] vectorQueryNearest failed:`, msg);
         }
         neighbors = [];
       }
@@ -439,9 +439,20 @@ export async function evaluateBookUniqueness(
     }
 
     const total = clusters.length;
-    /* Phase 4: undefined при total=0 — это «не оценено», не «100% плагиат». */
-    const score = total === 0 ? undefined : Math.round((100 * novel) / total);
-    return { score, novelCount: novel, totalIdeas: total };
+    /* Smoothing для маленьких выборок: на total < 3 кластеров score
+     * становится экстремальным (0%/50%/100%) и UX-шумит. Возвращаем
+     * undefined — UI рендерит «—» вместо «100% unique» для книг где
+     * крем сигнал слишком тонок. total=0 (нет кластеров) — то же самое. */
+    const MIN_CLUSTERS_FOR_SCORE = 3;
+    const score = total < MIN_CLUSTERS_FOR_SCORE
+      ? undefined
+      : Math.round((100 * novel) / total);
+    const error = total === 0
+      ? "no clusters"
+      : total < MIN_CLUSTERS_FOR_SCORE
+        ? `insufficient clusters (${total} < ${MIN_CLUSTERS_FOR_SCORE})`
+        : undefined;
+    return { score, novelCount: novel, totalIdeas: total, error };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { score: undefined, novelCount: 0, totalIdeas: 0, error: msg };

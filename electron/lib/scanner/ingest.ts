@@ -4,8 +4,7 @@ import { chunkBook, type BookChunk, type ChunkerOptions } from "./chunker.js";
 import { ScannerStateStore } from "./state.js";
 import { DEFAULT_EMBED_MODEL, EMBED_MAX_INPUT_CHARS } from "./embedding.js";
 import { embedPassage } from "../embedder/shared.js";
-import { ensureChromaCollection } from "../chroma/collection-config.js";
-import { chromaUpsertAdaptive, sanitizeMetadata, type ChromaPoint } from "../chroma/points.js";
+import { ensureCollection, vectorUpsertAdaptive, sanitizeMetadata, type VectorPoint } from "../vectordb/index.js";
 
 async function maybeTranslateNonRussian(
   _parsed: ParseResult,
@@ -24,7 +23,7 @@ async function maybeTranslateNonRussian(
  *   1. parse(file) → ParseResult (sections + metadata)
  *   2. chunk(parsed) → BookChunk[]
  *   3. для каждого chunk: embed("passage: …") → Float32 vector
- *   4. batch upsert в Chroma (32 chunks за раз)
+ *   4. batch upsert в vectordb (32 chunks за раз)
  *   5. progress: ScannerStateStore.markProgress
  *   6. resume: пропускаем chunkId уже processedChunkIds
  *
@@ -49,10 +48,6 @@ export interface IngestProgress {
 
 export interface IngestOptions {
   collection: string;
-  /** URL Chroma server (например http://localhost:8000). На текущем этапе
-   *  передаётся caller'ом для логирования; runtime берёт URL через live-binding
-   *  в `chroma/http-client.ts`. */
-  chromaUrl?: string;
   embedModel?: string;
   chunkerOptions?: ChunkerOptions;
   signal?: AbortSignal;
@@ -78,20 +73,19 @@ const DEFAULT_UPSERT_BATCH = 32;
 const DEFAULT_MAX_BOOK_CHARS = 5_000_000;
 
 /**
- * Создать коллекцию в Chroma с tuned HNSW (M=24, construction_ef=128) для
+ * Создать коллекцию в vectordb с tuned HNSW (M=24, construction_ef=128) для
  * мультиязычных книжных корпусов. Идемпотентно: повторный вызов для
  * существующей коллекции = no-op.
  *
- * Note: Chroma не имеет отдельных payload-индексов — фильтрация по
- * metadata работает встроенным механизмом, поэтому
- * `bookSourcePath` / `bookTitle` / `tags` / `language` не требуют
- * явного индексирования.
+ * Note: фильтрация по metadata работает встроенным механизмом LanceDB
+ * (DataFusion SQL predicate). `bookSourcePath` / `bookTitle` / `tags` /
+ * `language` доступны для filter без отдельного индексирования.
  */
 async function ensureCollectionDense(collection: string): Promise<void> {
-  await ensureChromaCollection({
+  await ensureCollection({
     name: collection,
     distance: "cosine",
-    hnsw: { m: 24, construction_ef: 128 },
+    hnsw: { m: 24, constructionEf: 128 },
   });
 }
 
@@ -178,13 +172,13 @@ export async function ingestBook(filePath: string, opts: IngestOptions): Promise
   let embedded = 0;
   let upserted = 0;
   let skipped = 0;
-  const buf: ChromaPoint[] = [];
+  const buf: VectorPoint[] = [];
   const flushedIds: string[] = [];
 
   const flush = async (): Promise<void> => {
     if (buf.length === 0) return;
     if (opts.signal?.aborted) throw new Error("ingest aborted");
-    await chromaUpsertAdaptive(opts.collection, buf, { signal: opts.signal });
+    await vectorUpsertAdaptive(opts.collection, buf, { signal: opts.signal });
     upserted += buf.length;
     if (opts.state) await opts.state.markProgress(filePath, flushedIds.splice(0));
     emit({
@@ -209,11 +203,11 @@ export async function ingestBook(filePath: string, opts: IngestOptions): Promise
       const truncated = c.text.length > EMBED_MAX_INPUT_CHARS ? c.text.slice(0, EMBED_MAX_INPUT_CHARS) : c.text;
       const denseVec = await embedPassage(truncated, model);
       embedded++;
-      /* Chroma shape:
-       *  - id            — String (defensive coercion в chromaUpsert)
+      /* VectorPoint shape:
+       *  - id            — String (defensive coercion в vectorUpsert)
        *  - embedding     — Float32Array → number[]
-       *  - document      — text chunk (top-level в Chroma, поддерживает FTS)
-       *  - metadata      — только скаляры; tags → "|tag|tag|" (sanitizeMetadata).
+       *  - document      — text chunk (top-level колонка в LanceDB schema)
+       *  - metadata      — sanitizeMetadata: nullable scalars + extraJson catch-all.
        *    `text` НЕ дублируем в metadata — он уже в `document`. */
       buf.push({
         id: String(c.id),

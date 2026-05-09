@@ -75,8 +75,8 @@ let mainWindow: BrowserWindow | null = null;
  *   - font:   self + Google Fonts
  *   - img:    self + data: (icons embedded as base64) + https: (book
  *     covers from BookHunter sources)
- *   - connect: self + Google Fonts + http(s):// localhost (LM Studio,
- *     Chroma) + http(s)://* for HF / BookHunter sources
+ *   - connect: self + Google Fonts + http(s):// localhost (LM Studio)
+ *     + http(s)://* for HF / BookHunter sources
  */
 const CSP_HEADER = [
   "default-src 'self'",
@@ -200,35 +200,12 @@ if (!gotLock) {
     const prefs = await prefsStore.getAll();
     const { applyRuntimeSideEffects } = await import("./ipc/preferences.ipc.js");
     applyRuntimeSideEffects(prefs);
-    const { setChromaUrl } = await import("./lib/chroma/http-client.js");
-    const { getEndpoints } = await import("./lib/endpoints/index.js");
-    const endpoints = await getEndpoints();
-    setChromaUrl(endpoints.chromaUrl);
 
-    /* Auto-spawn Chroma как child process если pref включён И heartbeat
-       пуст. Port берётся из endpoints.chromaUrl чтобы НЕ дублировать
-       hardcoded 8000 — если пользователь поменял chromaUrl на :9000,
-       мы spawn'имся на 9000 и UI heartbeat остаётся в sync.
-       Не блокирующий: bootstrap идёт дальше пока Chroma поднимается. */
-    if (prefs.chromaAutoSpawn) {
-      void import("./lib/chroma/auto-spawn.js").then(async ({ startEmbeddedChroma, defaultChromaDataPath, chromaPortFromUrl }) => {
-        try {
-          const result = await startEmbeddedChroma({
-            dataPath: defaultChromaDataPath(dataDir),
-            port: chromaPortFromUrl(endpoints.chromaUrl),
-          });
-          if (result) {
-            await result.ready;
-            console.log("[main] Embedded Chroma is ready");
-          }
-        } catch (err) {
-          /* Не валим запуск приложения — пользователь увидит chroma offline
-             в Welcome Wizard и сможет либо install uv/python, либо
-             запустить Chroma вручную, либо отключить chromaAutoSpawn. */
-          console.warn(`[main] Embedded Chroma not started: ${err instanceof Error ? err.message : err}`);
-        }
-      });
-    }
+    /* In-process LanceDB connection. Заменяет HTTP Chroma + auto-spawn
+       child-process. Открываем ОДИН раз тут, до registerAllIpcHandlers,
+       чтобы все IPC-хендлеры могли getDb() без race на init. */
+    const { initVectorDb } = await import("./lib/vectordb/index.js");
+    await initVectorDb({ dataDir });
 
     registerExtractionPipeline();
     applyCsp();
@@ -287,11 +264,12 @@ if (!gotLock) {
       ["killAllSynthChildren", killAllSynthChildren],
       ["abortAllLibrary", () => abortAllLibrary("app-quit")],
       ["closeCacheDb", closeCacheDb],
-      ["stopEmbeddedChroma", () => {
-        /* fire-and-forget — kill child grace-фул, не ждём.
-           Если Chroma не была spawn'нута (pref выкл / уже запущена) — no-op. */
-        void import("./lib/chroma/auto-spawn.js")
-          .then(({ stopEmbeddedChroma }) => stopEmbeddedChroma())
+      ["closeVectorDb", () => {
+        /* In-process LanceDB connection close — освобождает native file
+           handles на .lance/.lock. На Windows без этого `rm -r` data dir
+           валится с EBUSY. Best-effort fire-and-forget. */
+        void import("./lib/vectordb/index.js")
+          .then(({ closeDb }) => closeDb())
           .catch(() => { /* ignore */ });
       }],
     ];

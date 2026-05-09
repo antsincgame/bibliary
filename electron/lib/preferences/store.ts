@@ -17,7 +17,7 @@ import { writeJsonAtomic, withFileLock } from "../resilience";
 // ---------------------------------------------------------------------------
 
 export const PreferencesSchema = z.object({
-  // -- Chroma search threshold (cosine score 0..1) --
+  // -- vectordb search threshold (cosine score 0..1) --
   searchScoreThreshold: z.number().min(0).max(1).default(0.55),
 
   // -- Scanner / Ingest --
@@ -58,9 +58,10 @@ export const PreferencesSchema = z.object({
   searchPerSourceLimit: z.number().int().min(1).max(50).default(20),
   downloadMaxRetries: z.number().int().min(1).max(10).default(3),
 
-  // -- Chroma (vector DB) --
-  chromaTimeoutMs: z.number().int().min(1000).max(60_000).default(8000),
-  chromaSearchLimit: z.number().int().min(1).max(100).default(12),
+  // -- Vector DB (in-process LanceDB) --
+  /** Сколько результатов выводить в search UI. Не влияет на upsert/queryNearest
+   * самой LanceDB — только на размер списка в renderer'е. */
+  vectordbSearchLimit: z.number().int().min(1).max(100).default(12),
 
   // -- UI --
   /* refreshIntervalMs / toastTtlMs / spinDurationMs удалены 2026-05-01:
@@ -130,11 +131,6 @@ export const PreferencesSchema = z.object({
   // -- Connectivity (external service URLs) --
   /** Empty string = use env var or built-in default. Validation: no trailing slash. */
   lmStudioUrl: z.string().regex(/^$|^https?:\/\/[^\s/$.?#].[^\s]*[^/]$/i, "must be a URL without trailing slash, or empty for default").default(""),
-  chromaUrl: z.string().regex(/^$|^https?:\/\/[^\s/$.?#].[^\s]*[^/]$/i, "must be a URL without trailing slash, or empty for default").default(""),
-  /** Auto-spawn Chroma при старте Bibliary (через uvx/python). Default true.
-   * Выключить если Chroma запускается отдельно (Docker, удалённый сервер,
-   * системный launchctl). */
-  chromaAutoSpawn: z.boolean().default(true),
 
   // -- Selected models per task (упрощено с 9 ролей до 3 задач, 2026-05) --
   /**
@@ -219,34 +215,56 @@ export const PreferencesSchema = z.object({
    */
   preferDjvuOverPdf: z.boolean().default(false),
 
-  // -- Uniqueness Evaluator (per-chapter idea novelty against Chroma corpus) --
+  // -- Uniqueness Evaluator (per-chapter idea novelty against vectordb corpus) --
   /**
    * Включить uniqueness-eval после quality-eval. Проходит по всем главам книги,
    * извлекает 3-7 идей на главу через reader LLM, дедуплицирует внутри книги,
-   * сравнивает с существующей коллекцией Chroma. Стоит ~1-3 минуты на книгу
+   * сравнивает с существующей коллекцией vectordb. Стоит ~1-3 минуты на книгу
    * (50 глав × 2с reader). Можно выключить если важна скорость.
    */
   uniquenessEvaluationEnabled: z.boolean().default(true),
   /**
    * Cosine similarity ≥ этого порога ⇒ идея считается DERIVATIVE без LLM-judge.
    * Default 0.85 — баланс между recall и precision на e5-small эмбеддингах.
+   *
+   * **Origin & calibration**: 0.85 / 0.65 / 0.92 — стартовые значения из
+   * pilot-runs на ~30 книгах смешанного домена (CS / phys / hist) с manual
+   * spot-check. Не рекомендуется без re-tuning менять для других corpus
+   * profiles (узко-доменные библиотеки → возможно нужно поднять threshold,
+   * иначе "everything looks similar"). TODO: добавить evaluation-set с
+   * labelled novel/derivative парами для empirical validation.
    */
   uniquenessSimilarityHigh: z.number().min(0.5).max(1).default(0.85),
   /**
    * Cosine similarity < этого порога ⇒ идея NOVEL без LLM-judge.
    * Между low и high — серая зона, отдаётся reader LLM на verdict.
+   * Default 0.65 — см. calibration-комментарий на uniquenessSimilarityHigh.
    */
   uniquenessSimilarityLow: z.number().min(0).max(0.95).default(0.65),
   /** Hard cap на число идей, извлекаемых из одной главы. */
   uniquenessIdeasPerChapterMax: z.number().int().min(2).max(15).default(7),
-  /** Сколько глав обрабатывать параллельно (LLM concurrency). */
+  /**
+   * Сколько глав обрабатывать параллельно (async-ready). Реальная concurrency
+   * = min(этот pref, GPU slots в LM Studio). На single-GPU LM Studio (типичный
+   * случай) запросы сериализуются в любом случае — больше 2-3 не даёт прироста.
+   */
   uniquenessChapterParallel: z.number().int().min(1).max(8).default(2),
   /**
    * Within-book dedup: cosine ≥ этого ⇒ идеи в один кластер.
    * Default 0.92 — only near-paraphrases collapse, distinct facts stay separate.
+   * Tuned на той же ~30-book pilot выборке что и similarityHigh/Low. Поднимать
+   * (например 0.95) если кластеры сливают семантически разные claims.
    */
   uniquenessMergeThreshold: z.number().min(0.7).max(1).default(0.92),
-  /** Включить concept-level dedup на этапе ingest (skip upsert если совпадение в Chroma). */
+  /**
+   * Имя коллекции, против которой uniqueness evaluator проверяет novelty.
+   * Пусто = fallback на dataset-v2 DEFAULT_COLLECTION (default ingest target).
+   * Если пользователь использует кастомную коллекцию для extraction,
+   * сюда нужно прописать то же имя — иначе uniqueness считает novelty
+   * против чужого корпуса и score становится бессмысленным.
+   */
+  uniquenessTargetCollection: z.string().default(""),
+  /** Включить concept-level dedup на этапе ingest (skip upsert если совпадение в коллекции). */
   conceptDedupEnabled: z.boolean().default(true),
   /**
    * Отдельный (более строгий) порог для ingest-dedup: cosine ≥ этого ⇒ skip
@@ -379,6 +397,13 @@ export class FsPreferencesStore {
     }
     if (!merged.visionOcrModel && typeof legacy.visionModelKey === "string") {
       merged.visionOcrModel = String(legacy.visionModelKey);
+    }
+    /* Migration shim (Phase 4 vectordb): legacy chroma* → vectordb* equivalent
+     * + drop fully-deprecated keys. Read-only — pruning старых ключей из
+     * persisted prefs.json произойдёт при следующем set() автоматически
+     * (PreferencesSchema.partial() отбросит unknown keys). */
+    if (typeof legacy.chromaSearchLimit === "number" && merged.vectordbSearchLimit === DEFAULTS.vectordbSearchLimit) {
+      merged.vectordbSearchLimit = legacy.chromaSearchLimit as number;
     }
 
     return merged as Preferences;

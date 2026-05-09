@@ -4,6 +4,81 @@ All notable changes to Bibliary are documented in this file. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] — 2026-05-08
+
+**ChromaDB → embedded LanceDB. Никакого Python / uvx / Docker.** Векторная БД
+теперь встроена в приложение через `@lancedb/lancedb` (Rust + napi prebuilt
+binaries для Win/macOS/Linux). Устранена единственная зависимость от Python
+во всём проекте — onboarding на macOS больше не упирается в установку `uv`.
+
+### Breaking changes
+
+- **Существующие данные старой Chroma НЕ мигрируются.** Пользователи стартуют
+  с пустой векторной БД на v2.0; книги нужно пере-кристаллизовать. Markdown
+  файлы, обложки, метаданные SQLite — все сохранены.
+- **IPC channels**: `chroma:*` → `vectordb:*` (7 каналов). Старые handler'ы
+  удалены — внешние интеграции (если были) сломаются.
+- **Preferences schema**: удалены `chromaUrl`, `chromaAutoSpawn`, `chromaTimeoutMs`.
+  Переименовано `chromaSearchLimit` → `vectordbSearchLimit` с migration shim'ом
+  для существующих `prefs.json`.
+- **Library `delete-book` response shape**: `chromaCleaned`/`chromaBackgroundScheduled`
+  → `vectorBackgroundScheduled` (count удалён — LanceDB не возвращает count
+  из delete API).
+- **Library `burn-all` response shape**: `chromaCleaned`/`chromaErrors`
+  → `vectorCollectionsCleaned`/`vectorCollectionsErrors`.
+
+### Added
+
+- `electron/lib/vectordb/` — in-process LanceDB adapter (~1100 LOC):
+  `connection`, `store`, `points`, `scroll`, `filter`, `schema`, `locks`,
+  `testing`, `index`. Apache Arrow Schema с nullable metadata + `extraJson`
+  catch-all для forward-compat. HNSW index lazy-build после ≥1024 rows.
+  Per-table `KeyedAsyncMutex` для writer'а (concurrent reads — без лока).
+- `tests/vectordb-{filter,roundtrip}.test.ts` — 45 тестов: filter pure-function
+  + integration round-trip против реального LanceDB на mkdtemp.
+
+### Changed
+
+- Welcome Wizard: вместо двух карточек «LM Studio + Chroma» показывает
+  «LM Studio + Local LanceDB · ready · N collections». Убрана URL-input
+  для vector store, убрана кнопка «Запустить Chroma автоматически».
+- Settings: убрана секция Chroma URL / timeout. `chromaSearchLimit` поле
+  переименовано в `vectordbSearchLimit`.
+- `main.ts` boot: `setChromaUrl(...)` + `chromaAutoSpawn` блок →
+  `await initVectorDb({dataDir})`. Shutdown: `stopEmbeddedChroma` → `closeDb`.
+- `tests/evaluator-uniqueness-step.test.ts` переписан с HTTP-mock'а на
+  реальный LanceDB на mkdtemp + `ensureCollection`.
+
+### Removed
+
+- `electron/lib/chroma/` (6 файлов: `auto-spawn`, `http-client`,
+  `collection-cache`, `collection-config`, `points`, `scroll` — ~1500 LOC).
+- `docker-compose.yml` (только Chroma был).
+- `tests/chroma-*.test.ts` (6 файлов), `tests/uniqueness-score-pipeline.test.ts`,
+  `tests/helpers/mock-fetch.ts` — заменены DI-based тестами через vectordb.
+- `scripts/concepts-export.ts` — Phase 0 bridge-export, не нужен при clean-slate.
+- Renderer `openChromaApi()` / `offerDashboardFallback()` в collection-picker —
+  у in-process LanceDB нет HTTP endpoint'а для browser-open.
+- Locale strings: `ww.conn.ch.*` (7 ключей включая `autoStart` / `autoStarting`),
+  `settings.chromaUrl`, `settings.chromaTimeoutMs`, `settings.field.chromaUrl.desc`.
+
+### Fixed (попутно при Phase 2 swap)
+
+- **Hardcoded `DEFAULT_COLLECTION` в `evaluator-uniqueness-step.ts`** — раньше
+  uniqueness-eval всегда сравнивал с `delta-knowledge`, игнорируя пользовательскую
+  коллекцию. Теперь читается из `prefs.uniquenessTargetCollection` с fallback'ом.
+- **`Connection.close()` leak** в `vectordb/connection.ts:closeDb` — без явного
+  close LanceDB держал open file handles на `.lance/.lock`, что валило
+  `rm -r dataDir` на Windows с EBUSY.
+
+### Verification
+
+- `npm run typecheck` — clean.
+- `npm run test:fast` — 934/939 pass (1 pre-existing fail: `edgeparse-linux-x64-gnu`
+  не имеет prebuilt для Linux, unrelated to migration; 4 skipped — pre-existing).
+- Native binary verification: `verify-deps-for-packaging.cjs` расширен
+  `require.resolve("@lancedb/lancedb")` проверкой до начала electron-builder.
+
 ## [1.1.2] — 2026-05-08
 
 **Импорт и оценка: DjVu-главы, OCR-каша, surrogate под контекст, явный UI прогресса.**

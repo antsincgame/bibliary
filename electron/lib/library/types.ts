@@ -27,7 +27,7 @@ export type BookStatus =
   | "evaluating"      // эвалюатор работает прямо сейчас
   | "evaluated"       // получены qualityScore + domain + tags
   | "crystallizing"   // кристаллизация в процессе
-  | "indexed"         // концепты приняты в Chroma
+  | "indexed"         // концепты приняты в vectordb
   | "failed"          // парсер или эвалюатор упали
   | "unsupported";    // парсер не смог собрать ни одной главы
 
@@ -134,7 +134,7 @@ export interface BookCatalogMeta {
   chunksTotal?: number;
   // ── uniqueness evaluator outputs ──
   /**
-   * 0..100 — доля уникальных идей книги по отношению к существующей Chroma-
+   * 0..100 — доля уникальных идей книги по отношению к существующей vectordb-
    * коллекции. `undefined` означает «оценка не проводилась» либо «не удалась»
    * (ни одной идеи не извлечено), это НЕ то же самое что 0 (= полный плагиат).
    */

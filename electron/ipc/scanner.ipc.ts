@@ -13,7 +13,7 @@
  *   - scanner:start-ingest   → IngestResult       (полный pipeline с прогрессом)
  *   - scanner:cancel-ingest  → boolean            (по ingestId)
  *   - scanner:list-history   → агрегированная история по коллекциям
- *   - scanner:delete-from-collection → удаление книги из Chroma + state cleanup
+ *   - scanner:delete-from-collection → удаление книги из vectordb + state cleanup
  *
  * Прогресс летит в renderer через 'scanner:ingest-progress' (push event).
  */
@@ -52,11 +52,7 @@ import {
   type OcrSupportInfo,
 } from "../lib/scanner/index.js";
 
-/* CHROMA_URL читается через preferences-aware getChromaUrl() при каждом
-   вызове — user-changed URL применяется без перезапуска приложения. */
-import { getChromaUrl } from "../lib/endpoints/index.js";
-import { chromaDeleteByWhere, chromaWhereAnyOf } from "../lib/chroma/points.js";
-import { invalidate as invalidateCollectionCache } from "../lib/chroma/collection-cache.js";
+import { vectorDeleteByWhere, whereAnyOf } from "../lib/vectordb/index.js";
 
 interface ParsePreview {
   metadata: {
@@ -181,10 +177,8 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
       try {
         const prefs = await getPreferencesStore().getAll();
         const ocrWanted = typeof args.ocrOverride === "boolean" ? args.ocrOverride : prefs.ocrEnabled;
-        const chromaUrl = await getChromaUrl();
         const result = await ingestBook(args.filePath, {
           collection: args.collection,
-          chromaUrl,
           state: stateStore(),
           signal: ctrl.signal,
           chunkerOptions: args.chunkerOptions,
@@ -312,10 +306,8 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
         send("scanner:bundle-progress", { ingestId, phase: "ingest", file: tmpFile });
 
         const prefs = await getPreferencesStore().getAll();
-        const chromaUrl = await getChromaUrl();
         await ingestBook(tmpFile, {
           collection,
-          chromaUrl,
           state: stateStore(),
           signal: ctrl.signal,
           upsertBatch: prefs.ingestUpsertBatch,
@@ -408,7 +400,7 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
   );
 
   /**
-   * Удалить все точки книги из Chroma-коллекции и очистить scanner-state.
+   * Удалить все точки книги из vectordb-коллекции и очистить scanner-state.
    *
    * Унифицированный контракт удаления (Mahakala 2026-05-02):
    *   - Если передан `bookId` (новые книги после Иt 8Г.3 имеют его в payload) —
@@ -432,26 +424,25 @@ export function registerScannerIpc(getMainWindow: () => BrowserWindow | null): v
       const collection = parseOrThrow(CollectionNameSchema, args.collection, "collection");
       const bookId = typeof args.bookId === "string" && args.bookId.length > 0 ? args.bookId : undefined;
 
-      /* Chroma where: если есть bookId — OR через $or (legacy книги до коммита
-         8a9f171 не имеют bookId, идентифицируются по bookSourcePath); иначе
-         просто по bookSourcePath. */
+      /* vectordb where: если есть bookId — OR через $or (legacy книги до
+         коммита 8a9f171 не имеют bookId, идентифицируются по
+         bookSourcePath); иначе просто по bookSourcePath. */
       const where = bookId
-        ? chromaWhereAnyOf([
+        ? whereAnyOf([
             { field: "bookId", value: bookId },
             { field: "bookSourcePath", value: bookSourcePath },
           ])
         : { bookSourcePath };
 
       try {
-        await chromaDeleteByWhere(collection, where);
+        await vectorDeleteByWhere(collection, where);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        /* 404 / коллекция отсутствует — не ошибка delete-from-collection,
+        /* Коллекция отсутствует — не ошибка delete-from-collection,
            продолжаем удаление scanner state ниже. */
-        if (!/404|not found|does not exist/i.test(msg)) {
-          throw new Error(`chroma delete: ${msg.slice(0, 240)}`);
+        if (!/does not exist/i.test(msg)) {
+          throw new Error(`vectordb delete: ${msg.slice(0, 240)}`);
         }
-        invalidateCollectionCache(collection);
       }
 
       let pointsDeleted = 0;

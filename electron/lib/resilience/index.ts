@@ -1,4 +1,4 @@
-export { writeJsonAtomic, writeTextAtomic } from "./atomic-write";
+export { writeJsonAtomic, writeTextAtomic, renameWithRetry } from "./atomic-write";
 export {
   withFileLock,
   configureFileLockDefaults,

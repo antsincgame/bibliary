@@ -8,13 +8,13 @@
  * consistent.
  *
  * If you change EMBEDDING_DIM, you MUST also change the model name and
- * vacate existing Chroma collections (different dim = incompatible vectors).
+ * vacate existing vectordb collections (different dim = incompatible vectors).
  */
 
 /**
  * Default embedding model. Used by the scanner ingest pipeline and the
  * dataset-v2 delta-extractor для embedding принятых концептов перед upsert
- * в Chroma (cross-library dedupe выполняется в delta-extractor через
+ * в vectordb (cross-library dedupe выполняется в delta-extractor через
  * vector similarity search).
  */
 export const DEFAULT_EMBED_MODEL = "Xenova/multilingual-e5-small";

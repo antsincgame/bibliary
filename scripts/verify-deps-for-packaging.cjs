@@ -119,10 +119,48 @@ function runKnipProductionUnlisted() {
   console.log(`${PREFIX} knip --production (unlisted, unresolved) — OK`);
 }
 
+/**
+ * Native-binding sanity-check.
+ *
+ * Проверяет что prebuilt binaries для critical native deps лежат на диске
+ * И что Node может их require'нуть без ABI-сюрпризов. Не покрывает Electron
+ * ABI mismatch — это умеют только smoke-тесты с реальным electron-runtime.
+ *
+ * Если @lancedb/lancedb не имеет prebuilt под текущую platform×arch — упадёт
+ * именно тут, до начала electron-builder pipeline'а, что экономит ~3 минуты
+ * сборки.
+ */
+function verifyNativeBindings() {
+  /* @lancedb/lancedb: napi prebuilds. Загрузка через require — тест что
+   * платформенный binary разрешается. Если нет — knip / npm ls этого
+   * не поймали бы. */
+  const checks = [
+    { name: "@lancedb/lancedb", optional: false },
+    /* better-sqlite3 проверяется отдельно через ensure-sqlite-abi.cjs */
+  ];
+  for (const c of checks) {
+    try {
+      require.resolve(c.name);
+      console.log(`${PREFIX} require.resolve("${c.name}") — OK`);
+    } catch (e) {
+      const msg = `${PREFIX} require.resolve("${c.name}") FAILED: ${e.message}`;
+      if (c.optional) {
+        console.warn(msg);
+      } else {
+        console.error(msg);
+        console.error(`${PREFIX} prebuilt napi binding для ${c.name} не найден на этой платформе/архитектуре.`);
+        console.error(`${PREFIX} попробуйте: npm install ${c.name} --force`);
+        process.exit(1);
+      }
+    }
+  }
+}
+
 function main() {
   verifyLockRootMatchesPackageJson();
   runNpmLs();
   runKnipProductionUnlisted();
+  verifyNativeBindings();
   console.log(`${PREFIX} все проверки пройдены.`);
 }
 

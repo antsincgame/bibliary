@@ -81,6 +81,11 @@ asarUnpack:
   - "node_modules/@napi-rs/system-ocr/**/*"
   # Canvas (PDF rasterisation) — native per-platform
   - "node_modules/@napi-rs/canvas/**/*"
+  # LanceDB — Rust native binary (NAPI prebuilt per platform).
+  # Без unpack процесс не сможет dlopen() .node файл из asar архива.
+  - "node_modules/@lancedb/**/*"
+  # apache-arrow — pure JS, но lancedb зависит от него; safest to keep adjacent.
+  - "node_modules/apache-arrow/**/*"
 extraMetadata:
   type: commonjs
 afterPack: scripts/afterPack.js

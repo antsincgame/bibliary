@@ -1,8 +1,8 @@
 /**
  * Dataset v2 типы — Delta-Knowledge Pipeline.
  *
- * Единый пайплайн: чанкинг → AURA-фильтр → DeltaKnowledge → Chroma.
- * Один чанк = 0 или 1 запись в Chroma.
+ * Единый пайплайн: чанкинг → AURA-фильтр → DeltaKnowledge → vectordb.
+ * Один чанк = 0 или 1 запись в vectordb.
  */
 import { z } from "zod";
 
@@ -74,7 +74,7 @@ export const DeltaKnowledgeSchema = z.object({
    * связи "X depends_on Y", строить knowledge maps, выявлять противоречия.
    * Минимум 1 связь обязательна (модель должна выделить хотя бы одну).
    *
-   * NB: для backward-compat существующих записей в Chroma без relations
+   * NB: для backward-compat существующих записей в vectordb без relations
    * предусмотрена отдельная legacy-схема `DeltaKnowledgeLegacySchema` ниже.
    */
   relations: z.array(TopologyRelationSchema).min(1).max(8),

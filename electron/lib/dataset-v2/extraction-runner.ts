@@ -45,13 +45,13 @@ export interface StartExtractionArgs {
   /** Override модели (по умолчанию — BIG profile). */
   extractModel?: string;
   /**
-   * Имя Chroma-коллекции, куда уходят принятые концепты + где
+   * Имя vectordb-коллекции, куда уходят принятые концепты + где
    * выполняется cross-library dedup. Если не указано — `DEFAULT_COLLECTION`.
    */
   targetCollection?: string;
   /**
    * Иt 8Г.3: stable book identifier (UUID/SHA-derived) для:
-   *   - payload Chroma (более стабильный ключ чем bookSourcePath, который
+   *   - payload vectordb (более стабильный ключ чем bookSourcePath, который
    *     может меняться при перемещении файла);
    *   - delete-on-reimport: перед upsert новых точек книги — удалить старые
    *     `must.bookId === args.bookId` (нет orphan vectors при reimport).
@@ -239,22 +239,22 @@ async function runExtractionInner(
     const warnings: string[] = [];
     let processed = 0;
 
-    const { CHROMA_URL } = await import("../chroma/http-client.js");
     const { EMBEDDING_DIM } = await import("../scanner/embedding.js");
-    const { ensureChromaCollection } = await import("../chroma/collection-config.js");
-    const { chromaUpsert, chromaDeleteByWhere, sanitizeMetadata, chromaQueryNearest } = await import("../chroma/points.js");
-    console.log(`[extraction] Chroma: ${CHROMA_URL} → collection "${targetCollection}" (dim=${EMBEDDING_DIM})`);
+    const {
+      ensureCollection,
+      vectorUpsert,
+      vectorDeleteByWhere,
+      sanitizeMetadata,
+      vectorQueryNearest,
+    } = await import("../vectordb/index.js");
+    console.log(`[extraction] vectordb (LanceDB) → collection "${targetCollection}" (dim=${EMBEDDING_DIM})`);
 
     try {
-      const ensureRes = await ensureChromaCollection({
+      await ensureCollection({
         name: targetCollection,
         distance: "cosine",
-        hnsw: { m: 24, construction_ef: 128 },
+        hnsw: { m: 24, constructionEf: 128 },
       });
-      if (ensureRes.hnswMismatch.length > 0) {
-        console.warn(`[extraction] HNSW mismatch on existing collection "${targetCollection}":`, ensureRes.hnswMismatch);
-        warnings.push(`hnsw-mismatch: ${ensureRes.hnswMismatch.join(", ")}`);
-      }
     } catch (createErr) {
       console.warn(`[extraction] collection create failed (will try upsert anyway): ${createErr instanceof Error ? createErr.message : createErr}`);
     }
@@ -264,8 +264,8 @@ async function runExtractionInner(
        Условие: bookId передан (новый код) — иначе legacy путь без cleanup. */
     if (args.bookId) {
       try {
-        const res = await chromaDeleteByWhere(targetCollection, { bookId: args.bookId });
-        console.log(`[extraction] reimport cleanup: deleted ${res.deleted} points for bookId="${args.bookId}"`);
+        await vectorDeleteByWhere(targetCollection, { bookId: args.bookId });
+        console.log(`[extraction] reimport cleanup: deleted points for bookId="${args.bookId}"`);
       } catch (deleteErr) {
         const msg = deleteErr instanceof Error ? deleteErr.message : String(deleteErr);
         console.warn(`[extraction] reimport cleanup failed (continuing with upsert): ${msg}`);
@@ -347,7 +347,7 @@ async function runExtractionInner(
          * нет LLM-fallback'а в серой зоне, компенсируем строгостью. */
         if (prefs.conceptDedupEnabled) {
           try {
-            const neighbors = await chromaQueryNearest(targetCollection, vector, 1, { signal: ctrl.signal });
+            const neighbors = await vectorQueryNearest(targetCollection, vector, 1, { signal: ctrl.signal });
             const top = neighbors[0]?.similarity ?? 0;
             if (top >= prefs.conceptDedupSimilarityThreshold) {
               console.log(`[extraction] ⊘ dedup skip "${targetCollection}" id=${delta.id} (cosine=${top.toFixed(3)})`);
@@ -358,16 +358,16 @@ async function runExtractionInner(
           } catch (err) {
             /* Query упал — не блокируем upsert. Вычитаем graceful warn. */
             const msg = err instanceof Error ? err.message : String(err);
-            if (!/not found|no records|empty/i.test(msg)) {
+            if (!/does not exist|no records|empty/i.test(msg)) {
               console.warn(`[extraction] dedup query failed:`, msg);
             }
           }
         }
         console.log(`[extraction] ✓ upsert → "${targetCollection}" id=${delta.id} domain=${delta.domain} tags=[${delta.tags.join(",")}]`);
-        /* Chroma upsert: text концепта (essence) → documents[]; остальное →
-         * metadata через sanitizeMetadata (массивы → "|tag|tag|", объекты →
-         * JSON.stringify, null → ""). */
-        await chromaUpsert(targetCollection, [{
+        /* vectordb upsert: text концепта (essence) → document column;
+         * остальное → metadata через sanitizeMetadata (массивы →
+         * "|tag|tag|", объекты → JSON.stringify, null → null). */
+        await vectorUpsert(targetCollection, [{
           id: String(delta.id),
           embedding: vector,
           document: delta.essence,
@@ -390,7 +390,7 @@ async function runExtractionInner(
                файла, делает точечный delete-by-where возможным. */
             ...(args.bookId ? { bookId: args.bookId } : {}),
           }),
-        }], { timeoutMs: 15_000 });
+        }]);
         stats.accepted++;
         emitWithJob({
           stage: "accepted",

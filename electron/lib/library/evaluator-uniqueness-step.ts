@@ -14,7 +14,7 @@ import { readPipelinePrefsOrNull } from "../preferences/store.js";
 import type { BookCatalogMeta, ConvertedChapter } from "./types.js";
 
 export interface RunUniquenessStepArgs {
-  /** Метаданные книги после quality-eval (передаётся в Chroma как baseline). */
+  /** Метаданные книги после quality-eval (передаётся в vectordb как baseline). */
   baseMeta: BookCatalogMeta;
   /** Главы книги (parsed из book.md). */
   chapters: ConvertedChapter[];
@@ -24,7 +24,7 @@ export interface RunUniquenessStepArgs {
   md: string;
   /** Reasoning от evaluator'а — попадает в Evaluator Reasoning section. */
   reasoning: string | null | undefined;
-  /** Slot abort signal — должен прокинуться в LLM/Chroma вызовы. */
+  /** Slot abort signal — должен прокинуться в LLM/vectordb вызовы. */
   signal: AbortSignal;
   /** Persist callback — реальный wrapper над frontmatter writer. */
   persistFrontmatter: (
@@ -55,9 +55,17 @@ export async function runUniquenessStep(args: RunUniquenessStepArgs): Promise<vo
     const reader = await getReaderModel();
     if (!reader) return; /* нет загруженной модели — пропускаем без warning */
 
+    /* Fix-while-touching (Phase 2): раньше тут был хардкод DEFAULT_COLLECTION
+     * без оглядки на пользовательскую конфигурацию dataset-v2. Если юзер
+     * extract'ит в `marketing-concepts`, а uniqueness читает `delta-knowledge`
+     * — score становится бессмысленным (сравниваем с чужим корпусом).
+     * Теперь читаем из prefs.uniquenessTargetCollection; пустая строка
+     * fallback'ится на DEFAULT_COLLECTION (= back-compat поведение). */
+    const targetCollection = prefs.uniquenessTargetCollection?.trim() || DEFAULT_COLLECTION;
+
     const unique = await evaluateBookUniqueness(args.chapters, {
       modelKey: reader.modelKey,
-      targetCollection: DEFAULT_COLLECTION,
+      targetCollection,
       similarityHigh: prefs.uniquenessSimilarityHigh,
       similarityLow: prefs.uniquenessSimilarityLow,
       ideasPerChapterMax: prefs.uniquenessIdeasPerChapterMax,

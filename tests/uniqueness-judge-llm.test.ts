@@ -18,9 +18,9 @@ import {
   _resetUniquenessDepsForTesting,
   type BookIdea,
 } from "../electron/lib/library/uniqueness-evaluator.ts";
-import type { ChromaNearestNeighbor } from "../electron/lib/chroma/points.ts";
+import type { VectorNearestNeighbor } from "../electron/lib/vectordb/index.ts";
 
-function neighbor(doc: string, sim: number): ChromaNearestNeighbor {
+function neighbor(doc: string, sim: number): VectorNearestNeighbor {
   return { id: "x", document: doc, metadata: {}, similarity: sim };
 }
 

@@ -9,7 +9,7 @@ const STEP_COUNT = 4;
 /**
  * Onboarding wizard v3 — 4 шага:
  *   0 Hero       → приветствие
- *   1 Connect    → health-check LM Studio + Chroma с visible feedback
+ *   1 Connect    → health-check LM Studio + vectordb с visible feedback
  *   2 Setup      → hardware-info + инструкция «настройте модели вручную в Models».
  *                  Выбор моделей — задача страницы Models, не wizard'а.
  *   3 Done       → persist в preferences (onboardingDone) + 3 action-карточки
@@ -122,7 +122,7 @@ export function openWelcomeWizard(opts) {
       try {
         STATE.services = /** @type {any} */ (await window.api.system.probeServices());
         renderConnCard(lmCard, "lm", STATE.services.lmStudio);
-        renderConnCard(chCard, "ch", STATE.services.chroma);
+        renderConnCard(chCard, "ch", STATE.services.vectordb);
       } catch (e) {
         renderConnCard(lmCard, "lm", { online: false, url: "?", error: errMsg(e) });
         renderConnCard(chCard, "ch", { online: false, url: "?", error: errMsg(e) });
@@ -140,7 +140,7 @@ export function openWelcomeWizard(opts) {
     wrap.appendChild(retryBtn);
 
     /* Экспортируем доступ к doProbe через STATE — кнопка «Запустить
-     * Chroma автоматически» внутри renderConnCard сможет вызвать его
+     * vectordb автоматически» внутри renderConnCard сможет вызвать его
      * после успешного spawn чтобы UI перерисовался без ручного клика. */
     STATE.scheduleConnRecheck = () => { void doProbe(); };
     wrap.appendChild(
@@ -156,7 +156,7 @@ export function openWelcomeWizard(opts) {
     const isOnline = status?.online === true;
     card.className = "ww-conn-card " + (isOnline ? "ww-conn-card-ok" : "ww-conn-card-off");
 
-    const titleKey = kind === "lm" ? "ww.conn.lm.title" : "ww.conn.ch.title";
+    const titleKey = kind === "lm" ? "ww.conn.lm.title" : "ww.conn.vectordb.title";
     const head = el("div", { class: "ww-conn-card-head" }, [
       el("span", { class: "ww-conn-card-title" }, t(titleKey)),
       el(
@@ -169,85 +169,39 @@ export function openWelcomeWizard(opts) {
     ]);
     card.appendChild(head);
 
-    const url = String(status?.url ?? "");
-    const urlInput = /** @type {HTMLInputElement} */ (
-      el("input", {
-        type: "url",
-        class: "ww-conn-card-url",
-        value: url,
-        placeholder: kind === "lm" ? "http://localhost:1234" : "http://localhost:8000",
-      })
-    );
-    urlInput.addEventListener("input", () => {
-      STATE.urlsTouched[kind === "lm" ? "lm" : "ch"] = true;
-    });
-    urlInput.addEventListener("change", async () => {
-      const v = urlInput.value.trim().replace(/\/+$/, "");
-      const prefKey = kind === "lm" ? "lmStudioUrl" : "chromaUrl";
-      try {
-        await window.api.preferences.set({ [prefKey]: v });
-      } catch { /* ignore */ }
-    });
-    card.appendChild(urlInput);
-
-    if (!isOnline) {
-      const hintKey = kind === "lm" ? "ww.conn.lm.offlineHint" : "ww.conn.ch.offlineHint";
-      card.appendChild(el("p", { class: "ww-conn-card-hint" }, t(hintKey)));
-
-      /* Для Chroma: кнопка «Запустить автоматически» — пытается
-       * spawn'нуть child-процесс через uvx/python. Если получится —
-       * автоматически вызываем doProbe чтобы UI обновился без ручного
-       * клика «Перепроверить» (1.5с задержка чтобы Chroma успела
-       * поднять HTTP сервер после spawn). */
-      if (kind === "ch") {
-        const autoBtn = /** @type {HTMLButtonElement} */ (el("button", {
-          class: "ww-conn-auto-btn",
-          type: "button",
-        }, t("ww.conn.ch.autoStart")));
-        /* Single error slot — replace text, не аппендить новые <p> при
-         * повторных кликах. Создаём один раз, переиспользуем. */
-        const errSlot = el("p", { class: "ww-conn-card-error", hidden: "" }, "");
-        let inflight = false;
-
-        autoBtn.addEventListener("click", async () => {
-          if (inflight) return; /* защита от двойного клика до disabled */
-          inflight = true;
-          autoBtn.disabled = true;
-          autoBtn.textContent = t("ww.conn.ch.autoStarting");
-          errSlot.hidden = true;
-          errSlot.textContent = "";
-          try {
-            const res = await window.api.chroma.startEmbedded();
-            if (res.ok) {
-              autoBtn.textContent = res.alreadyRunning
-                ? t("ww.conn.ch.autoAlready")
-                : t("ww.conn.ch.autoStarted");
-              /* Auto-rerun probe через 1.5с чтобы UI сам перерисовался.
-               * doProbe is closure от buildConn — ссылка на него
-               * через STATE если он экспортирован, иначе symbol path. */
-              setTimeout(() => {
-                if (typeof STATE.scheduleConnRecheck === "function") {
-                  STATE.scheduleConnRecheck();
-                }
-              }, 1500);
-            } else {
-              autoBtn.disabled = false;
-              autoBtn.textContent = t("ww.conn.ch.autoStart");
-              errSlot.textContent = res.reason ?? "spawn failed";
-              errSlot.hidden = false;
-            }
-          } catch (e) {
-            autoBtn.disabled = false;
-            autoBtn.textContent = t("ww.conn.ch.autoStart");
-            errSlot.textContent = e instanceof Error ? e.message : String(e);
-            errSlot.hidden = false;
-          } finally {
-            inflight = false;
-          }
-        });
-        card.appendChild(autoBtn);
-        card.appendChild(errSlot);
+    /* LM Studio: editable URL input. VectorDB: in-process, нет network
+     * endpoint'а — show "(local)" badge вместо input'а. */
+    if (kind === "lm") {
+      const url = String(status?.url ?? "");
+      const urlInput = /** @type {HTMLInputElement} */ (
+        el("input", {
+          type: "url",
+          class: "ww-conn-card-url",
+          value: url,
+          placeholder: "http://localhost:1234",
+        })
+      );
+      urlInput.addEventListener("input", () => {
+        STATE.urlsTouched.lm = true;
+      });
+      urlInput.addEventListener("change", async () => {
+        const v = urlInput.value.trim().replace(/\/+$/, "");
+        try {
+          await window.api.preferences.set({ lmStudioUrl: v });
+        } catch { /* ignore */ }
+      });
+      card.appendChild(urlInput);
+      if (!isOnline) {
+        card.appendChild(el("p", { class: "ww-conn-card-hint" }, t("ww.conn.lm.offlineHint")));
       }
+    } else {
+      /* vectordb card: static badge с counts. Никогда не offline в norm flow
+       * (in-process), но если probe вернул error — показываем как safety net. */
+      const counts = typeof status?.collectionsCount === "number"
+        ? ` · ${status.collectionsCount} collections`
+        : "";
+      card.appendChild(el("p", { class: "ww-conn-card-info" },
+        t("ww.conn.vectordb.local") + counts));
     }
   }
 
@@ -384,7 +338,7 @@ export function openWelcomeWizard(opts) {
       const isConn = STATE.step === 1;
       const bothOffline =
         isConn && STATE.services
-          ? !STATE.services.lmStudio?.online && !STATE.services.chroma?.online
+          ? !STATE.services.lmStudio?.online && !STATE.services.vectordb?.online
           : false;
       const nextLabel =
         STATE.step === 0

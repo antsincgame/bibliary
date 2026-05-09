@@ -47,10 +47,11 @@ export class ScannerStateStore {
   }
 
   async write(state: ScannerState): Promise<void> {
-    await fs.mkdir(path.dirname(this.filePath), { recursive: true });
-    const tmp = `${this.filePath}.tmp`;
-    await fs.writeFile(tmp, JSON.stringify(state, null, 2), "utf8");
-    await fs.rename(tmp, this.filePath);
+    /* Делегируем централизованному atomic-write с Windows EPERM/EBUSY retry,
+     * fdatasync и cleanup .tmp на ошибке. Раньше был inline tmp+rename
+     * без retry — на Windows + AV-сканер раз в N запусков валилось. */
+    const { writeTextAtomic } = await import("../resilience/atomic-write.js");
+    await writeTextAtomic(this.filePath, JSON.stringify(state, null, 2));
   }
 
   async upsertBook(book: ScannerBookState): Promise<void> {

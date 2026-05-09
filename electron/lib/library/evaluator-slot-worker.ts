@@ -65,7 +65,31 @@ interface SurrogateBudgetResult {
   truncationWarning: string | null;
 }
 
-function applySurrogateTokenBudget(text: string, modelKey: string): SurrogateBudgetResult {
+interface SurrogateComposition {
+  tocChapters: number;
+  introWords: number;
+  outroWords: number;
+  totalWords: number;
+  /** Сколько nodal-срезов было в полном surrogate (до truncation). */
+  nodalCount: number;
+}
+
+/**
+ * Truncate surrogate под model context window. Когда срез происходит,
+ * **prepend'им [COMPOSITION] блок наверх** — он переживает обрезание (cut
+ * только с хвоста) и явно сообщает LLM что:
+ *   - Исходная книга имела N слов
+ *   - Surrogate структура: TOC + intro(W1) + outro(W2) + K nodal slices
+ *   - Часть текста была обрезана
+ *
+ * Без этого блока LLM на small-n_ctx моделях видит обрезанный intro/middle
+ * и оценивает книгу как структурно неполную, хотя дело только в budget'е.
+ */
+function applySurrogateTokenBudget(
+  text: string,
+  modelKey: string,
+  composition?: SurrogateComposition,
+): SurrogateBudgetResult {
   const ctx = getModelContext(modelKey) ?? SURROGATE_FALLBACK_NCTX;
   const tokenBudget = Math.max(
     500,
@@ -75,11 +99,23 @@ function applySurrogateTokenBudget(text: string, modelKey: string): SurrogateBud
   if (estimatedTokens <= tokenBudget) {
     return { text, truncationWarning: null };
   }
-  const targetChars = Math.max(1, Math.floor(tokenBudget * TOKEN_ESTIMATE_CHARS_PER_TOKEN));
+  /* Composition annotation block — prepend перед truncation, чтобы пережил
+   * cut. Если composition не передана, остаётся generic message. */
+  const compHeader = composition
+    ? `# SURROGATE COMPOSITION (truncated below)\n` +
+      `Original book: ${composition.totalWords} words across ${composition.tocChapters} chapters.\n` +
+      `Surrogate normally contains: TOC(${composition.tocChapters} ch) + ` +
+      `intro(~${composition.introWords}w) + outro(~${composition.outroWords}w) + ` +
+      `${composition.nodalCount} nodal slices.\n` +
+      `Due to small model context (n_ctx=${ctx}), only the head fits below.\n` +
+      `Evaluate based on what's available — don't penalize structural completeness.\n\n`
+    : "";
+
+  const targetChars = Math.max(1, Math.floor(tokenBudget * TOKEN_ESTIMATE_CHARS_PER_TOKEN) - compHeader.length);
   const head = text.slice(0, targetChars);
   const lastSpace = head.lastIndexOf(" ");
   const cutAt = lastSpace > targetChars * 0.95 ? lastSpace : targetChars;
-  const truncated = `${head.slice(0, cutAt).trimEnd()}\n\n[...surrogate truncated to fit model context window (n_ctx=${ctx})...]`;
+  const truncated = `${compHeader}${head.slice(0, cutAt).trimEnd()}\n\n[...surrogate truncated to fit model context window (n_ctx=${ctx})...]`;
   const truncationWarning = `surrogate truncated: ~${estimatedTokens}→~${tokenBudget} tokens (model n_ctx=${ctx})`;
   return { text: truncated, truncationWarning };
 }
@@ -270,7 +306,13 @@ export async function evaluateOneInSlot(
        (overflow-guard) либо safe fallback 4096. Truncation отражается в
        warnings, чтобы пользователь видел что оценка проводилась по
        обрезанному surrogate. */
-    const surrogateBudget = applySurrogateTokenBudget(surrogateWithHints, model);
+    const surrogateBudget = applySurrogateTokenBudget(surrogateWithHints, model, {
+      tocChapters: surrogate.composition.tocChapters,
+      introWords: surrogate.composition.introWords,
+      outroWords: surrogate.composition.outroWords,
+      totalWords: surrogate.composition.totalWords,
+      nodalCount: surrogate.composition.nodalSlices.length,
+    });
     if (surrogateBudget.truncationWarning) {
       surrogateWithHints = surrogateBudget.text;
       meta = {

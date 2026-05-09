@@ -274,7 +274,7 @@ export function registerLibraryCatalogIpc(): void {
       /** Иt 8Е.1 (hybrid cascade): активная коллекция в renderer (если выбрана).
        *  Sync-удаление точек этой книги ДО возврата (быстро, ~50ms). */
       activeCollection?: string;
-    }): Promise<{ ok: boolean; reason?: string; chromaCleaned?: number; chromaBackgroundScheduled?: boolean; filesRemoved?: number; dirsRemoved?: number }> => {
+    }): Promise<{ ok: boolean; reason?: string; vectorBackgroundScheduled?: boolean; filesRemoved?: number; dirsRemoved?: number }> => {
       if (!args || typeof args.bookId !== "string") return { ok: false, reason: "bookId required" };
       const meta = getBookById(args.bookId);
       if (!meta) return { ok: false, reason: "not-found" };
@@ -333,7 +333,7 @@ export function registerLibraryCatalogIpc(): void {
           );
         }
 
-        /* Иt 8Е.1: cascade Chroma cleanup (hybrid стратегия).
+        /* Иt 8Е.1: cascade vectordb cleanup (hybrid стратегия).
            Этап 1 (sync, быстро): удалить точки книги из активной коллекции
            если она передана из renderer. Это покрывает 90% случаев —
            пользователь обычно работает с одной коллекцией.
@@ -342,24 +342,25 @@ export function registerLibraryCatalogIpc(): void {
            Оба этапа используют bookId фильтр (Иt 8Г.3 payload + индекс).
            bookSourcePath fallback не нужен — bookId стабильнее (выживает
            перемещение файла). */
-        let chromaCleaned = 0;
-        let chromaBackgroundScheduled = false;
+        /* Vector store cleanup. LanceDB API не возвращает count удалённых
+         * rows из delete API (vectordb это делал) — мы оставляем поле для
+         * back-compat в response shape, но всегда ставим 0. UI этим
+         * полем рендерит footer "Cleaned X vectors", после Phase 4
+         * это поле уйдёт в пользу collectionCleaned (true/false). */
+        let vectorBackgroundScheduled = false;
         try {
-          const { chromaDeleteByWhere } = await import("../lib/chroma/points.js");
+          const { vectorDeleteByWhere, listCollections } = await import("../lib/vectordb/index.js");
           if (args.activeCollection) {
-            const r = await chromaDeleteByWhere(args.activeCollection, { bookId: args.bookId });
-            chromaCleaned = r.deleted;
+            await vectorDeleteByWhere(args.activeCollection, { bookId: args.bookId });
           }
           /* Background full scan для orphan-vector cleanup во всех остальных коллекциях. */
           void (async () => {
             try {
-              const { chromaUrl, fetchChromaJson } = await import("../lib/chroma/http-client.js");
-              const collections = await fetchChromaJson<Array<{ name: string }>>(chromaUrl("/collections"));
-              const names = (collections ?? []).map((c) => c.name);
+              const names = await listCollections();
               for (const collection of names) {
                 if (collection === args.activeCollection) continue;
                 try {
-                  await chromaDeleteByWhere(collection, { bookId: args.bookId });
+                  await vectorDeleteByWhere(collection, { bookId: args.bookId });
                 } catch (innerErr) {
                   console.warn(`[library:delete-book] background cleanup failed for "${collection}":`, innerErr);
                 }
@@ -368,14 +369,14 @@ export function registerLibraryCatalogIpc(): void {
               console.warn("[library:delete-book] background full-scan failed:", bgErr);
             }
           })();
-          chromaBackgroundScheduled = true;
-        } catch (chromaErr) {
-          /* Chroma unreachable — не блокируем delete-book (книга и так удалена
+          vectorBackgroundScheduled = true;
+        } catch (vectorErr) {
+          /* vectordb недоступна — не блокируем delete-book (книга и так удалена
              из SQLite). Просто warning. */
-          console.warn("[library:delete-book] Chroma cascade cleanup failed (non-fatal):", chromaErr);
+          console.warn("[library:delete-book] vectordb cascade cleanup failed (non-fatal):", vectorErr);
         }
 
-        return { ok: true, chromaCleaned, chromaBackgroundScheduled, filesRemoved, dirsRemoved };
+        return { ok: true, vectorBackgroundScheduled, filesRemoved, dirsRemoved };
       } catch (e) {
         return { ok: false, reason: e instanceof Error ? e.message : String(e), filesRemoved, dirsRemoved };
       }
@@ -420,7 +421,7 @@ export function registerLibraryCatalogIpc(): void {
    *   - .blobs/ (CAS-storage иллюстраций)
    *   - .import/ (state-журналы импорта, locks)
    *   - bibliary-cache.db (+ -wal, -shm) — закрываем хэндл ДО rm
-   *   - все Chroma коллекции с префиксом "bibliary-" (best-effort, non-fatal)
+   *   - все vectordb коллекции с префиксом "bibliary-" (best-effort, non-fatal)
    *
    * Сбрасывает all in-process кэши: near-dup, revision-dedup. Cache-DB
    * откроется заново лениво при следующем запросе (свежая, пустая).
@@ -438,8 +439,8 @@ export function registerLibraryCatalogIpc(): void {
       libraryRoot: string;
       removedFiles: number;
       removedDirs: number;
-      chromaCleaned: number;
-      chromaErrors: string[];
+      vectorCollectionsCleaned: number;
+      vectorCollectionsErrors: string[];
     }> => {
       const root = resolveLibraryRoot();
       const dbPath = getCacheDbPath();
@@ -465,29 +466,22 @@ export function registerLibraryCatalogIpc(): void {
         resetNearDupCache();
         resetRevisionDedupCache();
 
-        let chromaCleaned = 0;
-        const chromaErrors: string[] = [];
+        let vectorCollectionsCleaned = 0;
+        const vectorCollectionsErrors: string[] = [];
         try {
-          const { chromaUrl, fetchChromaJson } = await import("../lib/chroma/http-client.js");
-          const { invalidate, clearAll } = await import("../lib/chroma/collection-cache.js");
-          const collections = await fetchChromaJson<Array<{ name: string }>>(chromaUrl("/collections"));
-          const names = (collections ?? [])
-            .map((c) => c.name)
-            .filter((n) => typeof n === "string" && n.startsWith("bibliary-"));
+          const { listCollections, deleteCollection } = await import("../lib/vectordb/index.js");
+          const allCollections = await listCollections();
+          const names = allCollections.filter((n) => typeof n === "string" && n.startsWith("bibliary-"));
           for (const collection of names) {
             try {
-              await fetchChromaJson(chromaUrl(`/collections/${encodeURIComponent(collection)}`), {
-                method: "DELETE",
-              });
-              invalidate(collection);
-              chromaCleaned += 1;
+              await deleteCollection(collection);
+              vectorCollectionsCleaned += 1;
             } catch (err) {
-              chromaErrors.push(`${collection}: ${err instanceof Error ? err.message : String(err)}`);
+              vectorCollectionsErrors.push(`${collection}: ${err instanceof Error ? err.message : String(err)}`);
             }
           }
-          clearAll();
-        } catch (chromaErr) {
-          chromaErrors.push(chromaErr instanceof Error ? chromaErr.message : String(chromaErr));
+        } catch (vectorErr) {
+          vectorCollectionsErrors.push(vectorErr instanceof Error ? vectorErr.message : String(vectorErr));
         }
 
         return {
@@ -495,8 +489,8 @@ export function registerLibraryCatalogIpc(): void {
           libraryRoot: root,
           removedFiles,
           removedDirs,
-          chromaCleaned,
-          chromaErrors,
+          vectorCollectionsCleaned,
+          vectorCollectionsErrors,
         };
       } catch (e) {
         return {
@@ -505,8 +499,8 @@ export function registerLibraryCatalogIpc(): void {
           libraryRoot: root,
           removedFiles,
           removedDirs,
-          chromaCleaned: 0,
-          chromaErrors: [],
+          vectorCollectionsCleaned: 0,
+          vectorCollectionsErrors: [],
         };
       }
     }
