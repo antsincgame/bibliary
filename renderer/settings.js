@@ -113,12 +113,20 @@ function buildUrlField(field, root) {
     status.textContent = t("settings.url.testing");
     status.className = "settings-url-status settings-url-status-info";
     try {
-      const ok = await probeEndpoint(field.probe, String(input.value).trim());
-      if (ok) {
-        status.textContent = t("settings.url.ok");
+      const result = await probeEndpoint(field.probe, String(input.value).trim());
+      if (result.ok) {
+        const tail = result.modelsCount !== undefined
+          ? ` · ${result.modelsCount} ${t("settings.url.models")}`
+          : "";
+        const lat = result.latencyMs !== undefined ? ` · ${result.latencyMs}ms` : "";
+        status.textContent = t("settings.url.ok") + tail + lat;
         status.className = "settings-url-status settings-url-status-ok";
+        /* Если probe сработал через IPv4 fallback — подсказываем подменить URL. */
+        if (result.resolvedUrl && result.resolvedUrl !== String(input.value).trim()) {
+          status.textContent += ` · ${t("settings.url.ipv4hint")}: ${result.resolvedUrl}`;
+        }
       } else {
-        status.textContent = t("settings.url.unreachable");
+        status.textContent = formatProbeError(result);
         status.className = "settings-url-status settings-url-status-error";
       }
     } catch (e) {
@@ -188,17 +196,40 @@ function buildField(field, root) {
   throw new Error(`[settings] unexpected field type for "${field.key}": ${field.type}`);
 }
 
+/**
+ * Probe endpoint через main process (IPC). Не делаем fetch из renderer'а:
+ *   1) Browser fetch теряет error.cause → "Failed to fetch" без диагностики.
+ *   2) CORS preflight может отклонить ответ даже от живого LM Studio.
+ *   3) На Windows localhost иногда резолвится в IPv6 ::1 — нужен fallback на 127.0.0.1.
+ *
+ * Возвращает структурированный результат (LmStudioProbeResult из preload.ts).
+ *
+ * @param {string} kind - "lmstudio" (vectordb теперь in-process, не нуждается в HTTP probe)
+ * @param {string} baseUrl
+ * @returns {Promise<{ok: boolean, status?: number, latencyMs?: number, modelsCount?: number, resolvedUrl?: string, kind?: string, message?: string, statusCode?: number, errorCode?: string}>}
+ */
 async function probeEndpoint(kind, baseUrl) {
-  const path = kind === "lmstudio" ? "/v1/models" : "/api/v1/heartbeat";
-  const url = baseUrl.replace(/\/+$/, "") + path;
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), 5000);
-  try {
-    const resp = await fetch(url, { signal: ctl.signal });
-    return resp.ok;
-  } finally {
-    clearTimeout(timer);
+  if (kind !== "lmstudio") {
+    /* В Settings UI остался только LM Studio probe — vectordb in-process всегда online.
+       Если когда-то добавят другие probe-kinds — прокинуть сюда новые ветки. */
+    return { ok: false, kind: "invalid_url", message: `unsupported probe kind: ${kind}` };
   }
+  return await api().lmstudio.probeUrl(baseUrl, { timeoutMs: 5000, ipv4Fallback: true });
+}
+
+/**
+ * Превращает структурированный probe error в человекочитаемое i18n-сообщение.
+ * Каждый kind имеет свою локализованную подсказку, чтобы пользователь сразу
+ * понимал что делать (запустить LM Studio / поправить URL / проверить firewall).
+ */
+function formatProbeError(result) {
+  const kind = result.kind || "unknown";
+  const baseKey = `settings.url.err.${kind}`;
+  const localized = t(baseKey);
+  /* fallback на generic если нет специфического перевода */
+  const head = localized === baseKey ? t("settings.url.unreachable") : localized;
+  const detail = result.message ? ` (${result.message})` : "";
+  return head + detail;
 }
 
 function updateSaveUi(root) {

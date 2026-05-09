@@ -264,17 +264,18 @@ async function poll(): Promise<void> {
 }
 
 async function checkLiveness(): Promise<boolean> {
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), activeConfig.livenessTimeoutMs);
-  try {
-    const baseUrl = await getLmStudioUrl();
-    const response = await fetch(`${baseUrl}/v1/models`, { signal: ctl.signal });
-    return response.ok;
-  } catch {
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
+  /* Унифицированный probe: тот же путь что и Settings UI / wizard.
+     Single source of truth — изменения в lmstudio-http-probe.ts автоматически
+     отражаются на watchdog'е. IPv4 fallback здесь отключаем: watchdog работает
+     с уже сохранённым URL который пользователь подтвердил рабочим, не нужно
+     модифицировать его за спиной. */
+  const baseUrl = await getLmStudioUrl();
+  const { probeLmStudioUrl } = await import("../llm/lmstudio-http-probe.js");
+  const result = await probeLmStudioUrl(baseUrl, {
+    timeoutMs: activeConfig.livenessTimeoutMs,
+    ipv4Fallback: false,
+  });
+  return result.ok;
 }
 
 function emit(channel: string, payload: unknown): void {

@@ -12,11 +12,39 @@ import {
   readActionsLog,
   clearActionsLog,
 } from "../lib/llm/lmstudio-actions-log.js";
+import {
+  probeLmStudioUrl,
+  type LmStudioProbeResult,
+} from "../lib/llm/lmstudio-http-probe.js";
 
 export function registerLmstudioIpc(): void {
   ipcMain.handle("lmstudio:status", async () => getServerStatus());
   ipcMain.handle("lmstudio:list-downloaded", async () => listDownloaded());
   ipcMain.handle("lmstudio:list-loaded", async () => listLoaded());
+
+  /**
+   * Структурированный probe произвольного URL для UI Settings/Wizard.
+   * Renderer передаёт URL который пользователь только что ввёл (ещё не
+   * сохранил в preferences) — handler возвращает детализированный результат
+   * с типом ошибки и подсказкой по IPv4 fallback.
+   *
+   * НЕ кеширует: каждый клик "Тест" должен делать живой ping (пользователь
+   * мог только что запустить LM Studio).
+   */
+  ipcMain.handle(
+    "lmstudio:probe-url",
+    async (
+      _e,
+      url: unknown,
+      opts: { timeoutMs?: number; ipv4Fallback?: boolean } = {},
+    ): Promise<LmStudioProbeResult> => {
+      const safeUrl = typeof url === "string" ? url : "";
+      return probeLmStudioUrl(safeUrl, {
+        timeoutMs: typeof opts.timeoutMs === "number" ? opts.timeoutMs : undefined,
+        ipv4Fallback: opts.ipv4Fallback,
+      });
+    },
+  );
 
   ipcMain.handle(
     "lmstudio:load",

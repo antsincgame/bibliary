@@ -22,6 +22,34 @@ interface ServerStatus {
   version?: string;
 }
 
+/**
+ * Структурированный результат IPC `lmstudio:probe-url`.
+ * Зеркалирует LmStudioProbeResult из electron/lib/llm/lmstudio-http-probe.ts —
+ * preload не импортирует main-side типы напрямую (изоляция renderer).
+ */
+type LmStudioProbeErrorKind =
+  | "refused"
+  | "timeout"
+  | "dns"
+  | "unreachable"
+  | "reset"
+  | "http"
+  | "invalid_url"
+  | "cors"
+  | "unknown";
+
+interface LmStudioProbeResult {
+  ok: boolean;
+  status?: number;
+  latencyMs?: number;
+  modelsCount?: number;
+  resolvedUrl?: string;
+  kind?: LmStudioProbeErrorKind;
+  message?: string;
+  statusCode?: number;
+  errorCode?: string;
+}
+
 interface VectorDbCollectionsListItem {
   name: string;
   pointsCount: number;
@@ -215,6 +243,17 @@ contextBridge.exposeInMainWorld("api", {
 
   lmstudio: {
     status: (): Promise<ServerStatus> => ipcRenderer.invoke("lmstudio:status"),
+    /**
+     * Probe произвольного URL (для кнопки "Тест" в Settings и onboarding wizard).
+     * Делает Node fetch GET /v1/models через main process — обходит CORS,
+     * возвращает структурированный errno (refused/timeout/dns/...) и пробует
+     * IPv4 fallback при ECONNREFUSED на localhost.
+     */
+    probeUrl: (
+      url: string,
+      opts?: { timeoutMs?: number; ipv4Fallback?: boolean },
+    ): Promise<LmStudioProbeResult> =>
+      ipcRenderer.invoke("lmstudio:probe-url", url, opts ?? {}),
     listDownloaded: (): Promise<DownloadedModelInfo[]> => ipcRenderer.invoke("lmstudio:list-downloaded"),
     listLoaded: (): Promise<LoadedModelInfo[]> => ipcRenderer.invoke("lmstudio:list-loaded"),
     load: (
