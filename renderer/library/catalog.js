@@ -384,7 +384,15 @@ export function buildCatalogToolbar(root) {
     },
     onDelete: async (name) => {
       try {
-        await window.api.vectordb.remove(name);
+        /* IPC-handler возвращает {ok: boolean, error?: string} — проверяем
+         * явно. До этого фикса `await` без проверки приводил к stale UI:
+         * vectordb.remove silently fail (например EBUSY на Windows когда
+         * native binary держит .lance файл) → catch не срабатывал → UI
+         * считал коллекцию удалённой, но vectordb её сохранил. */
+        const result = await window.api.vectordb.remove(name);
+        if (!result?.ok) {
+          throw new Error(result?.error || "vectordb.remove returned not-ok without error message");
+        }
         if (STATE.targetCollection === name) {
           STATE.targetCollection = "";
           STATE.collection = "";

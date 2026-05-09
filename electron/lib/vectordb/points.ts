@@ -294,16 +294,33 @@ export async function vectorQueryNearest(
 
   const rows = (await q.toArray()) as Array<Record<string, unknown> & { _distance?: number }>;
 
-  return rows.map((row) => {
-    const distance = typeof row._distance === "number" ? row._distance : 0;
-    const metadata = extractMetadataFromRow(row);
-    return {
+  /* Skip rows без `_distance`: до этого фикса default `?? 0` через cosine
+   * conversion давал `similarity = 1.0` (perfect match) — uniqueness eval
+   * получал silent false-positive дубликаты. Теперь при отсутствии distance
+   * (SDK quirk / index bug / corrupt row) row выбрасывается с warning'ом,
+   * caller видит меньшее количество neighbors и принимает решение на чистых
+   * данных. */
+  const out: VectorNearestNeighbor[] = [];
+  let skippedNoDistance = 0;
+  for (const row of rows) {
+    if (typeof row._distance !== "number") {
+      skippedNoDistance += 1;
+      continue;
+    }
+    out.push({
       id: String(row.id ?? ""),
       document: typeof row.document === "string" ? row.document : "",
-      metadata,
-      similarity: distanceToCosine(distance, space),
-    };
-  });
+      metadata: extractMetadataFromRow(row),
+      similarity: distanceToCosine(row._distance, space),
+    });
+  }
+  if (skippedNoDistance > 0) {
+    console.warn(
+      `[vectordb] queryNearest("${collectionName}"): ${skippedNoDistance}/${rows.length} ` +
+      `rows missing _distance — skipped (would have been false-positive similarity=1.0)`,
+    );
+  }
+  return out;
 }
 
 /**
