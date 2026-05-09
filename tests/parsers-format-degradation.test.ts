@@ -1,7 +1,7 @@
 /**
  * Тесты деградации парсеров: битый ZIP под .epub и невалидный XML под .fb2
  * должны возвращать warnings + sections:[] вместо throw, чтобы
- * import-book получил outcome "unsupported", а не "failed".
+ * import-book мог вернуть outcome "skipped" (не пишем в каталог), а не "failed".
  *
  * Тест для DOCX (mammoth fallthrough) и ODT (zip-fail → warnings) оставлены
  * на будущее — требуют более сложных фикстур.

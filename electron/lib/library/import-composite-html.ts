@@ -84,6 +84,16 @@ export async function importCompositeHtmlBook(
     warnings: warnings.length > 0 ? [...warnings] : undefined,
   };
 
+  if (meta.status === "unsupported") {
+    return {
+      outcome: "skipped",
+      warnings: [
+        ...warnings,
+        "composite-html: no sections assembled — not added to library",
+      ],
+    };
+  }
+
   // Build markdown
   let markdown = `---\n`;
   markdown += `id: "${bookId}"\n`;

@@ -1,7 +1,7 @@
 import type { BookCatalogMeta } from "./types.js";
 
 export interface ImportResult {
-  /** "added" -- новая книга. "duplicate" -- уже была (SHA совпал). "skipped" -- неподдерживаемый формат. "failed" -- ошибка парсинга. */
+  /** "added" — новая книга. "duplicate" — уже была (SHA совпал). "skipped" — неподдерживаемый формат / нет извлекаемых глав. "failed" — ошибка парсинга. */
   outcome: "added" | "duplicate" | "skipped" | "failed";
   bookId?: string;
   meta?: BookCatalogMeta;

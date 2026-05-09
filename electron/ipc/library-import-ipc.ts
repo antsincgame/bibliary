@@ -493,7 +493,9 @@ export function registerLibraryImportIpc(getMainWindow: () => BrowserWindow | nu
 
     await getImportLogger().write({
       importId, level: "warn", category: "import.cancel",
-      message: "Import cancelled by user — stopped pending evaluator queue and aborted in-flight LLM calls",
+      message:
+        "Import aborted via cancel-import (UI). Evaluator queue cleared; in-flight LLM calls aborted. " +
+        "There is no automatic cancel in code — only this IPC or app shutdown.",
     });
     return true;
   });

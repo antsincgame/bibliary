@@ -172,6 +172,21 @@ export async function importBookFromFile(
     }
   }
 
+  /* Нет ни одной главы: md-converter ставит status=unsupported (битый PDF, пустой
+     текстовый слой, OCR выключен/не смог). Раньше запись всё равно попадала в
+     каталог и в evaluator — пользователь видел «мусорные» строки. Теперь не
+     трогаем диск/БД и считаем файл skipped (как неподдерживаемый контент). */
+  if (convResult.meta.status === "unsupported") {
+    return {
+      outcome: "skipped",
+      warnings: [
+        ...warnings,
+        "import: no extractable chapters (unsupported content) — not added to library",
+      ],
+      sourceArchive: opts.sourceArchive,
+    };
+  }
+
   /* Синтетическая обложка: если парсер не нашёл img-cover (TXT, FB2 без картинок,
      PDF без первой страницы), генерируем SVG-обложку в стиле академической литературы.
      Хранится в CAS как image/svg+xml — нативно рендерится Chromium в <img> без доп. deps. */
