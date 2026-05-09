@@ -96,3 +96,8 @@ data/lmstudio-actions.log
 
 # Olympics report — runtime artifact (не для VCS)
 data/olympics-report.json
+
+# Tesseract.js traineddata orphans at repo root (если случайно скачались
+# не в vendor/tessdata/). Реальные модели лежат в vendor/tessdata/*.traineddata
+# и трекаются через !vendor/tessdata/ ниже.
+/*.traineddata
