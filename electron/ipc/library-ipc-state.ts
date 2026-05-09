@@ -45,7 +45,7 @@ import type { ProgressEvent } from "../lib/library/import.js";
  * API. Если в LM Studio нет vision-модели — graceful fallback на system OCR.
  */
 export async function readImportPrefs(): Promise<{
-  djvuOcrProvider: "auto" | "system" | "vision-llm" | "none";
+  djvuOcrProvider: "auto" | "tesseract" | "system" | "vision-llm" | "none";
   ocrLanguages: string[];
   ocrEnabled: boolean;
   ocrAccuracy: "fast" | "accurate";

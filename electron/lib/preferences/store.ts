@@ -93,15 +93,17 @@ export const PreferencesSchema = z.object({
   ocrPdfDpi: z.number().int().min(100).max(600).default(400),
   /**
    * Провайдер OCR для DJVU и сканированных PDF.
-   *   - "auto" (default): сначала пытаемся через локальную vision-модель LM Studio
-   *     (роль vision_ocr из настроек "Модели"), при провале — системный OCR
-   *     (Windows.Media.Ocr / macOS Vision Framework), при его недоступности — none.
-   *     Это режим "лучшее качество с автоматическим fallback".
+   *   - "auto" (default): cascade — Tesseract (works everywhere, ~3s/page,
+   *     solid Cyrillic) → system OCR (Win.Media.Ocr / macOS Vision если
+   *     доступен) → vision-LLM (если назначен vision_ocr role). Tesseract
+   *     поставлен первым потому что у нас bundled rus/ukr/eng tessdata,
+   *     работает идентично на всех платформах, и не нагружает GPU LLM'ом.
+   *   - "tesseract": ТОЛЬКО Tesseract.js (быстрый CPU OCR, без GPU).
    *   - "vision-llm": ТОЛЬКО локальный LM Studio (vision_ocr роль).
    *   - "system": ТОЛЬКО системный OS OCR.
    *   - "none": OCR полностью отключён для DJVU/PDF-сканов.
    */
-  djvuOcrProvider: z.enum(["auto", "system", "vision-llm", "none"]).default("auto"),
+  djvuOcrProvider: z.enum(["auto", "tesseract", "system", "vision-llm", "none"]).default("auto"),
   djvuRenderDpi: z.number().int().min(100).max(600).default(400),
   /** Hard limit для размера DJVU файла (MB). Default 500 MB; архивные тома
    * (Britannica, БСЭ) часто 800-2000 MB — поднять для них. Min 50, max 4096 MB. */

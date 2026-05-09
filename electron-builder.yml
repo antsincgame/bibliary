@@ -30,6 +30,14 @@ extraResources:
     to: vendor/djvu
     filter:
       - "**/*"
+  # Tesseract.js tessdata (rus/ukr/eng) — Tier-1a OCR для DjVu/PDF без
+  # text-layer'а. ~12 MB total, downloaded локально (no CDN runtime fetch).
+  # Закрывает Linux-gap (нет system OCR) и вытесняет vision-LLM (плохо знает
+  # кириллицу) в Tier-2. См. electron/lib/scanner/ocr/tesseract.ts.
+  - from: vendor/tessdata
+    to: vendor/tessdata
+    filter:
+      - "**/*"
 win:
   target:
     - nsis
@@ -86,6 +94,11 @@ asarUnpack:
   - "node_modules/@lancedb/**/*"
   # apache-arrow — pure JS, но lancedb зависит от него; safest to keep adjacent.
   - "node_modules/apache-arrow/**/*"
+  # Tesseract.js — pure JS + WASM core. Worker spawn использует worker_threads,
+  # которые требуют чтобы tesseract.js + tesseract.js-core были unpacked
+  # (asar archive не позволяет dlopen WASM напрямую).
+  - "node_modules/tesseract.js/**/*"
+  - "node_modules/tesseract.js-core/**/*"
 extraMetadata:
   type: commonjs
 afterPack: scripts/afterPack.js
