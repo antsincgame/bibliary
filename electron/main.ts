@@ -272,6 +272,14 @@ if (!gotLock) {
           .then(({ closeDb }) => closeDb())
           .catch(() => { /* ignore */ });
       }],
+      ["disposeTesseract", () => {
+        /* Tesseract.js worker terminate — освобождает WASM heap (~30 MB)
+         * и worker_thread. Если worker никогда не создавался (OCR не
+         * вызывался) — disposeTesseract no-op. */
+        void import("./lib/scanner/ocr/tesseract.js")
+          .then(({ disposeTesseract }) => disposeTesseract())
+          .catch(() => { /* ignore */ });
+      }],
     ];
     for (const [label, fn] of subsystems) {
       try { fn(); } catch (e) {

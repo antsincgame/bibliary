@@ -3,6 +3,7 @@ import * as os from "os";
 import * as path from "path";
 import { cleanParagraph, looksLikeHeading, type BookParser, type ParseOptions, type ParseResult, type BookSection } from "./types.js";
 import { isOcrSupported, recognizeImageBuffer, reorderLanguagesForCyrillic } from "../ocr/index.js";
+import { isTesseractAvailable, recognizeWithTesseract } from "../ocr/tesseract.js";
 import { recognizeWithVisionLlm } from "../../llm/vision-ocr.js";
 import { getDjvuBookmarks, getDjvuInstallHint, getDjvuPageCount, runDdjvu, runDjvutxt, runDjvutxtPage } from "./djvu-cli.js";
 import { imageBufferToPng } from "../../native/sharp-loader.js";
@@ -145,7 +146,18 @@ async function parseDjvu(filePath: string, opts: ParseOptions = {}): Promise<Par
       await conv.cleanup();
     }
 
-    /* Fallback на прямой OCR cascade (старый путь, сохранён как safety net). */
+    /* AUTO cascade: Tesseract Tier-1a → system OCR Tier-1b → vision-LLM Tier-2.
+       Tesseract первым, потому что:
+       1. Bundled rus/ukr/eng tessdata — работает на всех платформах identically.
+       2. ~3s/page, CPU-only — не нагружает GPU LLM.
+       3. Solid Cyrillic из коробки (rus/ukr models). Закрывает Linux gap, где
+          system OCR не существует, и вытесняет vision-LLM (плохо знает кириллицу)
+          в Tier-2. */
+    if (isTesseractAvailable()) {
+      const result = await ocrDjvuPages(filePath, baseName, "tesseract", opts, warnings);
+      if (result.sections.length > 0) return result;
+      warnings.push("tesseract OCR returned no text — falling back to system / vision-llm");
+    }
     if (isOcrSupported()) {
       const result = await ocrDjvuPages(filePath, baseName, "system", opts, warnings);
       if (result.sections.length > 0) return result;
@@ -155,22 +167,24 @@ async function parseDjvu(filePath: string, opts: ParseOptions = {}): Promise<Par
     if (visionAvailable) {
       return ocrDjvuPages(filePath, baseName, "vision-llm", opts, warnings);
     }
-    /* НЕ DjVuLibre проблема — DjVu успешно прочитан, у файла просто нет text-layer'а.
-       Реальная проблема: ни system OCR, ни vision-LLM не работают. Указываем
-       конкретно что чинить в настройках. */
+    /* Все варианты исчерпаны. */
     warnings.push("DJVU has no embedded OCR text layer (image-only scan)");
+    warnings.push("Tesseract bundled tessdata not found — verify vendor/tessdata/ in build");
     warnings.push("System OCR: unavailable on this OS (works only on Windows/macOS)");
     warnings.push("Vision-LLM: no model assigned to vision_ocr role (configure in Models)");
-    warnings.push("To extract text from this DjVu: assign a vision_ocr model in LM Studio");
+    return { metadata: { title: baseName, warnings }, sections: [], rawCharCount: 0 };
+  }
+
+  if (provider === "tesseract" && !isTesseractAvailable()) {
+    warnings.push("DJVU OCR provider=tesseract but bundled tessdata not found");
+    warnings.push("Expected vendor/tessdata/{rus,ukr,eng}.traineddata in app resources");
     return { metadata: { title: baseName, warnings }, sections: [], rawCharCount: 0 };
   }
 
   if (provider === "system" && !isOcrSupported()) {
-    /* Пользователь явно выбрал system OCR, но платформа Linux. DjVuLibre тут не
-       при чём — он сделал свою работу. Указываем альтернативу. */
     warnings.push("DJVU has no embedded OCR text layer (image-only scan)");
     warnings.push("System OCR is available only on Windows and macOS");
-    warnings.push("Linux alternative: switch DJVU OCR provider to vision-llm and assign a vision_ocr model");
+    warnings.push("Linux alternative: switch DJVU OCR provider to tesseract or vision-llm");
     return { metadata: { title: baseName, warnings }, sections: [], rawCharCount: 0 };
   }
 
@@ -208,7 +222,7 @@ const PER_PAGE_TEXT_THRESHOLD = 50;
 async function ocrDjvuPages(
   filePath: string,
   baseName: string,
-  provider: "system" | "vision-llm",
+  provider: "tesseract" | "system" | "vision-llm",
   opts: ParseOptions,
   warnings: string[],
 ): Promise<ParseResult> {
@@ -315,15 +329,24 @@ async function ocrDjvuPages(
 
       const langsToTry = effectiveLangs.length > 0 ? effectiveLangs : ["ru", "uk", "en"];
       const platform = os.platform();
-      const supportsNativeMultiLang = platform === "darwin" || provider === "vision-llm";
+      /* Tesseract нативно multi-lang в одном вызове (передаём все языки в worker
+       * init). macOS Vision и vision-LLM тоже multi-lang. Только Win.Media.Ocr
+       * требует cycling — single-lang per call. */
+      const supportsNativeMultiLang =
+        provider === "tesseract" || provider === "vision-llm" || platform === "darwin";
 
       let bestText = "";
       let bestLang = langsToTry[0];
 
       if (supportsNativeMultiLang) {
-        /* macOS Vision Framework + vision-LLM умеют multi-lang нативно.
-           Один проход со всем списком — N раз быстрее cycling'а. */
-        const result = provider === "vision-llm"
+        const pngBytes = new Uint8Array(pngBuffer.buffer, pngBuffer.byteOffset, pngBuffer.byteLength);
+        const result = provider === "tesseract"
+          ? await recognizeWithTesseract(pngBytes, {
+            languages: langsToTry,
+            pageIndex: page,
+            signal: opts.signal,
+          })
+          : provider === "vision-llm"
           ? await recognizeWithVisionLlm(pngBuffer, {
             languages: langsToTry,
             signal: opts.signal,
@@ -331,7 +354,7 @@ async function ocrDjvuPages(
             modelKey: opts.visionOcrModel,
           })
           : await recognizeImageBuffer(
-            new Uint8Array(pngBuffer.buffer, pngBuffer.byteOffset, pngBuffer.byteLength),
+            pngBytes,
             page,
             langsToTry,
             opts.ocrAccuracy ?? "accurate",

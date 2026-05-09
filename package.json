@@ -47,7 +47,8 @@
     "setup:djvulibre": "node scripts/download-djvulibre-win.cjs",
     "setup:7zip": "node scripts/download-7zip-win.cjs",
     "setup:djvulibre-macos": "node scripts/download-djvulibre-macos.cjs",
-    "setup:7zip-macos": "node scripts/download-7zip-macos.cjs"
+    "setup:7zip-macos": "node scripts/download-7zip-macos.cjs",
+    "setup:tessdata": "node scripts/download-tessdata.cjs"
   },
   "dependencies": {
     "@firecrawl/pdf-inspector": "^1.8.0",
@@ -72,6 +73,7 @@
     "pdfjs-dist": "^4.10.38",
     "proper-lockfile": "^4.1.2",
     "sharp": "^0.32.0",
+    "tesseract.js": "^7.0.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {

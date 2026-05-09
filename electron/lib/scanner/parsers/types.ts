@@ -79,11 +79,12 @@ export interface ParseOptions {
    *     Порядок «cheapest first» защищает heavy-очередь от DDoS на длинных
    *     сканах: система пробует OS OCR на каждой странице и поднимает
    *     тяжёлую vision-LLM только если system OCR не справилась.
+   *   - "tesseract": local Tesseract.js (rus/ukr/eng), works on all platforms.
    *   - "vision-llm": только локальный LM Studio (роль vision_ocr).
    *   - "system": только OS OCR (Windows.Media.Ocr / macOS Vision).
    *   - "none": OCR не выполняется.
    */
-  djvuOcrProvider?: "auto" | "system" | "vision-llm" | "none";
+  djvuOcrProvider?: "auto" | "tesseract" | "system" | "vision-llm" | "none";
   /** Render DPI used by ddjvu page rasterisation. */
   djvuRenderDpi?: number;
   /**

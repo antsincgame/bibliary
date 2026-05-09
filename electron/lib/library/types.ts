@@ -223,7 +223,7 @@ export interface ConvertOptions {
    *   - "system": ТОЛЬКО OS OCR.
    *   - "none": OCR отключён.
    */
-  djvuOcrProvider?: "auto" | "system" | "vision-llm" | "none";
+  djvuOcrProvider?: "auto" | "tesseract" | "system" | "vision-llm" | "none";
   /** Точность OS-OCR. Default "accurate". */
   ocrAccuracy?: "fast" | "accurate";
   /** DPI растеризации страниц PDF перед OCR. Default 400. */

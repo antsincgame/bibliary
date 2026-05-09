@@ -44,7 +44,7 @@ export interface ImportFolderOptions {
    * OCR-провайдер для DJVU и сканированных PDF. Default "auto":
    * vision-llm (LM Studio) → system → none, fallback chain.
    */
-  djvuOcrProvider?: "auto" | "system" | "vision-llm" | "none";
+  djvuOcrProvider?: "auto" | "tesseract" | "system" | "vision-llm" | "none";
   /** Хинты OCR-языков ("uk", "en", "ru"). Первый — primary для Windows OCR. */
   ocrLanguages?: string[];
   /** Точность OS-OCR (default "accurate"). */
