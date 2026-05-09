@@ -415,12 +415,25 @@ export async function bootstrapEvaluatorQueue(): Promise<void> {
     for (const meta of stuckRows) {
       const reset: BookCatalogMeta = { ...meta, status: "imported" };
       upsertBook(reset, meta.mdPath);
-      /* В book.md тоже -- иначе после rebuildFromFs опять появится evaluating. */
+      /* В book.md тоже -- иначе после rebuildFromFs опять появится evaluating.
+       * Если frontmatter не записался (book.md удалён / read-only ФС / EPERM
+       * на Windows), помечаем книгу как failed с явной причиной — так на
+       * следующем bootstrap'е она НЕ попадёт обратно в "evaluating" и не
+       * зациклится через rebuildFromFs. */
       try {
         const md = await deps.readFile(meta.mdPath);
         await deps.writeFile(meta.mdPath, replaceFrontmatter(md, reset));
-      } catch {
-        /* tolerate */
+      } catch (writeErr) {
+        const reason = writeErr instanceof Error ? writeErr.message : String(writeErr);
+        console.error(
+          `[evaluator-queue/bootstrap] failed to reset frontmatter for ${meta.mdPath}: ${reason} — marking as failed to avoid loop`,
+        );
+        const failed: BookCatalogMeta = {
+          ...meta,
+          status: "failed",
+          lastError: `bootstrap: frontmatter reset failed (${reason.slice(0, 200)})`,
+        };
+        upsertBook(failed, meta.mdPath);
       }
     }
     if (!nextCursor) break;

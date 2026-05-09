@@ -41,6 +41,17 @@ export const SECTIONS = Object.freeze([
     icon: "MAIN",
     fields: [
       { key: "lmStudioUrl", type: "url", labelKey: "settings.lmStudioUrl", placeholder: "http://localhost:1234", probe: "lmstudio" },
+      /* OCR провайдер для DJVU и сканированных PDF. По умолчанию "auto" —
+       * каскад Tesseract → system OCR → vision-LLM. Видимое поле, потому что
+       * пользователи иногда хотят форсировать конкретный engine для отладки
+       * качества (например проверить точно ли Tesseract отрабатывает на
+       * кириллице vs vision-LLM). */
+      {
+        key: "djvuOcrProvider",
+        type: "enum",
+        options: ["auto", "tesseract", "system", "vision-llm", "none"],
+        labelKey: "settings.djvuOcrProvider",
+      },
     ],
   },
   /* Uniqueness Evaluator — единственная advanced-секция, восстановленная после

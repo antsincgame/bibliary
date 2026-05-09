@@ -328,7 +328,13 @@ test("evaluator-queue defers 'no LLM loaded' without permanently failing the boo
     skipped?.error,
     "evaluator deferred: evaluator: no LLM loaded in LM Studio",
   );
-  assert.ok(events.some((e) => e.type === "evaluator.paused"));
+  /* Контракт после refactor 5fa3766 «backoff без вечной паузы»:
+   * single deferral → exponential backoff retry (5s × 2^n до max 60s),
+   * pause только после DEFER_PAUSE_THRESHOLD=10 consecutive defers. На
+   * один enqueue paused НЕ ожидаем — это правильное новое поведение,
+   * избегающее permanent stall на transient LM Studio outage. */
+  assert.ok(!events.some((e) => e.type === "evaluator.paused"),
+    "single deferral must NOT trigger pause (new backoff contract — pause after 10 consecutive defers)");
   const cached = getBookById(book.meta.id);
   assert.equal(cached?.status, "imported");
   assert.equal(cached?.lastError, "evaluator deferred: evaluator: no LLM loaded in LM Studio");
@@ -362,7 +368,10 @@ test("evaluator-queue defers transient LM Studio circuit failures", async (t) =>
   assert.equal(cached?.status, "imported");
   assert.match(cached?.lastError ?? "", /Circuit "lmstudio" is OPEN/);
   assert.ok(events.some((e) => e.type === "evaluator.skipped" && e.bookId === book.meta.id));
-  assert.ok(events.some((e) => e.type === "evaluator.paused"));
+  /* Same as above test: single transient circuit failure → backoff retry,
+   * not permanent pause. Pause гарантирован только после 10 consecutive defers. */
+  assert.ok(!events.some((e) => e.type === "evaluator.paused"),
+    "single circuit failure must NOT trigger pause (new backoff contract)");
   assert.equal(getEvaluatorStatus().totalFailed, 0);
 });
 

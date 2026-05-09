@@ -68,4 +68,24 @@ if (process.env.BIBLIARY_SKIP_VENDOR_AUTOSETUP !== "1") {
      устанавливаются автоматически. Production билды только Win+macOS. */
 }
 
+/* Step 4 — Tesseract.js tessdata (rus/ukr/eng) autodownload.
+ *           Cross-platform: bundled при первом install через postinstall, чтобы
+ *           Tier-1a OCR работал из коробки на любой платформе. ~12 MB total.
+ *           Idempotent — если файлы уже есть, скрипт делает noop.
+ *           Best-effort: на закрытых сетях / corporate proxy скачивание может
+ *           провалиться; пользователь дозапустит `npm run setup:tessdata`
+ *           вручную (или OCR cascade fallback на system OCR / vision-LLM).
+ *
+ *           Skip via env: `BIBLIARY_SKIP_VENDOR_AUTOSETUP=1 npm install`. */
+if (process.env.BIBLIARY_SKIP_VENDOR_AUTOSETUP !== "1") {
+  const tessRus = require("node:path").join(ROOT, "vendor", "tessdata", "rus.traineddata");
+  if (!require("node:fs").existsSync(tessRus)) {
+    console.log("[postinstall] Downloading Tesseract tessdata (best-effort)...");
+    const tessStatus = run(process.execPath, [require("node:path").join("scripts", "download-tessdata.cjs")]);
+    if (tessStatus !== 0) {
+      console.log("[postinstall] tessdata download failed — run 'npm run setup:tessdata' manually before electron:build");
+    }
+  }
+}
+
 process.exit(0);

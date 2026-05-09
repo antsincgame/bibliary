@@ -86,6 +86,21 @@ export async function* scrollVectors(opts: ScrollVectorsOptions): AsyncGenerator
   let offset = 0;
   let yielded = 0;
 
+  /* CONCURRENCY caveat: LanceDB Query API не имеет `orderBy` (verified
+   * через `node_modules/@lancedb/lancedb/dist/query.d.ts:165-199` — только
+   * select/where/limit/offset). Default order — implementation-defined
+   * (insertion order). Если concurrent writer добавит row между нашими
+   * страницами в самое начало (фактически невозможно — Lance append-only,
+   * но теоретически), offset N+pageSize может skip/duplicate. Bibliary
+   * mitigation:
+   *   1. `vectorUpsert` идёт под per-table `KeyedAsyncMutex` — concurrent
+   *      writes на ту же таблицу сериализуются, нет race window'ов между
+   *      delete и add.
+   *   2. Caller (concept-loader / dataset-v2) использует scroll только в
+   *      read-only фазах (domain breakdown), без параллельного re-extract'а.
+   * Если в будущем потребуется stable pagination под concurrent writes —
+   * перейти на cursor-based: `where("id > 'last_id'")`, sort полагаясь на
+   * лексикографический порядок UUIDv7 / ULID id'ов. */
   while (yielded < maxItems) {
     if (opts.signal?.aborted) throw new Error("scrollVectors: aborted");
 

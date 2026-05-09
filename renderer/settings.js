@@ -189,10 +189,35 @@ function buildNumberField(field, root) {
   return wrapFieldCard(field, [input, resetBtn], range);
 }
 
+function buildEnumField(field, root) {
+  const dflt = STATE.defaults[field.key];
+  const value = STATE.prefs[field.key] ?? dflt;
+  const options = Array.isArray(field.options) ? field.options : [];
+  const select = el("select", { class: "settings-input" },
+    options.map((opt) =>
+      el("option",
+        { value: String(opt), ...(value === opt ? { selected: "selected" } : {}) },
+        String(opt),
+      ),
+    ),
+  );
+  /** @type {HTMLSelectElement} */(select).value = String(value);
+  select.addEventListener("change", () => {
+    STATE.prefs[field.key] = /** @type {HTMLSelectElement} */(select).value;
+    STATE.dirty = true;
+    updateSaveUi(root);
+  });
+  const resetBtn = buildResetBtn(field.key, dflt, () => {
+    /** @type {HTMLSelectElement} */(select).value = String(dflt);
+  }, value === dflt, root);
+  return wrapFieldCard(field, [select, resetBtn], "");
+}
+
 function buildField(field, root) {
   if (field.type === "url") return buildUrlField(field, root);
   if (field.type === "bool") return buildBoolField(field, root);
   if (field.type === "int" || field.type === "float") return buildNumberField(field, root);
+  if (field.type === "enum") return buildEnumField(field, root);
   throw new Error(`[settings] unexpected field type for "${field.key}": ${field.type}`);
 }
 
