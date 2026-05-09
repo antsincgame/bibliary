@@ -24,7 +24,10 @@ export const evaluationSchema = z.object({
   conceptual_density: z.number().int().min(0).max(100),
   originality: z.number().int().min(0).max(100),
   quality_score: z.number().int().min(0).max(100),
-  verdict_reason: z.string().min(1),
+  /* >= 30 chars per .claude/rules/03-evaluation.md "1. Оценка ВСЕГДА с
+   * reasoning ≥30 chars" — голая короткая фраза («ok», «bad», «good»)
+   * не несёт сигнала для downstream и не должна проходить валидацию. */
+  verdict_reason: z.string().min(30),
 });
 
 export function buildEvaluatorResponseFormat(): Record<string, unknown> {
@@ -74,7 +77,7 @@ export function buildEvaluatorResponseFormat(): Record<string, unknown> {
           conceptual_density: { type: "integer", minimum: 0, maximum: 100 },
           originality: { type: "integer", minimum: 0, maximum: 100 },
           quality_score: { type: "integer", minimum: 0, maximum: 100 },
-          verdict_reason: { type: "string", minLength: 1 },
+          verdict_reason: { type: "string", minLength: 30 },
         },
       },
     },

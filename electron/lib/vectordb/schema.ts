@@ -30,7 +30,6 @@ import {
   Field,
   FixedSizeList,
   Float32,
-  Int32,
   Schema,
   Utf8,
 } from "apache-arrow";
@@ -68,10 +67,9 @@ export const METADATA_FIELDS: ReadonlyArray<string> = [
  * Колонки `id`, `vector`, `document`, `schemaVersion` — required-non-null.
  * Метаданные — все nullable.
  *
- * `cursor_id: Int32` — synthetic auto-increment для pagination fallback'а
- * (см. `scroll.ts`). Если LanceDB Node SDK имеет нативный `.offset()`,
- * cursor_id можно игнорировать в production query path; всё равно держим
- * в схеме для forward-compat.
+ * Pagination использует нативный `.offset(n).limit(m)` LanceDB Query API
+ * (`scroll.ts`). Synthetic cursor_id не понадобился — Plan B из roadmap
+ * откатился после verification offset-path работает на 50K+ rows.
  */
 export function buildConceptSchema(): Schema {
   return new Schema([
@@ -83,7 +81,6 @@ export function buildConceptSchema(): Schema {
     ),
     new Field("document", new Utf8(), /* nullable */ false),
     new Field("schemaVersion", new Utf8(), /* nullable */ false),
-    new Field("cursor_id", new Int32(), /* nullable */ true),
 
     /* metadata — все nullable */
     new Field("bookId", new Utf8(), true),

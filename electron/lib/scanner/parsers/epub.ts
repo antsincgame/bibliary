@@ -179,6 +179,10 @@ async function parseEpub(filePath: string): Promise<ParseResult> {
     };
   });
   const itemById = new Map(items.map((i) => [i.id, i] as const));
+  /* path.posix умышленно: opfPath — это путь ВНУТРИ ZIP-архива, а ZIP
+   * spec требует forward-slash separator вне зависимости от хоста. На
+   * Windows path.dirname сделал бы backslash и манифест распарсился бы
+   * криво. */
   const opfDir = path.posix.dirname(opfPath);
   const resolve = (href: string): string => {
     if (!opfDir || opfDir === ".") return href;

@@ -110,7 +110,6 @@ export function canonicalizeRow(point: VectorPoint): Record<string, unknown> {
     vector: toPlainArray(point.embedding),
     document: typeof point.document === "string" ? point.document : "",
     schemaVersion: SCHEMA_VERSION,
-    cursor_id: null, /* assigned by upsert step */
   };
 
   /* Заполнить все известные metadata-колонки nullable null'ами */

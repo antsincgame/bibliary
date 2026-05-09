@@ -98,7 +98,10 @@ export async function putBlob(
     } finally {
       await fh.close();
     }
-    await fs.rename(tmpPath, absPath);
+    /* renameWithRetry: на Windows AV-сканер изредка удерживает blob-файл при
+     * первом write → EPERM/EBUSY на rename. Backoff 50→100→200→400ms x5. */
+    const { renameWithRetry } = await import("../resilience/atomic-write.js");
+    await renameWithRetry(tmpPath, absPath);
   } catch (err) {
     try { await fs.unlink(tmpPath); } catch { /* ignore */ }
     throw err;

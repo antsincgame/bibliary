@@ -51,11 +51,43 @@ export async function writeTextAtomic(filePath: string, content: string): Promis
     } finally {
       await fh.close();
     }
-    await fs.rename(tmpPath, filePath);
+    await renameWithRetry(tmpPath, filePath);
   } catch (err) {
     if (opened) {
       await fs.unlink(tmpPath).catch((e) => console.error("[atomic-write] unlink tmp Error:", e));
     }
     throw err;
   }
+}
+
+/**
+ * Windows-only flake mitigation: на NTFS rename(tmp, target) изредка падает
+ * с EPERM/EBUSY/EACCES когда target момент удерживается AV / Indexer /
+ * параллельным watcher'ом (особенно на packaged Electron-app — Defender любит
+ * сканировать .json при появлении). На POSIX это не происходит.
+ *
+ * Стратегия: до 5 попыток с backoff 50ms→100ms→200ms→400ms. После последней
+ * — пробрасываем оригинальную ошибку для caller'а.
+ *
+ * Экспортируется для caller'ов которые делают свой tmp+rename pattern с
+ * binary content'ом (см. library/library-store.ts blob writer).
+ */
+export async function renameWithRetry(src: string, dst: string): Promise<void> {
+  const RETRIABLE = new Set(["EPERM", "EBUSY", "EACCES"]);
+  let lastErr: NodeJS.ErrnoException | null = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      await fs.rename(src, dst);
+      return;
+    } catch (err) {
+      lastErr = err as NodeJS.ErrnoException;
+      if (process.platform !== "win32" || !RETRIABLE.has(lastErr.code ?? "")) {
+        throw err;
+      }
+      /* Exp backoff with jitter: 50, 100, 200, 400ms. */
+      const backoffMs = 50 * Math.pow(2, attempt);
+      await new Promise((r) => setTimeout(r, backoffMs));
+    }
+  }
+  throw lastErr;
 }

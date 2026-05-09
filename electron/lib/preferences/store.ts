@@ -226,20 +226,34 @@ export const PreferencesSchema = z.object({
   /**
    * Cosine similarity ≥ этого порога ⇒ идея считается DERIVATIVE без LLM-judge.
    * Default 0.85 — баланс между recall и precision на e5-small эмбеддингах.
+   *
+   * **Origin & calibration**: 0.85 / 0.65 / 0.92 — стартовые значения из
+   * pilot-runs на ~30 книгах смешанного домена (CS / phys / hist) с manual
+   * spot-check. Не рекомендуется без re-tuning менять для других corpus
+   * profiles (узко-доменные библиотеки → возможно нужно поднять threshold,
+   * иначе "everything looks similar"). TODO: добавить evaluation-set с
+   * labelled novel/derivative парами для empirical validation.
    */
   uniquenessSimilarityHigh: z.number().min(0.5).max(1).default(0.85),
   /**
    * Cosine similarity < этого порога ⇒ идея NOVEL без LLM-judge.
    * Между low и high — серая зона, отдаётся reader LLM на verdict.
+   * Default 0.65 — см. calibration-комментарий на uniquenessSimilarityHigh.
    */
   uniquenessSimilarityLow: z.number().min(0).max(0.95).default(0.65),
   /** Hard cap на число идей, извлекаемых из одной главы. */
   uniquenessIdeasPerChapterMax: z.number().int().min(2).max(15).default(7),
-  /** Сколько глав обрабатывать параллельно (LLM concurrency). */
+  /**
+   * Сколько глав обрабатывать параллельно (async-ready). Реальная concurrency
+   * = min(этот pref, GPU slots в LM Studio). На single-GPU LM Studio (типичный
+   * случай) запросы сериализуются в любом случае — больше 2-3 не даёт прироста.
+   */
   uniquenessChapterParallel: z.number().int().min(1).max(8).default(2),
   /**
    * Within-book dedup: cosine ≥ этого ⇒ идеи в один кластер.
    * Default 0.92 — only near-paraphrases collapse, distinct facts stay separate.
+   * Tuned на той же ~30-book pilot выборке что и similarityHigh/Low. Поднимать
+   * (например 0.95) если кластеры сливают семантически разные claims.
    */
   uniquenessMergeThreshold: z.number().min(0.7).max(1).default(0.92),
   /**

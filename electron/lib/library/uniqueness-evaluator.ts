@@ -439,9 +439,20 @@ export async function evaluateBookUniqueness(
     }
 
     const total = clusters.length;
-    /* Phase 4: undefined при total=0 — это «не оценено», не «100% плагиат». */
-    const score = total === 0 ? undefined : Math.round((100 * novel) / total);
-    return { score, novelCount: novel, totalIdeas: total };
+    /* Smoothing для маленьких выборок: на total < 3 кластеров score
+     * становится экстремальным (0%/50%/100%) и UX-шумит. Возвращаем
+     * undefined — UI рендерит «—» вместо «100% unique» для книг где
+     * крем сигнал слишком тонок. total=0 (нет кластеров) — то же самое. */
+    const MIN_CLUSTERS_FOR_SCORE = 3;
+    const score = total < MIN_CLUSTERS_FOR_SCORE
+      ? undefined
+      : Math.round((100 * novel) / total);
+    const error = total === 0
+      ? "no clusters"
+      : total < MIN_CLUSTERS_FOR_SCORE
+        ? `insufficient clusters (${total} < ${MIN_CLUSTERS_FOR_SCORE})`
+        : undefined;
+    return { score, novelCount: novel, totalIdeas: total, error };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { score: undefined, novelCount: 0, totalIdeas: 0, error: msg };

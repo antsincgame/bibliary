@@ -153,17 +153,25 @@ test("[uniqueness-step] success → upsertBook + persistFrontmatter с uniquenes
     listLoaded: async () => [{ identifier: "reader-x", modelKey: "reader-x" }],
     getPrefs: async () => ({ readerModel: "reader-x" }),
   });
-  /* Mock LLM extraction → 1 idea + embed → unit vec */
+  /* Mock LLM: возвращаем 3 distinct ideas (≥ MIN_CLUSTERS_FOR_SCORE=3),
+   * чтобы пройти smoothing-gate и получить численный score. */
+  let embedCall = 0;
   _setUniquenessDepsForTesting({
-    callLlm: async () => JSON.stringify({ ideas: [{ title: "T", essence: "Some claim." }] }),
+    callLlm: async () => JSON.stringify({ ideas: [
+      { title: "T1", essence: "First distinct claim." },
+      { title: "T2", essence: "Second distinct claim." },
+      { title: "T3", essence: "Third distinct claim." },
+    ] }),
+    /* Каждый idea получает orthogonal unit vector, чтобы они не схлопывались
+     * в один кластер при mergeThreshold=0.92. */
     embed: async () => {
       const v = new Array(384).fill(0);
-      v[0] = 1;
+      v[embedCall++ % 384] = 1;
       return v;
     },
   });
   /* Empty LanceDB collection → vectorQueryNearest вернёт 0 neighbors →
-   * все идеи трактуются как NOVEL → score=100. */
+   * все 3 кластера трактуются как NOVEL → score=100. */
   await ensureCollection({ name: "delta-knowledge", distance: "cosine" });
 
   let upsertedMeta: BookCatalogMeta | null = null;
@@ -178,10 +186,49 @@ test("[uniqueness-step] success → upsertBook + persistFrontmatter с uniquenes
     });
     assert.ok(upsertedMeta, "upsertBook должен быть вызван");
     assert.equal(upsertedMeta!.uniquenessScore, 100);
-    assert.equal(upsertedMeta!.uniquenessNovelCount, 1);
-    assert.equal(upsertedMeta!.uniquenessTotalIdeas, 1);
+    assert.equal(upsertedMeta!.uniquenessNovelCount, 3);
+    assert.equal(upsertedMeta!.uniquenessTotalIdeas, 3);
     assert.ok(upsertedMeta!.uniquenessEvaluatedAt);
     assert.equal(persistCalls, 1);
+  } finally {
+    await sb.cleanup();
+  }
+});
+
+test("[uniqueness-step] insufficient clusters (total<3) → score undefined + error", async () => {
+  const sb = await makeSandbox(true);
+  _setResolverDepsForTesting({
+    listLoaded: async () => [{ identifier: "reader-x", modelKey: "reader-x" }],
+    getPrefs: async () => ({ readerModel: "reader-x" }),
+  });
+  /* 2 distinct ideas → < MIN_CLUSTERS_FOR_SCORE=3 → smoothing kicks in. */
+  let embedCall = 0;
+  _setUniquenessDepsForTesting({
+    callLlm: async () => JSON.stringify({ ideas: [
+      { title: "T1", essence: "First claim." },
+      { title: "T2", essence: "Second claim." },
+    ] }),
+    embed: async () => {
+      const v = new Array(384).fill(0);
+      v[embedCall++ % 384] = 1;
+      return v;
+    },
+  });
+  await ensureCollection({ name: "delta-knowledge", distance: "cosine" });
+
+  let upsertedMeta: BookCatalogMeta | null = null;
+  const ctrl = new AbortController();
+  try {
+    await runUniquenessStep({
+      baseMeta, chapters, mdPath: "/tmp/x.md", md: "---\n---", reasoning: null,
+      signal: ctrl.signal,
+      persistFrontmatter: async () => {},
+      upsertBook: (m) => { upsertedMeta = m; },
+    });
+    assert.ok(upsertedMeta);
+    assert.equal(upsertedMeta!.uniquenessScore, undefined);
+    assert.equal(upsertedMeta!.uniquenessTotalIdeas, 2);
+    assert.match(upsertedMeta!.uniquenessError ?? "", /insufficient clusters/);
   } finally {
     await sb.cleanup();
   }
