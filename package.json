@@ -1,6 +1,6 @@
 {
   "name": "bibliary",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "type": "module",
   "main": "dist-electron/main.js",
   "description": "Local book library → structured Markdown → embedded LanceDB vector collections → ChatML JSONL fine-tuning datasets",
