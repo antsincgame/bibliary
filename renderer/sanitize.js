@@ -145,11 +145,16 @@ export function isSafeImageSrc(url) {
  * @returns {boolean}
  */
 export function isAllowedAttr(tagName, attrName) {
-  /* Жёсткий запрет: любые event handlers (on*) и srcdoc. */
+  /* Жёсткий запрет: любые event handlers (on*) и srcdoc/formaction/style. */
   if (attrName.startsWith("on")) return false;
   if (attrName === "srcdoc" || attrName === "formaction" || attrName === "style") return false;
-  /* xlink:href в SVG — но SVG мы и так не разрешаем; страховка. */
-  if (attrName.includes(":") && attrName !== "xml:lang") return false;
+  /* xml:lang — единственное разрешённое namespaced (legitimate i18n).
+     Fix 2026-05-10: раньше эта строка была early-rejected ниже, и xml:lang
+     не попадал в GLOBAL_ATTRS → возвращал false вопреки документированному
+     поведению. Теперь явный allow ДО namespace-check. */
+  if (attrName === "xml:lang") return true;
+  /* Все остальные namespaced (xlink:href, xml:base, xmlns, и т.д.) запрещены. */
+  if (attrName.includes(":")) return false;
   if (GLOBAL_ATTRS.has(attrName)) return true;
   const perTag = TAG_ATTRS[tagName];
   return perTag ? perTag.has(attrName) : false;

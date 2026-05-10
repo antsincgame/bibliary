@@ -58,6 +58,9 @@ function escapeYaml(value: string): string {
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n")}"`;
 }
 
+/* `year` добавлен (2026-05-10): buildFrontmatter пишет `year: 1965` без
+ * кавычек, parseFrontmatter должен прочитать обратно как number, иначе
+ * roundtrip ломается (BookCatalogMeta.year: number). */
 const NUMERIC_KEYS: ReadonlySet<string> = new Set([
   "wordCount",
   "chapterCount",
@@ -67,6 +70,7 @@ const NUMERIC_KEYS: ReadonlySet<string> = new Set([
   "conceptsExtracted",
   "conceptsAccepted",
   "layoutVersion",
+  "year",
 ]);
 
 const BOOLEAN_KEYS: ReadonlySet<string> = new Set(["isFictionOrWater"]);
