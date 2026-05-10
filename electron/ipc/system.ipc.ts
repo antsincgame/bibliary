@@ -1,6 +1,6 @@
 import { ipcMain, shell, app } from "electron";
 import { execSync } from "node:child_process";
-import { statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import * as path from "node:path";
 import { detectHardware } from "../lib/hardware/profiler.js";
 import { getEndpoints } from "../lib/endpoints/index.js";
@@ -15,9 +15,48 @@ interface AppBuildInfo {
   isPackaged: boolean;
 }
 
+interface BuildInfoFile {
+  commit?: string | null;
+  builtAt?: string | null;
+  nodeVersion?: string;
+}
+
 let cachedBuildInfo: AppBuildInfo | null = null;
+let cachedBuildInfoFile: BuildInfoFile | null | undefined = undefined;
+
+/**
+ * Читает dist-electron/build-info.json (создаётся scripts/prepare-electron.js
+ * при компиляции). Кэшируется в памяти. Если файл отсутствует или
+ * битый — возвращает null, caller fallback'ится.
+ *
+ * Это заменяет runtime `execSync("git rev-parse")` (audit 2026-05-09):
+ *   - в packaged build нет .git → execSync кидал → commit всегда null;
+ *   - runtime spawn shell — лишняя поверхность атаки;
+ *   - 1.5s timeout каждый раз — тормозит onboarding wizard.
+ */
+function readBuildInfoFile(): BuildInfoFile | null {
+  if (cachedBuildInfoFile !== undefined) return cachedBuildInfoFile;
+  try {
+    const buildInfoPath = path.join(__dirname, "build-info.json");
+    const raw = readFileSync(buildInfoPath, "utf8");
+    const parsed = JSON.parse(raw) as BuildInfoFile;
+    cachedBuildInfoFile = parsed;
+    return parsed;
+  } catch {
+    cachedBuildInfoFile = null;
+    return null;
+  }
+}
 
 function readCommitSha(): string | null {
+  /* Primary path: build-info.json (записан при compile time). */
+  const fromFile = readBuildInfoFile();
+  if (fromFile && typeof fromFile.commit === "string" && fromFile.commit.length > 0) {
+    return fromFile.commit;
+  }
+  /* Dev fallback: execSync git ТОЛЬКО когда не packaged. В packaged
+     .git каталога нет, и runtime spawn shell — лишний риск. */
+  if (app.isPackaged) return null;
   try {
     return execSync("git rev-parse --short HEAD", {
       encoding: "utf8",
@@ -30,6 +69,12 @@ function readCommitSha(): string | null {
 }
 
 function readBuiltAt(): string | null {
+  /* Primary path: build-info.json. */
+  const fromFile = readBuildInfoFile();
+  if (fromFile && typeof fromFile.builtAt === "string" && fromFile.builtAt.length > 0) {
+    return fromFile.builtAt;
+  }
+  /* Fallback: mtime of main.js (dev mode where build-info.json missing). */
   try {
     const mainPath = path.join(__dirname, "main.js");
     return statSync(mainPath).mtime.toISOString();
