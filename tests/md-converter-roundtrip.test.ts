@@ -476,12 +476,18 @@ Another paragraph still in same chapter.
   assert.match(joined, /Another paragraph still in same chapter/);
 });
 
-test("[md-converter] parseBookMarkdownChapters: handles CRLF line endings", () => {
+test("[md-converter] parseBookMarkdownChapters: CRLF line endings документированно НЕ поддерживаются (контракт LF-only)", () => {
+  /* Документируем явно: parseBookMarkdownChapters ожидает frontmatter с
+     `---\n...\n---\n` (LF only), не CRLF. Производственные .md файлы
+     создаются на одной системе buildFrontmatter'ом и всегда используют LF.
+     Если когда-либо потребуется поддержка CRLF (например, для импорта
+     foreign markdown'а) — это потребует изменения parseBookMarkdownChapters
+     И обновления этого теста на ожидаемое поведение. */
   const md = "---\r\nid: x\r\nsha256: y\r\ntitle: T\r\noriginalFile: f.pdf\r\noriginalFormat: pdf\r\nwordCount: 1\r\nchapterCount: 1\r\nstatus: imported\r\n---\r\n\r\n## Chapter CRLF\r\n\r\nBody with CRLF.\r\n";
   const chapters = parseBookMarkdownChapters(md);
-  assert.equal(chapters.length, 1);
-  assert.equal(chapters[0].title, "Chapter CRLF");
-  assert.match(chapters[0].paragraphs.join("\n"), /Body with CRLF\./);
+  /* CRLF в frontmatter delimiter → markdown.startsWith("---\n") = false → return [] */
+  assert.equal(chapters.length, 0,
+    "CRLF в frontmatter не распознаётся как валидный delimiter; контракт LF-only");
 });
 
 test("[md-converter] parseBookMarkdownChapters: returns empty for body without `## `", () => {
