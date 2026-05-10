@@ -34,6 +34,25 @@ import { closeCacheDb } from "./lib/library/cache-db.js";
 import { killAllSynthChildren } from "./ipc/dataset-v2.ipc.js";
 import { resolveBlobFromUrl, getBlobsRoot } from "./lib/library/library-store.js";
 import { resolveLibraryRoot } from "./lib/library/paths.js";
+import { applySmokeHarnessGate } from "./lib/smoke-harness-gate.js";
+
+/* SECURITY (audit 2026-05-09): block BIBLIARY_SMOKE_UI_HARNESS=1 in packaged
+   builds. Без этого gate инжекция env заставила бы preload подменить
+   library IPC fake-данными — пользователь увидит чужой каталог, deleteBook
+   ничего не удалит, burnAll soft-вернёт success. Должно стоять ДО любого
+   `new BrowserWindow(...)` — preload наследует env от main. */
+{
+  const gateResult = applySmokeHarnessGate({
+    isPackaged: app.isPackaged,
+    env: process.env,
+    log: (msg) => console.error(msg),
+  });
+  if (gateResult.blocked) {
+    /* Дополнительный защитный слой: если кто-то всё-таки прошёл
+       через build-time подмену, это попадёт в crash log. */
+    console.error(`[main/security] smoke harness gate result: ${gateResult.reason}`);
+  }
+}
 
 /* Disable libvips ORC SIMD vector codegen — prevents access violations on Windows
    portable builds (known orc_code_chunk_merge crash in GStreamer/liborc < 0.4.34).
