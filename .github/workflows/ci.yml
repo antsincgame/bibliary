@@ -5,21 +5,15 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  # Запуск раз в неделю — ловим расхождения с upstream (npm packages, Node).
   schedule:
-    - cron: '0 5 * * 1'  # Monday 05:00 UTC
+    - cron: '0 5 * * 1'
   workflow_dispatch: {}
 
-# Отменяем дублирующиеся runs для одного и того же PR/ветки.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # ─────────────────────────────────────────────────────────────────
-  # Главный job: на windows-latest, поскольку production билды
-  # портативные .exe собираются именно там.
-  # ─────────────────────────────────────────────────────────────────
   ci-windows:
     name: Win · Lint · Tests · Compile
     runs-on: windows-latest
@@ -32,34 +26,28 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
-      # Не скачиваем Electron binary в CI: для lint/test/compile он не нужен.
-      # better-sqlite3 имеет prebuilt Windows binary для Node 22.
       - name: Install dependencies
         run: npm ci
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
-      # postinstall пересобирает better-sqlite3 под Electron ABI;
-      # для node:test возвращаем под Node ABI через ensure-sqlite-abi.cjs
-      # (на чистом CI = rebuild + auto-stash; локально = ~50ms copy).
       - name: Ensure better-sqlite3 ABI (Node)
         run: node scripts/ensure-sqlite-abi.cjs --target=node
 
       - name: Lint (tsc + eslint)
         run: npm run lint
 
-      - name: Unit tests (Node test runner)
-        run: npm run test:fast
+      # ВРЕМЕННО (диагностика 2026-05-10 round 2): hang устранён, но какой-то
+      # тест всё ещё падает после atomic-fix 1a54cab. Чтобы локализовать,
+      # снова запускаем diagnose-test-hang.cjs — он покажет PASS/FAIL/TIMEOUT
+      # таблицу в логах. После идентификации → revert.
+      - name: Unit tests — DIAGNOSTIC MODE round 2
+        timeout-minutes: 30
+        run: node scripts/diagnose-test-hang.cjs
 
-      # Sanity-check: полный TypeScript emit без noEmit-кэша.
       - name: Compile Electron TypeScript
         run: npx tsc -p tsconfig.electron.json
 
-      # Electron smoke (Playwright): проверяет что preload bridge,
-      # IPC handlers (preferences:get-all + library:* shape) и UI flows
-      # реально работают в собранном приложении.
-      # Требует именно Windows runner — тесты запускают .exe через Playwright.
-      # Не блокирует merge (continue-on-error: true) пока не стабилизируется.
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
 
@@ -67,7 +55,6 @@ jobs:
         continue-on-error: true
         run: npm run test:smoke
 
-      # Артефакты: сохраняем компиляцию + любые отчёты из release/
       - name: Upload compile artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -79,11 +66,6 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  # ─────────────────────────────────────────────────────────────────
-  # macOS job: lint + unit tests + tsc compile.
-  # Playwright smoke пропускается — smoke-тесты запускают .exe,
-  # на macOS нужен отдельный Electron build в release workflow.
-  # ─────────────────────────────────────────────────────────────────
   ci-macos:
     name: macOS · Lint · Tests · Compile
     runs-on: macos-latest
@@ -107,8 +89,9 @@ jobs:
       - name: Lint (tsc + eslint)
         run: npm run lint
 
-      - name: Unit tests (Node test runner)
-        run: npm run test:fast
+      - name: Unit tests — DIAGNOSTIC MODE round 2
+        timeout-minutes: 30
+        run: node scripts/diagnose-test-hang.cjs
         env:
           BIBLIARY_SKIP_OCR: '1'
 
