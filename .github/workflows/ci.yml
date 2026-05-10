@@ -48,8 +48,16 @@ jobs:
       - name: Lint (tsc + eslint)
         run: npm run lint
 
-      - name: Unit tests (Node test runner)
-        run: npm run test:fast
+      # ВРЕМЕННО (диагностика hang'а 2026-05-10): вместо `npm run test:fast`
+      # (который висит >25 мин на CI runner'ах) запускаем diagnose-test-hang.cjs —
+      # он гонит каждый tests/*.test.ts ОТДЕЛЬНО с 60s таймаутом и печатает
+      # PASS/FAIL/TIMEOUT таблицу. Файл с TIMEOUT = root cause hang'а.
+      # `timeout-minutes: 30` — твёрдая граница для GH job'а на случай если
+      # все файлы зависнут (60s × 96 файлов = 96 min worst case).
+      # После идентификации hang-файла → восстановить `npm run test:fast`.
+      - name: Unit tests — DIAGNOSTIC MODE (per-file timeout)
+        timeout-minutes: 30
+        run: node scripts/diagnose-test-hang.cjs
 
       # Sanity-check: полный TypeScript emit без noEmit-кэша.
       - name: Compile Electron TypeScript
@@ -107,8 +115,9 @@ jobs:
       - name: Lint (tsc + eslint)
         run: npm run lint
 
-      - name: Unit tests (Node test runner)
-        run: npm run test:fast
+      - name: Unit tests — DIAGNOSTIC MODE (per-file timeout)
+        timeout-minutes: 30
+        run: node scripts/diagnose-test-hang.cjs
         env:
           BIBLIARY_SKIP_OCR: '1'
 
