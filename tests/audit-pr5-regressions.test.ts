@@ -1,46 +1,453 @@
 /**
  * tests/audit-pr5-regressions.test.ts
  *
- * ВРЕМЕННО ОТКЛЮЧЁН для диагностики hang'а CI Unit tests step.
- * Если этот файл — источник hang'а: после `t.skip()` всех тестов CI должен
- * пройти Unit tests за нормальное время (~5-10 мин). Если CI всё ещё висит
- * 25+ минут — hang в другом тестовом файле, не моём.
+ * Регрессионные тесты на 4 фикса PR #4 (commit 654b70f, 2026-05-09):
  *
- * После диагностики оригинальные тесты будут восстановлены (commit `d931c88`
- * содержит полную версию с timeouts и wordCount=0 фиксом).
+ *   1. CRITICAL #1: vectorQueryNearest skip rows без `_distance`
+ *   2. CRITICAL #4: bootstrapEvaluatorQueue → frontmatter writeFile failure
+ *      теперь mark книги как `failed` (раньше silent catch → infinite loop).
+ *   3. REGRESSION (5fa3766 → PR #4): DEFER_PAUSE_THRESHOLD=10
+ *   4. v1.0.7 (autonomous heresy fix): allowAutoLoad consume-once
  *
- * Background: Все unit tests локально (M1) проходят за ~5 мин (PR #4 commit
- * message: 496+ pass / 2 pre-existing fails). CI на medium-spec runners
- * (3-core macOS, 4-core Windows) запускает один и тот же набор. Hang
- * локально не воспроизводится → может быть platform-specific (filesystem,
- * native sqlite ABI, или порядок параллельного запуска test files).
+ * Hang-prevention notes (fix 2026-05-10):
+ *   - Test #2 [PR#4 #4]: wordCount=0 → Stage 2 enqueueEvaluatableRows
+ *     пропускает revert (`if (meta.wordCount <= 0 || meta.chapterCount <= 0) continue`).
+ *     Книга остаётся `failed` после bootstrap'а.
+ *   - Test #3 [PR#4 5fa3766]: waitForPausedOrIdle вместо waitForIdle —
+ *     после pause queue может быть непустым.
+ *   - Все тесты имеют явный `timeout` 5-15 сек — fail-fast вместо hang.
+ *
+ * NOTE: CI hang issue (2026-05-10): диагностика показала что hang Unit tests
+ * step не в этом файле — даже с полностью skipped тестами CI висит >25 мин.
+ * Hang в другом тестовом файле, требует отдельного расследования через
+ * локальный `npm run test:fast` с per-file timeout.
  */
 import { test } from "node:test";
+import assert from "node:assert/strict";
+import * as os from "node:os";
+import * as path from "node:path";
+import { mkdtemp, rm, mkdir, writeFile, readFile } from "node:fs/promises";
 
-test.skip("[PR#4 #1] vectorQueryNearest distance integrity — TEMPORARILY DISABLED for CI hang diagnosis", () => {
-  /* see commit d931c88 for full test body */
-});
+import { closeCacheDb, upsertBook, getBookById } from "../electron/lib/library/cache-db.ts";
+import { _resetLibraryRootCache } from "../electron/lib/library/paths.ts";
+import {
+  _resetEvaluatorForTests,
+  _setEvaluatorDepsForTests,
+  bootstrapEvaluatorQueue,
+  enqueueBook,
+  getEvaluatorStatus,
+  subscribeEvaluator,
+  pauseEvaluator,
+  setEvaluatorSlots,
+  type EvaluatorEvent,
+} from "../electron/lib/library/evaluator-queue.ts";
+import {
+  initVectorDb,
+  closeDb,
+  setDataDirForTesting,
+  ensureCollection,
+  vectorUpsert,
+  vectorQueryNearest,
+  VECTOR_DIM,
+} from "../electron/lib/vectordb/index.ts";
+import type { BookCatalogMeta, EvaluationResult } from "../electron/lib/library/types.ts";
 
-test.skip("[PR#4 #4] bootstrapEvaluatorQueue writeFile failure — TEMPORARILY DISABLED for CI hang diagnosis", () => {
-  /* see commit d931c88 for full test body */
-});
+interface TestEnv {
+  tempRoot: string;
+  libraryRoot: string;
+  cleanup: () => Promise<void>;
+}
 
-test.skip("[PR#4 5fa3766] DEFER_PAUSE_THRESHOLD — TEMPORARILY DISABLED for CI hang diagnosis", () => {
-  /* see commit d931c88 for full test body */
-});
+async function setupTestEnv(): Promise<TestEnv> {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "bibliary-pr5-"));
+  const dataDir = path.join(tempRoot, "data");
+  const libraryRoot = path.join(dataDir, "library");
+  await mkdir(libraryRoot, { recursive: true });
 
-test.skip("[v1.0.7] allowAutoLoad granted — TEMPORARILY DISABLED for CI hang diagnosis", () => {
-  /* see commit d931c88 for full test body */
-});
+  const prev = {
+    BIBLIARY_DATA_DIR: process.env.BIBLIARY_DATA_DIR,
+    BIBLIARY_LIBRARY_DB: process.env.BIBLIARY_LIBRARY_DB,
+    BIBLIARY_LIBRARY_ROOT: process.env.BIBLIARY_LIBRARY_ROOT,
+  };
+  process.env.BIBLIARY_DATA_DIR = dataDir;
+  process.env.BIBLIARY_LIBRARY_DB = path.join(dataDir, "bibliary-cache.db");
+  process.env.BIBLIARY_LIBRARY_ROOT = libraryRoot;
 
-test.skip("[v1.0.7] allowAutoLoad denied — TEMPORARILY DISABLED for CI hang diagnosis", () => {
-  /* see commit d931c88 for full test body */
-});
+  closeCacheDb();
+  _resetLibraryRootCache();
+  _resetEvaluatorForTests();
 
-test.skip("[v1.0.7] allowAutoLoad upgrade-only — TEMPORARILY DISABLED for CI hang diagnosis", () => {
-  /* see commit d931c88 for full test body */
-});
+  return {
+    tempRoot,
+    libraryRoot,
+    cleanup: async () => {
+      _resetEvaluatorForTests();
+      closeCacheDb();
+      _resetLibraryRootCache();
+      for (const k of Object.keys(prev) as (keyof typeof prev)[]) {
+        if (prev[k] === undefined) delete process.env[k];
+        else process.env[k] = prev[k];
+      }
+      await rm(tempRoot, { recursive: true, force: true });
+    },
+  };
+}
 
-test.skip("[v1.0.7] allowAutoLoad consume-once — TEMPORARILY DISABLED for CI hang diagnosis", () => {
-  /* see commit d931c88 for full test body */
-});
+function makeBook(
+  libraryRoot: string,
+  id: string,
+  title: string,
+  overrides: Partial<BookCatalogMeta> = {},
+): { meta: BookCatalogMeta; mdPath: string } {
+  const bookDir = path.join(libraryRoot, id);
+  const mdPath = path.join(bookDir, "book.md");
+  return {
+    meta: {
+      id,
+      sha256: id.padEnd(64, "0"),
+      title,
+      originalFile: "original.txt",
+      originalFormat: "txt",
+      wordCount: 1024,
+      chapterCount: 2,
+      status: "imported",
+      ...overrides,
+    },
+    mdPath,
+  };
+}
+
+async function writeBookMd(libraryRoot: string, meta: BookCatalogMeta, mdPath: string): Promise<void> {
+  const dir = path.dirname(mdPath);
+  await mkdir(dir, { recursive: true });
+  const md = `---
+id: ${meta.id}
+sha256: ${meta.sha256}
+title: ${meta.title}
+originalFile: ${meta.originalFile}
+originalFormat: ${meta.originalFormat}
+wordCount: ${meta.wordCount}
+chapterCount: ${meta.chapterCount}
+status: ${meta.status}
+---
+
+# ${meta.title}
+
+## Chapter 1
+
+${"Body. ".repeat(50)}
+
+## Chapter 2
+
+${"More body. ".repeat(50)}
+`;
+  await writeFile(mdPath, md, "utf-8");
+}
+
+function fakeEval(quality: number): EvaluationResult {
+  return {
+    evaluation: {
+      title_ru: "T", author_ru: "A", title_en: "T", author_en: "A",
+      year: 2024, domain: "x",
+      tags: ["a","b","c","d","e","f","g","h"],
+      tags_ru: ["а","б","в","г","д","е","ё","ж"],
+      is_fiction_or_water: false,
+      conceptual_density: 70, originality: 60,
+      quality_score: quality,
+      verdict_reason: "synthetic verdict reason at least thirty chars",
+    },
+    reasoning: null, raw: "{}", model: "fake-model", warnings: [],
+  };
+}
+
+async function waitForIdle(ms = 5000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < ms) {
+    const s = getEvaluatorStatus();
+    if (!s.running && s.queueLength === 0) return;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  throw new Error(`evaluator did not become idle within ${ms}ms`);
+}
+
+async function waitForPausedOrIdle(ms = 5000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < ms) {
+    const s = getEvaluatorStatus();
+    if (s.paused) return;
+    if (!s.running && s.queueLength === 0) return;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  throw new Error(`evaluator did not pause or idle within ${ms}ms`);
+}
+
+function unitVec(seed: number[]): number[] {
+  const v = new Array<number>(VECTOR_DIM).fill(0);
+  for (let i = 0; i < seed.length && i < VECTOR_DIM; i++) v[i] = seed[i];
+  let norm = 0;
+  for (const x of v) norm += x * x;
+  norm = Math.sqrt(norm);
+  if (norm === 0) return v;
+  return v.map((x) => x / norm);
+}
+
+/* ─── PR #4 CRITICAL #1: vectorQueryNearest distance integrity ─────── */
+
+test(
+  "[PR#4 #1] vectorQueryNearest: similarity range [0, 1] for known L2-normalized vectors (no false-positive 1.0 from missing _distance)",
+  { timeout: 15_000 },
+  async (t) => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "pr5-vdb-"));
+    setDataDirForTesting(dir);
+    await initVectorDb({ dataDir: dir });
+    t.after(async () => {
+      await closeDb();
+      setDataDirForTesting(null);
+      await rm(dir, { recursive: true, force: true });
+    });
+
+    await ensureCollection({ name: "regr1" });
+    const v1 = unitVec([1, 0, 0, 0]);
+    const v2 = unitVec([0, 1, 0, 0]);
+    const v3 = unitVec([0, 0, 1, 0]);
+    await vectorUpsert("regr1", [
+      { id: "p1", embedding: v1, metadata: { tag: "x" }, document: "doc1" },
+      { id: "p2", embedding: v2, metadata: { tag: "y" }, document: "doc2" },
+      { id: "p3", embedding: v3, metadata: { tag: "z" }, document: "doc3" },
+    ]);
+
+    const neighbors = await vectorQueryNearest("regr1", v1, 3);
+    assert.equal(neighbors.length, 3, "all 3 rows returned (no silent skip)");
+    const p1 = neighbors.find((n) => n.id === "p1");
+    assert.ok(p1, "exact-match row p1 must be present");
+    assert.ok(p1!.similarity > 0.99, `p1 similarity ~1.0, got ${p1!.similarity}`);
+    const p2 = neighbors.find((n) => n.id === "p2");
+    const p3 = neighbors.find((n) => n.id === "p3");
+    assert.ok(p2 && p3, "p2 + p3 present");
+    assert.ok(p2!.similarity < 0.5, `p2 (orthogonal) similarity should be near 0, got ${p2!.similarity}`);
+    assert.ok(p3!.similarity < 0.5, `p3 (orthogonal) similarity should be near 0, got ${p3!.similarity}`);
+    for (const n of neighbors) {
+      assert.ok(n.similarity >= -1.0 && n.similarity <= 1.0,
+        `similarity must be in [-1, 1], got ${n.similarity} for ${n.id}`);
+    }
+  },
+);
+
+/* ─── PR #4 CRITICAL #4: bootstrap writeFile failure → mark as failed ─ */
+
+test(
+  "[PR#4 #4] bootstrapEvaluatorQueue: writeFile failure on stuck book → status=failed (no infinite re-bootstrap loop)",
+  { timeout: 5000 },
+  async (t) => {
+    const env = await setupTestEnv();
+    t.after(env.cleanup);
+
+    pauseEvaluator();
+
+    const stuckId = "deadbeefdeadbeef";
+    const stuck = makeBook(env.libraryRoot, stuckId, "Stuck Book", {
+      wordCount: 0,
+      chapterCount: 0,
+    });
+    await writeBookMd(env.libraryRoot, { ...stuck.meta, status: "evaluating" }, stuck.mdPath);
+    upsertBook({ ...stuck.meta, status: "evaluating" }, stuck.mdPath);
+
+    _setEvaluatorDepsForTests({
+      pickEvaluatorModel: async () => null,
+      evaluateBook: async () => {
+        throw new Error("evaluateBook must not be called when paused + wordCount=0");
+      },
+      readFile: async (p) => readFile(p, "utf-8"),
+      writeFile: async () => {
+        throw new Error("EPERM: simulated read-only fs");
+      },
+    });
+
+    await bootstrapEvaluatorQueue();
+
+    const cached = getBookById(stuckId);
+    assert.equal(cached?.status, "failed",
+      `stuck book must become failed (got ${cached?.status}) — без этого фикса infinite re-bootstrap loop`);
+    assert.match(cached?.lastError ?? "", /bootstrap.*frontmatter reset failed/i,
+      `lastError must describe writeFile failure for diagnostics, got: ${cached?.lastError}`);
+    assert.match(cached?.lastError ?? "", /EPERM/,
+      "lastError must propagate underlying EPERM message");
+  },
+);
+
+/* ─── PR #4 REGRESSION (5fa3766): DEFER_PAUSE_THRESHOLD=10 ─────────── */
+
+test(
+  "[PR#4 5fa3766] DEFER_PAUSE_THRESHOLD: 10 consecutive no-model defers triggers evaluator.paused",
+  { timeout: 15_000 },
+  async (t) => {
+    const env = await setupTestEnv();
+    t.after(env.cleanup);
+
+    setEvaluatorSlots(1);
+
+    const books = Array.from({ length: 11 }, (_, i) =>
+      makeBook(env.libraryRoot, `de${i.toString(16).padStart(14, "0")}`, `Defer ${i}`),
+    );
+    for (const b of books) {
+      await writeBookMd(env.libraryRoot, b.meta, b.mdPath);
+      upsertBook(b.meta, b.mdPath);
+    }
+
+    _setEvaluatorDepsForTests({
+      pickEvaluatorModel: async () => null,
+      evaluateBook: async () => {
+        throw new Error("evaluateBook must NOT be called when pickEvaluatorModel returns null");
+      },
+    });
+
+    const events: EvaluatorEvent[] = [];
+    const unsub = subscribeEvaluator((e) => events.push(e));
+
+    for (const b of books) enqueueBook(b.meta.id);
+
+    await waitForPausedOrIdle(10_000);
+    unsub();
+
+    const skips = events.filter((e) => e.type === "evaluator.skipped");
+    assert.ok(skips.length >= 10, `expected ≥10 skipped events, got ${skips.length}`);
+
+    const paused = events.find((e) => e.type === "evaluator.paused");
+    assert.ok(paused, "after 10 consecutive defers evaluator.paused MUST fire (DEFER_PAUSE_THRESHOLD=10 contract)");
+    const pausedIdx = events.indexOf(paused!);
+    const skipsBeforePause = events.slice(0, pausedIdx).filter((e) => e.type === "evaluator.skipped").length;
+    assert.ok(skipsBeforePause >= 10,
+      `paused fired after only ${skipsBeforePause} skips — must be at least 10 (off-by-one or threshold drifted)`);
+  },
+);
+
+/* ─── v1.0.7: allowAutoLoad флаг как right-to-load ─────────────────── */
+
+test(
+  "[v1.0.7] enqueueBook(id, {allowAutoLoad:true}) → picker.allowAutoLoad=true (user-intent right-to-load)",
+  { timeout: 10_000 },
+  async (t) => {
+    const env = await setupTestEnv();
+    t.after(env.cleanup);
+
+    const book = makeBook(env.libraryRoot, "a110aaaaaaaaaaaa", "AutoLoad Granted");
+    await writeBookMd(env.libraryRoot, book.meta, book.mdPath);
+    upsertBook(book.meta, book.mdPath);
+
+    let receivedAutoLoad: boolean | undefined;
+    _setEvaluatorDepsForTests({
+      readEvaluatorPrefs: async () => ({ preferred: "preferred-x", fallbacks: [], allowFallback: true }),
+      pickEvaluatorModel: async (opts) => {
+        receivedAutoLoad = opts?.allowAutoLoad;
+        return opts?.preferred ?? null;
+      },
+      evaluateBook: async () => fakeEval(80),
+    });
+
+    enqueueBook(book.meta.id, { allowAutoLoad: true });
+    await waitForIdle();
+
+    assert.equal(receivedAutoLoad, true,
+      "user-intent enqueue (e.g. 'Re-evaluate' button or POST library:import) MUST grant picker right to loadModel from disk");
+  },
+);
+
+test(
+  "[v1.0.7] enqueueBook(id) without flag → picker.allowAutoLoad=false (cold-start bootstrap doesn't autoload 35GB models)",
+  { timeout: 10_000 },
+  async (t) => {
+    const env = await setupTestEnv();
+    t.after(env.cleanup);
+
+    const book = makeBook(env.libraryRoot, "a220aaaaaaaaaaaa", "AutoLoad Denied");
+    await writeBookMd(env.libraryRoot, book.meta, book.mdPath);
+    upsertBook(book.meta, book.mdPath);
+
+    let receivedAutoLoad: boolean | undefined;
+    _setEvaluatorDepsForTests({
+      readEvaluatorPrefs: async () => ({ preferred: "preferred-x", fallbacks: [], allowFallback: true }),
+      pickEvaluatorModel: async (opts) => {
+        receivedAutoLoad = opts?.allowAutoLoad;
+        return opts?.preferred ?? null;
+      },
+      evaluateBook: async () => fakeEval(80),
+    });
+
+    enqueueBook(book.meta.id);
+    await waitForIdle();
+
+    assert.equal(receivedAutoLoad, false,
+      "default enqueue (no user-intent) MUST NOT grant autoload right — fixes autonomous heresy from pre-v1.0.7");
+  },
+);
+
+test(
+  "[v1.0.7] allowAutoLoad upgrade-only: re-enqueue WITHOUT flag does not downgrade an already-granted right",
+  { timeout: 10_000 },
+  async (t) => {
+    const env = await setupTestEnv();
+    t.after(env.cleanup);
+
+    const book = makeBook(env.libraryRoot, "a330aaaaaaaaaaaa", "Upgrade Only");
+    await writeBookMd(env.libraryRoot, book.meta, book.mdPath);
+    upsertBook(book.meta, book.mdPath);
+
+    let receivedAutoLoad: boolean | undefined;
+    let release: () => void = () => {};
+    _setEvaluatorDepsForTests({
+      readEvaluatorPrefs: async () => ({ preferred: "preferred-x", fallbacks: [], allowFallback: true }),
+      pickEvaluatorModel: async (opts) => {
+        receivedAutoLoad = opts?.allowAutoLoad;
+        return opts?.preferred ?? null;
+      },
+      evaluateBook: () => new Promise<EvaluationResult>((resolve) => {
+        release = () => resolve(fakeEval(80));
+      }),
+    });
+
+    enqueueBook(book.meta.id);
+    enqueueBook(book.meta.id, { allowAutoLoad: true });
+    enqueueBook(book.meta.id);
+
+    await new Promise((r) => setTimeout(r, 50));
+    release();
+    await waitForIdle();
+
+    assert.equal(receivedAutoLoad, true,
+      "once granted, allowAutoLoad must persist until slot consumes it; re-enqueue without flag must not downgrade");
+  },
+);
+
+test(
+  "[v1.0.7] allowAutoLoad consume-once: после взятия слотом следующий enqueue без флага получает false",
+  { timeout: 10_000 },
+  async (t) => {
+    const env = await setupTestEnv();
+    t.after(env.cleanup);
+
+    const book = makeBook(env.libraryRoot, "a440aaaaaaaaaaaa", "Consume Once");
+    await writeBookMd(env.libraryRoot, book.meta, book.mdPath);
+    upsertBook(book.meta, book.mdPath);
+
+    const observedFlags: Array<boolean | undefined> = [];
+    _setEvaluatorDepsForTests({
+      readEvaluatorPrefs: async () => ({ preferred: "preferred-x", fallbacks: [], allowFallback: true }),
+      pickEvaluatorModel: async (opts) => {
+        observedFlags.push(opts?.allowAutoLoad);
+        return opts?.preferred ?? null;
+      },
+      evaluateBook: async () => fakeEval(80),
+    });
+
+    enqueueBook(book.meta.id, { allowAutoLoad: true });
+    await waitForIdle();
+    assert.equal(observedFlags[0], true, "first enqueue with flag → true");
+
+    upsertBook(book.meta, book.mdPath);
+
+    enqueueBook(book.meta.id);
+    await waitForIdle();
+    assert.equal(observedFlags[1], false,
+      "after consume, re-enqueue without flag must NOT inherit previous grant (consume-once contract)");
+  },
+);
