@@ -110,7 +110,7 @@ const SAFE_DATA_IMAGE_RE = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/
  * @returns {boolean}
  */
 export function isSafeUrl(url) {
-  if (typeof url !== "string") return false;
+  if (typeof url !== "string" || url.length === 0) return false;
   /* Защита от unicode-spoofing и control chars. */
   if (/[\u0000-\u001f\u007f]/.test(url)) return false;
   /* Hash-only / relative path-only безопасно (anchor link, относительный путь
