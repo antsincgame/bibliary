@@ -380,6 +380,11 @@ export function injectCasImageRefs(markdown: string, images: ImageRef[], meta: B
  * удаляется.
  *
  * Идемпотентно: повторный вызов с тем же reasoning не меняет файл.
+ *
+ * Fix 2026-05-10: oldEnd → oldEnd + 1. Раньше cut оставлял лишний `\n` от
+ * границы между футером и следующей секцией, и block + rest давал
+ * `\n\n\n## Ch1` вместо `\n\n## Ch1`. Симптом: вторая идентичная upsert
+ * меняла файл (НЕ идемпотентно), что ломало evaluator-queue rebuild.
  */
 export function upsertEvaluatorReasoning(markdown: string, reasoning: string | null): string {
   if (!markdown.startsWith("---\n")) return markdown;
@@ -388,14 +393,18 @@ export function upsertEvaluatorReasoning(markdown: string, reasoning: string | n
   const head = markdown.slice(0, fmEnd + 5); /* до и включая "\n---\n" */
   let rest = markdown.slice(fmEnd + 5);
 
-  /* Если секция уже была -- вырезаем её целиком (с маркером-футером). */
+  /* Если секция уже была -- вырезаем её целиком (с маркером-футером).
+   * oldEnd + 1: oldEnd указывает на `\n` сразу после футера; этот `\n`
+   * принадлежит самому блоку, а следующий `\n` (граница перед `## Ch1`)
+   * сохраняется в rest. Без +1 после повторного upsert получали тройной
+   * перенос строки. */
   const oldStart = rest.indexOf(`\n${REASONING_HEADER}\n`);
   if (oldStart !== -1) {
     const oldFooter = rest.indexOf(REASONING_FOOTER, oldStart);
     const oldEnd = oldFooter !== -1
       ? rest.indexOf("\n", oldFooter + REASONING_FOOTER.length)
       : -1;
-    if (oldEnd !== -1) rest = rest.slice(0, oldStart) + rest.slice(oldEnd);
+    if (oldEnd !== -1) rest = rest.slice(0, oldStart) + rest.slice(oldEnd + 1);
   }
 
   if (reasoning === null || reasoning.trim().length === 0) {
