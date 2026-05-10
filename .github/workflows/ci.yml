@@ -37,13 +37,8 @@ jobs:
       - name: Lint (tsc + eslint)
         run: npm run lint
 
-      # ВРЕМЕННО (диагностика 2026-05-10 round 2): hang устранён, но какой-то
-      # тест всё ещё падает после atomic-fix 1a54cab. Чтобы локализовать,
-      # снова запускаем diagnose-test-hang.cjs — он покажет PASS/FAIL/TIMEOUT
-      # таблицу в логах. После идентификации → revert.
-      - name: Unit tests — DIAGNOSTIC MODE round 2
-        timeout-minutes: 30
-        run: node scripts/diagnose-test-hang.cjs
+      - name: Unit tests (Node test runner)
+        run: npm run test:fast
 
       - name: Compile Electron TypeScript
         run: npx tsc -p tsconfig.electron.json
@@ -89,9 +84,8 @@ jobs:
       - name: Lint (tsc + eslint)
         run: npm run lint
 
-      - name: Unit tests — DIAGNOSTIC MODE round 2
-        timeout-minutes: 30
-        run: node scripts/diagnose-test-hang.cjs
+      - name: Unit tests (Node test runner)
+        run: npm run test:fast
         env:
           BIBLIARY_SKIP_OCR: '1'
 
