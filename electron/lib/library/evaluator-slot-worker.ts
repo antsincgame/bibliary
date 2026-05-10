@@ -32,6 +32,7 @@ import { logModelAction } from "../llm/lmstudio-actions-log.js";
 import { runUniquenessStep } from "./evaluator-uniqueness-step.js";
 import { getModelContext } from "../token/overflow-guard.js";
 import type { BookCatalogMeta, EvaluationResult } from "./types.js";
+import { buildEvaluatedMeta, buildEvaluatorDoneEvent } from "./evaluator-mapping.js";
 import type { EvaluatorEvent } from "./evaluator-queue.js";
 import type { PickEvaluatorModelOptions } from "./book-evaluator.js";
 
@@ -362,29 +363,13 @@ export async function evaluateOneInSlot(
       return;
     }
 
-    /* 5. Build updated meta. */
-    const ev = result.evaluation;
-    const updated: BookCatalogMeta = {
-      ...meta,
-      titleRu: ev.title_ru,
-      authorRu: ev.author_ru,
-      titleEn: ev.title_en,
-      authorEn: ev.author_en,
-      year: ev.year ?? meta.year,
-      domain: ev.domain,
-      tags: ev.tags,
-      tagsRu: ev.tags_ru,
-      qualityScore: ev.quality_score,
-      conceptualDensity: ev.conceptual_density,
-      originality: ev.originality,
-      isFictionOrWater: ev.is_fiction_or_water,
-      verdictReason: ev.verdict_reason,
-      evaluatorReasoning: result.reasoning ?? undefined,
-      evaluatorModel: result.model,
+    /* 5. Build updated meta — pure mapping (см. evaluator-mapping.ts +
+       tests/evaluator-mapping.test.ts). */
+    const updated: BookCatalogMeta = buildEvaluatedMeta({
+      baseMeta: meta,
+      result,
       evaluatedAt: new Date().toISOString(),
-      status: "evaluated",
-      warnings: result.warnings.length > 0 ? [...(meta.warnings ?? []), ...result.warnings] : meta.warnings,
-    };
+    });
     upsertBook(updated, meta.mdPath);
     await deps.persistFrontmatter(updated, meta.mdPath, md, result.reasoning);
     deps.incrementEvaluated();
@@ -402,15 +387,9 @@ export async function evaluateOneInSlot(
       upsertBook,
     });
 
-    /* 7. Emit done. */
-    deps.emit({
-      type: "evaluator.done",
-      bookId,
-      title: ev.title_en,
-      qualityScore: ev.quality_score,
-      isFictionOrWater: ev.is_fiction_or_water,
-      warnings: result.warnings.length > 0 ? result.warnings : undefined,
-    });
+    /* 7. Emit done — payload собирается тем же helper'ом, что и meta,
+       чтобы schema контракт был в одном месте. */
+    deps.emit(buildEvaluatorDoneEvent(bookId, result));
   } catch (err) {
     /* Сверяем abort через единый helper (проверяет ABORT_SENTINEL или
        /aborted/i) -- консистентно с lm-request-policy. */
