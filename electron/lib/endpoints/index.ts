@@ -19,7 +19,15 @@
 
 import { getPreferencesStore } from "../preferences/store.js";
 
-const ENV_LM_STUDIO_URL = process.env.LM_STUDIO_URL || "";
+/* Читаем env-var лениво при каждом обращении (а не один раз при загрузке
+ * модуля). Это критично для CLI-скриптов и интеграционных тестов: код может
+ * выставить `process.env.LM_STUDIO_URL` уже ПОСЛЕ загрузки модуля
+ * (например, в test setup), и обещание из шапки файла «kept for CLI scripts
+ * and CI» работает только при динамическом чтении. Чтение env — это hash
+ * lookup, оверхеда нет. */
+function readEnvLmStudioUrl(): string {
+  return process.env.LM_STUDIO_URL || "";
+}
 
 export const DEFAULT_LM_STUDIO_URL = "http://localhost:1234";
 
@@ -48,10 +56,10 @@ export async function getEndpoints(): Promise<{ lmStudioUrl: string }> {
   } catch {
     /* store not yet initialised (very early boot) — fall back to env */
   }
-  const lmStudio = prefsLm || trim(ENV_LM_STUDIO_URL) || DEFAULT_LM_STUDIO_URL;
+  const lmStudio = prefsLm || trim(readEnvLmStudioUrl()) || DEFAULT_LM_STUDIO_URL;
   const loadedFrom: UrlCache["loadedFrom"] = prefsLm
     ? "prefs"
-    : (ENV_LM_STUDIO_URL ? "env" : "default");
+    : (readEnvLmStudioUrl() ? "env" : "default");
   cache = { lmStudio, loadedFrom };
   return { lmStudioUrl: lmStudio };
 }
@@ -70,5 +78,5 @@ export function getLmStudioUrlSync(): string {
   /* `||` (не `??`) — trim() возвращает "" для пустого env, а `??` пропускает
      пустую строку (она не nullish), что приводит к `LMStudioClient({baseUrl:""})`
      и падению "Invalid baseUrl". */
-  return cache?.lmStudio || trim(ENV_LM_STUDIO_URL) || DEFAULT_LM_STUDIO_URL;
+  return cache?.lmStudio || trim(readEnvLmStudioUrl()) || DEFAULT_LM_STUDIO_URL;
 }
