@@ -6,6 +6,7 @@ import { detectHardware } from "../lib/hardware/profiler.js";
 import { getEndpoints } from "../lib/endpoints/index.js";
 import { getServerStatus } from "../lmstudio-client.js";
 import { listCollections } from "../lib/vectordb/index.js";
+import { validateOpenExternalUrl, type OpenExternalResult } from "./handlers/system.handlers.js";
 
 interface AppBuildInfo {
   version: string;
@@ -96,13 +97,6 @@ function getBuildInfo(): AppBuildInfo {
 }
 
 /**
- * Whitelist схем для system:open-external. Защита от prompt-injection /
- * UI бага, который мог бы открыть file:// или javascript: URL.
- * lmstudio:// — protocol handler LM Studio; http(s) — браузер.
- */
-const ALLOWED_OPEN_SCHEMES = ["http:", "https:", "lmstudio:"];
-
-/**
  * Probe для in-process LanceDB: проверяем что connection открыт и
  * можно перечислить tables. Всегда быстрый (millisecond-level), нет
  * network round-trip'ов.
@@ -152,23 +146,14 @@ export function registerSystemIpc(): void {
    * протокол-хэндлере. Используется wizard'ом для кнопки "Open LM Studio"
    * и потенциально другими местами, где нужно увести пользователя из
    * Bibliary без копирования URL вручную.
-   * Защита: только http(s) и lmstudio:// схемы. Всё остальное игнорируется.
+   * Защита: только http(s) и lmstudio:// схемы (см. validateOpenExternalUrl
+   * — security-критичная проверка, покрыта tests/ipc-system-handlers.test.ts).
    */
-  ipcMain.handle("system:open-external", async (_e, url: unknown): Promise<{ ok: boolean; reason?: string }> => {
-    if (typeof url !== "string" || url.length === 0) {
-      return { ok: false, reason: "url required" };
-    }
-    let parsed: URL;
+  ipcMain.handle("system:open-external", async (_e, url: unknown): Promise<OpenExternalResult> => {
+    const validation = validateOpenExternalUrl(url);
+    if (!validation.ok) return validation;
     try {
-      parsed = new URL(url);
-    } catch {
-      return { ok: false, reason: "invalid url" };
-    }
-    if (!ALLOWED_OPEN_SCHEMES.includes(parsed.protocol)) {
-      return { ok: false, reason: `scheme not allowed: ${parsed.protocol}` };
-    }
-    try {
-      await shell.openExternal(url);
+      await shell.openExternal(url as string);
       return { ok: true };
     } catch (e) {
       return { ok: false, reason: e instanceof Error ? e.message : String(e) };
