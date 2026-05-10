@@ -1,0 +1,64 @@
+name: Smoke · Nightly (strict)
+
+# Strict smoke run: запускается раз в сутки и по запросу.
+# Отличие от smoke в ci.yml — НЕТ `continue-on-error: true`. Если smoke
+# падает, появляется красная галка на main. Не блокирует PR-merge (этот
+# workflow триггерится только на schedule + workflow_dispatch), но даёт
+# раннее предупреждение что Playwright-сценарии разъехались с UI.
+#
+# Логика: ci.yml с continue-on-error прячет деградацию smoke. Без отдельного
+# nightly run'а regression в reader/catalog/burnAll бы оставался невидимым
+# до жалоб пользователей. Этот workflow выходит из тени.
+
+on:
+  schedule:
+    # 02:00 UTC ежедневно (после ночных npm package updates на Western Europe).
+    - cron: '0 2 * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: smoke-nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke-nightly:
+    name: "Nightly: full Electron smoke (strict)"
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Ensure better-sqlite3 ABI (Electron)
+        run: node scripts/ensure-sqlite-abi.cjs --target=electron
+
+      - name: Compile Electron TypeScript
+        run: |
+          node scripts/prepare-electron.js
+          npx tsc -p tsconfig.electron.json
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      # Strict: НЕТ continue-on-error. Падение блокирует workflow run.
+      - name: Electron smoke (real app + preload + IPC) — STRICT
+        run: npm run test:smoke
+
+      - name: Upload smoke artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-nightly-failure-${{ github.run_id }}
+          path: |
+            dist-electron/
+            release/*.json
+          retention-days: 14
+          if-no-files-found: ignore
