@@ -23,6 +23,18 @@
  *      consume-once. Тест: enqueue с allowAutoLoad:true → picker получает
  *      true; повторный enqueue той же книги без флага → не downgrade'ится.
  *      После взятия слотом — флаг исчерпан (повторный enqueue без → false).
+ *
+ * Hang-prevention notes (fix 2026-05-10):
+ *   - Тест #2 раньше вешал CI: `bootstrapEvaluatorQueue` → Stage 2 enqueue
+ *     → slots в фоне → infinite retry на mocked writeFile EPERM. Фикс:
+ *     `pauseEvaluator()` ДО bootstrap → Stage 2 enqueue работает но slots
+ *     сразу breakают на `if (paused.value) break`. Bootstrap тестируется
+ *     изолированно, без cascade'а в slot worker.
+ *   - Тест #3: после 10 defers `pauseEvaluator()` → slots breakают, но
+ *     queue может содержать остаточные книги (paused в момент когда slot 0
+ *     обработал b9, slot 1 b10, оставив b10 в очереди если был в work).
+ *     `waitForIdle` ждёт queueLength === 0 — никогда не дождётся. Фикс:
+ *     `waitForPausedOrIdle` возвращает на любом терминальном состоянии.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -39,6 +51,8 @@ import {
   enqueueBook,
   getEvaluatorStatus,
   subscribeEvaluator,
+  pauseEvaluator,
+  setEvaluatorSlots,
   type EvaluatorEvent,
 } from "../electron/lib/library/evaluator-queue.ts";
 import {
@@ -154,6 +168,10 @@ function fakeEval(quality: number): EvaluationResult {
   };
 }
 
+/**
+ * Ждёт пока evaluator станет idle (no running, queue empty).
+ * Throws on timeout — тесты ловят это как падение, не как hang.
+ */
 async function waitForIdle(ms = 5000): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < ms) {
@@ -162,6 +180,27 @@ async function waitForIdle(ms = 5000): Promise<void> {
     await new Promise((r) => setTimeout(r, 25));
   }
   throw new Error(`evaluator did not become idle within ${ms}ms`);
+}
+
+/**
+ * Ждёт пока evaluator достигнет терминального состояния:
+ *   - paused (с любым размером queue), ИЛИ
+ *   - idle (no running, queue empty)
+ *
+ * Используется в DEFER_PAUSE тесте где после 10 defers `pauseEvaluator()`
+ * срабатывает с непустым queue (slot 0 обработал b0..b9, b10 остаётся
+ * в очереди когда другой slot сделал 10-й defer и paused). Без этого
+ * варианта `waitForIdle` ловит timeout и тест считается «hang» в CI.
+ */
+async function waitForPausedOrIdle(ms = 5000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < ms) {
+    const s = getEvaluatorStatus();
+    if (s.paused) return;
+    if (!s.running && s.queueLength === 0) return;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  throw new Error(`evaluator did not pause or idle within ${ms}ms`);
 }
 
 function unitVec(seed: number[]): number[] {
@@ -226,6 +265,13 @@ test("[PR#4 #4] bootstrapEvaluatorQueue: writeFile failure on stuck book → sta
   const env = await setupTestEnv();
   t.after(env.cleanup);
 
+  /* CRITICAL: pause ДО bootstrap. Bootstrap'у Stage 2 ставит failed-книгу
+     в очередь, а это будит slots → они процессят book → persistFrontmatter
+     с mocked writeFile = EPERM → cascading failures и потенциальный hang
+     на retry-цепочке. С paused=true слоты break'ают на проверке
+     `if (paused.value) break` сразу же → тестируем строго Stage 1. */
+  pauseEvaluator();
+
   const stuckId = "deadbeefdeadbeef";
   const stuck = makeBook(env.libraryRoot, stuckId, "Stuck Book");
   await writeBookMd(env.libraryRoot, { ...stuck.meta, status: "evaluating" }, stuck.mdPath);
@@ -237,8 +283,13 @@ test("[PR#4 #4] bootstrapEvaluatorQueue: writeFile failure on stuck book → sta
      в reset → бесконечный цикл. Теперь должна быть `failed` после первого
      прогона bootstrap. */
   _setEvaluatorDepsForTests({
-    pickEvaluatorModel: async () => "fake-model",
-    evaluateBook: async () => fakeEval(80),
+    /* pickEvaluatorModel/evaluateBook не вызовутся: paused → slots break
+       до того как доберутся до evaluateOneInSlot. Mock'и здесь как
+       defensive — если pause протечёт, не дать slot'у реальный success. */
+    pickEvaluatorModel: async () => null,
+    evaluateBook: async () => {
+      throw new Error("evaluateBook must not be called when paused");
+    },
     /* readFile нужен для replaceFrontmatter чтения исходника. */
     readFile: async (p) => readFile(p, "utf-8"),
     writeFile: async () => {
@@ -264,6 +315,13 @@ test("[PR#4 5fa3766] DEFER_PAUSE_THRESHOLD: 10 consecutive no-model defers trigg
   const env = await setupTestEnv();
   t.after(env.cleanup);
 
+  /* Single-slot для детерминированности: с 2 default slots порядок defer'ов
+     может быть interleaved (slot 0 обрабатывает b0,b2,b4..., slot 1
+     b1,b3,...), что приведёт к pauseEvaluator на 10-м defer от любого
+     слота — корректно, но events тогда могут не быть строго упорядочены.
+     1 slot = строгий порядок b0→b1→...→b9 → pause перед b10. */
+  setEvaluatorSlots(1);
+
   /* 11 разных книг, на всех pickEvaluatorModel = null. После 10 defer'ов
      должен отработать pauseEvaluator(). Это контракт PR #4: pause не
      срабатывает с первого раза (избегаем permanent stall на transient
@@ -287,7 +345,13 @@ test("[PR#4 5fa3766] DEFER_PAUSE_THRESHOLD: 10 consecutive no-model defers trigg
   const unsub = subscribeEvaluator((e) => events.push(e));
 
   for (const b of books) enqueueBook(b.meta.id);
-  await waitForIdle(8000);
+
+  /* CRITICAL: waitForPausedOrIdle вместо waitForIdle. После 10-го defer
+     pauseEvaluator() срабатывает синхронно внутри slot worker'а — slots
+     break'ают, но queue может содержать b10 (последняя книга, до которой
+     слот не дошёл). waitForIdle ждал бы queueLength === 0 → timeout →
+     ложный fail. Здесь корректно завершаемся как только paused=true. */
+  await waitForPausedOrIdle(8000);
   unsub();
 
   const skips = events.filter((e) => e.type === "evaluator.skipped");
