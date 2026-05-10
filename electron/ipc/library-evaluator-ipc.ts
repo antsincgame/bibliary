@@ -9,6 +9,10 @@
  *   library:reparse-book
  *
  * Извлечено из `library.ipc.ts` (Phase 3.1 cross-platform roadmap, 2026-04-30).
+ *
+ * Pure validators payload'ов вынесены в `handlers/library-evaluator.handlers.ts`
+ * (2026-05-10). Сами они покрыты unit-тестами, тут — только wiring к ipcMain
+ * и heavy I/O (cache-db, evaluator-queue, convertBookToMarkdown).
  */
 
 import { ipcMain } from "electron";
@@ -36,6 +40,13 @@ import { getBlobsRoot } from "../lib/library/library-store.js";
 import { resolveLibraryRoot } from "../lib/library/paths.js";
 import * as path from "path";
 import type { BookCatalogMeta, BookStatus } from "../lib/library/types.js";
+import {
+  validateReevaluateArgs,
+  sanitizeEvaluatorModel,
+  validatePrioritizeArgs,
+  validateSetSlots,
+  validateReparseBookArgs,
+} from "./handlers/library-evaluator.handlers.js";
 
 export function registerLibraryEvaluatorIpc(): void {
   ipcMain.handle("library:evaluator-status", async () => getEvaluatorStatus());
@@ -53,16 +64,17 @@ export function registerLibraryEvaluatorIpc(): void {
   });
   ipcMain.handle(
     "library:evaluator-reevaluate",
-    async (_e, args: { bookId: string }): Promise<{ ok: boolean; reason?: string }> => {
-      if (!args || typeof args.bookId !== "string") return { ok: false, reason: "bookId required" };
-      const meta = getBookById(args.bookId);
+    async (_e, args: unknown): Promise<{ ok: boolean; reason?: string }> => {
+      const validation = validateReevaluateArgs(args);
+      if (!validation.ok) return { ok: false, reason: validation.reason };
+      const meta = getBookById(validation.bookId!);
       if (!meta) return { ok: false, reason: "not-found" };
       /* Reset status to imported -- evaluator подберёт. mdPath сохраняется.
          v1.0.7: allowAutoLoad=true — это явная команда пользователя
          "Re-evaluate", которая имеет право грузить preferred модель. */
       const reset: BookCatalogMeta = { ...meta, status: "imported" as BookStatus };
       upsertBook(reset, meta.mdPath);
-      enqueueBook(args.bookId, { allowAutoLoad: true });
+      enqueueBook(validation.bookId!, { allowAutoLoad: true });
       return { ok: true };
     }
   );
@@ -90,36 +102,34 @@ export function registerLibraryEvaluatorIpc(): void {
   });
   ipcMain.handle(
     "library:evaluator-set-model",
-    async (_e, modelKey: string | null): Promise<boolean> => {
-      setEvaluatorModel(typeof modelKey === "string" && modelKey.length > 0 ? modelKey : null);
+    async (_e, modelKey: unknown): Promise<boolean> => {
+      setEvaluatorModel(sanitizeEvaluatorModel(modelKey));
       return true;
     }
   );
   /* Priority enqueue: UI-flow «оценить эти первыми» (selected rows). */
   ipcMain.handle(
     "library:evaluator-prioritize",
-    async (_e, args: { bookIds: string[] }): Promise<{ ok: boolean; queued: number }> => {
-      if (!args || !Array.isArray(args.bookIds)) return { ok: false, queued: 0 };
-      let queued = 0;
+    async (_e, args: unknown): Promise<{ ok: boolean; queued: number }> => {
+      const validation = validatePrioritizeArgs(args);
+      if (!validation.ok) return { ok: false, queued: 0 };
+      const ids = validation.bookIds!;
       /* Reverse order: при unshift каждой следующей она оттесняет предыдущую,
          так что итоговый порядок = тот, что передал caller. */
-      for (let i = args.bookIds.length - 1; i >= 0; i--) {
-        const id = args.bookIds[i];
-        if (typeof id === "string" && id.length > 0) {
-          /* v1.0.7: явная команда «оценить эти первыми» — autoLoad разрешён. */
-          enqueuePriority(id, { allowAutoLoad: true });
-          queued += 1;
-        }
+      for (let i = ids.length - 1; i >= 0; i--) {
+        /* v1.0.7: явная команда «оценить эти первыми» — autoLoad разрешён. */
+        enqueuePriority(ids[i], { allowAutoLoad: true });
       }
-      return { ok: true, queued };
+      return { ok: true, queued: ids.length };
     }
   );
   /* Runtime regulation параллелизма evaluator. UI слайдер 1..16. */
   ipcMain.handle(
     "library:evaluator-set-slots",
-    async (_e, n: number): Promise<{ ok: boolean; slots: number }> => {
-      if (!Number.isInteger(n) || n < 1) return { ok: false, slots: getEvaluatorSlotCount() };
-      setEvaluatorSlots(n);
+    async (_e, n: unknown): Promise<{ ok: boolean; slots: number }> => {
+      const validation = validateSetSlots(n);
+      if (!validation.ok) return { ok: false, slots: getEvaluatorSlotCount() };
+      setEvaluatorSlots(validation.slots!);
       return { ok: true, slots: getEvaluatorSlotCount() };
     }
   );
@@ -133,9 +143,10 @@ export function registerLibraryEvaluatorIpc(): void {
    */
   ipcMain.handle(
     "library:reparse-book",
-    async (_e, bookId: string): Promise<{ ok: boolean; chapters?: number; reason?: string }> => {
-      if (typeof bookId !== "string") return { ok: false, reason: "bookId required" };
-      const meta = getBookById(bookId);
+    async (_e, bookId: unknown): Promise<{ ok: boolean; chapters?: number; reason?: string }> => {
+      const validation = validateReparseBookArgs(bookId);
+      if (!validation.ok) return { ok: false, reason: validation.reason };
+      const meta = getBookById(validation.bookId!);
       if (!meta) return { ok: false, reason: "not-found" };
 
       const { promises: fsMod } = await import("fs");
