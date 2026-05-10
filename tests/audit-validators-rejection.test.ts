@@ -70,15 +70,23 @@ test("[validators] CollectionName rejects empty / too long / invalid chars / non
 
 /* ─── AbsoluteFilePathSchema ───────────────────────────────────────── */
 
-test("[validators] AbsoluteFilePath accepts valid absolute paths (POSIX + Windows)", () => {
-  for (const p of [
+test("[validators] AbsoluteFilePath accepts valid absolute paths (native to current OS)", () => {
+  /* Schema использует path.isAbsolute, который OS-aware: на POSIX (Linux/macOS)
+     принимаются только Unix-пути, на Win32 — только Win-пути. Это корректное
+     поведение для desktop-приложения: путь должен быть валиден для текущей
+     OS пользователя. Поэтому тест проверяет ТОЛЬКО native-пути для своей OS. */
+  const posixPaths = [
     "/tmp/file.txt",
     "/usr/local/bin/x",
+    "/" + "x".repeat(4000),  /* под лимитом 4096 */
+  ];
+  const winPaths = [
     "C:\\Users\\file.txt",
     "C:/Users/file.txt",
     "D:\\",
-    "/" + "x".repeat(4000),  /* под лимитом 4096 */
-  ]) {
+  ];
+  const validPaths = process.platform === "win32" ? winPaths : posixPaths;
+  for (const p of validPaths) {
     const r = AbsoluteFilePathSchema.safeParse(p);
     assert.equal(r.success, true, `must accept: ${p}`);
   }
