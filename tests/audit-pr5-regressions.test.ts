@@ -15,26 +15,32 @@
  *      → `failed` с описательным lastError.
  *
  *   3. REGRESSION (5fa3766 → PR #4): DEFER_PAUSE_THRESHOLD=10 — auto-pause
- *      ровно после 10 consecutive defers, не после первого. Тест: 10 раз
- *      enqueue книгу при отсутствии модели → последняя итерация должна
- *      эмитнуть `evaluator.paused`.
+ *      ровно после 10 consecutive defers, не после первого.
  *
  *   4. v1.0.7 (autonomous heresy fix): allowAutoLoad флаг как right-to-load,
- *      consume-once. Тест: enqueue с allowAutoLoad:true → picker получает
- *      true; повторный enqueue той же книги без флага → не downgrade'ится.
- *      После взятия слотом — флаг исчерпан (повторный enqueue без → false).
+ *      consume-once.
  *
  * Hang-prevention notes (fix 2026-05-10):
- *   - Тест #2 раньше вешал CI: `bootstrapEvaluatorQueue` → Stage 2 enqueue
- *     → slots в фоне → infinite retry на mocked writeFile EPERM. Фикс:
- *     `pauseEvaluator()` ДО bootstrap → Stage 2 enqueue работает но slots
- *     сразу breakают на `if (paused.value) break`. Bootstrap тестируется
- *     изолированно, без cascade'а в slot worker.
- *   - Тест #3: после 10 defers `pauseEvaluator()` → slots breakают, но
- *     queue может содержать остаточные книги (paused в момент когда slot 0
- *     обработал b9, slot 1 b10, оставив b10 в очереди если был в work).
- *     `waitForIdle` ждёт queueLength === 0 — никогда не дождётся. Фикс:
- *     `waitForPausedOrIdle` возвращает на любом терминальном состоянии.
+ *
+ *   - Test #2 [PR#4 #4]: bootstrapEvaluatorQueue имеет 2 stage'а:
+ *     Stage 1 reset stuck `evaluating` → пытается writeFile frontmatter →
+ *     при failure помечает `failed`. Stage 2 затем sweeps `imported`+`failed`
+ *     и ВОЗВРАЩАЕТ failed-книги (с wordCount>0 && chapterCount>0) обратно
+ *     в `imported` для retry. Книга с `wordCount=0` пропускается этой
+ *     ревизией → остаётся `failed` после bootstrap'а. Это и используем —
+ *     устанавливаем wordCount=0 чтобы изолированно тестировать ТОЛЬКО
+ *     Stage 1 поведение. pauseEvaluator() ставится для defensive: даже
+ *     если condition Stage 2 изменится в будущем, slots не процессят.
+ *
+ *   - Test #3 [PR#4 5fa3766]: после 10 defers `pauseEvaluator()` срабатывает,
+ *     слот breakает на `if (paused.value) break`, но queue может остаться
+ *     непустым. waitForIdle ждал бы queueLength === 0 → timeout. Замена
+ *     на waitForPausedOrIdle решает.
+ *
+ *   - Все тесты теперь имеют явный `timeout`: 5000-10000ms. node:test
+ *     по умолчанию НЕ имеет timeout — если тест await'ит promise который
+ *     никогда не resolve'ится, тест висит вечно. Явный timeout превращает
+ *     hang в failure → CI быстро восстанавливается.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -107,7 +113,12 @@ async function setupTestEnv(): Promise<TestEnv> {
   };
 }
 
-function makeBook(libraryRoot: string, id: string, title: string): { meta: BookCatalogMeta; mdPath: string } {
+function makeBook(
+  libraryRoot: string,
+  id: string,
+  title: string,
+  overrides: Partial<BookCatalogMeta> = {},
+): { meta: BookCatalogMeta; mdPath: string } {
   const bookDir = path.join(libraryRoot, id);
   const mdPath = path.join(bookDir, "book.md");
   return {
@@ -120,6 +131,7 @@ function makeBook(libraryRoot: string, id: string, title: string): { meta: BookC
       wordCount: 1024,
       chapterCount: 2,
       status: "imported",
+      ...overrides,
     },
     mdPath,
   };
@@ -186,11 +198,6 @@ async function waitForIdle(ms = 5000): Promise<void> {
  * Ждёт пока evaluator достигнет терминального состояния:
  *   - paused (с любым размером queue), ИЛИ
  *   - idle (no running, queue empty)
- *
- * Используется в DEFER_PAUSE тесте где после 10 defers `pauseEvaluator()`
- * срабатывает с непустым queue (slot 0 обработал b0..b9, b10 остаётся
- * в очереди когда другой slot сделал 10-й defer и paused). Без этого
- * варианта `waitForIdle` ловит timeout и тест считается «hang» в CI.
  */
 async function waitForPausedOrIdle(ms = 5000): Promise<void> {
   const start = Date.now();
@@ -215,282 +222,277 @@ function unitVec(seed: number[]): number[] {
 
 /* ─── PR #4 CRITICAL #1: vectorQueryNearest distance integrity ─────── */
 
-test("[PR#4 #1] vectorQueryNearest: similarity range [0, 1] for known L2-normalized vectors (no false-positive 1.0 from missing _distance)", async (t) => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "pr5-vdb-"));
-  setDataDirForTesting(dir);
-  await initVectorDb({ dataDir: dir });
-  t.after(async () => {
-    await closeDb();
-    setDataDirForTesting(null);
-    await rm(dir, { recursive: true, force: true });
-  });
+test(
+  "[PR#4 #1] vectorQueryNearest: similarity range [0, 1] for known L2-normalized vectors (no false-positive 1.0 from missing _distance)",
+  { timeout: 15_000 },
+  async (t) => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "pr5-vdb-"));
+    setDataDirForTesting(dir);
+    await initVectorDb({ dataDir: dir });
+    t.after(async () => {
+      await closeDb();
+      setDataDirForTesting(null);
+      await rm(dir, { recursive: true, force: true });
+    });
 
-  await ensureCollection({ name: "regr1" });
-  /* Seed orthogonal points: identical query vector → similarity ~1.0,
-     orthogonal → similarity ~0. Если _distance silently отсутствует
-     и default `?? 0` возвращён — все similarity станут 1.0. */
-  const v1 = unitVec([1, 0, 0, 0]);
-  const v2 = unitVec([0, 1, 0, 0]);
-  const v3 = unitVec([0, 0, 1, 0]);
-  await vectorUpsert("regr1", [
-    { id: "p1", embedding: v1, metadata: { tag: "x" }, document: "doc1" },
-    { id: "p2", embedding: v2, metadata: { tag: "y" }, document: "doc2" },
-    { id: "p3", embedding: v3, metadata: { tag: "z" }, document: "doc3" },
-  ]);
+    await ensureCollection({ name: "regr1" });
+    /* Seed orthogonal points: identical query vector → similarity ~1.0,
+       orthogonal → similarity ~0. Если _distance silently отсутствует
+       и default `?? 0` возвращён — все similarity станут 1.0. */
+    const v1 = unitVec([1, 0, 0, 0]);
+    const v2 = unitVec([0, 1, 0, 0]);
+    const v3 = unitVec([0, 0, 1, 0]);
+    await vectorUpsert("regr1", [
+      { id: "p1", embedding: v1, metadata: { tag: "x" }, document: "doc1" },
+      { id: "p2", embedding: v2, metadata: { tag: "y" }, document: "doc2" },
+      { id: "p3", embedding: v3, metadata: { tag: "z" }, document: "doc3" },
+    ]);
 
-  const neighbors = await vectorQueryNearest("regr1", v1, 3);
-  /* Контракт: ровно 3 соседа, у всех есть валидное similarity. */
-  assert.equal(neighbors.length, 3, "all 3 rows returned (no silent skip)");
-  /* Хотя бы один — точное совпадение (p1 идентичен query). */
-  const p1 = neighbors.find((n) => n.id === "p1");
-  assert.ok(p1, "exact-match row p1 must be present");
-  assert.ok(p1!.similarity > 0.99, `p1 similarity ~1.0, got ${p1!.similarity}`);
-  /* Ортогональные — близко к 0. Если бы _distance силент пропадал и
-     fallback возвращал 0 → similarity = 1.0 для всех; этот ассерт это ловит. */
-  const p2 = neighbors.find((n) => n.id === "p2");
-  const p3 = neighbors.find((n) => n.id === "p3");
-  assert.ok(p2 && p3, "p2 + p3 present");
-  assert.ok(p2!.similarity < 0.5, `p2 (orthogonal) similarity should be near 0, got ${p2!.similarity}`);
-  assert.ok(p3!.similarity < 0.5, `p3 (orthogonal) similarity should be near 0, got ${p3!.similarity}`);
-  /* All similarity values must be within mathematical range. */
-  for (const n of neighbors) {
-    assert.ok(n.similarity >= -1.0 && n.similarity <= 1.0,
-      `similarity must be in [-1, 1], got ${n.similarity} for ${n.id}`);
-  }
-});
+    const neighbors = await vectorQueryNearest("regr1", v1, 3);
+    assert.equal(neighbors.length, 3, "all 3 rows returned (no silent skip)");
+    const p1 = neighbors.find((n) => n.id === "p1");
+    assert.ok(p1, "exact-match row p1 must be present");
+    assert.ok(p1!.similarity > 0.99, `p1 similarity ~1.0, got ${p1!.similarity}`);
+    const p2 = neighbors.find((n) => n.id === "p2");
+    const p3 = neighbors.find((n) => n.id === "p3");
+    assert.ok(p2 && p3, "p2 + p3 present");
+    assert.ok(p2!.similarity < 0.5, `p2 (orthogonal) similarity should be near 0, got ${p2!.similarity}`);
+    assert.ok(p3!.similarity < 0.5, `p3 (orthogonal) similarity should be near 0, got ${p3!.similarity}`);
+    for (const n of neighbors) {
+      assert.ok(n.similarity >= -1.0 && n.similarity <= 1.0,
+        `similarity must be in [-1, 1], got ${n.similarity} for ${n.id}`);
+    }
+  },
+);
 
 /* ─── PR #4 CRITICAL #4: bootstrap writeFile failure → mark as failed ─ */
 
-test("[PR#4 #4] bootstrapEvaluatorQueue: writeFile failure on stuck book → status=failed (no infinite re-bootstrap loop)", async (t) => {
-  const env = await setupTestEnv();
-  t.after(env.cleanup);
+test(
+  "[PR#4 #4] bootstrapEvaluatorQueue: writeFile failure on stuck book → status=failed (no infinite re-bootstrap loop)",
+  { timeout: 5000 },
+  async (t) => {
+    const env = await setupTestEnv();
+    t.after(env.cleanup);
 
-  /* CRITICAL: pause ДО bootstrap. Bootstrap'у Stage 2 ставит failed-книгу
-     в очередь, а это будит slots → они процессят book → persistFrontmatter
-     с mocked writeFile = EPERM → cascading failures и потенциальный hang
-     на retry-цепочке. С paused=true слоты break'ают на проверке
-     `if (paused.value) break` сразу же → тестируем строго Stage 1. */
-  pauseEvaluator();
+    /* Defensive: pause ДО bootstrap. Если Stage 2 condition изменится в
+       будущем (например, начнёт revert'ить failed books с wordCount=0),
+       slots не подхватят книгу и тест не зависнет. С текущей реализацией
+       Stage 2 пропускает книги с wordCount=0/chapterCount=0 — slot pickup
+       и так не происходит, но pause страхует. */
+    pauseEvaluator();
 
-  const stuckId = "deadbeefdeadbeef";
-  const stuck = makeBook(env.libraryRoot, stuckId, "Stuck Book");
-  await writeBookMd(env.libraryRoot, { ...stuck.meta, status: "evaluating" }, stuck.mdPath);
-  upsertBook({ ...stuck.meta, status: "evaluating" }, stuck.mdPath);
+    /* CRITICAL: wordCount=0 + chapterCount=0 → Stage 2 enqueueEvaluatableRows
+       пропускает revert (`if (meta.wordCount <= 0 || meta.chapterCount <= 0) continue`).
+       Книга остаётся `failed` после bootstrap'а — то что нам нужно для assertion. */
+    const stuckId = "deadbeefdeadbeef";
+    const stuck = makeBook(env.libraryRoot, stuckId, "Stuck Book", {
+      wordCount: 0,
+      chapterCount: 0,
+    });
+    await writeBookMd(env.libraryRoot, { ...stuck.meta, status: "evaluating" }, stuck.mdPath);
+    upsertBook({ ...stuck.meta, status: "evaluating" }, stuck.mdPath);
 
-  /* writeFile throw симулирует EPERM/EBUSY/read-only FS на frontmatter
-     reset во время bootstrap. До PR #4 это был silent catch → книга
-     оставалась `evaluating` в book.md → следующий bootstrap снова брал её
-     в reset → бесконечный цикл. Теперь должна быть `failed` после первого
-     прогона bootstrap. */
-  _setEvaluatorDepsForTests({
-    /* pickEvaluatorModel/evaluateBook не вызовутся: paused → slots break
-       до того как доберутся до evaluateOneInSlot. Mock'и здесь как
-       defensive — если pause протечёт, не дать slot'у реальный success. */
-    pickEvaluatorModel: async () => null,
-    evaluateBook: async () => {
-      throw new Error("evaluateBook must not be called when paused");
-    },
-    /* readFile нужен для replaceFrontmatter чтения исходника. */
-    readFile: async (p) => readFile(p, "utf-8"),
-    writeFile: async () => {
-      throw new Error("EPERM: simulated read-only fs");
-    },
-  });
+    /* writeFile throw симулирует EPERM/EBUSY/read-only FS на frontmatter
+       reset во время bootstrap. До PR #4 это был silent catch → книга
+       оставалась `evaluating` в book.md → следующий bootstrap снова брал её
+       в reset → бесконечный цикл. Теперь должна быть `failed` после первого
+       прогона bootstrap. */
+    _setEvaluatorDepsForTests({
+      pickEvaluatorModel: async () => null,
+      evaluateBook: async () => {
+        throw new Error("evaluateBook must not be called when paused + wordCount=0");
+      },
+      readFile: async (p) => readFile(p, "utf-8"),
+      writeFile: async () => {
+        throw new Error("EPERM: simulated read-only fs");
+      },
+    });
 
-  await bootstrapEvaluatorQueue();
-  /* После bootstrap НЕ ждём idle: книга станет failed синхронно в Stage 1. */
+    await bootstrapEvaluatorQueue();
 
-  const cached = getBookById(stuckId);
-  assert.equal(cached?.status, "failed",
-    `stuck book must become failed (got ${cached?.status}) — без этого фикса infinite re-bootstrap loop`);
-  assert.match(cached?.lastError ?? "", /bootstrap.*frontmatter reset failed/i,
-    `lastError must describe writeFile failure for diagnostics, got: ${cached?.lastError}`);
-  assert.match(cached?.lastError ?? "", /EPERM/,
-    "lastError must propagate underlying EPERM message");
-});
+    const cached = getBookById(stuckId);
+    assert.equal(cached?.status, "failed",
+      `stuck book must become failed (got ${cached?.status}) — без этого фикса infinite re-bootstrap loop`);
+    assert.match(cached?.lastError ?? "", /bootstrap.*frontmatter reset failed/i,
+      `lastError must describe writeFile failure for diagnostics, got: ${cached?.lastError}`);
+    assert.match(cached?.lastError ?? "", /EPERM/,
+      "lastError must propagate underlying EPERM message");
+  },
+);
 
 /* ─── PR #4 REGRESSION (5fa3766): DEFER_PAUSE_THRESHOLD=10 ─────────── */
 
-test("[PR#4 5fa3766] DEFER_PAUSE_THRESHOLD: 10 consecutive no-model defers triggers evaluator.paused", async (t) => {
-  const env = await setupTestEnv();
-  t.after(env.cleanup);
+test(
+  "[PR#4 5fa3766] DEFER_PAUSE_THRESHOLD: 10 consecutive no-model defers triggers evaluator.paused",
+  { timeout: 15_000 },
+  async (t) => {
+    const env = await setupTestEnv();
+    t.after(env.cleanup);
 
-  /* Single-slot для детерминированности: с 2 default slots порядок defer'ов
-     может быть interleaved (slot 0 обрабатывает b0,b2,b4..., slot 1
-     b1,b3,...), что приведёт к pauseEvaluator на 10-м defer от любого
-     слота — корректно, но events тогда могут не быть строго упорядочены.
-     1 slot = строгий порядок b0→b1→...→b9 → pause перед b10. */
-  setEvaluatorSlots(1);
+    setEvaluatorSlots(1);
 
-  /* 11 разных книг, на всех pickEvaluatorModel = null. После 10 defer'ов
-     должен отработать pauseEvaluator(). Это контракт PR #4: pause не
-     срабатывает с первого раза (избегаем permanent stall на transient
-     LM Studio outage), но и не пропускает — после 10 → paused. */
-  const books = Array.from({ length: 11 }, (_, i) =>
-    makeBook(env.libraryRoot, `de${i.toString(16).padStart(14, "0")}`, `Defer ${i}`),
-  );
-  for (const b of books) {
-    await writeBookMd(env.libraryRoot, b.meta, b.mdPath);
-    upsertBook(b.meta, b.mdPath);
-  }
+    const books = Array.from({ length: 11 }, (_, i) =>
+      makeBook(env.libraryRoot, `de${i.toString(16).padStart(14, "0")}`, `Defer ${i}`),
+    );
+    for (const b of books) {
+      await writeBookMd(env.libraryRoot, b.meta, b.mdPath);
+      upsertBook(b.meta, b.mdPath);
+    }
 
-  _setEvaluatorDepsForTests({
-    pickEvaluatorModel: async () => null,
-    evaluateBook: async () => {
-      throw new Error("evaluateBook must NOT be called when pickEvaluatorModel returns null");
-    },
-  });
+    _setEvaluatorDepsForTests({
+      pickEvaluatorModel: async () => null,
+      evaluateBook: async () => {
+        throw new Error("evaluateBook must NOT be called when pickEvaluatorModel returns null");
+      },
+    });
 
-  const events: EvaluatorEvent[] = [];
-  const unsub = subscribeEvaluator((e) => events.push(e));
+    const events: EvaluatorEvent[] = [];
+    const unsub = subscribeEvaluator((e) => events.push(e));
 
-  for (const b of books) enqueueBook(b.meta.id);
+    for (const b of books) enqueueBook(b.meta.id);
 
-  /* CRITICAL: waitForPausedOrIdle вместо waitForIdle. После 10-го defer
-     pauseEvaluator() срабатывает синхронно внутри slot worker'а — slots
-     break'ают, но queue может содержать b10 (последняя книга, до которой
-     слот не дошёл). waitForIdle ждал бы queueLength === 0 → timeout →
-     ложный fail. Здесь корректно завершаемся как только paused=true. */
-  await waitForPausedOrIdle(8000);
-  unsub();
+    await waitForPausedOrIdle(10_000);
+    unsub();
 
-  const skips = events.filter((e) => e.type === "evaluator.skipped");
-  assert.ok(skips.length >= 10, `expected ≥10 skipped events, got ${skips.length}`);
+    const skips = events.filter((e) => e.type === "evaluator.skipped");
+    assert.ok(skips.length >= 10, `expected ≥10 skipped events, got ${skips.length}`);
 
-  const paused = events.find((e) => e.type === "evaluator.paused");
-  assert.ok(paused, "after 10 consecutive defers evaluator.paused MUST fire (DEFER_PAUSE_THRESHOLD=10 contract)");
-  /* paused должен быть после ≥10 skip'ов, не раньше. */
-  const pausedIdx = events.indexOf(paused!);
-  const skipsBeforePause = events.slice(0, pausedIdx).filter((e) => e.type === "evaluator.skipped").length;
-  assert.ok(skipsBeforePause >= 10,
-    `paused fired after only ${skipsBeforePause} skips — must be at least 10 (off-by-one or threshold drifted)`);
-});
+    const paused = events.find((e) => e.type === "evaluator.paused");
+    assert.ok(paused, "after 10 consecutive defers evaluator.paused MUST fire (DEFER_PAUSE_THRESHOLD=10 contract)");
+    const pausedIdx = events.indexOf(paused!);
+    const skipsBeforePause = events.slice(0, pausedIdx).filter((e) => e.type === "evaluator.skipped").length;
+    assert.ok(skipsBeforePause >= 10,
+      `paused fired after only ${skipsBeforePause} skips — must be at least 10 (off-by-one or threshold drifted)`);
+  },
+);
 
 /* ─── v1.0.7: allowAutoLoad флаг как right-to-load ─────────────────── */
 
-test("[v1.0.7] enqueueBook(id, {allowAutoLoad:true}) → picker.allowAutoLoad=true (user-intent right-to-load)", async (t) => {
-  const env = await setupTestEnv();
-  t.after(env.cleanup);
+test(
+  "[v1.0.7] enqueueBook(id, {allowAutoLoad:true}) → picker.allowAutoLoad=true (user-intent right-to-load)",
+  { timeout: 10_000 },
+  async (t) => {
+    const env = await setupTestEnv();
+    t.after(env.cleanup);
 
-  const book = makeBook(env.libraryRoot, "a110aaaaaaaaaaaa", "AutoLoad Granted");
-  await writeBookMd(env.libraryRoot, book.meta, book.mdPath);
-  upsertBook(book.meta, book.mdPath);
+    const book = makeBook(env.libraryRoot, "a110aaaaaaaaaaaa", "AutoLoad Granted");
+    await writeBookMd(env.libraryRoot, book.meta, book.mdPath);
+    upsertBook(book.meta, book.mdPath);
 
-  let receivedAutoLoad: boolean | undefined;
-  _setEvaluatorDepsForTests({
-    readEvaluatorPrefs: async () => ({ preferred: "preferred-x", fallbacks: [], allowFallback: true }),
-    pickEvaluatorModel: async (opts) => {
-      receivedAutoLoad = opts?.allowAutoLoad;
-      return opts?.preferred ?? null;
-    },
-    evaluateBook: async () => fakeEval(80),
-  });
+    let receivedAutoLoad: boolean | undefined;
+    _setEvaluatorDepsForTests({
+      readEvaluatorPrefs: async () => ({ preferred: "preferred-x", fallbacks: [], allowFallback: true }),
+      pickEvaluatorModel: async (opts) => {
+        receivedAutoLoad = opts?.allowAutoLoad;
+        return opts?.preferred ?? null;
+      },
+      evaluateBook: async () => fakeEval(80),
+    });
 
-  enqueueBook(book.meta.id, { allowAutoLoad: true });
-  await waitForIdle();
+    enqueueBook(book.meta.id, { allowAutoLoad: true });
+    await waitForIdle();
 
-  assert.equal(receivedAutoLoad, true,
-    "user-intent enqueue (e.g. 'Re-evaluate' button or POST library:import) MUST grant picker right to loadModel from disk");
-});
+    assert.equal(receivedAutoLoad, true,
+      "user-intent enqueue (e.g. 'Re-evaluate' button or POST library:import) MUST grant picker right to loadModel from disk");
+  },
+);
 
-test("[v1.0.7] enqueueBook(id) without flag → picker.allowAutoLoad=false (cold-start bootstrap doesn't autoload 35GB models)", async (t) => {
-  const env = await setupTestEnv();
-  t.after(env.cleanup);
+test(
+  "[v1.0.7] enqueueBook(id) without flag → picker.allowAutoLoad=false (cold-start bootstrap doesn't autoload 35GB models)",
+  { timeout: 10_000 },
+  async (t) => {
+    const env = await setupTestEnv();
+    t.after(env.cleanup);
 
-  const book = makeBook(env.libraryRoot, "a220aaaaaaaaaaaa", "AutoLoad Denied");
-  await writeBookMd(env.libraryRoot, book.meta, book.mdPath);
-  upsertBook(book.meta, book.mdPath);
+    const book = makeBook(env.libraryRoot, "a220aaaaaaaaaaaa", "AutoLoad Denied");
+    await writeBookMd(env.libraryRoot, book.meta, book.mdPath);
+    upsertBook(book.meta, book.mdPath);
 
-  let receivedAutoLoad: boolean | undefined;
-  _setEvaluatorDepsForTests({
-    readEvaluatorPrefs: async () => ({ preferred: "preferred-x", fallbacks: [], allowFallback: true }),
-    pickEvaluatorModel: async (opts) => {
-      receivedAutoLoad = opts?.allowAutoLoad;
-      return opts?.preferred ?? null;
-    },
-    evaluateBook: async () => fakeEval(80),
-  });
+    let receivedAutoLoad: boolean | undefined;
+    _setEvaluatorDepsForTests({
+      readEvaluatorPrefs: async () => ({ preferred: "preferred-x", fallbacks: [], allowFallback: true }),
+      pickEvaluatorModel: async (opts) => {
+        receivedAutoLoad = opts?.allowAutoLoad;
+        return opts?.preferred ?? null;
+      },
+      evaluateBook: async () => fakeEval(80),
+    });
 
-  /* Default enqueue — никаких флагов, имитация bootstrap-resume или фоновой
-     reenqueue. До v1.0.7 это всё равно получало allowAutoLoad:true и
-     bootstrap начинал грузить тяжёлые модели на старте app. */
-  enqueueBook(book.meta.id);
-  await waitForIdle();
+    enqueueBook(book.meta.id);
+    await waitForIdle();
 
-  assert.equal(receivedAutoLoad, false,
-    "default enqueue (no user-intent) MUST NOT grant autoload right — fixes autonomous heresy from pre-v1.0.7");
-});
+    assert.equal(receivedAutoLoad, false,
+      "default enqueue (no user-intent) MUST NOT grant autoload right — fixes autonomous heresy from pre-v1.0.7");
+  },
+);
 
-test("[v1.0.7] allowAutoLoad upgrade-only: re-enqueue WITHOUT flag does not downgrade an already-granted right", async (t) => {
-  const env = await setupTestEnv();
-  t.after(env.cleanup);
+test(
+  "[v1.0.7] allowAutoLoad upgrade-only: re-enqueue WITHOUT flag does not downgrade an already-granted right",
+  { timeout: 10_000 },
+  async (t) => {
+    const env = await setupTestEnv();
+    t.after(env.cleanup);
 
-  const book = makeBook(env.libraryRoot, "a330aaaaaaaaaaaa", "Upgrade Only");
-  await writeBookMd(env.libraryRoot, book.meta, book.mdPath);
-  upsertBook(book.meta, book.mdPath);
+    const book = makeBook(env.libraryRoot, "a330aaaaaaaaaaaa", "Upgrade Only");
+    await writeBookMd(env.libraryRoot, book.meta, book.mdPath);
+    upsertBook(book.meta, book.mdPath);
 
-  let receivedAutoLoad: boolean | undefined;
-  /* evaluateBook ВИСИТ — гарантирует что enqueue выполняется ДО старта слота. */
-  let release: () => void = () => {};
-  _setEvaluatorDepsForTests({
-    readEvaluatorPrefs: async () => ({ preferred: "preferred-x", fallbacks: [], allowFallback: true }),
-    pickEvaluatorModel: async (opts) => {
-      receivedAutoLoad = opts?.allowAutoLoad;
-      return opts?.preferred ?? null;
-    },
-    evaluateBook: () => new Promise<EvaluationResult>((resolve) => {
-      release = () => resolve(fakeEval(80));
-    }),
-  });
+    let receivedAutoLoad: boolean | undefined;
+    let release: () => void = () => {};
+    _setEvaluatorDepsForTests({
+      readEvaluatorPrefs: async () => ({ preferred: "preferred-x", fallbacks: [], allowFallback: true }),
+      pickEvaluatorModel: async (opts) => {
+        receivedAutoLoad = opts?.allowAutoLoad;
+        return opts?.preferred ?? null;
+      },
+      evaluateBook: () => new Promise<EvaluationResult>((resolve) => {
+        release = () => resolve(fakeEval(80));
+      }),
+    });
 
-  /* Bootstrap-style enqueue (без флага) → ставит в очередь без права. */
-  enqueueBook(book.meta.id);
-  /* Сразу же user нажал "Re-evaluate" → upgrade флаг. Очередь идемпотентна:
-     второй enqueue не дублирует, но контракт допускает upgrade флага. */
-  enqueueBook(book.meta.id, { allowAutoLoad: true });
-  /* Теперь снова bootstrap-style enqueue — НЕ должен снять флаг. */
-  enqueueBook(book.meta.id);
+    enqueueBook(book.meta.id);
+    enqueueBook(book.meta.id, { allowAutoLoad: true });
+    enqueueBook(book.meta.id);
 
-  /* Дать слоту стартовать. */
-  await new Promise((r) => setTimeout(r, 50));
-  release();
-  await waitForIdle();
+    await new Promise((r) => setTimeout(r, 50));
+    release();
+    await waitForIdle();
 
-  assert.equal(receivedAutoLoad, true,
-    "once granted, allowAutoLoad must persist until slot consumes it; re-enqueue without flag must not downgrade");
-});
+    assert.equal(receivedAutoLoad, true,
+      "once granted, allowAutoLoad must persist until slot consumes it; re-enqueue without flag must not downgrade");
+  },
+);
 
-test("[v1.0.7] allowAutoLoad consume-once: после взятия слотом следующий enqueue без флага получает false", async (t) => {
-  const env = await setupTestEnv();
-  t.after(env.cleanup);
+test(
+  "[v1.0.7] allowAutoLoad consume-once: после взятия слотом следующий enqueue без флага получает false",
+  { timeout: 10_000 },
+  async (t) => {
+    const env = await setupTestEnv();
+    t.after(env.cleanup);
 
-  const book = makeBook(env.libraryRoot, "a440aaaaaaaaaaaa", "Consume Once");
-  await writeBookMd(env.libraryRoot, book.meta, book.mdPath);
-  upsertBook(book.meta, book.mdPath);
+    const book = makeBook(env.libraryRoot, "a440aaaaaaaaaaaa", "Consume Once");
+    await writeBookMd(env.libraryRoot, book.meta, book.mdPath);
+    upsertBook(book.meta, book.mdPath);
 
-  const observedFlags: Array<boolean | undefined> = [];
-  _setEvaluatorDepsForTests({
-    readEvaluatorPrefs: async () => ({ preferred: "preferred-x", fallbacks: [], allowFallback: true }),
-    pickEvaluatorModel: async (opts) => {
-      observedFlags.push(opts?.allowAutoLoad);
-      return opts?.preferred ?? null;
-    },
-    evaluateBook: async () => fakeEval(80),
-  });
+    const observedFlags: Array<boolean | undefined> = [];
+    _setEvaluatorDepsForTests({
+      readEvaluatorPrefs: async () => ({ preferred: "preferred-x", fallbacks: [], allowFallback: true }),
+      pickEvaluatorModel: async (opts) => {
+        observedFlags.push(opts?.allowAutoLoad);
+        return opts?.preferred ?? null;
+      },
+      evaluateBook: async () => fakeEval(80),
+    });
 
-  /* 1-й проход: с флагом → picker видит true, после взятия слотом флаг
-     удаляется из autoLoadAllowedBooks. */
-  enqueueBook(book.meta.id, { allowAutoLoad: true });
-  await waitForIdle();
-  assert.equal(observedFlags[0], true, "first enqueue with flag → true");
+    enqueueBook(book.meta.id, { allowAutoLoad: true });
+    await waitForIdle();
+    assert.equal(observedFlags[0], true, "first enqueue with flag → true");
 
-  /* Возвращаем книгу в imported (имитируем re-enqueue после reset). */
-  upsertBook(book.meta, book.mdPath);
+    upsertBook(book.meta, book.mdPath);
 
-  /* 2-й проход: без флага → picker должен получить false (флаг был
-     consume-once'нут предыдущим прогоном, не остался ghost'ом). */
-  enqueueBook(book.meta.id);
-  await waitForIdle();
-  assert.equal(observedFlags[1], false,
-    "after consume, re-enqueue without flag must NOT inherit previous grant (consume-once contract)");
-});
+    enqueueBook(book.meta.id);
+    await waitForIdle();
+    assert.equal(observedFlags[1], false,
+      "after consume, re-enqueue without flag must NOT inherit previous grant (consume-once contract)");
+  },
+);
