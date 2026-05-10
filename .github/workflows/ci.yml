@@ -37,8 +37,17 @@ jobs:
       - name: Lint (tsc + eslint)
         run: npm run lint
 
-      - name: Unit tests (Node test runner)
-        run: npm run test:fast
+      # Windows runner имеет 4 vCPU → node:test параллелит файлы по CPU cores.
+      # Это вызывает подтверждённый flake (~50% ранее): NTFS file
+      # locking на временных SQLite/cache-db файлах, которые разные
+      # тесты открывают в mkdtempSync()'ах в параллель. macOS нежнее
+      # к fs handle reuse и не выдаёт EBUSY/ENOENT под этими же условиями.
+      #
+      # test:fast:serial пробрасывает --test-concurrency=1 в node:test,
+      # чтобы файлы выполнялись sequentially. ~20% медленнее (Win Unit
+      # стадия сейчас ~30-50с), но устраняет флейк 100%.
+      - name: Unit tests (Node test runner, serial on Windows)
+        run: npm run test:fast:serial
 
       - name: Compile Electron TypeScript
         run: npx tsc -p tsconfig.electron.json
@@ -84,6 +93,7 @@ jobs:
       - name: Lint (tsc + eslint)
         run: npm run lint
 
+      # macOS параллельный прогон — быстрее, file locking не проблема.
       - name: Unit tests (Node test runner)
         run: npm run test:fast
         env:

@@ -38,6 +38,7 @@
     "test:unit": "npm run test:rebuild-native && node --import tsx --test tests/*.test.ts",
     "test:rebuild-native": "node scripts/ensure-sqlite-abi.cjs --target=node",
     "test:fast": "node --import tsx --test tests/*.test.ts",
+    "test:fast:serial": "node --import tsx --test --test-concurrency=1 tests/*.test.ts",
     "test:smoke": "node scripts/prepare-electron.js && tsc -p tsconfig.electron.json && node --import tsx --test tests/smoke/*.test.ts",
     "typecheck": "tsc -p tsconfig.electron.json --noEmit",
     "lint": "npm run typecheck && eslint \"renderer/**/*.js\" --ignore-pattern \"renderer/vendor/**\" --max-warnings=0",
