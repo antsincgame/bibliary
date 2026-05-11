@@ -51,7 +51,6 @@ export async function loadEdgeParse(): Promise<EdgeParseModule | null> {
       const platformKey = `${process.platform}-${process.arch}`;
       const addonMap: Record<string, string> = {
         "win32-x64": "edgeparse-node.win32-x64-msvc.node",
-        "linux-x64": "edgeparse-node.linux-x64-gnu.node",
       };
       const filename = addonMap[platformKey];
       if (!filename) {

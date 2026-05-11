@@ -1,15 +1,12 @@
 /**
- * Cross-platform helpers для путей в `vendor/` и имен исполняемых файлов.
+ * Helpers для путей в `vendor/` и имен исполняемых файлов.
  *
  * Соглашение каталогов:
- *   vendor/<package>/<platform>-<arch>/
- *
- * где `<platform>` ∈ {"win32", "linux"} и `<arch>` ∈ {"x64", "arm64"}.
+ *   vendor/<package>/win32-x64/
  */
 
 /**
- * Текущая директория `<platform>-<arch>` для бандленых vendor-binary.
- * Примеры: "win32-x64", "linux-x64".
+ * Директория `win32-x64` для бандленых vendor-binary.
  */
 export function platformVendorDir(): string {
   const arch = process.arch === "arm64" ? "arm64" : "x64";

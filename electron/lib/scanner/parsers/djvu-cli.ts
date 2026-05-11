@@ -357,8 +357,5 @@ export async function runDjvutxtPage(srcPath: string, pageIndex: number, signal?
 }
 
 export function getDjvuInstallHint(): string {
-  if (process.platform === "win32") {
-    return "Install DjVuLibre or keep bundled binaries (djvutxt.exe/ddjvu.exe/djvused.exe) in vendor/djvulibre/win32-x64";
-  }
-  return "Install DjVuLibre: sudo apt-get install -y djvulibre-bin (or place binaries in vendor/djvulibre/linux-x64/)";
+  return "Install DjVuLibre or keep bundled binaries (djvutxt.exe/ddjvu.exe/djvused.exe) in vendor/djvulibre/win32-x64";
 }

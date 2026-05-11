@@ -6,8 +6,8 @@
  * от Russian Coder (https://github.com/RussCoder/djvujs, GPL v2).
  *
  * Почему меняем:
- *   - DjVuLibre CLI требует vendor binaries 4 MB на каждой платформе
- *     (отдельные скачивания для win32-x64, linux-x64).
+ *   - DjVuLibre CLI требует vendor binaries 4 MB (отдельное скачивание
+ *     для win32-x64).
  *   - Watchdog #297 (infinite loop в RLE decoder) — некоторые DjVu файлы
  *     зависают djvutxt навсегда; pure-JS импл не страдает этой багой.
  *   - Цепочка spawn → pipe → parse — медленнее и хрупче чем in-process

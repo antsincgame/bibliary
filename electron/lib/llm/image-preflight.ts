@@ -2,10 +2,10 @@
  * Image preflight: magic-byte detection (fast, no native deps) + optional
  * sharp metadata validation (slow, requires sharp prebuild for the platform).
  *
- * `sharp` is loaded lazily so a missing prebuild (e.g. на чистом Linux dev
- * без `@img/sharp-linux-x64`) НЕ роняет main process на старте — модуль
- * импортируется через цепочку `library.ipc → illustration-worker → image-preflight`,
- * и top-level `import sharp from "sharp"` крашит весь Electron boot.
+ * `sharp` is loaded lazily so a missing prebuild не роняет main process
+ * на старте — модуль импортируется через цепочку
+ * `library.ipc → illustration-worker → image-preflight`, и top-level
+ * `import sharp from "sharp"` крашит весь Electron boot.
  *
  * При отсутствии sharp `validateImageBuffer` возвращает `{ok: false}` с
  * понятной причиной; magic-byte fast path (`detectImageMimeFromMagic`)

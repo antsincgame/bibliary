@@ -2,7 +2,7 @@
 
 > Превращает коллекцию книг в датасет для дообучения LLM — через структурированный Markdown, смысловые чанки и LanceDB-коллекции.
 
-**Платформа:** Windows / macOS · **Модели:** LM Studio (локально) · **Vector store:** LanceDB (in-process)
+**Платформа:** Windows · **Модели:** LM Studio (локально) · **Vector store:** LanceDB (in-process)
 
 ---
 
@@ -223,7 +223,7 @@ bibliary/
 |-----------|--------|------------|
 | [LM Studio](https://lmstudio.ai/) | 0.3+ | Локальный инференс LLM |
 | [LanceDB](https://lancedb.com/) | embedded | Векторная база данных (встроена в приложение через `@lancedb/lancedb`) |
-| Windows / macOS | x64 / arm64 | Поддерживаемые платформы |
+| Windows | x64 | Поддерживаемая платформа |
 | RAM | 8+ GB | Минимум; 16+ GB рекомендуется |
 
 **Рекомендуемое железо:** 16–32 GB RAM, GPU с 6+ GB VRAM (для S/M-class моделей в LM Studio).
@@ -371,10 +371,10 @@ tests/
 
 ## Известные ограничения
 
-- **Поддерживаются Windows x64 и macOS** (arm64 + Intel x64 universal). Linux официально не поддерживается.
+- **Поддерживается только Windows x64.** macOS и Linux официально не поддерживаются.
 - **LM Studio обязателен** — нет встроенного инференса.
 - **OCR медленный** — сканированные PDF/DJVU с OCR: минуты на книгу.
-- **Multi-language OCR**: Win использует Windows.Media.Ocr (single-lang per call, нужны language packs); macOS — Vision Framework (нативно multi-lang).
+- **Multi-language OCR**: Windows.Media.Ocr — single-lang per call, нужны language packs.
 
 ---
 
