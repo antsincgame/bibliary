@@ -10,9 +10,10 @@ release/
 Bibliary*.exe
 Bibliary*.blockmap
 
-# IDE / AI local config — ignore everything inside .claude/ EXCEPT rules/
+# IDE / AI local config — ignore everything inside .claude/ EXCEPT rules/ and commands/
 .claude/*
 !.claude/rules/
+!.claude/commands/
 .git-commit-msg.tmp
 .commit-msg
 
