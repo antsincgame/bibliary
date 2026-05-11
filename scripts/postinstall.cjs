@@ -44,29 +44,10 @@ if (rebuildStatus !== 0) {
   console.log("[postinstall] @electron/rebuild skipped или упал — для Electron-сборки запустите вручную: npx @electron/rebuild --only better-sqlite3 --force");
 }
 
-/* Step 3 — vendor binaries autosetup (best-effort).
- *           На macOS пытаемся подложить 7zip + DjVuLibre в vendor/darwin-<arch>/
- *           через Homebrew, если их там ещё нет. Падение этого шага НЕ ломает
- *           install: пользователь сможет дозапустить `npm run setup:*-macos`
- *           вручную, либо приложение работает на системных утилитах из PATH.
+/* Step 3 — vendor binaries autosetup.
  *           Windows: vendor binaries закоммичены в репо, autosetup не нужен.
- *
- *           Skip via env: `BIBLIARY_SKIP_VENDOR_AUTOSETUP=1 npm install`. */
-if (process.env.BIBLIARY_SKIP_VENDOR_AUTOSETUP !== "1") {
-  const platform = process.platform;
-  const arch = process.arch === "arm64" ? "arm64" : "x64";
-  const vendorDir = `${platform}-${arch}`;
-  const have7z = require("node:fs").existsSync(
-    require("node:path").join(ROOT, "vendor", "7zip", vendorDir, platform === "win32" ? "7z.exe" : "7z")
-  );
-  if (platform === "darwin" && !have7z) {
-    console.log("[postinstall] Auto-running macOS vendor setup (best-effort)...");
-    run(process.execPath, [require("node:path").join("scripts", "download-7zip-macos.cjs")]);
-    run(process.execPath, [require("node:path").join("scripts", "download-djvulibre-macos.cjs")]);
-  }
-  /* Linux/other platforms: dev-режим работает но vendor binaries не
-     устанавливаются автоматически. Production билды только Win+macOS. */
-}
+ *           Linux: dev-режим работает на системных утилитах из PATH.
+ *           Production билды только Win. */
 
 /* Step 4 — Tesseract.js tessdata (rus/ukr/eng) autodownload.
  *           Cross-platform: bundled при первом install через postinstall, чтобы

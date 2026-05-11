@@ -75,13 +75,13 @@ export interface OcrSupportInfo {
 
 export function getOcrSupport(): OcrSupportInfo {
   const platform = os.platform();
-  if (platform === "win32" || platform === "darwin") {
+  if (platform === "win32") {
     return { supported: true, platform };
   }
   return {
     supported: false,
     platform,
-    reason: "OS-native OCR is available only on Windows (Windows.Media.Ocr) and macOS (Vision Framework)",
+    reason: "OS-native OCR is available only on Windows (Windows.Media.Ocr)",
   };
 }
 

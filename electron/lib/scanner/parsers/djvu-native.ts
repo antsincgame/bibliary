@@ -7,7 +7,7 @@
  *
  * Почему меняем:
  *   - DjVuLibre CLI требует vendor binaries 4 MB на каждой платформе
- *     (отдельные скачивания для win32-x64, linux-x64, darwin-arm64).
+ *     (отдельные скачивания для win32-x64, linux-x64).
  *   - Watchdog #297 (infinite loop в RLE decoder) — некоторые DjVu файлы
  *     зависают djvutxt навсегда; pure-JS импл не страдает этой багой.
  *   - Цепочка spawn → pipe → parse — медленнее и хрупче чем in-process

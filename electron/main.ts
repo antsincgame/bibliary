@@ -136,10 +136,8 @@ function registerAssetProtocol(): void {
 }
 
 function createWindow(): void {
-  const isMac = process.platform === "darwin";
   /* Иконка для окна: на Linux обязательна (taskbar/dock-иконка), на Win
-     полезна как fallback пока .ico не подгружен из NSIS-установки.
-     На macOS иконка приходит из app bundle (.icns), параметр игнорируется. */
+     полезна как fallback пока .ico не подгружен из NSIS-установки. */
   const iconPath = path.join(__dirname, "..", "build", "icon.png");
   mainWindow = new BrowserWindow({
     width: WINDOW_WIDTH,
@@ -149,13 +147,6 @@ function createWindow(): void {
     backgroundColor: BG_COLOR,
     title: "Bibliary",
     icon: iconPath,
-    /* macOS: native traffic lights inside the dark window frame.
-       "hiddenInset" keeps the standard traffic lights but lets
-       the renderer extend under the title bar (no white bar). */
-    ...(isMac ? {
-      titleBarStyle: "hiddenInset" as const,
-      trafficLightPosition: { x: 14, y: 14 },
-    } : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -259,15 +250,8 @@ if (!gotLock) {
     app.exit(1);
   });
 
-  /* macOS: keep the app alive when all windows are closed
-     (standard macOS convention — re-open via dock or Cmd+N). */
   app.on("window-all-closed", () => {
-    if (process.platform !== "darwin") app.quit();
-  });
-
-  /* macOS: clicking the dock icon re-opens the main window. */
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    app.quit();
   });
 
   const FORCE_EXIT_MS = 4_000;

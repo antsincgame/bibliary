@@ -69,35 +69,3 @@ jobs:
             release/*.json
           retention-days: 7
           if-no-files-found: ignore
-
-  ci-macos:
-    name: macOS · Lint · Tests · Compile
-    runs-on: macos-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-        env:
-          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
-
-      - name: Ensure better-sqlite3 ABI (Node)
-        run: node scripts/ensure-sqlite-abi.cjs --target=node
-
-      - name: Lint (tsc + eslint)
-        run: npm run lint
-
-      # macOS параллельный прогон — быстрее, file locking не проблема.
-      - name: Unit tests (Node test runner)
-        run: npm run test:fast
-        env:
-          BIBLIARY_SKIP_OCR: '1'
-
-      - name: Compile Electron TypeScript
-        run: npx tsc -p tsconfig.electron.json

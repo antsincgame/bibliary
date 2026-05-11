@@ -12,8 +12,7 @@ files:
   - node_modules/**/*
   - package.json
 extraResources:
-  # Vendor binaries — per-platform (win32-x64, darwin-arm64, darwin-x64).
-  # electron-builder replaces ${platform}/${arch} at build time.
+  # Vendor binaries — Windows only (win32-x64).
   - from: vendor/djvulibre/${platform}-${arch}
     to: vendor/djvulibre/${platform}-${arch}
     filter:
@@ -47,22 +46,6 @@ win:
 nsis:
   oneClick: true
   perMachine: false
-mac:
-  target:
-    - dmg
-    - zip
-  category: public.app-category.productivity
-  # Hardened Runtime required for notarization.
-  # Sign with: APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID env vars.
-  hardenedRuntime: true
-  gatekeeperAssess: false
-  entitlements: build/entitlements.mac.plist
-  entitlementsInherit: build/entitlements.mac.plist
-dmg:
-  title: "Bibliary ${version}"
-  window:
-    width: 540
-    height: 380
 asar: true
 asarUnpack:
   # Native addons and binary runtimes must be outside asar (no dlopen inside archive).
@@ -78,14 +61,7 @@ asarUnpack:
   - "node_modules/edgeparse/npm/win32-x64-msvc/**/*"
   - "node_modules/edgeparse/package.json"
   - "node_modules/edgeparse-win32-x64-msvc/**/*"
-  # edgeparse — macOS arm64 / x64
-  - "node_modules/edgeparse/npm/edgeparse-node.darwin-arm64.node"
-  - "node_modules/edgeparse/npm/darwin-arm64/**/*"
-  - "node_modules/edgeparse-darwin-arm64/**/*"
-  - "node_modules/edgeparse/npm/edgeparse-node.darwin-x64.node"
-  - "node_modules/edgeparse/npm/darwin-x64/**/*"
-  - "node_modules/edgeparse-darwin-x64/**/*"
-  # System OCR — Windows + macOS Vision Framework bindings
+  # System OCR — Windows
   - "node_modules/@napi-rs/system-ocr/**/*"
   # Canvas (PDF rasterisation) — native per-platform
   - "node_modules/@napi-rs/canvas/**/*"

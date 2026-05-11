@@ -6,10 +6,9 @@
  * Файл который превысит лимит = источник hang'а в CI Unit tests step.
  *
  * Контекст: после PR #4 + аудит-pack из 12+ коммитов CI Unit tests step
- * висит >25 минут (~720 тестов через node:test + tsx loader). Локально
- * на M1 Mac тесты проходят за ~5 мин (496+ pass / 2 fails), но CI
- * (3-core macos-latest, 4-core windows-latest) либо очень медленный
- * либо один из файлов вешает execution.
+ * висит >25 минут (~720 тестов через node:test + tsx loader). CI
+ * (4-core windows-latest) либо очень медленный либо один из файлов
+ * вешает execution.
  *
  * Запуск:
  *   node scripts/diagnose-test-hang.cjs

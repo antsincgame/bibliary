@@ -1,5 +1,4 @@
 import { promises as fs } from "fs";
-import * as os from "os";
 import * as path from "path";
 import { cleanParagraph, looksLikeHeading, type BookParser, type ParseOptions, type ParseResult, type BookSection } from "./types.js";
 import { isOcrSupported, recognizeImageBuffer, reorderLanguagesForCyrillic } from "../ocr/index.js";
@@ -328,12 +327,11 @@ async function ocrDjvuPages(
       const pngBuffer = await imageBufferToPng(imageBuffer);
 
       const langsToTry = effectiveLangs.length > 0 ? effectiveLangs : ["ru", "uk", "en"];
-      const platform = os.platform();
       /* Tesseract нативно multi-lang в одном вызове (передаём все языки в worker
-       * init). macOS Vision и vision-LLM тоже multi-lang. Только Win.Media.Ocr
-       * требует cycling — single-lang per call. */
+       * init). vision-LLM тоже multi-lang. Только Win.Media.Ocr требует
+       * cycling — single-lang per call. */
       const supportsNativeMultiLang =
-        provider === "tesseract" || provider === "vision-llm" || platform === "darwin";
+        provider === "tesseract" || provider === "vision-llm";
 
       let bestText = "";
       let bestLang = langsToTry[0];

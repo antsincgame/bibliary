@@ -360,6 +360,5 @@ export function getDjvuInstallHint(): string {
   if (process.platform === "win32") {
     return "Install DjVuLibre or keep bundled binaries (djvutxt.exe/ddjvu.exe/djvused.exe) in vendor/djvulibre/win32-x64";
   }
-  if (process.platform === "darwin") return "Install DjVuLibre: brew install djvulibre (then run npm run setup:djvulibre-macos)";
   return "Install DjVuLibre: sudo apt-get install -y djvulibre-bin (or place binaries in vendor/djvulibre/linux-x64/)";
 }

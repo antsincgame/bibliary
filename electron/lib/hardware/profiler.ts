@@ -97,7 +97,6 @@ async function detectGpus(platform: NodeJS.Platform): Promise<GpuInfo[]> {
   if (nvidia.length > 0) return nvidia;
 
   if (platform === "win32") return await detectGpusWindows();
-  if (platform === "darwin") return await detectGpusMac();
   return [];
 }
 
@@ -189,34 +188,6 @@ async function detectGpusWindows(): Promise<GpuInfo[]> {
         vramGB: typeof x.AdapterRAM === "number" ? round1(x.AdapterRAM / 1024 ** 3) : null,
         backend: detectBackend(x.Name),
       }));
-  } catch {
-    return [];
-  }
-}
-
-async function detectGpusMac(): Promise<GpuInfo[]> {
-  try {
-    const { stdout } = await execAsync("system_profiler SPDisplaysDataType -json", {
-      timeout: EXEC_TIMEOUT_MS,
-    });
-    const parsed = JSON.parse(stdout) as { SPDisplaysDataType?: Array<Record<string, unknown>> };
-    const arr = parsed.SPDisplaysDataType || [];
-    const gpus: GpuInfo[] = [];
-    for (const item of arr) {
-      const name = String(item._name || item.sppci_model || "Apple GPU");
-      // На M1/M2/M3 — unified memory; vram = total RAM (но это overestimate для inference).
-      // Используем sppci_vram (если есть) или fallback на null.
-      const vramRaw = String(item.sppci_vram || item.spdisplays_vram || "");
-      const vramMatch = vramRaw.match(/(\d+)\s*GB/i);
-      const vramGB = vramMatch ? Number(vramMatch[1]) : null;
-      const isApple = /apple/i.test(name);
-      gpus.push({
-        name,
-        vramGB: isApple ? round1(os.totalmem() / 1024 ** 3) : vramGB,
-        backend: isApple ? "metal" : "unknown",
-      });
-    }
-    return gpus;
   } catch {
     return [];
   }

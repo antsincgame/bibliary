@@ -1,11 +1,11 @@
 /**
- * Application menu — кроссплатформенный шаблон.
+ * Application menu — Windows/Linux шаблон.
  *
- * macOS:  [App] [File] [Edit] [View] [Window] [Help]
- * Win/Linux: [File] [Edit] [View] [Window] [Help]
+ * Layout: [File] [Edit] [View] [Window] [Help]
  *
- * App menu (только macOS) добавляется первым: About / Hide / Quit — конвенция Apple.
- * Все акселераторы — `CmdOrCtrl+...`, Electron сам мапит на ⌘ на macOS и Ctrl на Win/Linux.
+ * Win/Linux: без мнемоник (&) Chromium часто трактует одиночный Alt как
+ * «меню» и перехватывает клавишу до системного Alt+Shift / Alt+Ctrl
+ * переключения раскладки (Electron #17418, #28088; обход как в nativefier#768).
  */
 
 import { Menu, app, shell, BrowserWindow, dialog } from "electron";
@@ -13,40 +13,7 @@ import type { MenuItemConstructorOptions } from "electron";
 
 const APP_NAME = "Bibliary";
 
-/**
- * Win/Linux: без мнемоник (&) Chromium часто трактует одиночный Alt как
- * «меню» и перехватывает клавишу до системного Alt+Shift / Alt+Ctrl
- * переключения раскладки (Electron #17418, #28088; обход как в nativefier#768).
- * На macOS символ `&` в подписях не используется — оставляем обычный текст.
- */
-function topBarLabel(isMac: boolean, plain: string, winLinuxMnemonic: string): string {
-  return isMac ? plain : winLinuxMnemonic;
-}
-
-function buildMacAppMenu(): MenuItemConstructorOptions {
-  return {
-    label: APP_NAME,
-    submenu: [
-      { role: "about", label: `About ${APP_NAME}` },
-      { type: "separator" },
-      {
-        label: "Preferences…",
-        accelerator: "Cmd+,",
-        click: (_item, win) => focusRouteInWindow(win as BrowserWindow | undefined, "settings"),
-      },
-      { type: "separator" },
-      { role: "services" },
-      { type: "separator" },
-      { role: "hide", label: `Hide ${APP_NAME}` },
-      { role: "hideOthers" },
-      { role: "unhide" },
-      { type: "separator" },
-      { role: "quit", label: `Quit ${APP_NAME}` },
-    ],
-  };
-}
-
-function buildFileMenu(isMac: boolean): MenuItemConstructorOptions {
+function buildFileMenu(): MenuItemConstructorOptions {
   const submenu: MenuItemConstructorOptions[] = [
     {
       label: "Open Library Folder…",
@@ -59,40 +26,29 @@ function buildFileMenu(isMac: boolean): MenuItemConstructorOptions {
       click: (_item, win) => focusRouteInWindow(win as BrowserWindow | undefined, "datasets"),
     },
     { type: "separator" },
-    isMac ? { role: "close" } : { role: "quit" },
+    { role: "quit" },
   ];
-  return { label: topBarLabel(isMac, "File", "&File"), submenu };
+  return { label: "&File", submenu };
 }
 
-function buildEditMenu(isMac: boolean): MenuItemConstructorOptions {
-  const base: MenuItemConstructorOptions[] = [
+function buildEditMenu(): MenuItemConstructorOptions {
+  const submenu: MenuItemConstructorOptions[] = [
     { role: "undo" },
     { role: "redo" },
     { type: "separator" },
     { role: "cut" },
     { role: "copy" },
     { role: "paste" },
+    { role: "delete" },
+    { type: "separator" },
+    { role: "selectAll" },
   ];
-  if (isMac) {
-    base.push(
-      { role: "pasteAndMatchStyle" },
-      { role: "delete" },
-      { role: "selectAll" },
-      { type: "separator" },
-      {
-        label: "Speech",
-        submenu: [{ role: "startSpeaking" }, { role: "stopSpeaking" }],
-      },
-    );
-  } else {
-    base.push({ role: "delete" }, { type: "separator" }, { role: "selectAll" });
-  }
-  return { label: topBarLabel(isMac, "Edit", "&Edit"), submenu: base };
+  return { label: "&Edit", submenu };
 }
 
-function buildViewMenu(isMac: boolean): MenuItemConstructorOptions {
+function buildViewMenu(): MenuItemConstructorOptions {
   return {
-    label: topBarLabel(isMac, "View", "&View"),
+    label: "&View",
     submenu: [
       { role: "reload" },
       { role: "forceReload" },
@@ -107,25 +63,17 @@ function buildViewMenu(isMac: boolean): MenuItemConstructorOptions {
   };
 }
 
-function buildWindowMenu(isMac: boolean): MenuItemConstructorOptions {
-  const submenu: MenuItemConstructorOptions[] = [{ role: "minimize" }, { role: "zoom" }];
-  if (isMac) {
-    submenu.push(
-      { type: "separator" },
-      { role: "front" },
-      { type: "separator" },
-      { role: "window" },
-    );
-  } else {
-    submenu.push({ role: "close" });
-  }
-  return { label: topBarLabel(isMac, "Window", "&Window"), submenu };
+function buildWindowMenu(): MenuItemConstructorOptions {
+  return {
+    label: "&Window",
+    submenu: [{ role: "minimize" }, { role: "zoom" }, { role: "close" }],
+  };
 }
 
-function buildHelpMenu(isMac: boolean): MenuItemConstructorOptions {
+function buildHelpMenu(): MenuItemConstructorOptions {
   return {
     role: "help",
-    ...(!isMac ? { label: "&Help" } : {}),
+    label: "&Help",
     submenu: [
       {
         label: "Documentation",
@@ -182,16 +130,13 @@ function focusRouteInWindow(win: BrowserWindow | undefined, route: string): void
 }
 
 export function buildApplicationMenu(): Menu {
-  const isMac = process.platform === "darwin";
-  const template: MenuItemConstructorOptions[] = [];
-  if (isMac) template.push(buildMacAppMenu());
-  template.push(
-    buildFileMenu(isMac),
-    buildEditMenu(isMac),
-    buildViewMenu(isMac),
-    buildWindowMenu(isMac),
-    buildHelpMenu(isMac),
-  );
+  const template: MenuItemConstructorOptions[] = [
+    buildFileMenu(),
+    buildEditMenu(),
+    buildViewMenu(),
+    buildWindowMenu(),
+    buildHelpMenu(),
+  ];
   return Menu.buildFromTemplate(template);
 }
 

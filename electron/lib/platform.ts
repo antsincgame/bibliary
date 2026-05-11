@@ -1,19 +1,15 @@
 /**
  * Cross-platform helpers для путей в `vendor/` и имен исполняемых файлов.
  *
- * Создан в Phase 4.2 cross-platform roadmap (2026-04-30) — заменяет
- * хардкод `"win32-x64"` и `.exe` суффиксов на per-platform значения.
- *
  * Соглашение каталогов:
  *   vendor/<package>/<platform>-<arch>/
  *
- * где `<platform>` ∈ {"win32", "linux", "darwin"} и `<arch>` ∈ {"x64", "arm64"}.
- * Совпадает с конвенцией napi-rs, electron-builder и сложилось у нас раньше.
+ * где `<platform>` ∈ {"win32", "linux"} и `<arch>` ∈ {"x64", "arm64"}.
  */
 
 /**
  * Текущая директория `<platform>-<arch>` для бандленых vendor-binary.
- * Примеры: "win32-x64", "linux-x64", "darwin-arm64".
+ * Примеры: "win32-x64", "linux-x64".
  */
 export function platformVendorDir(): string {
   const arch = process.arch === "arm64" ? "arm64" : "x64";

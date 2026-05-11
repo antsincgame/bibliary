@@ -67,13 +67,6 @@ export function resolveAppDataDir(ctx: AppDataDirContext): string {
   }
 
   if (ctx.isPackaged) {
-    /* macOS: execPath lives inside the read-only .app bundle
-       (Contents/MacOS/Bibliary). Writing data there fails after code-signing.
-       Use ~/Library/Application Support/<AppName> instead, which is what
-       Electron's app.getPath("userData") already resolves to on macOS. */
-    if (platform === "darwin" && ctx.userDataPath) {
-      return path.join(ctx.userDataPath, "data");
-    }
     return path.join(path.dirname(ctx.execPath), "data");
   }
   return path.resolve(ctx.devBaseDir, "..", "data");

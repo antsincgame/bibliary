@@ -21,16 +21,6 @@ const PLATFORMS = {
     file: "edgeparse-node.win32-x64-msvc.node",
     subfolder: "win32-x64-msvc",
   },
-  "darwin-x64": {
-    pkg: "edgeparse-darwin-x64",
-    file: "edgeparse-node.darwin-x64.node",
-    subfolder: "darwin-x64",
-  },
-  "darwin-arm64": {
-    pkg: "edgeparse-darwin-arm64",
-    file: "edgeparse-node.darwin-arm64.node",
-    subfolder: "darwin-arm64",
-  },
 };
 
 const key = `${process.platform}-${process.arch}`;
