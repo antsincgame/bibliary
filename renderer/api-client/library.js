@@ -105,8 +105,17 @@ export const library = {
 
   /* ─── Realtime push (Phase 3b SSE) ─────────────────────────────── */
 
+  /** Evaluator pipeline events (POST /api/library/books/:id/evaluate). */
   /** @param {(ev: unknown) => void} cb */
   onEvaluatorEvent: (cb) => subscribe("evaluator_events:created", cb),
+  /**
+   * Extractor / crystallizer pipeline events
+   * (POST /api/library/books/:id/extract). Separate channel since
+   * Phase 6f — payload.kind: "extraction" (book-level) | "chapter".
+   *
+   * @param {(ev: unknown) => void} cb
+   */
+  onExtractorEvent: (cb) => subscribe("extractor_events:created", cb),
   /** @param {(ev: unknown) => void} cb */
   onImportProgress: (cb) => subscribe("ingest_jobs:update", cb),
   /** @param {(ev: unknown) => void} cb */

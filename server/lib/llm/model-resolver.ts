@@ -32,6 +32,14 @@ export interface ResolvedProvider {
   provider: LLMProvider;
   providerId: ProviderId;
   model: string;
+  /**
+   * True если роль не назначена в user_preferences и мы упали на
+   * LM Studio + first loaded model (silent fallback). UI должен
+   * показать toast «Using LM Studio fallback — configure provider
+   * in Settings → Providers» чтобы user понял почему ответы
+   * приходят не от Claude/GPT когда он ожидал.
+   */
+  usingFallback: boolean;
 }
 
 export async function resolveForRole(
@@ -45,6 +53,7 @@ export async function resolveForRole(
 
   let providerId: ProviderId;
   let model: string;
+  let usingFallback = false;
   if (entry && isProviderId(entry.provider) && typeof entry.model === "string" && entry.model) {
     providerId = entry.provider;
     model = entry.model;
@@ -58,11 +67,12 @@ export async function resolveForRole(
       );
     }
     model = fallback;
+    usingFallback = true;
   }
 
   try {
     const provider = await getProvider(userId, providerId);
-    return { provider, providerId, model };
+    return { provider, providerId, model, usingFallback };
   } catch (err) {
     throw new ProviderNotAvailableError(
       `Provider "${providerId}" for role "${role}" unavailable: ${err instanceof Error ? err.message : String(err)}`,
@@ -93,8 +103,13 @@ async function pickDefaultLmStudioModel(): Promise<string | null> {
 export async function withProvider<T>(
   userId: string,
   role: LLMRole,
-  fn: (provider: LLMProvider, model: string, providerId: ProviderId) => Promise<T>,
+  fn: (
+    provider: LLMProvider,
+    model: string,
+    providerId: ProviderId,
+    usingFallback: boolean,
+  ) => Promise<T>,
 ): Promise<T> {
-  const { provider, providerId, model } = await resolveForRole(userId, role);
-  return fn(provider, model, providerId);
+  const { provider, providerId, model, usingFallback } = await resolveForRole(userId, role);
+  return fn(provider, model, providerId, usingFallback);
 }

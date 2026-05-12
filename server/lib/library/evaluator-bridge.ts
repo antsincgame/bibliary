@@ -125,6 +125,7 @@ export async function evaluateBookViaBridge(
       qualityScore: ev.quality_score,
       isFictionOrWater: ev.is_fiction_or_water,
       domain: ev.domain,
+      usingFallback: result.usingFallback,
     },
   });
 

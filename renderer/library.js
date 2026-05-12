@@ -103,11 +103,18 @@ export async function mountLibrary(root) {
   root.append(layout);
 
   if (typeof CATALOG.unsubEvaluator === "function") CATALOG.unsubEvaluator();
+  if (typeof CATALOG.unsubExtractor === "function") CATALOG.unsubExtractor();
   if (typeof CATALOG.unsubBatch === "function") CATALOG.unsubBatch();
 
   installWindowDropGuards(root);
 
-  CATALOG.unsubEvaluator = window.api.library.onEvaluatorEvent((ev) => {
+  /**
+   * Phase 6f split: evaluator events (POST /evaluate) и extractor events
+   * (POST /extract) идут на разные SSE channels. Тот же callback
+   * рефрешит UI на обоих — book row может изменить score (evaluator)
+   * или статус indexed/failed (extractor).
+   */
+  const onPipelineEvent = (ev) => {
     if (STATE.tab === "catalog") void renderCatalog(root);
     if (STATE.tab === "import") void refreshEvaluatorState(root);
     if (ev.bookId && STATE.tab !== "catalog" && STATE.tab !== "import") {
@@ -119,7 +126,11 @@ export async function mountLibrary(root) {
         }
       }
     }
-  });
+  };
+  CATALOG.unsubEvaluator = window.api.library.onEvaluatorEvent(onPipelineEvent);
+  if (typeof window.api.library.onExtractorEvent === "function") {
+    CATALOG.unsubExtractor = window.api.library.onExtractorEvent(onPipelineEvent);
+  }
 
   CATALOG.unsubBatch = window.api.datasetV2.onEvent((ev) => {
     applyBatchEvent(root, ev, catalogDeps);
@@ -158,6 +169,10 @@ export function isLibraryBusy() {
  * Called by router.js before unmounting (locale switch / remount).
  */
 export function unmountLibrary() {
+  if (typeof CATALOG.unsubExtractor === "function") {
+    CATALOG.unsubExtractor();
+    CATALOG.unsubExtractor = null;
+  }
   if (typeof CATALOG.unsubEvaluator === "function") {
     CATALOG.unsubEvaluator();
     CATALOG.unsubEvaluator = null;

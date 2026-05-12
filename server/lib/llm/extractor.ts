@@ -40,6 +40,8 @@ export interface ExtractorResult {
   reasoning: string | null;
   model: string;
   warnings: string[];
+  /** True если crystallizer role не назначена и pipeline на LM Studio fallback. */
+  usingFallback: boolean;
 }
 
 const REPAIR_SYSTEM_PROMPT =
@@ -63,10 +65,11 @@ export async function extractDeltaForChunk(
       chunk,
       ctx,
       opts,
+      false,
     );
   }
-  return withProvider(userId, "crystallizer", (provider, model) =>
-    extractWithProvider(provider, model, chunk, ctx, opts),
+  return withProvider(userId, "crystallizer", (provider, model, _id, usingFallback) =>
+    extractWithProvider(provider, model, chunk, ctx, opts, usingFallback),
   );
 }
 
@@ -76,8 +79,14 @@ async function extractWithProvider(
   chunk: ExtractorInputChunk,
   ctx: ExtractorInputContext,
   opts: ExtractorOptions,
+  usingFallback: boolean,
 ): Promise<ExtractorResult> {
   const warnings: string[] = [];
+  if (usingFallback) {
+    warnings.push(
+      "extractor: using LM Studio fallback — assign crystallizer in Settings → Providers for cloud model",
+    );
+  }
   const request: ChatRequest = {
     model,
     system: EXTRACTOR_SYSTEM_PROMPT,
@@ -102,6 +111,7 @@ async function extractWithProvider(
       reasoning: null,
       model,
       warnings,
+      usingFallback,
     };
   }
 
@@ -118,13 +128,14 @@ async function extractWithProvider(
       reasoning,
       model,
       warnings,
+      usingFallback,
     };
   }
 
   if (parsed.json !== null) {
     const validation = DeltaKnowledgeSchema.safeParse(parsed.json);
     if (validation.success) {
-      return { delta: validation.data, raw, reasoning, model, warnings };
+      return { delta: validation.data, raw, reasoning, model, warnings, usingFallback };
     }
     warnings.push(
       `extractor: schema mismatch — ${validation.error.issues
@@ -133,7 +144,7 @@ async function extractWithProvider(
     );
   }
 
-  return repairAndValidate(provider, model, raw, reasoning, opts, warnings);
+  return repairAndValidate(provider, model, raw, reasoning, opts, warnings, usingFallback);
 }
 
 async function repairAndValidate(
@@ -143,6 +154,7 @@ async function repairAndValidate(
   priorReasoning: string | null,
   opts: ExtractorOptions,
   warnings: string[],
+  usingFallback: boolean,
 ): Promise<ExtractorResult> {
   warnings.push("extractor: attempting JSON repair retry");
 
@@ -179,6 +191,7 @@ async function repairAndValidate(
       reasoning: priorReasoning,
       model,
       warnings,
+      usingFallback,
     };
   }
 
@@ -195,6 +208,7 @@ async function repairAndValidate(
       reasoning,
       model,
       warnings,
+      usingFallback,
     };
   }
   if (parsed.json === null) {
@@ -206,6 +220,7 @@ async function repairAndValidate(
       reasoning,
       model,
       warnings,
+      usingFallback,
     };
   }
 
@@ -223,9 +238,10 @@ async function repairAndValidate(
       reasoning,
       model,
       warnings,
+      usingFallback,
     };
   }
-  return { delta: validation.data, raw: rawRepair, reasoning, model, warnings };
+  return { delta: validation.data, raw: rawRepair, reasoning, model, warnings, usingFallback };
 }
 
 /**
@@ -252,6 +268,8 @@ export interface ChapterExtractionResult {
     filler: number;
     failed: number;
   };
+  /** Aggregated: true если хотя бы один chunk шёл через fallback. */
+  usingFallback: boolean;
 }
 
 const LEDGER_SIZE = 5;
@@ -302,5 +320,6 @@ export async function extractChapter(
       filler,
       failed,
     },
+    usingFallback: perChunk.some((r) => r.usingFallback),
   };
 }

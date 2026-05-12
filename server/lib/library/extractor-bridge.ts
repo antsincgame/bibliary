@@ -120,7 +120,7 @@ export async function extractBookViaBridge(
   }
 
   await updateBook(userId, bookId, { status: "crystallizing" });
-  publishUser(userId, "evaluator_events:created", {
+  publishUser(userId, "extractor_events:created", {
     bookId,
     event: "started",
     payload: { kind: "extraction", collection },
@@ -134,7 +134,7 @@ export async function extractBookViaBridge(
       ? "markdown_file_missing"
       : err instanceof Error ? err.message : String(err);
     await updateBook(userId, bookId, { status: "failed" });
-    publishUser(userId, "evaluator_events:created", {
+    publishUser(userId, "extractor_events:created", {
       bookId,
       event: "failed",
       payload: { reason: msg },
@@ -170,7 +170,7 @@ export async function extractBookViaBridge(
       chaptersProcessed += 1;
       continue;
     }
-    publishUser(userId, "evaluator_events:created", {
+    publishUser(userId, "extractor_events:created", {
       bookId,
       event: "started",
       payload: {
@@ -209,7 +209,7 @@ export async function extractBookViaBridge(
     }
 
     chaptersProcessed += 1;
-    publishUser(userId, "evaluator_events:created", {
+    publishUser(userId, "extractor_events:created", {
       bookId,
       event: "done",
       payload: {
@@ -223,7 +223,11 @@ export async function extractBookViaBridge(
 
   const finalStatus = conceptsAccepted > 0 ? "indexed" : "failed";
   await updateBook(userId, bookId, { status: finalStatus });
-  publishUser(userId, "evaluator_events:created", {
+  /* Aggregate fallback hint — true если хотя бы один chunk шёл fallback. */
+  const aggregatedFallback = accumulatedWarnings.some((w) =>
+    w.includes("using LM Studio fallback"),
+  );
+  publishUser(userId, "extractor_events:created", {
     bookId,
     event: "done",
     payload: {
@@ -232,6 +236,7 @@ export async function extractBookViaBridge(
       chunksTotal,
       conceptsAccepted,
       conceptsFailed,
+      usingFallback: aggregatedFallback,
     },
   });
 

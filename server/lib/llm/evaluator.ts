@@ -47,6 +47,11 @@ export interface ServerEvaluationResult {
   raw: string;
   model: string;
   warnings: string[];
+  /**
+   * True если evaluator role не назначена в Settings и pipeline упал
+   * на LM Studio fallback. UI должен показать toast.
+   */
+  usingFallback: boolean;
 }
 
 const REPAIR_SYSTEM_PROMPT =
@@ -73,10 +78,11 @@ export async function evaluateBook(
       opts.providerOverride.model,
       surrogate,
       opts,
+      false,
     );
   }
-  return withProvider(userId, "evaluator", (provider, model) =>
-    evaluateBookWithProvider(provider, model, surrogate, opts),
+  return withProvider(userId, "evaluator", (provider, model, _providerId, usingFallback) =>
+    evaluateBookWithProvider(provider, model, surrogate, opts, usingFallback),
   );
 }
 
@@ -85,8 +91,14 @@ async function evaluateBookWithProvider(
   model: string,
   surrogate: string,
   opts: EvaluatorOptions,
+  usingFallback: boolean,
 ): Promise<ServerEvaluationResult> {
   const warnings: string[] = [];
+  if (usingFallback) {
+    warnings.push(
+      "evaluator: using LM Studio fallback — assign provider in Settings → Providers for cloud model",
+    );
+  }
 
   const request: ChatRequest = {
     model,
@@ -105,7 +117,7 @@ async function evaluateBookWithProvider(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     warnings.push(`evaluator: provider.chat failed: ${msg}`);
-    return { evaluation: null, reasoning: null, raw: "", model, warnings };
+    return { evaluation: null, reasoning: null, raw: "", model, warnings, usingFallback };
   }
 
   const raw = response.text ?? "";
@@ -116,7 +128,7 @@ async function evaluateBookWithProvider(
   if (parsed.json !== null) {
     const validation = evaluationSchema.safeParse(parsed.json);
     if (validation.success) {
-      return { evaluation: validation.data, reasoning, raw, model, warnings };
+      return { evaluation: validation.data, reasoning, raw, model, warnings, usingFallback };
     }
     warnings.push(
       `evaluator: schema mismatch — ${validation.error.issues
@@ -127,7 +139,7 @@ async function evaluateBookWithProvider(
   }
 
   /* Repair retry — один шанс с strict system prompt. */
-  return repairAndValidate(provider, model, raw, reasoning, opts, warnings);
+  return repairAndValidate(provider, model, raw, reasoning, opts, warnings, usingFallback);
 }
 
 async function repairAndValidate(
@@ -137,6 +149,7 @@ async function repairAndValidate(
   priorReasoning: string | null,
   opts: EvaluatorOptions,
   warnings: string[],
+  usingFallback: boolean,
 ): Promise<ServerEvaluationResult> {
   warnings.push("evaluator: attempting JSON repair retry");
 
@@ -166,7 +179,7 @@ async function repairAndValidate(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     warnings.push(`evaluator: repair provider.chat failed: ${msg}`);
-    return { evaluation: null, reasoning: priorReasoning, raw: badRaw, model, warnings };
+    return { evaluation: null, reasoning: priorReasoning, raw: badRaw, model, warnings, usingFallback };
   }
 
   const rawRepair = response.text ?? "";
@@ -176,7 +189,7 @@ async function repairAndValidate(
 
   if (parsed.json === null) {
     warnings.push("evaluator: repair retry also failed to produce valid JSON");
-    return { evaluation: null, reasoning, raw: rawRepair || badRaw, model, warnings };
+    return { evaluation: null, reasoning, raw: rawRepair || badRaw, model, warnings, usingFallback };
   }
 
   const validation = evaluationSchema.safeParse(parsed.json);
@@ -186,8 +199,8 @@ async function repairAndValidate(
         .map((i) => `${i.path.join(".")}: ${i.message}`)
         .join("; ")}`,
     );
-    return { evaluation: null, reasoning, raw: rawRepair, model, warnings };
+    return { evaluation: null, reasoning, raw: rawRepair, model, warnings, usingFallback };
   }
 
-  return { evaluation: validation.data, reasoning, raw: rawRepair, model, warnings };
+  return { evaluation: validation.data, reasoning, raw: rawRepair, model, warnings, usingFallback };
 }
