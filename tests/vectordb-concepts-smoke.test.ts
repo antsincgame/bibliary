@@ -12,7 +12,7 @@ import * as path from "node:path";
 const ENV_SNAPSHOT: Record<string, string | undefined> = {};
 let tmpDir = "";
 
-before(() => {
+before(async () => {
   ENV_SNAPSHOT["BIBLIARY_VECTORS_DB_PATH"] = process.env["BIBLIARY_VECTORS_DB_PATH"];
   ENV_SNAPSHOT["BIBLIARY_DATA_DIR"] = process.env["BIBLIARY_DATA_DIR"];
   ENV_SNAPSHOT["BIBLIARY_EMBEDDING_DIM"] = process.env["BIBLIARY_EMBEDDING_DIM"];
@@ -27,6 +27,12 @@ before(() => {
   process.env["APPWRITE_ENDPOINT"] = "http://localhost/v1";
   process.env["APPWRITE_PROJECT_ID"] = "test";
   process.env["APPWRITE_API_KEY"] = "test";
+
+  /* Reset cached singleton: if an earlier test (e.g. via transitive
+   * import) opened the vector DB with a different dim or path, our
+   * env vars above would be ignored. Force fresh init. */
+  const { resetVectorDbForTesting } = await import("../server/lib/vectordb/db.ts");
+  resetVectorDbForTesting();
 });
 
 after(async () => {
