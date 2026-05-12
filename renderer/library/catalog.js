@@ -607,7 +607,7 @@ export function buildCatalogBottomBar(root, deps) {
    * Feature-detect: window.api.library.extract существует с Phase 6e.
    * В Electron-режиме preload не выставляет — кнопка просто не рендерится. */
   const crystallizeBtn =
-    typeof /** @type {any} */ (window.api.library).extract === "function"
+    typeof /** @type {any} */ (window.api.library).startBatch === "function"
       ? el(
           "button",
           {
@@ -635,26 +635,42 @@ export function buildCatalogBottomBar(root, deps) {
                   return;
                 }
                 const ids = Array.from(CATALOG.selected);
-                let queued = 0;
-                /** @type {string[]} */
-                const errors = [];
-                for (const bookId of ids) {
-                  try {
-                    const r = /** @type {any} */ (
-                      await window.api.library.extract(bookId, { collection })
-                    );
-                    if (r?.ok) queued += 1;
-                    else errors.push(`${bookId.slice(0, 8)}…: ${compactError(r?.error || "not ok")}`);
-                  } catch (e) {
-                    errors.push(`${bookId.slice(0, 8)}…: ${compactError(catalogErrMsg(e))}`);
-                  }
-                }
-                if (errors.length > 0) {
-                  await showAlert(
-                    `Queued ${queued}/${ids.length} books. Errors:\n${errors.slice(0, 5).join("\n")}`,
+                try {
+                  /* Phase 9 — single batch call. Server runs the quality
+                   * gate; per-book results come back as a single response
+                   * + downstream SSE per child job. */
+                  const r = /** @type {any} */ (
+                    await window.api.library.startBatch({
+                      bookIds: ids,
+                      collection,
+                    })
                   );
-                } else {
-                  setCatalogStatus(root, `Queued ${queued} books for crystallization → '${collection}'`);
+                  /* Group skipped reasons for a tighter toast. */
+                  /** @type {Record<string, number>} */
+                  const reasons = {};
+                  for (const s of r.skipped ?? []) {
+                    const key = String(s.reason ?? "unknown");
+                    reasons[key] = (reasons[key] ?? 0) + 1;
+                  }
+                  const skipSummary = Object.keys(reasons).length
+                    ? " · Skipped: " +
+                      Object.entries(reasons)
+                        .map(([k, n]) => `${n} ${k.replace(/_/g, " ")}`)
+                        .join(", ")
+                    : "";
+                  setCatalogStatus(
+                    root,
+                    `Queued ${r.eligible}/${r.total} → '${collection}'${skipSummary}`,
+                  );
+                  if ((r.skipped?.length ?? 0) > 0 && r.eligible === 0) {
+                    await showAlert(
+                      `No books were eligible.${skipSummary}\n\nEvaluate first (qualityScore ≥ 5) to unlock crystallization.`,
+                    );
+                  }
+                } catch (e) {
+                  await showAlert(
+                    `Batch failed: ${compactError(catalogErrMsg(e))}`,
+                  );
                 }
               }),
           },

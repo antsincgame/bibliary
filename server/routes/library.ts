@@ -3,6 +3,7 @@ import { HTTPException } from "hono/http-exception";
 import { zValidator } from "@hono/zod-validator";
 import { ID, Permission, Role } from "node-appwrite";
 import { InputFile } from "node-appwrite/file";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import type { AppEnv } from "../app.js";
@@ -23,6 +24,7 @@ import {
   listUserJobs,
 } from "../lib/queue/job-store.js";
 import { ALL_JOB_STATES } from "../lib/queue/types.js";
+import { publishUser } from "../lib/realtime/event-bus.js";
 import {
   deleteBook,
   getBookById,
@@ -307,6 +309,113 @@ export function libraryRoutes(): Hono<AppEnv> {
         ...(body.collection ? { collection: body.collection } : {}),
       });
       return c.json({ ok: true, jobId: job.id, state: job.state }, 202);
+    },
+  );
+
+  /**
+   * Phase 9 — batch crystallization. Enqueues N child jobs (one per
+   * eligible book) into the existing extraction queue with a shared
+   * target collection. The "batch" itself is an opaque, ephemeral
+   * grouping — its progress is aggregated by the client from the SSE
+   * channel using the returned jobId list.
+   *
+   * Quality gate (server-enforced):
+   *   - book.qualityScore must be set (evaluated) AND >= minQuality
+   *   - book.isFictionOrWater must NOT be true
+   *   - book.markdownFileId must be set
+   * Books failing any check appear in `skipped` with a reason; nothing
+   * else is enqueued for them.
+   *
+   * Response is synchronous (no streaming) so the caller can subscribe
+   * to SSE BEFORE any child job starts. SSE event `batch:filtered` is
+   * published immediately after validation so the renderer can render
+   * "27/30 eligible, starting" before the worker drains.
+   */
+  app.post(
+    "/batches/start",
+    zValidator(
+      "json",
+      z.object({
+        bookIds: z.array(z.string().min(1).max(100)).min(1).max(500),
+        collection: z
+          .string()
+          .min(1)
+          .max(100)
+          .regex(/^[a-zA-Z0-9_-]+$/, "collection must be [a-zA-Z0-9_-]"),
+        minQuality: z.coerce.number().min(0).max(10).default(5).optional(),
+      }),
+    ),
+    async (c) => {
+      const user = c.get("user");
+      if (!user) throw new HTTPException(401, { message: "auth_required" });
+      const body = c.req.valid("json");
+      const minQuality = body.minQuality ?? 5;
+      const batchId = randomUUID();
+      const enqueued: Array<{ bookId: string; jobId: string }> = [];
+      const skipped: Array<{
+        bookId: string;
+        reason:
+          | "not_found"
+          | "missing_markdown"
+          | "fiction_or_water"
+          | "unevaluated"
+          | "low_quality";
+      }> = [];
+
+      for (const bookId of body.bookIds) {
+        const book = await getBookById(user.sub, bookId);
+        if (!book) {
+          skipped.push({ bookId, reason: "not_found" });
+          continue;
+        }
+        if (!book.markdownFileId) {
+          skipped.push({ bookId, reason: "missing_markdown" });
+          continue;
+        }
+        if (book.isFictionOrWater === true) {
+          skipped.push({ bookId, reason: "fiction_or_water" });
+          continue;
+        }
+        if (typeof book.qualityScore !== "number") {
+          skipped.push({ bookId, reason: "unevaluated" });
+          continue;
+        }
+        if (book.qualityScore < minQuality) {
+          skipped.push({ bookId, reason: "low_quality" });
+          continue;
+        }
+        const queue = getExtractionQueue();
+        const job = await queue.enqueue({
+          userId: user.sub,
+          bookId,
+          collection: body.collection,
+        });
+        enqueued.push({ bookId, jobId: job.id });
+      }
+
+      publishUser(user.sub, "extractor_events:created", {
+        batchId,
+        event: "batch:filtered",
+        payload: {
+          kind: "batch",
+          collection: body.collection,
+          total: body.bookIds.length,
+          eligible: enqueued.length,
+          skipped: skipped.length,
+          minQuality,
+        },
+      });
+
+      return c.json(
+        {
+          batchId,
+          enqueued,
+          skipped,
+          total: body.bookIds.length,
+          eligible: enqueued.length,
+        },
+        201,
+      );
     },
   );
 

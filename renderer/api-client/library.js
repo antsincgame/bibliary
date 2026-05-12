@@ -202,6 +202,18 @@ export const library = {
   cancelJob: (jobId) =>
     http.post(`/api/library/jobs/${encodeURIComponent(jobId)}/cancel`),
 
+  /**
+   * Phase 9 — kick off batch crystallization. Server validates each
+   * bookId against the quality gate; ineligible books are returned in
+   * `skipped` with a reason. Each eligible book gets its own child
+   * extraction job — the client should track progress via SSE using
+   * the returned jobIds.
+   *
+   * @param {{bookIds: string[], collection: string, minQuality?: number}} args
+   * @returns {Promise<{batchId: string, enqueued: Array<{bookId: string, jobId: string}>, skipped: Array<{bookId: string, reason: "not_found"|"missing_markdown"|"fiction_or_water"|"unevaluated"|"low_quality"}>, total: number, eligible: number}>}
+   */
+  startBatch: (args) => http.post("/api/library/batches/start", args),
+
   /* ─── Electron-only dialogs (replaced by drag&drop / browser file picker) ─── */
 
   pickFiles: notImplemented("pickFiles"),
