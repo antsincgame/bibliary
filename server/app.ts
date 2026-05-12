@@ -5,6 +5,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { HTTPException } from "hono/http-exception";
 
 import { getCorsOrigins, loadConfig } from "./config.js";
+import { authRoutes } from "./routes/auth.js";
 import { healthRoutes } from "./routes/health.js";
 
 export type AppEnv = {
@@ -43,6 +44,7 @@ export function buildApp(): Hono<AppEnv> {
   );
 
   app.route("/", healthRoutes());
+  app.route("/api/auth", authRoutes());
 
   app.onError((err, c) => {
     if (err instanceof HTTPException) {
