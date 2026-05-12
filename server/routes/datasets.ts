@@ -78,7 +78,7 @@ export function datasetsRoutes(): Hono<AppEnv> {
           .min(1)
           .max(100)
           .regex(/^[a-zA-Z0-9_-]+$/, "collection must be [a-zA-Z0-9_-]"),
-        format: z.enum(["jsonl", "sharegpt"]).optional(),
+        format: z.enum(["jsonl", "sharegpt", "chatml"]).optional(),
       }),
     ),
     async (c) => {

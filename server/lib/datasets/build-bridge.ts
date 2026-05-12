@@ -1,10 +1,16 @@
 import { ID, Permission, Role } from "node-appwrite";
 import { InputFile } from "node-appwrite/file";
 
+import { withProvider } from "../llm/model-resolver.js";
 import { BUCKETS, COLLECTIONS, getAppwrite, isAppwriteCode, type RawDoc } from "../appwrite.js";
 import { publishUser } from "../realtime/event-bus.js";
-import { buildShareGptBuffer } from "./sharegpt.js";
-import { buildJsonlBuffer, type DatasetFormat } from "./synthesize.js";
+import { renderChatMlLine } from "./chatml.js";
+import { generateQAPair, buildShareGptLine } from "./sharegpt.js";
+import { openTempJsonlWriter } from "./stream-writer.js";
+import {
+  iterateAcceptedConcepts,
+  type DatasetFormat,
+} from "./synthesize.js";
 
 /**
  * Phase 8 bridge: trigger dataset build → синтезирует JSONL поток
@@ -99,20 +105,17 @@ async function markBuildFailed(jobId: string, error: string): Promise<void> {
   }
 }
 
-async function uploadJsonl(
+async function uploadFromPath(
   userId: string,
-  collectionName: string,
-  format: DatasetFormat,
-  jsonl: string,
-): Promise<{ fileId: string; bytes: number }> {
+  filename: string,
+  filePath: string,
+): Promise<{ fileId: string }> {
   const { storage } = getAppwrite();
   const fileId = ID.unique();
-  const buf = Buffer.from(jsonl, "utf-8");
-  const filename = `${collectionName}-${Date.now()}.${format}`;
   const file = await storage.createFile(
     BUCKETS.datasetExports,
     fileId,
-    InputFile.fromBuffer(buf, filename),
+    InputFile.fromPath(filePath, filename),
     [
       Permission.read(Role.user(userId)),
       Permission.update(Role.user(userId)),
@@ -120,7 +123,13 @@ async function uploadJsonl(
       Permission.read(Role.team("admin")),
     ],
   );
-  return { fileId: file.$id, bytes: buf.byteLength };
+  return { fileId: file.$id };
+}
+
+function buildFilename(collection: string, format: DatasetFormat): string {
+  const ts = Date.now();
+  const ext = format === "chatml" ? "chatml.jsonl" : format === "sharegpt" ? "sharegpt.jsonl" : "jsonl";
+  return `${collection}-${ts}.${ext}`;
 }
 
 export interface BuildDatasetInput {
@@ -130,15 +139,21 @@ export interface BuildDatasetInput {
 }
 
 /**
- * Synchronous build (in-process). 100-1000 concepts → ~5-10s. Для
- * very large экспортов (>10K concepts) подойдёт streaming variant
- * чтобы не накапливать буфер в RAM — отдельный коммит когда понадобится.
+ * Streaming build (Phase 8d). Пишет JSONL в temp file построчно — RAM
+ * footprint O(1) regardless of dataset size. Upload через
+ * InputFile.fromPath; temp dir cleaned в finally.
+ *
+ * Поддерживает три format:
+ *   - jsonl:    direct dump DeltaKnowledge без LLM, instant.
+ *   - sharegpt: per-concept LLM Q&A через crystallizer role.
+ *   - chatml:   same Q&A, rendered как <|im_start|>...<|im_end|> template
+ *               в `text` field (HuggingFace SFT convention).
  */
 export async function buildDataset(
   input: BuildDatasetInput,
 ): Promise<BuildDatasetResult> {
   const format: DatasetFormat = input.format ?? "jsonl";
-  if (format !== "jsonl" && format !== "sharegpt") {
+  if (format !== "jsonl" && format !== "sharegpt" && format !== "chatml") {
     return {
       ok: false,
       jobId: "",
@@ -158,30 +173,72 @@ export async function buildDataset(
     },
   });
 
+  const filename = buildFilename(input.collectionName, format);
+  const writer = await openTempJsonlWriter(filename);
+  const warnings: string[] = [];
+  let lineCount = 0;
+
   try {
-    const buildResult =
-      format === "sharegpt"
-        ? await buildShareGptBuffer({
-            userId: input.userId,
-            collectionName: input.collectionName,
-            onProgress: (done, total) => {
+    if (format === "jsonl") {
+      for await (const src of iterateAcceptedConcepts({
+        userId: input.userId,
+        collectionName: input.collectionName,
+        onWarning: (w) => warnings.push(w),
+      })) {
+        await writer.writeLine(JSON.stringify(src));
+        lineCount += 1;
+      }
+    } else {
+      /* sharegpt + chatml оба зависят от Q&A pair generation через
+       * crystallizer role. Single iteration с условным рендером. */
+      const sourceLines: Array<Awaited<ReturnType<typeof iterateAcceptedConcepts>> extends AsyncGenerator<infer T> ? T : never> = [];
+      for await (const src of iterateAcceptedConcepts({
+        userId: input.userId,
+        collectionName: input.collectionName,
+        onWarning: (w) => warnings.push(w),
+      })) {
+        sourceLines.push(src);
+      }
+
+      if (sourceLines.length > 0) {
+        await withProvider(input.userId, "crystallizer", async (provider, model) => {
+          let processed = 0;
+          for (const src of sourceLines) {
+            try {
+              const qa = await generateQAPair(provider, model, src.delta);
+              if (!qa) {
+                warnings.push(`concept ${src.conceptId}: QA generation failed`);
+                continue;
+              }
+              const sharegptLine = buildShareGptLine(src, qa);
+              const output =
+                format === "chatml"
+                  ? renderChatMlLine(sharegptLine)
+                  : sharegptLine;
+              await writer.writeLine(JSON.stringify(output));
+              lineCount += 1;
+            } catch (err) {
+              warnings.push(
+                `concept ${src.conceptId}: synthesizer threw: ${err instanceof Error ? err.message : String(err)}`,
+              );
+            } finally {
+              processed += 1;
               publishUser(input.userId, "extractor_events:created", {
                 jobId,
                 event: "progress",
                 payload: {
                   kind: "dataset_build",
                   format,
-                  done,
-                  total,
+                  done: processed,
+                  total: sourceLines.length,
                 },
               });
-            },
-          })
-        : await buildJsonlBuffer({
-            userId: input.userId,
-            collectionName: input.collectionName,
-          });
-    const { jsonl, lineCount, warnings } = buildResult;
+            }
+          }
+        });
+      }
+    }
+
     if (lineCount === 0) {
       await markBuildFailed(jobId, "no_concepts_in_collection");
       publishUser(input.userId, "extractor_events:created", {
@@ -200,12 +257,9 @@ export async function buildDataset(
       };
     }
 
-    const { fileId, bytes } = await uploadJsonl(
-      input.userId,
-      input.collectionName,
-      format,
-      jsonl,
-    );
+    const { path, bytes } = await writer.finish();
+    const { fileId } = await uploadFromPath(input.userId, filename, path);
+
     await markBuildDone(jobId, fileId, lineCount);
     publishUser(input.userId, "extractor_events:created", {
       jobId,
@@ -234,7 +288,9 @@ export async function buildDataset(
       event: "failed",
       payload: { kind: "dataset_build", reason: msg },
     });
-    return { ok: false, jobId, warnings: [], error: msg };
+    return { ok: false, jobId, warnings, error: msg };
+  } finally {
+    await writer.cleanup();
   }
 }
 

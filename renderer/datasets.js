@@ -167,12 +167,18 @@ async function runBuildDataset() {
     return;
   }
   const formatRaw = await showPrompt(
-    "Format: 'jsonl' (raw delta-knowledge) или 'sharegpt' (Q&A pairs, slower — LLM per concept):",
+    "Format: 'jsonl' (raw delta, instant) | 'sharegpt' (Q&A pairs, ~5s/concept) | 'chatml' (Q&A rendered как <|im_start|> template):",
     "jsonl",
     { title: "Format", okText: "Build" },
   );
   if (!formatRaw) return;
-  const format = formatRaw.trim() === "sharegpt" ? "sharegpt" : "jsonl";
+  const trimmed = formatRaw.trim();
+  const format =
+    trimmed === "sharegpt"
+      ? "sharegpt"
+      : trimmed === "chatml"
+        ? "chatml"
+        : "jsonl";
   try {
     const result = /** @type {any} */ (
       await window.api.datasets.build({ collection, format })
@@ -199,7 +205,12 @@ async function runBuildDataset() {
     });
     const url = /** @type {any} */ (window.api.datasets).downloadUrl(result.jobId);
     /* Trigger browser save-as via <a download>. */
-    const ext = format === "sharegpt" ? "sharegpt.jsonl" : "jsonl";
+    const ext =
+      format === "chatml"
+        ? "chatml.jsonl"
+        : format === "sharegpt"
+          ? "sharegpt.jsonl"
+          : "jsonl";
     const a = document.createElement("a");
     a.href = url;
     a.download = `${collection}-${Date.now()}.${ext}`;

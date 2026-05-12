@@ -180,5 +180,5 @@ export async function buildShareGptBuffer(opts: ShareGptBuildOptions): Promise<{
   };
 }
 
-/* Pure helper for tests. */
-export { QASchema, type QAPair, buildShareGptLine };
+/* Pure helpers for tests + build-bridge reuse. */
+export { QASchema, type QAPair, buildShareGptLine, generateQAPair };

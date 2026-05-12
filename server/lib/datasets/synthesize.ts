@@ -20,7 +20,7 @@ import type { DeltaKnowledge } from "../../../shared/llm/extractor-schema.js";
  * compatible (downstream может ignore). Удаление/переименование — нет.
  */
 
-export type DatasetFormat = "jsonl" | "sharegpt";
+export type DatasetFormat = "jsonl" | "sharegpt" | "chatml";
 
 export interface JsonlLine {
   conceptId: string;
