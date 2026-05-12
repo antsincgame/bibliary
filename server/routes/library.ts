@@ -6,6 +6,13 @@ import { z } from "zod";
 import type { AppEnv } from "../app.js";
 import { BUCKETS, getAppwrite, isAppwriteCode } from "../lib/appwrite.js";
 import {
+  queryByAuthor,
+  queryByDomain,
+  queryByTag,
+  queryByYear,
+  queryTagStats,
+} from "../lib/library/aggregations.js";
+import {
   deleteBook,
   getBookById,
   queryCatalog,
@@ -45,6 +52,10 @@ const DeleteQuery = z.object({
     .union([z.literal("true"), z.literal("false"), z.literal("1"), z.literal("0")])
     .optional()
     .transform((v) => v === "true" || v === "1"),
+});
+
+const LocaleQuery = z.object({
+  locale: z.enum(["ru", "en"]).optional(),
 });
 
 async function streamFile(
@@ -187,6 +198,40 @@ export function libraryRoutes(): Hono<AppEnv> {
 
     const ok = await deleteBook(user.sub, book.id);
     return c.json({ ok, removedFiles });
+  });
+
+  app.get("/tag-stats", zValidator("query", LocaleQuery), async (c) => {
+    const user = c.get("user");
+    if (!user) throw new HTTPException(401, { message: "auth_required" });
+    const { locale } = c.req.valid("query");
+    const stats = await queryTagStats(user.sub, locale ?? "en");
+    return c.json(stats);
+  });
+
+  app.get("/collection/by-domain", async (c) => {
+    const user = c.get("user");
+    if (!user) throw new HTTPException(401, { message: "auth_required" });
+    return c.json(await queryByDomain(user.sub));
+  });
+
+  app.get("/collection/by-author", zValidator("query", LocaleQuery), async (c) => {
+    const user = c.get("user");
+    if (!user) throw new HTTPException(401, { message: "auth_required" });
+    const { locale } = c.req.valid("query");
+    return c.json(await queryByAuthor(user.sub, locale ?? "en"));
+  });
+
+  app.get("/collection/by-year", async (c) => {
+    const user = c.get("user");
+    if (!user) throw new HTTPException(401, { message: "auth_required" });
+    return c.json(await queryByYear(user.sub));
+  });
+
+  app.get("/collection/by-tag", zValidator("query", LocaleQuery), async (c) => {
+    const user = c.get("user");
+    if (!user) throw new HTTPException(401, { message: "auth_required" });
+    const { locale } = c.req.valid("query");
+    return c.json(await queryByTag(user.sub, locale ?? "en"));
   });
 
   return app;
