@@ -3422,6 +3422,107 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   background: rgba(13, 13, 18, 0.4);
 }
 
+/* ===== Settings → Providers panel (Phase 8a) ===== */
+.settings-providers-panel {
+  margin: 2rem 0 1rem;
+  padding: 1rem 1.25rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+}
+.providers-header {
+  margin: 0 0 0.25rem;
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
+}
+.providers-help {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+.providers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.provider-card {
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+}
+.provider-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+.provider-badge {
+  font-size: 0.78rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.55);
+}
+.provider-badge[data-configured="true"] {
+  background: rgba(64, 200, 120, 0.18);
+  color: rgba(140, 230, 180, 0.95);
+}
+.provider-key-input {
+  width: 100%;
+  padding: 0.45rem 0.7rem;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.85rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: inherit;
+  margin-bottom: 0.55rem;
+}
+.provider-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.provider-actions .btn {
+  padding: 0.3rem 0.75rem;
+  font-size: 0.85rem;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  cursor: pointer;
+}
+.provider-actions .btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.provider-actions .btn-primary {
+  background: rgba(100, 180, 230, 0.18);
+  border-color: rgba(100, 180, 230, 0.4);
+}
+.provider-actions .btn-danger {
+  background: rgba(220, 100, 100, 0.14);
+  border-color: rgba(220, 100, 100, 0.4);
+}
+.provider-status {
+  margin: 0.5rem 0 0;
+  font-size: 0.82rem;
+}
+.provider-status-working {
+  color: rgba(220, 220, 100, 0.85);
+}
+.provider-status-ok {
+  color: rgba(140, 230, 180, 0.95);
+}
+.provider-status-error {
+  color: rgba(240, 130, 130, 0.95);
+}
+.provider-note {
+  margin: 0;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.55);
+}
+
 /* ===== Settings page ===== */
 .settings-actions {
   position: sticky;
