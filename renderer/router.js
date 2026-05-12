@@ -7,6 +7,7 @@ import { applyI18n, getLocale, setLocale, listLocales, onLocaleChange, t } from 
 import { mountResilienceBar } from "./components/resilience-bar.js";
 import { openWelcomeWizard } from "./components/welcome-wizard.js";
 import { mountVersionBadge } from "./components/version-badge.js";
+import { mountAuthPage } from "./auth/auth-pages.js";
 
 const ROUTES = ["models", "library", "crystal", "datasets", "settings"];
 const REMOUNT_ON_LOCALE = new Set([
@@ -101,7 +102,43 @@ mountVersionBadge().catch((err) => {
   console.warn("[router] version badge mount failed:", err);
 });
 
+/**
+ * Web-mode auth gate: window.api.auth.meOrNull() возвращает null когда
+ * пользователь не авторизован — показываем login/register экран до
+ * первой успешной auth, потом обычный flow.
+ *
+ * Electron-mode preload.ts не выставляет api.auth — там single-user
+ * без login, auth gate просто пропускается.
+ */
+async function requireAuth() {
+  const auth = /** @type {any} */ (window).api?.auth;
+  if (!auth || typeof auth.meOrNull !== "function") {
+    return; /* Electron preload — без gate. */
+  }
+  const current = await auth.meOrNull();
+  if (current) return;
+  const authRoot = ensureAuthRoot();
+  document.querySelectorAll(".route").forEach((el) => el.classList.remove("route-active"));
+  document.querySelector(".sidebar")?.setAttribute("hidden", "true");
+  authRoot.classList.add("route-active");
+  await mountAuthPage(authRoot);
+  authRoot.classList.remove("route-active");
+  document.querySelector(".sidebar")?.removeAttribute("hidden");
+}
+
+function ensureAuthRoot() {
+  let root = document.getElementById("route-auth");
+  if (root) return root;
+  root = document.createElement("section");
+  root.id = "route-auth";
+  root.className = "route route-auth";
+  document.querySelector("main")?.appendChild(root) ?? document.body.appendChild(root);
+  return root;
+}
+
 (async () => {
+  await requireAuth();
+
   let onboardingDone = false;
   try {
     const prefs = /** @type {any} */ (await window.api.preferences.getAll());

@@ -3422,6 +3422,105 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   background: rgba(13, 13, 18, 0.4);
 }
 
+/* ===== Auth pages (web-mode login/register) ===== */
+.route-auth {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg, #0a0a0b);
+  z-index: 1000;
+}
+.auth-card {
+  width: 360px;
+  max-width: 92vw;
+  padding: 2rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+}
+.auth-title {
+  margin: 0 0 0.25rem;
+  font-size: 1.6rem;
+  letter-spacing: 0.05em;
+  text-align: center;
+}
+.auth-subtitle {
+  margin: 0 0 1.5rem;
+  text-align: center;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.auth-field-label {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.55);
+}
+.auth-field-input {
+  padding: 0.55rem 0.75rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  color: inherit;
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+.auth-field-input:focus {
+  outline: none;
+  border-color: rgba(120, 200, 240, 0.5);
+  background: rgba(0, 0, 0, 0.4);
+}
+.auth-submit {
+  margin-top: 0.5rem;
+  padding: 0.6rem 1rem;
+  background: rgba(100, 180, 230, 0.18);
+  border: 1px solid rgba(100, 180, 230, 0.4);
+  color: inherit;
+  font-size: 0.95rem;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.auth-submit:hover:not([disabled]) {
+  background: rgba(100, 180, 230, 0.28);
+}
+.auth-submit[disabled] {
+  opacity: 0.5;
+  cursor: wait;
+}
+.auth-error {
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.82rem;
+  background: rgba(220, 100, 100, 0.12);
+  border: 1px solid rgba(220, 100, 100, 0.35);
+  border-radius: 5px;
+  color: rgba(240, 130, 130, 0.95);
+}
+.auth-toggle {
+  margin: 1rem 0 0;
+  text-align: center;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+.auth-toggle a {
+  color: rgba(120, 200, 240, 0.9);
+  text-decoration: none;
+}
+.auth-toggle a:hover {
+  text-decoration: underline;
+}
+
 /* ===== Settings → Providers panel (Phase 8a) ===== */
 .settings-providers-panel {
   margin: 2rem 0 1rem;
