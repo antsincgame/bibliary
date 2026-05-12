@@ -286,3 +286,40 @@ export function countChunksForBook(userId: string, bookId: string): number {
     .get(userId, bookId) as { n: number };
   return Number(r.n);
 }
+
+/**
+ * Phase Δd — set parent_vec_rowid on a batch of L1 (or L0) chunks to
+ * point upward to the L2 summary that subsumes them. Used right after
+ * an L2 summary row is inserted: pass the children's rowids + the new
+ * parent's rowid.
+ */
+export function setParentForChunks(childRowIds: number[], parentRowId: number): void {
+  if (childRowIds.length === 0) return;
+  const { db } = getVectorDb();
+  const stmt = db.prepare(`UPDATE chunks SET parent_vec_rowid = ? WHERE vec_rowid = ?`);
+  const tx = db.transaction(() => {
+    for (const id of childRowIds) stmt.run(parentRowId, id);
+  });
+  tx();
+}
+
+/**
+ * Phase Δd — list L1 chunks under a given parent (or null parent) for
+ * a (user, book). Used by the L2 summarizer to confirm coverage and
+ * by Δf tree-proximity scoring.
+ */
+export function listL1ChunksForUnit(
+  userId: string,
+  bookId: string,
+  sectionOrder: number,
+): ChunkRow[] {
+  const { db } = getVectorDb();
+  const rows = db
+    .prepare(
+      `SELECT * FROM chunks
+       WHERE user_id = ? AND book_id = ? AND level = 1 AND section_order = ?
+       ORDER BY part_n ASC`,
+    )
+    .all(userId, bookId, sectionOrder) as Array<Record<string, unknown>>;
+  return rows.map(rowToChunk);
+}

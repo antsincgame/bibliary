@@ -2,12 +2,14 @@ import { ID, Permission, Role } from "node-appwrite";
 
 import { BUCKETS, COLLECTIONS, getAppwrite, isAppwriteCode } from "../appwrite.js";
 import { extractChapter } from "../llm/extractor.js";
+import { summarizeUnit } from "../llm/summarizer.js";
 import { publishUser } from "../realtime/event-bus.js";
 import { buildConceptEmbedText, embedPassage } from "../embedder/index.js";
 import {
   deleteAllChunksForBook,
   insertChunk,
   linkChunkSiblings,
+  setParentForChunks,
 } from "../vectordb/chunks.js";
 import {
   findSimilarConcepts,
@@ -482,6 +484,53 @@ export async function extractBookViaBridge(
       }
     }
 
+    /* Phase Δd — L2 chapter summary. Synthesize a short throughline
+     * over the essences accepted in this unit, embed it, store as
+     * level=2 chunk, and reparent the L1 children to it. Failure
+     * (LLM unavailable, schema-empty result) only warns; the L1 tree
+     * stays parent-less but still queryable. */
+    const acceptedEssences = result.perChunk
+      .map((pc) => pc.delta?.essence)
+      .filter((e): e is string => typeof e === "string" && e.length > 0);
+    let l2Rowid: number | null = null;
+    if (!opts.signal?.aborted) {
+      try {
+        const summary = await summarizeUnit(
+          userId,
+          { breadcrumb: unit.rootPath, essences: acceptedEssences },
+          opts.signal ? { signal: opts.signal } : {},
+        );
+        accumulatedWarnings.push(
+          ...summary.warnings.map((w) => `unit-${i}: ${w}`),
+        );
+        if (summary.text) {
+          const embedding = await embedPassage(summary.text);
+          l2Rowid = insertChunk({
+            userId,
+            bookId,
+            level: 2,
+            embedding,
+            text: summary.text,
+            pathTitles: unit.rootPath,
+            sectionLevel: unit.rootLevel,
+            sectionOrder: unit.rootOrder,
+            partN: 1,
+            partOf: 1,
+          });
+          /* Reparent L1 children to the L2 summary. rowIds[] still maps
+           * to chunks[]; filter out embed-failed nulls. */
+          const childRowIds = rowIds.filter((r): r is number => r !== null);
+          if (childRowIds.length > 0) {
+            setParentForChunks(childRowIds, l2Rowid);
+          }
+        }
+      } catch (err) {
+        accumulatedWarnings.push(
+          `unit-${i}: L2 summary failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
     chaptersProcessed += 1;
     publishUser(userId, "extractor_events:created", {
       bookId,
@@ -491,6 +540,7 @@ export async function extractBookViaBridge(
         chapterIndex: i,
         chapterTitle: unit.thesisTitle,
         breadcrumb: unit.rootPath,
+        l2Rowid,
         stats: result.stats,
       },
     });
