@@ -106,6 +106,17 @@ export const datasets = {
    */
   search: (args) => http.get("/api/datasets/search", { query: args }),
 
+  /**
+   * Phase Δf — graph-aware chunk retrieval. Blends cosine similarity
+   * (L1 chunk embeddings) with Personalized PageRank over the per-user
+   * entity graph seeded from query tokens. alpha/beta tune the blend
+   * (defaults 0.7 / 0.3); setting beta=0 reduces to pure cosine.
+   *
+   * @param {{q: string, limit?: number, alpha?: number, beta?: number, bookId?: string, minSimilarity?: number}} args
+   * @returns {Promise<{rows: Array<{chunkRowid: number, bookId: string, similarity: number, graphScore: number, finalScore: number, level: number, pathTitles: string[], partN: number|null, partOf: number|null, text: string}>, total: number, alpha: number, beta: number, pprSeeds: number, pprIterations: number}>}
+   */
+  searchChunks: (args) => http.get("/api/datasets/search-chunks", { query: args }),
+
   /* Electron native folder picker — недоступен в web. */
   pickFolder: notImplemented("pickFolder"),
 };
