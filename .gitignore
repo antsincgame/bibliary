@@ -1,6 +1,8 @@
 node_modules/
 dist/
 dist-electron/
+dist-renderer/
+dist-server/
 release/
 .env
 .cache/
