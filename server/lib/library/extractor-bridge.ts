@@ -10,7 +10,11 @@ import {
   type SimilarConceptRow,
 } from "../vectordb/concepts.js";
 import { cleanChapterParagraphs } from "./chunk-cleanup.js";
-import { chunkChapter, splitMarkdownIntoChapters } from "./chunker.js";
+import {
+  chunkSections,
+  groupSectionsForExtraction,
+  splitMarkdownIntoSections,
+} from "./chunker.js";
 import {
   getBookById,
   updateBook,
@@ -261,31 +265,40 @@ export async function extractBookViaBridge(
     };
   }
 
-  const chapters = splitMarkdownIntoChapters(markdown);
+  /* Phase Δa — section-aware split. Each unit = H1/H2 root + its H3+
+   * descendants. Every emitted chunk carries pathTitles breadcrumb so
+   * the crystallizer prompt can disambiguate ("Part II > Ch 3 > §2"
+   * NOT just "§2"). LLM cost stays at one extractChapter() call per
+   * unit — same grain as legacy chapter loop. */
+  const sections = splitMarkdownIntoSections(markdown);
+  const units = groupSectionsForExtraction(sections);
   const accumulatedWarnings: string[] = [];
   let chaptersProcessed = 0;
   let chunksTotal = 0;
   let conceptsAccepted = 0;
   let conceptsFailed = 0;
 
-  for (let i = 0; i < chapters.length; i++) {
+  for (let i = 0; i < units.length; i++) {
     if (opts.signal?.aborted) break;
-    const ch = chapters[i];
+    const unit = units[i];
     /* Phase 8e: strip metadata noise (page markers, ISBN/copyright,
      * decorative dividers, repeated running headers, footnote markers)
      * ПЕРЕД chunking. «Плод знаний без шелухи» → больше signal на
-     * tokens budget. */
-    const cleanedParagraphs = cleanChapterParagraphs(ch.paragraphs);
-    const rawChunks = chunkChapter({
-      paragraphs: cleanedParagraphs,
-      chapterTitle: ch.chapterTitle,
-    });
-    /* Phase 8e: token budget guard. Если chunk превышает CHUNK_TOKEN_BUDGET,
-     * trim at sentence boundary — LLM context window saved + per-chunk
-     * focus retained. */
+     * tokens budget. Cleanup is per-section so heading inheritance
+     * across H3 children isn't disturbed. */
+    const cleanedSections = unit.sections.map((s) => ({
+      ...s,
+      paragraphs: cleanChapterParagraphs(s.paragraphs),
+    }));
+    const rawChunks = chunkSections(cleanedSections);
+    /* Phase 8e: token budget guard. */
     const chunks = rawChunks.map((chunk) => ({
-      ...chunk,
+      partN: chunk.partN,
       text: trimToTokenBudget(chunk.text, CHUNK_TOKEN_BUDGET).text,
+      pathTitles: chunk.pathTitles,
+      sectionLevel: chunk.sectionLevel,
+      sectionOrder: chunk.sectionOrder,
+      partOf: chunk.partOf,
     }));
     chunksTotal += chunks.length;
     if (chunks.length === 0) {
@@ -298,23 +311,28 @@ export async function extractBookViaBridge(
       payload: {
         kind: "chapter",
         chapterIndex: i,
-        chapterTitle: ch.chapterTitle,
+        chapterTitle: unit.thesisTitle,
+        breadcrumb: unit.rootPath,
         chunkCount: chunks.length,
       },
     });
 
+    /* Phase Δa: prefer the full breadcrumb as thesis context when
+     * available (e.g. "Part II > Chapter 7" instead of bare "Chapter 7"),
+     * which disambiguates duplicate titles repeated across a book. */
+    const thesis = unit.rootPath.length > 1
+      ? unit.rootPath.join(" > ")
+      : unit.thesisTitle;
     const result = await extractChapter(
       userId,
       {
-        /* Используем chapterTitle как thesis MVP — Phase 6f добавит
-         * pre-pass через provider.chat для нормального chapter thesis. */
-        chapterThesis: ch.chapterTitle,
-        chunks,
+        chapterThesis: thesis,
+        chunks: chunks.map(({ partN, text }) => ({ partN, text })),
       },
       opts.signal ? { signal: opts.signal } : {},
     );
     accumulatedWarnings.push(
-      ...result.warnings.map((w) => `chapter-${i}: ${w}`),
+      ...result.warnings.map((w) => `unit-${i}: ${w}`),
     );
 
     for (const delta of result.accepted) {
@@ -323,13 +341,13 @@ export async function extractBookViaBridge(
         if (result.persisted) conceptsAccepted += 1;
         else if (result.dedupSkipped) {
           accumulatedWarnings.push(
-            `chapter-${i}: semantic dedup skipped (cosine > ${DEDUP_SIMILARITY_THRESHOLD})`,
+            `unit-${i}: semantic dedup skipped (cosine > ${DEDUP_SIMILARITY_THRESHOLD})`,
           );
         } else conceptsFailed += 1;
       } catch (err) {
         conceptsFailed += 1;
         accumulatedWarnings.push(
-          `chapter-${i}: persist failed: ${err instanceof Error ? err.message : String(err)}`,
+          `unit-${i}: persist failed: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
     }
@@ -341,11 +359,13 @@ export async function extractBookViaBridge(
       payload: {
         kind: "chapter",
         chapterIndex: i,
-        chapterTitle: ch.chapterTitle,
+        chapterTitle: unit.thesisTitle,
+        breadcrumb: unit.rootPath,
         stats: result.stats,
       },
     });
   }
+
 
   const finalStatus = conceptsAccepted > 0 ? "indexed" : "failed";
   await updateBook(userId, bookId, { status: finalStatus });

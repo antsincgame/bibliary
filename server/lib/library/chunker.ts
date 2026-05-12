@@ -223,6 +223,10 @@ export function chunkChapter(
  * Helper для bridge: режет полный markdown книги на главы (по H1/H2),
  * возвращает {chapterTitle, paragraphs[]} per chapter. Frontmatter
  * (между --- ... ---) пропускается.
+ *
+ * Phase Δa: implemented as a flattening wrapper around the richer
+ * splitMarkdownIntoSections() — keeps existing callers/tests working
+ * while the topological pipeline migrates to Sections.
  */
 export interface ChapterBlock {
   chapterTitle: string;
@@ -230,39 +234,80 @@ export interface ChapterBlock {
 }
 
 const FRONTMATTER_RE = /^---\n[\s\S]*?\n---\n/;
-const CHAPTER_HEADING_RE = /^(#{1,2})\s+(.+)$/m;
 
-export function splitMarkdownIntoChapters(markdown: string): ChapterBlock[] {
+/**
+ * Phase Δa — full hierarchy-aware split. Each Section carries its
+ * heading depth, local title, breadcrumb path from H1 → its own level,
+ * and the paragraphs that live BEFORE the next heading at any depth.
+ *
+ * Why not just keep flat chapters?
+ *   - Author-given structure (Part / Chapter / Section / Subsection) is
+ *     free signal. Treating H3+ as paragraph text discards the most
+ *     reliable topology hint a book provides.
+ *   - Section.order is a stable monotonic index for prev/next sibling
+ *     traversal (sqlite chunks.prev_id, chunks.next_id wires).
+ *   - Section.pathTitles is the breadcrumb used by the crystallizer
+ *     prompt: "Part II > Chapter 7 > Section 3" disambiguates duplicate
+ *     subsection titles across a book.
+ *
+ * Level 0 = leading text BEFORE any heading. Useful when a book opens
+ * with an unmarked preface/abstract.
+ */
+export interface Section {
+  level: 0 | 1 | 2 | 3 | 4 | 5 | 6;
+  title: string;
+  pathTitles: string[];
+  order: number;
+  paragraphs: string[];
+}
+
+export function splitMarkdownIntoSections(markdown: string): Section[] {
   const cleaned = markdown.replace(FRONTMATTER_RE, "").trim();
   if (cleaned.length === 0) return [];
 
   const lines = cleaned.split(/\r?\n/);
-  const chapters: ChapterBlock[] = [];
-  /* "Body" — дефолт чтобы no-headings markdown создавал один сензимый
-   * pseudo-chapter, не "Untitled". */
-  let currentTitle = "Body";
-  let currentParas: string[] = [];
+  const sections: Section[] = [];
+  /* Open section we're currently appending paragraphs to. */
+  let level: Section["level"] = 0;
+  let title = "";
+  let pathStack: string[] = []; // [H1, H2, H3, ...] in scope so far
+  let paragraphs: string[] = [];
   let buffer: string[] = [];
+  let order = 0;
 
   const flushBuffer = (): void => {
     const para = buffer.join(" ").trim();
-    if (para) currentParas.push(para);
+    if (para) paragraphs.push(para);
     buffer = [];
   };
-  const flushChapter = (): void => {
+  const flushSection = (): void => {
     flushBuffer();
-    if (currentParas.length > 0) {
-      chapters.push({ chapterTitle: currentTitle, paragraphs: currentParas });
+    /* Drop entirely-empty leading section (no preface text before H1). */
+    if (paragraphs.length > 0 || level > 0) {
+      order += 1;
+      sections.push({
+        level,
+        title,
+        pathTitles: [...pathStack],
+        order,
+        paragraphs,
+      });
     }
-    currentParas = [];
+    paragraphs = [];
   };
 
   for (const line of lines) {
     const trimmed = line.trim();
-    const headingMatch = trimmed.match(/^(#{1,2})\s+(.+)$/);
+    const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
     if (headingMatch) {
-      flushChapter();
-      currentTitle = headingMatch[2].trim();
+      flushSection();
+      const newLevel = headingMatch[1].length as Section["level"];
+      const newTitle = headingMatch[2].trim();
+      /* Pop stack to parent depth, then push our title. */
+      pathStack = pathStack.slice(0, newLevel - 1);
+      pathStack.push(newTitle);
+      level = newLevel;
+      title = newTitle;
       continue;
     }
     if (trimmed === "") {
@@ -271,19 +316,142 @@ export function splitMarkdownIntoChapters(markdown: string): ChapterBlock[] {
       buffer.push(trimmed);
     }
   }
-  flushChapter();
+  flushSection();
 
-  /* Если split не нашёл ни одного H1/H2 — вся книга = один pseudo-chapter. */
-  if (chapters.length === 0 && cleaned) {
-    const paragraphs = cleaned
+  /* No headings found → single body Section at level 0. */
+  if (sections.length === 0 && cleaned) {
+    const paras = cleaned
       .split(/\n{2,}/)
       .map((p) => p.replace(/\n/g, " ").trim())
       .filter(Boolean);
-    if (paragraphs.length > 0) {
-      chapters.push({ chapterTitle: "Body", paragraphs });
+    if (paras.length > 0) {
+      sections.push({
+        level: 0,
+        title: "",
+        pathTitles: [],
+        order: 1,
+        paragraphs: paras,
+      });
     }
   }
+  return sections;
+}
+
+/**
+ * Back-compat: flatten Sections to ChapterBlock[]. We collapse H1/H2
+ * boundaries (matches legacy behaviour); deeper H3+ headings get
+ * folded into their parent section's paragraphs as plain "## Title"
+ * lines so existing chunker heuristics still split on them.
+ */
+export function splitMarkdownIntoChapters(markdown: string): ChapterBlock[] {
+  const sections = splitMarkdownIntoSections(markdown);
+  if (sections.length === 0) return [];
+
+  const chapters: ChapterBlock[] = [];
+  let current: ChapterBlock | null = null;
+  for (const s of sections) {
+    if (s.level <= 2) {
+      if (current) chapters.push(current);
+      current = {
+        chapterTitle: s.title || "Body",
+        paragraphs: [...s.paragraphs],
+      };
+    } else if (current) {
+      if (s.title) current.paragraphs.push(`${"#".repeat(s.level)} ${s.title}`);
+      current.paragraphs.push(...s.paragraphs);
+    } else {
+      /* Stray H3+ before any H1/H2 — start an implicit Body chapter. */
+      current = { chapterTitle: "Body", paragraphs: [...s.paragraphs] };
+    }
+  }
+  if (current) chapters.push(current);
   return chapters;
 }
 
-void CHAPTER_HEADING_RE; // kept for grep — regex source documentation
+/**
+ * Phase Δa — section-aware chunker. Produces chunks that carry their
+ * full hierarchy breadcrumb. Each Section is chunked INDEPENDENTLY so
+ * we never silently merge text across a heading boundary.
+ *
+ * partN: 1-based position within the owning Section.
+ * partOf: total chunks in that Section (lets prompt say "part 3 of 5").
+ */
+export interface SectionAwareChunk extends ExtractorInputChunk {
+  pathTitles: string[];
+  sectionLevel: number;
+  sectionOrder: number;
+  partN: number;
+  partOf: number;
+}
+
+export function chunkSections(
+  sections: Section[],
+  opts: ChunkerOptions = {},
+): SectionAwareChunk[] {
+  const out: SectionAwareChunk[] = [];
+  for (const s of sections) {
+    if (s.paragraphs.length === 0) continue;
+    const local = chunkChapter({ paragraphs: s.paragraphs, chapterTitle: s.title }, opts);
+    for (let i = 0; i < local.length; i++) {
+      out.push({
+        partN: local[i].partN,
+        text: local[i].text,
+        pathTitles: s.pathTitles,
+        sectionLevel: s.level,
+        sectionOrder: s.order,
+        partOf: local.length,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Phase Δa — group sections into "extraction units". A unit starts at
+ * every H1/H2 (or the leading level-0 preface) and absorbs all H3+
+ * descendants up to the next H1/H2. This keeps LLM cost equal to
+ * legacy per-chapter extraction while preserving full hierarchy on
+ * every emitted chunk.
+ */
+export interface ExtractionUnit {
+  /** Display title for the unit: H1/H2 heading, or "Body" for level 0. */
+  thesisTitle: string;
+  /** Breadcrumb of the unit's ROOT section (H1 > H2). H3+ live inside. */
+  rootPath: string[];
+  /** Heading level of the root (0/1/2). */
+  rootLevel: 0 | 1 | 2;
+  /** Stable order of the root section. */
+  rootOrder: number;
+  /** The root section + all its H3+ descendants in document order. */
+  sections: Section[];
+}
+
+export function groupSectionsForExtraction(sections: Section[]): ExtractionUnit[] {
+  const units: ExtractionUnit[] = [];
+  let current: ExtractionUnit | null = null;
+  for (const s of sections) {
+    if (s.level <= 2) {
+      if (current) units.push(current);
+      current = {
+        thesisTitle: s.title || "Body",
+        rootPath: s.pathTitles.length > 0 ? [...s.pathTitles] : [],
+        rootLevel: s.level as 0 | 1 | 2,
+        rootOrder: s.order,
+        sections: [s],
+      };
+    } else if (current) {
+      current.sections.push(s);
+    } else {
+      /* Stray H3+ before any H1/H2 — implicit Body unit. */
+      current = {
+        thesisTitle: "Body",
+        rootPath: [],
+        rootLevel: 0,
+        rootOrder: s.order,
+        sections: [s],
+      };
+    }
+  }
+  if (current) units.push(current);
+  return units;
+}
