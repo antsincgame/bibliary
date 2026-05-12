@@ -3,6 +3,7 @@ import { InputFile } from "node-appwrite/file";
 
 import { BUCKETS, COLLECTIONS, getAppwrite, isAppwriteCode, type RawDoc } from "../appwrite.js";
 import { publishUser } from "../realtime/event-bus.js";
+import { buildShareGptBuffer } from "./sharegpt.js";
 import { buildJsonlBuffer, type DatasetFormat } from "./synthesize.js";
 
 /**
@@ -137,7 +138,7 @@ export async function buildDataset(
   input: BuildDatasetInput,
 ): Promise<BuildDatasetResult> {
   const format: DatasetFormat = input.format ?? "jsonl";
-  if (format !== "jsonl") {
+  if (format !== "jsonl" && format !== "sharegpt") {
     return {
       ok: false,
       jobId: "",
@@ -158,10 +159,29 @@ export async function buildDataset(
   });
 
   try {
-    const { jsonl, lineCount, warnings } = await buildJsonlBuffer({
-      userId: input.userId,
-      collectionName: input.collectionName,
-    });
+    const buildResult =
+      format === "sharegpt"
+        ? await buildShareGptBuffer({
+            userId: input.userId,
+            collectionName: input.collectionName,
+            onProgress: (done, total) => {
+              publishUser(input.userId, "extractor_events:created", {
+                jobId,
+                event: "progress",
+                payload: {
+                  kind: "dataset_build",
+                  format,
+                  done,
+                  total,
+                },
+              });
+            },
+          })
+        : await buildJsonlBuffer({
+            userId: input.userId,
+            collectionName: input.collectionName,
+          });
+    const { jsonl, lineCount, warnings } = buildResult;
     if (lineCount === 0) {
       await markBuildFailed(jobId, "no_concepts_in_collection");
       publishUser(input.userId, "extractor_events:created", {

@@ -160,15 +160,22 @@ async function runBuildDataset() {
   const collection = await showPrompt(
     "Source collection name (must match concepts accumulated via Crystallize):",
     "default",
-    { title: "Build dataset → JSONL", okText: "Build" },
+    { title: "Build dataset", okText: "Next" },
   );
   if (!collection || !/^[a-zA-Z0-9_-]+$/.test(collection)) {
     if (collection) await showAlert("Collection name must match [a-zA-Z0-9_-]+");
     return;
   }
+  const formatRaw = await showPrompt(
+    "Format: 'jsonl' (raw delta-knowledge) или 'sharegpt' (Q&A pairs, slower — LLM per concept):",
+    "jsonl",
+    { title: "Format", okText: "Build" },
+  );
+  if (!formatRaw) return;
+  const format = formatRaw.trim() === "sharegpt" ? "sharegpt" : "jsonl";
   try {
     const result = /** @type {any} */ (
-      await window.api.datasets.build({ collection, format: "jsonl" })
+      await window.api.datasets.build({ collection, format })
     );
     if (!result?.ok) {
       await showAlert(
@@ -182,8 +189,8 @@ async function runBuildDataset() {
     recordDataset({
       outputDir: result.jobId,
       collection,
-      format: "jsonl",
-      method: "template",
+      format,
+      method: format === "sharegpt" ? "llm-synth" : "template",
       concepts: result.lineCount ?? 0,
       totalLines: result.lineCount ?? 0,
       trainLines: result.lineCount ?? 0,
@@ -192,9 +199,10 @@ async function runBuildDataset() {
     });
     const url = /** @type {any} */ (window.api.datasets).downloadUrl(result.jobId);
     /* Trigger browser save-as via <a download>. */
+    const ext = format === "sharegpt" ? "sharegpt.jsonl" : "jsonl";
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${collection}-${Date.now()}.jsonl`;
+    a.download = `${collection}-${Date.now()}.${ext}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
