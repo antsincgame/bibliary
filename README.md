@@ -1,12 +1,42 @@
 ﻿# Bibliary
 
-> Превращает коллекцию книг в датасет для дообучения LLM — через структурированный Markdown, смысловые чанки и LanceDB-коллекции.
+> Self-hosted web-сервис для создателей датасетов: загружаешь книги — получаешь атомарные знания с топологическими связями для fine-tuning LLM.
 
-**Платформа:** Windows · **Модели:** LM Studio (локально) · **Vector store:** LanceDB (in-process)
+**Два режима:**
+- **Web (текущая ветка, рабочая)** — Hono backend + Vite renderer + Appwrite (DB/Storage/Realtime) + sqlite-vec. Multi-user, deploy через Coolify/Docker. См. [`docs/deployment.md`](docs/deployment.md). Доступен с любого устройства, поддерживает Anthropic Claude / OpenAI GPT / LM Studio как взаимозаменяемые провайдеры.
+- **Electron (legacy)** — Windows single-user desktop. Полная функциональность сохранена до Phase 12 миграции.
 
 ---
 
-## Что это
+## Для кого
+
+- **Исследователи + AI-инженеры** — нужны качественные training datasets из специфической литературы, без ручной разметки.
+- **Команды fine-tuning** — собирают domain-specific knowledge corpus (юриспруденция / медицина / engineering) из имеющихся книг.
+- **Knowledge graph builders** — Bibliary сохраняет subject→predicate→object триплеты в каждой DeltaKnowledge — выход уже graph-ready.
+
+Что отличает от ручной разметки или GPT-wrapper'ов:
+- **Topology-preserving extraction**: каждая концепция содержит ≥1 relation (S→P→O), не плоский факт-лист.
+- **AURA filter** (authorship/specialization/revision/causality): автоматический отсев банальностей; в датасет попадают только non-trivial идеи.
+- **Per-user provider keys (AES-GCM)**: bring-your-own Anthropic/OpenAI key, или crunch локально через LM Studio. Ключи зашифрованы at-rest.
+- **Async background queue**: загружаешь 100 книг → возвращаешься через час → датасет готов; backend не блокирует UI.
+
+---
+
+## Quick start (web)
+
+```bash
+cp .env.example .env
+# Заполни APPWRITE_*, JWT_PRIVATE_KEY_PEM, JWT_PUBLIC_KEY_PEM, BIBLIARY_ENCRYPTION_KEY.
+docker compose -f docker-compose.prod.yml up -d
+docker compose exec bibliary npm run appwrite:bootstrap
+open http://localhost:3000  # register → drag&drop книги → Settings → Anthropic key → каталог наполняется
+```
+
+Полная инструкция включая Coolify deploy — [`docs/deployment.md`](docs/deployment.md).
+
+---
+
+## Что это (legacy Electron режим)
 
 ### Bibliary — это пайплайн знаний, не RAG-чат
 
