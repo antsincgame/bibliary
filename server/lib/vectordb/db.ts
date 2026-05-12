@@ -116,6 +116,50 @@ function initSchema(db: DbType, dim: number): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_chunks_user_book ON chunks(user_id, book_id);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_chunks_parent ON chunks(parent_vec_rowid);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_chunks_level ON chunks(level);`);
+
+  /* Phase Δc — knowledge graph. Entities are canonical nodes;
+   * aliases capture alternative spellings observed in source; relations
+   * are typed edges (S, predicate, O) that point back to the L1 chunk
+   * that produced them so retrieval can score "narrative origin". */
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS entities (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      canonical TEXT NOT NULL,
+      display TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(user_id, canonical)
+    );
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_entities_user ON entities(user_id);`);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS entity_aliases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity_id INTEGER NOT NULL,
+      alias TEXT NOT NULL,
+      FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE
+    );
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_aliases_entity ON entity_aliases(entity_id);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_aliases_alias ON entity_aliases(alias);`);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS relations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      book_id TEXT NOT NULL,
+      subject_id INTEGER NOT NULL,
+      predicate TEXT NOT NULL,
+      object_id INTEGER NOT NULL,
+      source_chunk_vec_rowid INTEGER,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (subject_id) REFERENCES entities(id) ON DELETE CASCADE,
+      FOREIGN KEY (object_id) REFERENCES entities(id) ON DELETE CASCADE
+    );
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_relations_subject ON relations(subject_id);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_relations_object ON relations(object_id);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_relations_user_book ON relations(user_id, book_id);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_relations_source ON relations(source_chunk_vec_rowid);`);
 }
 
 /**

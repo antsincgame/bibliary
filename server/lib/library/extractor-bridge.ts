@@ -14,6 +14,11 @@ import {
   insertConceptVector,
   type SimilarConceptRow,
 } from "../vectordb/concepts.js";
+import {
+  deleteGraphForBook,
+  getEntitiesForBookRegistry,
+  ingestRelations,
+} from "../vectordb/graph.js";
 import { cleanChapterParagraphs } from "./chunk-cleanup.js";
 import {
   chunkSections,
@@ -64,6 +69,10 @@ export interface ExtractBookResult {
   chunksTotal: number;
   conceptsAccepted: number;
   conceptsFailed: number;
+  /** Phase Δc — distinct entities newly seen during this run. */
+  entitiesTouched?: number;
+  /** Phase Δc — total relations inserted into the graph. */
+  relationsInserted?: number;
   warnings: string[];
   error?: string;
 }
@@ -343,15 +352,25 @@ export async function extractBookViaBridge(
    * embedded set is the only one queryable. Concepts dedup separately
    * via Phase 10c. */
   const purgedChunks = deleteAllChunksForBook(userId, bookId);
+  /* Phase Δc — purge stale graph for this book too. Orphan entities
+   * (no surviving relation) are swept inside deleteGraphForBook. */
+  const purgedGraph = deleteGraphForBook(userId, bookId);
 
   const accumulatedWarnings: string[] = [];
   if (purgedChunks > 0) {
     accumulatedWarnings.push(`pre-extract: purged ${purgedChunks} stale chunks`);
   }
+  if (purgedGraph.relationsDeleted > 0) {
+    accumulatedWarnings.push(
+      `pre-extract: purged ${purgedGraph.relationsDeleted} stale relations, ${purgedGraph.entitiesDeleted} orphan entities`,
+    );
+  }
   let chaptersProcessed = 0;
   let chunksTotal = 0;
   let conceptsAccepted = 0;
   let conceptsFailed = 0;
+  let entitiesTouched = 0;
+  let relationsInserted = 0;
 
   for (let i = 0; i < units.length; i++) {
     if (opts.signal?.aborted) break;
@@ -384,8 +403,10 @@ export async function extractBookViaBridge(
     /* Phase Δb — embed + persist every L1 chunk BEFORE LLM extraction.
      * Pre-persist so a mid-extraction crash leaves the chunk tree
      * intact for resume; the queue can rerun extractChapter without
-     * re-embedding. Failures here only warn — we still extract. */
-    await embedAndStoreChunks(userId, bookId, chunks, (msg) =>
+     * re-embedding. Failures here only warn — we still extract.
+     * rowIds parallels chunks[]: rowIds[i] is the chunks_vec.rowid of
+     * chunks[i], or null if embed failed. */
+    const rowIds = await embedAndStoreChunks(userId, bookId, chunks, (msg) =>
       accumulatedWarnings.push(`unit-${i}: ${msg}`),
     );
 
@@ -419,15 +440,40 @@ export async function extractBookViaBridge(
       ...result.warnings.map((w) => `unit-${i}: ${w}`),
     );
 
-    for (const delta of result.accepted) {
+    /* Phase Δc — persist concept AND ingest its relations into the
+     * graph keyed by the chunk that produced them. perChunk[k] is the
+     * extraction outcome for chunks[k]; rowIds[k] is its vec rowid.
+     * We iterate perChunk so dedup-skipped deltas don't pollute graph
+     * counts but ACCEPTED deltas still contribute their topology. */
+    for (let k = 0; k < result.perChunk.length; k++) {
+      const pc = result.perChunk[k];
+      if (!pc.delta) continue;
+      const sourceChunkRowId = rowIds[k] ?? null;
       try {
-        const result = await persistConcept(userId, bookId, collection, delta);
-        if (result.persisted) conceptsAccepted += 1;
-        else if (result.dedupSkipped) {
+        const persisted = await persistConcept(userId, bookId, collection, pc.delta);
+        if (persisted.persisted) conceptsAccepted += 1;
+        else if (persisted.dedupSkipped) {
           accumulatedWarnings.push(
             `unit-${i}: semantic dedup skipped (cosine > ${DEDUP_SIMILARITY_THRESHOLD})`,
           );
         } else conceptsFailed += 1;
+        /* Even dedup-skipped concepts contribute relations to the
+         * graph — the topology is shared knowledge, only the dataset
+         * line is suppressed. */
+        try {
+          const ingested = ingestRelations({
+            userId,
+            bookId,
+            triples: pc.delta.relations,
+            sourceChunkVecRowId: sourceChunkRowId,
+          });
+          entitiesTouched += ingested.entitiesTouched;
+          relationsInserted += ingested.relationsInserted;
+        } catch (err) {
+          accumulatedWarnings.push(
+            `unit-${i}: graph ingest failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
       } catch (err) {
         conceptsFailed += 1;
         accumulatedWarnings.push(
@@ -466,9 +512,15 @@ export async function extractBookViaBridge(
       chunksTotal,
       conceptsAccepted,
       conceptsFailed,
+      entitiesTouched,
+      relationsInserted,
       usingFallback: aggregatedFallback,
     },
   });
+
+  /* Suppress unused — registry helper is consumed by Δd L2 summarizer;
+   * importing here so the symbol stays in the bridge's view. */
+  void getEntitiesForBookRegistry;
 
   return {
     ok: conceptsAccepted > 0,
@@ -477,6 +529,8 @@ export async function extractBookViaBridge(
     chunksTotal,
     conceptsAccepted,
     conceptsFailed,
+    entitiesTouched,
+    relationsInserted,
     warnings: accumulatedWarnings,
   };
 }
