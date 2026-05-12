@@ -5,6 +5,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { HTTPException } from "hono/http-exception";
 
 import { getCorsOrigins, loadConfig } from "./config.js";
+import { isDomainError } from "./lib/errors.js";
 import { rateLimit } from "./middleware/rate-limit.js";
 import { adminRoutes } from "./routes/admin.js";
 import { authRoutes } from "./routes/auth.js";
@@ -136,6 +137,14 @@ export function buildApp(): Hono<AppEnv> {
   app.onError((err, c) => {
     if (err instanceof HTTPException) {
       return err.getResponse();
+    }
+    /* DomainError carries a stable code + intended HTTP status; let
+     * lib/* code throw it without importing hono. The contract here is
+     * the only place that translates it. */
+    if (isDomainError(err)) {
+      const body: Record<string, unknown> = { error: err.code };
+      if (err.details) body["details"] = err.details;
+      return c.json(body, err.status as 400 | 401 | 403 | 404 | 409 | 422 | 429 | 500 | 503);
     }
     console.error("[app] unhandled error:", err);
     return c.json(

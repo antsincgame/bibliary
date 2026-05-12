@@ -1,13 +1,15 @@
 import bcrypt from "bcryptjs";
 
+import { DomainError } from "../errors.js";
+
 const COST = 12;
 
 export async function hashPassword(plaintext: string): Promise<string> {
   if (plaintext.length < 8) {
-    throw new Error("password_too_short");
+    throw new DomainError("password_too_short", { status: 422 });
   }
   if (plaintext.length > 256) {
-    throw new Error("password_too_long");
+    throw new DomainError("password_too_long", { status: 422 });
   }
   return bcrypt.hash(plaintext, COST);
 }

@@ -3,6 +3,7 @@ import { randomBytes, createHash } from "node:crypto";
 import { type JWTPayload, SignJWT, importPKCS8, importSPKI, jwtVerify, type KeyLike } from "jose";
 
 import { type Config, loadConfig } from "../../config.js";
+import { DomainError } from "../errors.js";
 
 const ALG = "RS256";
 const ISSUER = "bibliary";
@@ -66,11 +67,11 @@ export async function verifyAccessToken(
     typeof payload["email"] !== "string" ||
     typeof payload["role"] !== "string"
   ) {
-    throw new Error("invalid_token_claims");
+    throw new DomainError("invalid_token_claims", { status: 401 });
   }
   const role = payload["role"];
   if (role !== "user" && role !== "admin") {
-    throw new Error("invalid_token_role");
+    throw new DomainError("invalid_token_role", { status: 401 });
   }
   return {
     sub: payload.sub,
