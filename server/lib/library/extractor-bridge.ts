@@ -47,7 +47,12 @@ const CHUNK_TOKEN_BUDGET = 2000;
  * insights, 0.85 пропустил бы near-duplicates. 0.9 — компромисс из
  * Magpie research recommendations. */
 const DEDUP_SIMILARITY_THRESHOLD = 0.9;
-import type { DeltaKnowledge } from "../../../shared/llm/extractor-schema.js";
+/** Phase Δe — propositions are LAZY: only extracted for books that
+ * passed the evaluator with score ≥ this. Sub-threshold books still
+ * get full L1+L2 extraction; we just don't pay for the fine-grain
+ * L0 layer on them. */
+const L0_QUALITY_THRESHOLD = 7;
+import type { DeltaKnowledge, TopologyRelation } from "../../../shared/llm/extractor-schema.js";
 
 /**
  * Bridge Phase 6e: full delta-knowledge extraction для одной книги.
@@ -75,6 +80,8 @@ export interface ExtractBookResult {
   entitiesTouched?: number;
   /** Phase Δc — total relations inserted into the graph. */
   relationsInserted?: number;
+  /** Phase Δe — L0 atomic propositions persisted (≥7 quality books only). */
+  propositionsInserted?: number;
   warnings: string[];
   error?: string;
 }
@@ -87,6 +94,72 @@ async function loadMarkdown(bucketId: string, fileId: string): Promise<string> {
   const view = await storage.getFileDownload(bucketId, fileId);
   const bytes = view instanceof Uint8Array ? view : new Uint8Array(view as ArrayBuffer);
   return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+}
+
+/**
+ * Phase Δe — build a natural-language proposition from a topology
+ * triple. Predicate underscores get spaced (`launched_with` →
+ * "launched with") so the embedder sees a real sentence. Output is
+ * trimmed and capped at 400 chars (defensive against pathological
+ * LLM emissions).
+ */
+function buildPropositionText(rel: TopologyRelation): string {
+  const subj = rel.subject.trim();
+  const pred = rel.predicate.trim().replace(/_/g, " ");
+  const obj = rel.object.trim();
+  return `${subj} ${pred} ${obj}.`.slice(0, 400);
+}
+
+/**
+ * Phase Δe — embed every relation triple of an accepted delta as an
+ * L0 proposition. Parent points up at the L1 chunk that produced the
+ * delta so retrieval can walk L0 → L1 for context expansion. We dedup
+ * propositions within the delta by their text to avoid storing the
+ * same triple twice when the LLM repeats itself.
+ *
+ * Returns the count of inserted L0 rows so the caller can roll it
+ * into stats. Embedder failures only warn — extraction has already
+ * succeeded by this point.
+ */
+async function embedAndStorePropositions(
+  userId: string,
+  bookId: string,
+  parentChunkRowId: number | null,
+  delta: DeltaKnowledge,
+  onWarning: (msg: string) => void,
+): Promise<number> {
+  const seen = new Set<string>();
+  let inserted = 0;
+  for (let i = 0; i < delta.relations.length; i++) {
+    const rel = delta.relations[i];
+    const text = buildPropositionText(rel);
+    if (text.length < 10) continue; // garbage triple
+    const key = text.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    try {
+      const embedding = await embedPassage(text);
+      insertChunk({
+        userId,
+        bookId,
+        level: 0,
+        embedding,
+        text,
+        pathTitles: [], // propositions are not chapter-bound
+        sectionLevel: 0,
+        sectionOrder: 0,
+        partN: i + 1,
+        partOf: delta.relations.length,
+        parentVecRowId: parentChunkRowId,
+      });
+      inserted += 1;
+    } catch (err) {
+      onWarning(
+        `L0 proposition embed/insert failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+  return inserted;
 }
 
 /**
@@ -373,6 +446,22 @@ export async function extractBookViaBridge(
   let conceptsFailed = 0;
   let entitiesTouched = 0;
   let relationsInserted = 0;
+  let propositionsInserted = 0;
+
+  /* Phase Δe — gate L0 propositions on book quality. Books not yet
+   * evaluated (qualityScore === null) are below threshold by default,
+   * so the user can extract first / evaluate later and re-extract to
+   * get the L0 layer. isFictionOrWater === true bypasses the layer
+   * regardless of numeric score. */
+  const l0Enabled =
+    typeof book.qualityScore === "number" &&
+    book.qualityScore >= L0_QUALITY_THRESHOLD &&
+    book.isFictionOrWater !== true;
+  if (!l0Enabled) {
+    accumulatedWarnings.push(
+      `L0 propositions disabled (qualityScore=${book.qualityScore ?? "null"}, isFictionOrWater=${book.isFictionOrWater ?? "null"})`,
+    );
+  }
 
   for (let i = 0; i < units.length; i++) {
     if (opts.signal?.aborted) break;
@@ -476,6 +565,26 @@ export async function extractBookViaBridge(
             `unit-${i}: graph ingest failed: ${err instanceof Error ? err.message : String(err)}`,
           );
         }
+        /* Phase Δe — proposition layer for high-quality books. Skipped
+         * if (qualityScore < 7) OR (isFictionOrWater === true) OR
+         * not yet evaluated. We pass parent = the L1 chunk that
+         * produced this delta so retrieval can hop L0 → L1 freely. */
+        if (l0Enabled) {
+          try {
+            const n = await embedAndStorePropositions(
+              userId,
+              bookId,
+              sourceChunkRowId,
+              pc.delta,
+              (msg) => accumulatedWarnings.push(`unit-${i}: ${msg}`),
+            );
+            propositionsInserted += n;
+          } catch (err) {
+            accumulatedWarnings.push(
+              `unit-${i}: L0 batch failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        }
       } catch (err) {
         conceptsFailed += 1;
         accumulatedWarnings.push(
@@ -564,6 +673,7 @@ export async function extractBookViaBridge(
       conceptsFailed,
       entitiesTouched,
       relationsInserted,
+      propositionsInserted,
       usingFallback: aggregatedFallback,
     },
   });
@@ -581,6 +691,7 @@ export async function extractBookViaBridge(
     conceptsFailed,
     entitiesTouched,
     relationsInserted,
+    propositionsInserted,
     warnings: accumulatedWarnings,
   };
 }
