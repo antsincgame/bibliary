@@ -5,12 +5,21 @@
   "main": "dist-electron/main.js",
   "description": "Local book library → structured Markdown → embedded LanceDB vector collections → ChatML JSONL fine-tuning datasets",
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "scripts": {
     "inventory": "tsx scripts/inventory.ts",
     "validate-batch": "tsx scripts/validate-batch.ts",
     "postinstall": "node scripts/postinstall.cjs",
+    "dev:server": "tsx watch server/main.ts",
+    "dev:web": "vite",
+    "dev": "concurrently -k -n server,web -c blue,magenta npm:dev:server npm:dev:web",
+    "build:server": "tsc -p tsconfig.server.json",
+    "build:web": "vite build",
+    "build": "npm run build:server && npm run build:web",
+    "start": "node dist-server/server/main.js",
+    "appwrite:bootstrap": "tsx scripts/appwrite-bootstrap.ts",
+    "typecheck:server": "tsc -p tsconfig.server.json --noEmit",
     "electron:clean": "node --input-type=commonjs -e \"try{require('fs').rmSync('dist-electron',{recursive:true,force:true})}catch{}\"",
     "electron:compile": "npm run electron:clean && tsc -p tsconfig.electron.json && node scripts/prepare-electron.js",
     "electron:dev": "node scripts/ensure-sqlite-abi.cjs --target=electron && npm run electron:compile && electron dist-electron/main.js",
@@ -49,7 +58,10 @@
     "setup:tessdata": "node scripts/download-tessdata.cjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.40.0",
     "@firecrawl/pdf-inspector": "^1.8.0",
+    "@hono/node-server": "^1.13.0",
+    "@hono/zod-validator": "^0.4.0",
     "@lancedb/lancedb": "^0.21.3",
     "@lmstudio/sdk": "^1.5.0",
     "@napi-rs/canvas": "^0.1.99",
@@ -58,26 +70,35 @@
     "7z-bin": "^0.0.8",
     "7zip-bin": "^5.2.0",
     "apache-arrow": "^17.0.0",
+    "bcrypt": "^5.1.1",
     "better-sqlite3": "^12.9.0",
     "chardet": "^2.1.1",
     "edgeparse": "^0.2.3",
     "fast-xml-parser": "^4.5.1",
     "fastest-levenshtein": "^1.0.16",
+    "hono": "^4.6.0",
     "iconv-lite": "^0.7.2",
+    "jose": "^5.9.0",
     "jszip": "^3.10.1",
     "mammoth": "^1.8.0",
     "marked": "^18.0.0",
+    "node-appwrite": "^15.0.0",
+    "openai": "^4.70.0",
+    "p-queue": "^8.0.1",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^4.10.38",
     "proper-lockfile": "^4.1.2",
     "sharp": "^0.32.0",
+    "sqlite-vec": "^0.1.6",
     "tesseract.js": "^7.0.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@types/bcrypt": "^5.0.2",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.13.0",
     "@types/proper-lockfile": "^4.1.4",
+    "concurrently": "^9.1.0",
     "electron": "^41.2.0",
     "electron-builder": "^26.8.1",
     "eslint": "^10.2.1",
@@ -87,6 +108,7 @@
     "lint-staged": "^16.4.0",
     "playwright": "^1.59.1",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0"
   }
 }
