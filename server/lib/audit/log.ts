@@ -56,6 +56,23 @@ export interface AuditEvent {
 
 const METADATA_MAX_CHARS = 4900;
 
+/**
+ * Walk a shallow record and cap any string value to `max` chars.
+ * Designed for audit metadata, which is typically flat key→primitive.
+ * Nested objects/arrays pass through unchanged.
+ */
+function truncateValues(obj: Record<string, unknown>, max: number): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v === "string" && v.length > max) {
+      out[k] = v.slice(0, max - 1) + "…";
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
 export async function writeAuditEvent(ev: AuditEvent): Promise<void> {
   try {
     const { databases, databaseId } = getAppwrite();
@@ -67,14 +84,23 @@ export async function writeAuditEvent(ev: AuditEvent): Promise<void> {
     if (ev.userId) doc["userId"] = ev.userId;
     if (ev.target) doc["target"] = ev.target;
     if (ev.metadata) {
+      /* Two-step truncation: cap individual string values first so the
+       * structure survives; only if it's still over budget replace
+       * with a sentinel. Mid-JSON-string slicing produces unparseable
+       * output that listAuditEvents silently drops. */
       let serialized: string;
       try {
-        serialized = JSON.stringify(ev.metadata);
+        const trimmed = truncateValues(ev.metadata, 500);
+        serialized = JSON.stringify(trimmed);
+        if (serialized.length > METADATA_MAX_CHARS) {
+          serialized = JSON.stringify({
+            __truncated: true,
+            approxChars: serialized.length,
+            keys: Object.keys(ev.metadata),
+          });
+        }
       } catch {
-        serialized = "{}";
-      }
-      if (serialized.length > METADATA_MAX_CHARS) {
-        serialized = serialized.slice(0, METADATA_MAX_CHARS - 12) + '..."truncated"}';
+        serialized = JSON.stringify({ __truncated: true, reason: "stringify_failed" });
       }
       doc["metadata"] = serialized;
     }

@@ -238,11 +238,21 @@ class ExtractionQueueImpl {
        * прерыванию — он return'нёт с conceptsAccepted=0 → state="failed",
        * НО мы уже знаем что cancelled через ctrl.signal.aborted. */
       if (ctrl.signal.aborted) {
-        /* cancel() уже transition'нёт; не переписываем. */
-        await updateJob(jobId, {
+        /* cancel() обычно успевает transitionJob раньше — тогда наш
+         * вызов вернёт false и мы дополним только counters через updateJob.
+         * Если cancel() ещё не дошёл (race), state мог остаться "running" —
+         * наш transitionJob его сдвинет. Никогда не оставляем "running"
+         * после abort. */
+        const transitioned = await transitionJob(jobId, "cancelled", {
           stage: "cancelled",
           conceptsExtracted: result.conceptsAccepted,
         });
+        if (!transitioned) {
+          await updateJob(jobId, {
+            stage: "cancelled",
+            conceptsExtracted: result.conceptsAccepted,
+          });
+        }
       } else if (result.ok) {
         await transitionJob(jobId, "done", {
           stage: "done",

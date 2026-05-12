@@ -40,17 +40,23 @@ export interface UserStorageUsage {
   partial: boolean;
 }
 
-async function sizeOf(bucketId: string, fileId: string | undefined): Promise<number> {
-  if (!fileId) return 0;
+interface SizeResult {
+  bytes: number;
+  /** True if the underlying getFile threw something other than 404. */
+  walkError: boolean;
+}
+
+async function sizeOf(bucketId: string, fileId: string | undefined): Promise<SizeResult> {
+  if (!fileId) return { bytes: 0, walkError: false };
   const { storage } = getAppwrite();
   try {
     const file = await storage.getFile(bucketId, fileId);
-    return Number(file.sizeOriginal ?? 0);
+    return { bytes: Number(file.sizeOriginal ?? 0), walkError: false };
   } catch (err) {
-    if (isAppwriteCode(err, 404)) return 0;
-    /* Other errors (network, perms) — swallow to keep the walk going.
-     * Admin UI will see partial=true if many files fail. */
-    return 0;
+    /* 404 = file deleted out of band → not a walk error, count as 0.
+     * Network / perms / 5xx = walk error, surface via partial flag. */
+    if (isAppwriteCode(err, 404)) return { bytes: 0, walkError: false };
+    return { bytes: 0, walkError: true };
   }
 }
 
@@ -89,9 +95,10 @@ export async function computeUserStorageUsage(userId: string): Promise<UserStora
         sizeOf(BUCKETS.bookOriginals, b.originalFileId),
         sizeOf(BUCKETS.bookCovers, b.coverFileId),
       ]);
-      bytesMarkdown += mdSz;
-      bytesOriginal += origSz;
-      bytesCovers += covSz;
+      bytesMarkdown += mdSz.bytes;
+      bytesOriginal += origSz.bytes;
+      bytesCovers += covSz.bytes;
+      if (mdSz.walkError || origSz.walkError || covSz.walkError) partial = true;
     }
     if (page.documents.length < BOOKS_PAGE) break;
     offset += BOOKS_PAGE;
@@ -117,7 +124,9 @@ export async function computeUserStorageUsage(userId: string): Promise<UserStora
           partial = true;
           break;
         }
-        bytesDatasets += await sizeOf(BUCKETS.datasetExports, j.exportFileId);
+        const dsSz = await sizeOf(BUCKETS.datasetExports, j.exportFileId);
+        bytesDatasets += dsSz.bytes;
+        if (dsSz.walkError) partial = true;
       }
       if (page.documents.length < BOOKS_PAGE) break;
       dsOffset += BOOKS_PAGE;

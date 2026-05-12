@@ -78,6 +78,10 @@ export async function revokeRefreshByToken(refreshToken: string): Promise<boolea
 export async function revokeAllForUser(userId: string): Promise<number> {
   const { databases, databaseId } = getAppwrite();
   let revoked = 0;
+  /* Appwrite doesn't support bulk UPDATE; each token must be flipped
+   * individually. Parallelize per-page so revoke for a heavy user
+   * stays under a few hundred ms instead of N×roundtrip. Page size 100
+   * matches Appwrite's listDocuments cap. */
   for (;;) {
     const list = await databases.listDocuments<RawRefreshDoc>(
       databaseId,
@@ -85,10 +89,8 @@ export async function revokeAllForUser(userId: string): Promise<number> {
       [Query.equal("userId", userId), Query.equal("revoked", false), Query.limit(100)],
     );
     if (list.documents.length === 0) break;
-    for (const doc of list.documents) {
-      await revokeRefreshById(doc.$id);
-      revoked += 1;
-    }
+    await Promise.all(list.documents.map((doc) => revokeRefreshById(doc.$id)));
+    revoked += list.documents.length;
     if (list.documents.length < 100) break;
   }
   return revoked;

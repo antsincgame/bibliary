@@ -199,6 +199,11 @@ export async function loadMoreCatalog(root = null) {
 export function renderCatalogTable(root) {
   const tbody = root.querySelector(".lib-catalog-tbody");
   if (!tbody) return;
+  /* Drop the existing observer targets before clearing the tbody so
+   * the detached <td>s don't linger as observed-but-orphan refs.
+   * disconnect() resets all targets without destroying the observer
+   * instance — the new rows below will observe() afresh. */
+  if (COVER_OBSERVER) COVER_OBSERVER.disconnect();
   clear(tbody);
 
   const filtered = filterCatalog(CATALOG.rows);

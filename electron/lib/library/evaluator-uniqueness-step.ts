@@ -49,7 +49,9 @@ export async function runUniquenessStep(args: RunUniquenessStepArgs): Promise<vo
     if (!prefs?.uniquenessEvaluationEnabled || args.signal.aborted) return;
 
     const { evaluateBookUniqueness } = await import("./uniqueness-evaluator.js");
-    const { DEFAULT_COLLECTION } = await import("../../ipc/dataset-v2-ipc-state.js");
+    /* Phase 13c-light: DEFAULT_COLLECTION was in the deleted IPC state
+     * module. Inlined here — it's the only value the import was for. */
+    const DEFAULT_COLLECTION = "delta-knowledge";
     const { getReaderModel } = await import("../llm/model-resolver.js");
 
     const reader = await getReaderModel();

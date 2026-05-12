@@ -156,6 +156,21 @@ async function repairAndValidate(
   warnings: string[],
   usingFallback: boolean,
 ): Promise<ExtractorResult> {
+  /* Preflight: if the caller already aborted between the primary call
+   * and now, skip the repair retry entirely. Otherwise we'd burn an
+   * extra LLM call on a cancelled job. */
+  if (opts.signal?.aborted) {
+    warnings.push("extractor: skipped repair retry (aborted)");
+    return {
+      delta: null,
+      rejectReason: "provider_error",
+      raw: badRaw,
+      reasoning: priorReasoning,
+      model,
+      warnings,
+      usingFallback,
+    };
+  }
   warnings.push("extractor: attempting JSON repair retry");
 
   const request: ChatRequest = {
