@@ -1,0 +1,129 @@
+import { http } from "./http.js";
+
+/**
+ * Library catalog + aggregations + import + destructive ops.
+ *
+ * Push-event методы (onScanProgress, onImportProgress, onImportLog,
+ * onEvaluatorEvent) — stubs до подключения Appwrite Realtime в Phase 3b.
+ *
+ * Native dialogs (pickFiles, pickFolder, revealInFolder, openOriginal) —
+ * Electron-only. В web заменены на browser API: drag&drop + getCoverUrl.
+ */
+
+const noopUnsubscribe = () => undefined;
+
+const notImplemented = (name) => async () => {
+  throw new Error(`library.${name} not yet implemented in web mode`);
+};
+
+export const library = {
+  /* ─── Catalog ──────────────────────────────────────────────────── */
+
+  /**
+   * @param {Record<string, string | number | boolean | undefined>} [filters]
+   * @returns {Promise<{rows: any[], total: number}>}
+   */
+  catalog: (filters) => http.get("/api/library/books", { query: filters }),
+
+  /** @param {string} id */
+  getBook: (id) =>
+    http.get(`/api/library/books/${encodeURIComponent(id)}`).catch((err) => {
+      if (err && /** @type {any} */ (err).status === 404) return null;
+      throw err;
+    }),
+
+  /** @param {string} id */
+  readBookMd: (id) =>
+    http.get(`/api/library/books/${encodeURIComponent(id)}/markdown`, { parse: "text" }),
+
+  /** @param {string} id @returns {string} same-origin URL — браузер сам подставит cookies */
+  getCoverUrl: (id) => `/api/library/books/${encodeURIComponent(id)}/cover`,
+
+  /**
+   * @param {string} id
+   * @param {{deleteFiles?: boolean}} [opts]
+   */
+  deleteBook: (id, opts) =>
+    http.delete(`/api/library/books/${encodeURIComponent(id)}`, {
+      query: opts?.deleteFiles ? { deleteFiles: "true" } : undefined,
+    }),
+
+  /* ─── Aggregations (Phase 2f) ──────────────────────────────────── */
+
+  /** @param {"ru" | "en"} [locale] */
+  tagStats: (locale) =>
+    http.get("/api/library/tag-stats", locale ? { query: { locale } } : undefined),
+
+  collectionByDomain: () => http.get("/api/library/collection/by-domain"),
+
+  /** @param {"ru" | "en"} [locale] */
+  collectionByAuthor: (locale) =>
+    http.get("/api/library/collection/by-author", locale ? { query: { locale } } : undefined),
+
+  collectionByYear: () => http.get("/api/library/collection/by-year"),
+
+  /** @param {"ru" | "en"} [locale] */
+  collectionByTag: (locale) =>
+    http.get("/api/library/collection/by-tag", locale ? { query: { locale } } : undefined),
+
+  /** sphere — legacy SQLite concept; web returns empty list для UI safety. */
+  collectionBySphere: async () => /** @type {Array<{label: string, count: number, bookIds: string[]}>} */ ([]),
+
+  /* ─── Import (Phase 2k MVP) ────────────────────────────────────── */
+
+  /**
+   * Browser uploaded files to Appwrite Storage (book-originals bucket);
+   * pass returned fileIds here, backend parses + creates books.
+   *
+   * @param {string[]} fileIds
+   */
+  importFiles: (fileIds) => http.post("/api/library/import-files", { json: { fileIds } }),
+
+  /* ─── Destructive ──────────────────────────────────────────────── */
+
+  burnAll: () => http.post("/api/library/burn-all"),
+
+  /* ─── Stubs (Phase 3b / Phase 2m+) ─────────────────────────────── */
+
+  /** @param {(ev: unknown) => void} _cb */
+  onEvaluatorEvent: (_cb) => noopUnsubscribe,
+  /** @param {(ev: unknown) => void} _cb */
+  onImportProgress: (_cb) => noopUnsubscribe,
+  /** @param {(ev: unknown) => void} _cb */
+  onImportLog: (_cb) => noopUnsubscribe,
+  /** @param {(ev: unknown) => void} _cb */
+  onScanProgress: (_cb) => noopUnsubscribe,
+  /** @param {(ev: unknown) => void} _cb */
+  onScanReport: (_cb) => noopUnsubscribe,
+
+  importLogSnapshot: async () => /** @type {Array<unknown>} */ ([]),
+  clearImportLogs: async () => 0,
+  cancelImport: async () => false,
+  purgeDeadImports: async () => 0,
+  rebuildCache: notImplemented("rebuildCache"),
+  reparseBook: notImplemented("reparseBook"),
+
+  /* ─── Evaluator queue (Phase 6) ────────────────────────────────── */
+
+  evaluatorStatus: async () => ({
+    running: false,
+    paused: false,
+    currentBookId: null,
+    currentTitle: null,
+    queueLength: 0,
+    totalEvaluated: 0,
+    totalFailed: 0,
+  }),
+  evaluatorResume: async () => true,
+  reevaluate: notImplemented("reevaluate"),
+
+  /* ─── Electron-only dialogs (replaced by drag&drop / browser file picker) ─── */
+
+  pickFiles: notImplemented("pickFiles"),
+  pickFolder: notImplemented("pickFolder"),
+  openOriginal: notImplemented("openOriginal"),
+  revealInFolder: notImplemented("revealInFolder"),
+
+  scanFolder: notImplemented("scanFolder"),
+  importFolder: notImplemented("importFolder"),
+};

@@ -64,6 +64,11 @@
     </main>
   </div>
 
+  <!-- api-client устанавливает window.api перед загрузкой router.js.
+       В Electron-режиме electron/preload.ts перебивает window.api на свой
+       (IPC-backed) — порядок не важен, потому что preload выполняется в
+       другом world; в web-режиме грузится только этот скрипт. -->
+  <script type="module" src="api-client.js"></script>
   <script type="module" src="router.js"></script>
 </body>
 </html>
