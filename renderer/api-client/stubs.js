@@ -1,8 +1,10 @@
 /**
- * Stubs for namespaces that need either Realtime (Phase 3b) or LLM
- * provider abstraction (Phase 6) — exposed by the api-client so the
- * renderer destructure doesn't blow up at import time.
+ * Stubs / Realtime wirings — namespaces backed by SSE через
+ * /api/events. Pure stubs остались только для namespace'ов которые
+ * зависят от Phase 6 (LLM providers — dataset-v2).
  */
+
+import { subscribe } from "./realtime.js";
 
 const noopUnsubscribe = () => undefined;
 const notImplemented = (namespace, name) => async () => {
@@ -15,18 +17,18 @@ export const appMenu = {
   onNavigate: (_cb) => noopUnsubscribe,
 };
 
-/** Resilience push events — Phase 3b Realtime adapter. */
+/** Resilience push events — SSE channels из EventSink в server/main. */
 export const resilience = {
-  /** @param {() => void} _cb */
-  onLmstudioOffline: (_cb) => noopUnsubscribe,
-  /** @param {() => void} _cb */
-  onLmstudioOnline: (_cb) => noopUnsubscribe,
-  /** @param {(snapshot: unknown) => void} _cb */
-  onSchedulerSnapshot: (_cb) => noopUnsubscribe,
-  /** @param {(snapshot: unknown) => void} _cb */
-  onModelPoolSnapshot: (_cb) => noopUnsubscribe,
-  /** @param {(snapshot: unknown) => void} _cb */
-  onLmstudioPressure: (_cb) => noopUnsubscribe,
+  /** @param {() => void} cb */
+  onLmstudioOffline: (cb) => subscribe("resilience:lmstudio-offline", () => cb()),
+  /** @param {() => void} cb */
+  onLmstudioOnline: (cb) => subscribe("resilience:lmstudio-online", () => cb()),
+  /** @param {(snapshot: unknown) => void} cb */
+  onSchedulerSnapshot: (cb) => subscribe("resilience:scheduler-snapshot", cb),
+  /** @param {(snapshot: unknown) => void} cb */
+  onModelPoolSnapshot: (cb) => subscribe("resilience:model-pool-snapshot", cb),
+  /** @param {(snapshot: unknown) => void} cb */
+  onLmstudioPressure: (cb) => subscribe("resilience:lmstudio-pressure", cb),
 };
 
 /**

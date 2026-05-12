@@ -7,6 +7,7 @@ import { HTTPException } from "hono/http-exception";
 import { getCorsOrigins, loadConfig } from "./config.js";
 import { authRoutes } from "./routes/auth.js";
 import { datasetsRoutes } from "./routes/datasets.js";
+import { eventsRoutes } from "./routes/events.js";
 import { healthRoutes } from "./routes/health.js";
 import { libraryRoutes } from "./routes/library.js";
 import { lmstudioRoutes } from "./routes/lmstudio.js";
@@ -59,6 +60,7 @@ export function buildApp(): Hono<AppEnv> {
   app.route("/api/scanner", scannerRoutes());
   app.route("/api/library", libraryRoutes());
   app.route("/api/datasets", datasetsRoutes());
+  app.route("/api/events", eventsRoutes());
 
   app.onError((err, c) => {
     if (err instanceof HTTPException) {

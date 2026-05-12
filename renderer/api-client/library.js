@@ -1,4 +1,5 @@
 import { http } from "./http.js";
+import { subscribe } from "./realtime.js";
 
 /**
  * Library catalog + aggregations + import + destructive ops.
@@ -83,14 +84,14 @@ export const library = {
 
   burnAll: () => http.post("/api/library/burn-all"),
 
-  /* ─── Stubs (Phase 3b / Phase 2m+) ─────────────────────────────── */
+  /* ─── Realtime push (Phase 3b SSE) ─────────────────────────────── */
 
-  /** @param {(ev: unknown) => void} _cb */
-  onEvaluatorEvent: (_cb) => noopUnsubscribe,
-  /** @param {(ev: unknown) => void} _cb */
-  onImportProgress: (_cb) => noopUnsubscribe,
-  /** @param {(ev: unknown) => void} _cb */
-  onImportLog: (_cb) => noopUnsubscribe,
+  /** @param {(ev: unknown) => void} cb */
+  onEvaluatorEvent: (cb) => subscribe("evaluator_events:created", cb),
+  /** @param {(ev: unknown) => void} cb */
+  onImportProgress: (cb) => subscribe("ingest_jobs:update", cb),
+  /** @param {(ev: unknown) => void} cb */
+  onImportLog: (cb) => subscribe("import_logs:append", cb),
   /** @param {(ev: unknown) => void} _cb */
   onScanProgress: (_cb) => noopUnsubscribe,
   /** @param {(ev: unknown) => void} _cb */

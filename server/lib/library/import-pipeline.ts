@@ -7,6 +7,7 @@ import { ID, Permission, Query, Role } from "node-appwrite";
 import { InputFile } from "node-appwrite/file";
 
 import { BUCKETS, COLLECTIONS, getAppwrite, isAppwriteCode, type RawDoc } from "../appwrite.js";
+import { publishUser } from "../realtime/event-bus.js";
 import { parseBook } from "../scanner/parsers-bridge.js";
 import {
   detectExt,
@@ -270,7 +271,23 @@ async function updateIngestJob(jobId: string, patch: IngestPatch): Promise<void>
   if (patch.error !== undefined) updates["error"] = patch.error;
   if (patch.bookId !== undefined) updates["bookId"] = patch.bookId;
   try {
-    await databases.updateDocument(databaseId, COLLECTIONS.ingestJobs, jobId, updates);
+    const updated = await databases.updateDocument<RawDoc & { userId: string }>(
+      databaseId,
+      COLLECTIONS.ingestJobs,
+      jobId,
+      updates,
+    );
+    /* Push событие подписчикам через SSE. Source-of-truth — Appwrite
+     * document; bus всего лишь дёргает live UI. */
+    publishUser(updated.userId, "ingest_jobs:update", {
+      jobId,
+      state: patch.state,
+      stage: patch.stage,
+      progress: patch.progress,
+      message: patch.message,
+      error: patch.error,
+      bookId: patch.bookId,
+    });
   } catch (err) {
     if (!isAppwriteCode(err, 404)) throw err;
   }
