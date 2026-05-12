@@ -30,11 +30,14 @@ jobs:
       - name: Install system parser binaries
         # djvulibre / p7zip / tesseract-ocr live on Coolify's runtime image
         # too; install on the CI runner so scanner tests pass with the same
-        # binary surface that production sees.
+        # binary surface that production sees. Languages match Dockerfile:
+        # Cyrillic (rus, ukr), Chinese (chi-sim, chi-tra), English.
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            djvulibre-bin p7zip-full tesseract-ocr tesseract-ocr-rus tesseract-ocr-ukr
+            djvulibre-bin p7zip-full \
+            tesseract-ocr tesseract-ocr-rus tesseract-ocr-ukr \
+            tesseract-ocr-chi-sim tesseract-ocr-chi-tra
 
       - name: Install dependencies
         run: npm ci

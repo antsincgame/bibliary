@@ -68,7 +68,10 @@ ENV NODE_ENV=production \
 # Runtime apt deps:
 #   - djvulibre-bin → ddjvu / djvutxt (parsers/djvu-cli.ts)
 #   - p7zip-full   → 7z (chm.ts, cbz.ts, archive-extractor.ts)
-#   - tesseract-ocr + rus/ukr/eng tessdata → OCR Tier 1a fallback
+#   - tesseract-ocr + lang packs → OCR Tier 1a fallback for scanned PDFs.
+#     Focus on three families: Cyrillic (rus, ukr), Chinese (chi-sim,
+#     chi-tra), English (eng). Each pack ~30MB → 4 packs add ~120MB to
+#     the runtime image. Total CPU OCR; no GPU, no Python sidecar.
 #   - ca-certificates → HTTPS к Anthropic/OpenAI/Appwrite
 RUN apt-get update && apt-get install -y --no-install-recommends \
       djvulibre-bin \
@@ -77,6 +80,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       tesseract-ocr-rus \
       tesseract-ocr-ukr \
       tesseract-ocr-eng \
+      tesseract-ocr-chi-sim \
+      tesseract-ocr-chi-tra \
       ca-certificates \
       curl \
     && rm -rf /var/lib/apt/lists/*
