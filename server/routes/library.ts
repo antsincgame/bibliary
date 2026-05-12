@@ -16,6 +16,7 @@ import {
 } from "../lib/library/aggregations.js";
 import { burnAllForUser } from "../lib/library/burn.js";
 import { evaluateBookViaBridge } from "../lib/library/evaluator-bridge.js";
+import { extractBookViaBridge } from "../lib/library/extractor-bridge.js";
 import { importFiles } from "../lib/library/import-pipeline.js";
 import {
   deleteBook,
@@ -262,6 +263,41 @@ export function libraryRoutes(): Hono<AppEnv> {
     }
     return c.json(result);
   });
+
+  app.post(
+    "/books/:id/extract",
+    zValidator(
+      "json",
+      z
+        .object({
+          collection: z
+            .string()
+            .min(1)
+            .max(100)
+            .regex(/^[a-zA-Z0-9_-]+$/, "collection must be [a-zA-Z0-9_-]")
+            .optional(),
+        })
+        .optional(),
+    ),
+    async (c) => {
+      const user = c.get("user");
+      if (!user) throw new HTTPException(401, { message: "auth_required" });
+      const bookId = c.req.param("id");
+      const body = (c.req.valid("json") ?? {}) as { collection?: string };
+      const opts = body.collection ? { collection: body.collection } : {};
+      const result = await extractBookViaBridge(user.sub, bookId, opts);
+      if (!result.ok && result.error) {
+        const status =
+          result.error === "book_not_found"
+            ? 404
+            : result.error === "markdown_not_available" || result.error === "markdown_file_missing"
+              ? 409
+              : 502;
+        return c.json(result, status);
+      }
+      return c.json(result);
+    },
+  );
 
   app.post(
     "/import-files",

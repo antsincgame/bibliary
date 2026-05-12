@@ -146,6 +146,25 @@ export const library = {
   reevaluate: (bookId) =>
     http.post(`/api/library/books/${encodeURIComponent(bookId)}/evaluate`),
 
+  /**
+   * Full delta-knowledge extraction для одной книги. Load markdown →
+   * split chapters → chunk → extract per-chunk → write concepts в
+   * Appwrite collection (default "default"). Sync (Phase 7 → async).
+   *
+   * Прогресс через SSE evaluator_events:created с payload.kind:
+   *   "extraction" — старт/финиш всей книги
+   *   "chapter"    — старт/финиш одной главы (stats: {total, extracted,
+   *                  filler, failed})
+   *
+   * @param {string} bookId
+   * @param {{collection?: string}} [opts]
+   * @returns {Promise<{ok: boolean, bookId: string, chaptersProcessed: number, chunksTotal: number, conceptsAccepted: number, conceptsFailed: number, warnings: string[], error?: string}>}
+   */
+  extract: (bookId, opts = {}) =>
+    http.post(`/api/library/books/${encodeURIComponent(bookId)}/extract`, {
+      json: opts,
+    }),
+
   /* ─── Electron-only dialogs (replaced by drag&drop / browser file picker) ─── */
 
   pickFiles: notImplemented("pickFiles"),
