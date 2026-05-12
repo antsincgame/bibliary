@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
+import { startExtractionWorker } from "./lib/queue/extraction-queue.js";
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
@@ -17,6 +18,10 @@ async function main(): Promise<void> {
       console.log(
         `[bibliary] listening on http://${info.address}:${info.port} (${cfg.NODE_ENV})`,
       );
+      /* Background worker: resumes queued dataset_jobs из Appwrite после
+       * restart, дальше работает на enqueue triggers. Fire-and-forget
+       * — ошибки логируются внутри. */
+      startExtractionWorker();
     },
   );
 

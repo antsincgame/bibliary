@@ -95,6 +95,22 @@ describe("server boot smoke", () => {
     assert.equal(res.status, 401);
   });
 
+  it("/api/library/jobs (Phase 7) without auth returns 401", async () => {
+    const { buildApp } = await import("../server/app.ts");
+    const app = buildApp();
+    const res = await app.request("/api/library/jobs");
+    assert.equal(res.status, 401);
+  });
+
+  it("/api/library/jobs/:jobId/cancel without auth returns 401", async () => {
+    const { buildApp } = await import("../server/app.ts");
+    const app = buildApp();
+    const res = await app.request("/api/library/jobs/abc123/cancel", {
+      method: "POST",
+    });
+    assert.equal(res.status, 401);
+  });
+
   it("OPTIONS preflight on /api/library/books permits configured origin", async () => {
     const { buildApp } = await import("../server/app.ts");
     const app = buildApp();

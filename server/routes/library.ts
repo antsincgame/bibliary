@@ -16,8 +16,13 @@ import {
 } from "../lib/library/aggregations.js";
 import { burnAllForUser } from "../lib/library/burn.js";
 import { evaluateBookViaBridge } from "../lib/library/evaluator-bridge.js";
-import { extractBookViaBridge } from "../lib/library/extractor-bridge.js";
 import { importFiles } from "../lib/library/import-pipeline.js";
+import { getExtractionQueue } from "../lib/queue/extraction-queue.js";
+import {
+  getJob,
+  listUserJobs,
+} from "../lib/queue/job-store.js";
+import { ALL_JOB_STATES } from "../lib/queue/types.js";
 import {
   deleteBook,
   getBookById,
@@ -264,6 +269,17 @@ export function libraryRoutes(): Hono<AppEnv> {
     return c.json(result);
   });
 
+  /**
+   * Phase 7a/7b: async extract. Endpoint enqueues a dataset_jobs
+   * document, returns jobId immediately (HTTP 202 Accepted). Caller
+   * subscribes to SSE channel `extractor_events:created` для прогресса,
+   * либо poll'ит GET /api/library/jobs/:jobId.
+   *
+   * Если переданная книга не существует — extraction job создаётся
+   * всё равно (queued), но worker запишет failed на первой итерации.
+   * Это упрощает throughput (нет sync round-trip к Appwrite в hot path
+   * POST handler'а).
+   */
   app.post(
     "/books/:id/extract",
     zValidator(
@@ -284,20 +300,55 @@ export function libraryRoutes(): Hono<AppEnv> {
       if (!user) throw new HTTPException(401, { message: "auth_required" });
       const bookId = c.req.param("id");
       const body = (c.req.valid("json") ?? {}) as { collection?: string };
-      const opts = body.collection ? { collection: body.collection } : {};
-      const result = await extractBookViaBridge(user.sub, bookId, opts);
-      if (!result.ok && result.error) {
-        const status =
-          result.error === "book_not_found"
-            ? 404
-            : result.error === "markdown_not_available" || result.error === "markdown_file_missing"
-              ? 409
-              : 502;
-        return c.json(result, status);
-      }
-      return c.json(result);
+      const queue = getExtractionQueue();
+      const job = await queue.enqueue({
+        userId: user.sub,
+        bookId,
+        ...(body.collection ? { collection: body.collection } : {}),
+      });
+      return c.json({ ok: true, jobId: job.id, state: job.state }, 202);
     },
   );
+
+  /* ─── Job control surface (Phase 7b) ────────────────────────────── */
+
+  const ListJobsQuery = z.object({
+    state: z.enum(ALL_JOB_STATES).optional(),
+    limit: z.coerce.number().int().positive().max(200).optional(),
+    offset: z.coerce.number().int().nonnegative().optional(),
+  });
+
+  app.get("/jobs", zValidator("query", ListJobsQuery), async (c) => {
+    const user = c.get("user");
+    if (!user) throw new HTTPException(401, { message: "auth_required" });
+    const q = c.req.valid("query");
+    const opts: Parameters<typeof listUserJobs>[1] = {};
+    if (q.state) opts.state = q.state;
+    if (q.limit !== undefined) opts.limit = q.limit;
+    if (q.offset !== undefined) opts.offset = q.offset;
+    const result = await listUserJobs(user.sub, opts);
+    return c.json(result);
+  });
+
+  app.get("/jobs/:jobId", async (c) => {
+    const user = c.get("user");
+    if (!user) throw new HTTPException(401, { message: "auth_required" });
+    const job = await getJob(user.sub, c.req.param("jobId"));
+    if (!job) throw new HTTPException(404, { message: "job_not_found" });
+    return c.json(job);
+  });
+
+  app.post("/jobs/:jobId/cancel", async (c) => {
+    const user = c.get("user");
+    if (!user) throw new HTTPException(401, { message: "auth_required" });
+    const queue = getExtractionQueue();
+    const ok = await queue.cancel(user.sub, c.req.param("jobId"));
+    if (!ok) {
+      /* job либо не существует, либо terminal (already done/failed/cancelled). */
+      return c.json({ ok: false, reason: "job_not_cancellable" }, 409);
+    }
+    return c.json({ ok: true });
+  });
 
   app.post(
     "/import-files",

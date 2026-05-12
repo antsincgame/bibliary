@@ -156,23 +156,51 @@ export const library = {
     http.post(`/api/library/books/${encodeURIComponent(bookId)}/evaluate`),
 
   /**
-   * Full delta-knowledge extraction для одной книги. Load markdown →
-   * split chapters → chunk → extract per-chunk → write concepts в
-   * Appwrite collection (default "default"). Sync (Phase 7 → async).
+   * Async delta-knowledge extraction (Phase 7). Endpoint enqueues a
+   * background job + возвращает {jobId, state} немедленно (HTTP 202).
    *
-   * Прогресс через SSE evaluator_events:created с payload.kind:
-   *   "extraction" — старт/финиш всей книги
-   *   "chapter"    — старт/финиш одной главы (stats: {total, extracted,
-   *                  filler, failed})
+   * Прогресс через SSE channel "extractor_events:created":
+   *   event="queued"    — job created
+   *   event="started"   — worker picked job
+   *   event="chapter"   — per-chapter (payload.kind="chapter")
+   *   event="done"      — extraction finished (payload.kind="extraction")
+   *   event="cancelled" — user invoked cancel
+   *   event="failed"    — error
+   *
+   * Caller также может poll через listJobs / getJob.
    *
    * @param {string} bookId
    * @param {{collection?: string}} [opts]
-   * @returns {Promise<{ok: boolean, bookId: string, chaptersProcessed: number, chunksTotal: number, conceptsAccepted: number, conceptsFailed: number, warnings: string[], error?: string}>}
+   * @returns {Promise<{ok: true, jobId: string, state: "queued"}>}
    */
   extract: (bookId, opts = {}) =>
     http.post(`/api/library/books/${encodeURIComponent(bookId)}/extract`, {
       json: opts,
     }),
+
+  /**
+   * List user's extraction jobs (включая done/failed/cancelled), DESC по createdAt.
+   *
+   * @param {{state?: "queued"|"running"|"done"|"failed"|"cancelled", limit?: number, offset?: number}} [opts]
+   * @returns {Promise<{rows: Array<any>, total: number}>}
+   */
+  listJobs: (opts) =>
+    http.get("/api/library/jobs", opts ? { query: opts } : undefined),
+
+  /** @param {string} jobId @returns {Promise<any>} */
+  getJob: (jobId) =>
+    http.get(`/api/library/jobs/${encodeURIComponent(jobId)}`).catch((err) => {
+      if (err && /** @type {any} */ (err).status === 404) return null;
+      throw err;
+    }),
+
+  /**
+   * Cancel a running/queued job. 409 если уже terminal.
+   * @param {string} jobId
+   * @returns {Promise<{ok: boolean, reason?: string}>}
+   */
+  cancelJob: (jobId) =>
+    http.post(`/api/library/jobs/${encodeURIComponent(jobId)}/cancel`),
 
   /* ─── Electron-only dialogs (replaced by drag&drop / browser file picker) ─── */
 
