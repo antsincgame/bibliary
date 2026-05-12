@@ -4,6 +4,7 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 
 import type { AppEnv } from "../app.js";
+import { buildDataset, downloadExport } from "../lib/datasets/build-bridge.js";
 import {
   getExportJob,
   listExports,
@@ -60,6 +61,58 @@ export function datasetsRoutes(): Hono<AppEnv> {
     const result = await readJsonlHead(user.sub, job.exportFileId, limit);
     if (!result) throw new HTTPException(404, { message: "export_file_missing" });
     return c.json(result);
+  });
+
+  /**
+   * Phase 8a — dataset build. Synthesizes accepted concepts из
+   * collection в JSONL → uploads в `dataset-exports` bucket → returns
+   * jobId. Phase 8b добавит ShareGPT / ChatML formats.
+   */
+  app.post(
+    "/build",
+    zValidator(
+      "json",
+      z.object({
+        collection: z
+          .string()
+          .min(1)
+          .max(100)
+          .regex(/^[a-zA-Z0-9_-]+$/, "collection must be [a-zA-Z0-9_-]"),
+        format: z.literal("jsonl").optional(),
+      }),
+    ),
+    async (c) => {
+      const user = c.get("user");
+      if (!user) throw new HTTPException(401, { message: "auth_required" });
+      const body = c.req.valid("json");
+      const result = await buildDataset({
+        userId: user.sub,
+        collectionName: body.collection,
+        format: body.format ?? "jsonl",
+      });
+      if (!result.ok) {
+        const status = result.error === "no_concepts_in_collection" ? 409 : 502;
+        return c.json(result, status);
+      }
+      return c.json(result, 201);
+    },
+  );
+
+  /**
+   * Download generated export. Returns 404 если job not found / not
+   * owned / not yet completed. Sets Content-Disposition: attachment
+   * чтобы browser сразу saved-as.
+   */
+  app.get("/exports/:jobId/download", async (c) => {
+    const user = c.get("user");
+    if (!user) throw new HTTPException(401, { message: "auth_required" });
+    const result = await downloadExport(user.sub, c.req.param("jobId"));
+    if (!result) throw new HTTPException(404, { message: "export_not_found" });
+    return c.body(result.body, 200, {
+      "content-type": "application/x-ndjson; charset=utf-8",
+      "content-disposition": `attachment; filename="${result.filename}"`,
+      "content-length": String(result.size),
+    });
   });
 
   return app;

@@ -75,6 +75,28 @@ export const datasets = {
     }
   },
 
+  /**
+   * Phase 8a — build dataset from accepted concepts. Sync execution
+   * (5-30s для 100-1000 concepts). Returns {jobId, exportFileId,
+   * lineCount, bytes} на success или {error, jobId} на fail.
+   *
+   * После success caller вызывает downloadUrl(jobId) или idёт на
+   * GET /api/datasets/exports/:jobId/download напрямую (browser саvе-as).
+   *
+   * @param {{collection: string, format?: "jsonl"}} args
+   * @returns {Promise<{ok: boolean, jobId: string, exportFileId?: string, lineCount?: number, bytes?: number, warnings?: string[], error?: string}>}
+   */
+  build: (args) => http.post("/api/datasets/build", { json: args }),
+
+  /**
+   * Build a same-origin URL for downloading the generated file.
+   * Browser auto-saves with content-disposition set by backend.
+   * @param {string} jobId
+   * @returns {string}
+   */
+  downloadUrl: (jobId) =>
+    `/api/datasets/exports/${encodeURIComponent(jobId)}/download`,
+
   /* Electron native folder picker — недоступен в web. */
   pickFolder: notImplemented("pickFolder"),
 };
