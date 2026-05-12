@@ -1,33 +1,27 @@
-import { ID, Permission, Role } from "node-appwrite";
-
-import { BUCKETS, COLLECTIONS, getAppwrite, isAppwriteCode } from "../appwrite.js";
+import { BUCKETS, getAppwrite, isAppwriteCode } from "../appwrite.js";
 import { extractChapter } from "../llm/extractor.js";
 import { summarizeUnit } from "../llm/summarizer.js";
 import { publishUser } from "../realtime/event-bus.js";
-import { buildConceptEmbedText, embedPassage } from "../embedder/index.js";
+import { embedPassage } from "../embedder/index.js";
 import {
   deleteAllChunksForBook,
   insertChunk,
-  linkChunkSiblings,
   setParentForChunks,
 } from "../vectordb/chunks.js";
-import {
-  findSimilarConcepts,
-  insertConceptVector,
-  type SimilarConceptRow,
-} from "../vectordb/concepts.js";
 import {
   deleteGraphForBook,
   getEntitiesForBookRegistry,
   ingestRelations,
 } from "../vectordb/graph.js";
 import { cleanChapterParagraphs } from "./chunk-cleanup.js";
-import {
-  chunkSections,
+import { embedAndStoreChunks } from "./chunk-persistence.js";
+import { chunkSections,
   iterateExtractionUnits,
   iterateMarkdownSections,
   type SectionAwareChunk,
 } from "./chunker.js";
+import { DEDUP_SIMILARITY_THRESHOLD, persistConcept } from "./concept-persistence.js";
+import { embedAndStorePropositions } from "./proposition-builder.js";
 import {
   getBookById,
   updateBook,
@@ -41,18 +35,11 @@ import { trimToTokenBudget } from "./token-budget.js";
  * обрезанных в самом интересном месте. */
 const CHUNK_TOKEN_BUDGET = 2000;
 
-/** Phase 10c: cross-collection semantic dedup threshold. Cosine
- * similarity > 0.9 = "this delta is essentially same as existing".
- * Conservative — 0.92 был бы too aggressive для legitimately rephrased
- * insights, 0.85 пропустил бы near-duplicates. 0.9 — компромисс из
- * Magpie research recommendations. */
-const DEDUP_SIMILARITY_THRESHOLD = 0.9;
 /** Phase Δe — propositions are LAZY: only extracted for books that
  * passed the evaluator with score ≥ this. Sub-threshold books still
  * get full L1+L2 extraction; we just don't pay for the fine-grain
  * L0 layer on them. */
 const L0_QUALITY_THRESHOLD = 7;
-import type { DeltaKnowledge, TopologyRelation } from "../../../shared/llm/extractor-schema.js";
 
 /**
  * Bridge Phase 6e: full delta-knowledge extraction для одной книги.
@@ -87,7 +74,6 @@ export interface ExtractBookResult {
 }
 
 const COLLECTION_NAME_DEFAULT = "default";
-const CONCEPT_PAYLOAD_MAX_CHARS = 19_000; // collection field size cap from bootstrap
 
 async function loadMarkdown(bucketId: string, fileId: string): Promise<string> {
   const { storage } = getAppwrite();
@@ -96,258 +82,6 @@ async function loadMarkdown(bucketId: string, fileId: string): Promise<string> {
   return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
 }
 
-/**
- * Phase Δe — build a natural-language proposition from a topology
- * triple. Predicate underscores get spaced (`launched_with` →
- * "launched with") so the embedder sees a real sentence. Output is
- * trimmed and capped at 400 chars (defensive against pathological
- * LLM emissions).
- */
-function buildPropositionText(rel: TopologyRelation): string {
-  const subj = rel.subject.trim();
-  const pred = rel.predicate.trim().replace(/_/g, " ");
-  const obj = rel.object.trim();
-  return `${subj} ${pred} ${obj}.`.slice(0, 400);
-}
-
-/**
- * Phase Δe — embed every relation triple of an accepted delta as an
- * L0 proposition. Parent points up at the L1 chunk that produced the
- * delta so retrieval can walk L0 → L1 for context expansion. We dedup
- * propositions within the delta by their text to avoid storing the
- * same triple twice when the LLM repeats itself.
- *
- * Returns the count of inserted L0 rows so the caller can roll it
- * into stats. Embedder failures only warn — extraction has already
- * succeeded by this point.
- */
-async function embedAndStorePropositions(
-  userId: string,
-  bookId: string,
-  parentChunkRowId: number | null,
-  delta: DeltaKnowledge,
-  onWarning: (msg: string) => void,
-): Promise<number> {
-  const seen = new Set<string>();
-  let inserted = 0;
-  for (let i = 0; i < delta.relations.length; i++) {
-    const rel = delta.relations[i];
-    const text = buildPropositionText(rel);
-    if (text.length < 10) continue; // garbage triple
-    const key = text.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    try {
-      const embedding = await embedPassage(text);
-      insertChunk({
-        userId,
-        bookId,
-        level: 0,
-        embedding,
-        text,
-        pathTitles: [], // propositions are not chapter-bound
-        sectionLevel: 0,
-        sectionOrder: 0,
-        partN: i + 1,
-        partOf: delta.relations.length,
-        parentVecRowId: parentChunkRowId,
-      });
-      inserted += 1;
-    } catch (err) {
-      onWarning(
-        `L0 proposition embed/insert failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  }
-  return inserted;
-}
-
-/**
- * Phase Δb — embed every L1 section chunk and persist to chunks +
- * chunks_vec BEFORE extraction. Returns the rowids of the inserted
- * chunks (1:1 with input order) so the caller can later link siblings,
- * back-reference from concepts, or use as parents for L0 propositions.
- *
- * Embedder failures degrade gracefully: a chunk whose embedding throws
- * is skipped (we record a warning) but extraction still proceeds — the
- * narrative pipeline doesn't depend on chunks being vectorized.
- */
-async function embedAndStoreChunks(
-  userId: string,
-  bookId: string,
-  chunks: SectionAwareChunk[],
-  onWarning: (msg: string) => void,
-): Promise<Array<number | null>> {
-  const rowIds: Array<number | null> = [];
-  for (const chunk of chunks) {
-    try {
-      const embedding = await embedPassage(chunk.text);
-      const rowid = insertChunk({
-        userId,
-        bookId,
-        level: 1,
-        embedding,
-        text: chunk.text,
-        pathTitles: chunk.pathTitles,
-        sectionLevel: chunk.sectionLevel,
-        sectionOrder: chunk.sectionOrder,
-        partN: chunk.partN,
-        partOf: chunk.partOf,
-      });
-      rowIds.push(rowid);
-    } catch (err) {
-      onWarning(
-        `chunk embed failed (${err instanceof Error ? err.message : String(err)})`,
-      );
-      rowIds.push(null);
-    }
-  }
-  /* Link siblings within the same section. We group by sectionOrder
-   * because cross-section sibling links would distort tree-proximity
-   * scoring later (Δf). */
-  const bySection = new Map<number, number[]>();
-  for (let i = 0; i < chunks.length; i++) {
-    const rowid = rowIds[i];
-    if (rowid === null) continue;
-    const key = chunks[i].sectionOrder;
-    const arr = bySection.get(key) ?? [];
-    arr.push(rowid);
-    bySection.set(key, arr);
-  }
-  for (const arr of bySection.values()) {
-    if (arr.length > 1) linkChunkSiblings(arr);
-  }
-  return rowIds;
-}
-
-/**
- * Phase 10b: embed delta + INSERT в sqlite-vec → возвращает rowid.
- * Если embedder упал (network / cold-start timeout), возвращаем null
- * и concept всё равно persistится (без vectorRowId) — semantic
- * features degrade gracefully, dataset export по-прежнему работает.
- */
-async function embedAndStore(
-  userId: string,
-  bookId: string,
-  collectionName: string,
-  delta: DeltaKnowledge,
-): Promise<{ rowid: number; embedding: Float32Array } | null> {
-  try {
-    const text = buildConceptEmbedText(delta);
-    const embedding = await embedPassage(text);
-    const rowid = insertConceptVector({
-      userId,
-      bookId,
-      collectionName,
-      embedding,
-    });
-    return { rowid, embedding };
-  } catch (err) {
-    console.warn(
-      `[extractor-bridge] embed failed for concept (${err instanceof Error ? err.message : err}); persisting без vectorRowId`,
-    );
-    return null;
-  }
-}
-
-/**
- * Phase 10c: cross-collection semantic dedup. Если уже есть accepted
- * concept в той же user+collection partition с cosine > threshold →
- * return existing rowid + indicate skip. Caller записывает warning
- * вместо create.
- */
-function checkSemanticDuplicate(
-  userId: string,
-  collectionName: string,
-  embedding: Float32Array,
-): SimilarConceptRow | null {
-  try {
-    const similar = findSimilarConcepts({
-      userId,
-      collectionName,
-      embedding,
-      limit: 1,
-      minSimilarity: DEDUP_SIMILARITY_THRESHOLD,
-    });
-    return similar[0] ?? null;
-  } catch (err) {
-    console.warn(
-      `[extractor-bridge] dedup search failed (${err instanceof Error ? err.message : err}); proceeding без dedup`,
-    );
-    return null;
-  }
-}
-
-async function persistConcept(
-  userId: string,
-  bookId: string,
-  collectionName: string,
-  delta: DeltaKnowledge,
-): Promise<{ persisted: boolean; dedupSkipped: boolean }> {
-  /* Phase 10b: embed first, потому что результат нужен и для dedup,
-   * и для vectorRowId на create document. */
-  const embeddedResult = await embedAndStore(userId, bookId, collectionName, delta);
-
-  /* Phase 10c: если embedding получен, semantic dedup pass ДО create.
-   * Optimization: insertConceptVector выше уже добавил наш own vector —
-   * теперь findSimilar найдёт его как nearest (distance 0). Нужно
-   * исключить self-match. */
-  let dedupSkipped = false;
-  if (embeddedResult) {
-    const similar = checkSemanticDuplicate(
-      userId,
-      collectionName,
-      embeddedResult.embedding,
-    );
-    /* similar.rowid === embeddedResult.rowid когда match — это наш свежий.
-     * Real duplicate: similar.rowid OTHER than just-inserted. */
-    if (similar && similar.rowid !== embeddedResult.rowid) {
-      dedupSkipped = true;
-      /* Откатываем insert — мы скопировали существующий concept. */
-      try {
-        const { deleteConceptVector } = await import("../vectordb/concepts.js");
-        deleteConceptVector(embeddedResult.rowid);
-      } catch {
-        /* swallow — orphan vector не критично */
-      }
-      return { persisted: false, dedupSkipped: true };
-    }
-  }
-
-  const { databases, databaseId } = getAppwrite();
-  const nowIso = new Date().toISOString();
-  const payload = JSON.stringify(delta).slice(0, CONCEPT_PAYLOAD_MAX_CHARS);
-  try {
-    const doc: Record<string, unknown> = {
-      userId,
-      bookId,
-      collectionName,
-      payload,
-      accepted: true,
-      createdAt: nowIso,
-    };
-    if (embeddedResult) {
-      doc["vectorRowId"] = embeddedResult.rowid;
-    }
-    await databases.createDocument(
-      databaseId,
-      COLLECTIONS.concepts,
-      ID.unique(),
-      doc,
-      [
-        Permission.read(Role.user(userId)),
-        Permission.update(Role.user(userId)),
-        Permission.delete(Role.user(userId)),
-        Permission.read(Role.team("admin")),
-      ],
-    );
-    return { persisted: true, dedupSkipped };
-  } catch (err) {
-    /* Дубликаты по vectorRowId возможны при retry — игнорируем 409. */
-    if (isAppwriteCode(err, 409)) return { persisted: false, dedupSkipped };
-    throw err;
-  }
-}
 
 export async function extractBookViaBridge(
   userId: string,
