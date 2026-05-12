@@ -12,6 +12,7 @@ import {
   queryByYear,
   queryTagStats,
 } from "../lib/library/aggregations.js";
+import { burnAllForUser } from "../lib/library/burn.js";
 import {
   deleteBook,
   getBookById,
@@ -232,6 +233,13 @@ export function libraryRoutes(): Hono<AppEnv> {
     if (!user) throw new HTTPException(401, { message: "auth_required" });
     const { locale } = c.req.valid("query");
     return c.json(await queryByTag(user.sub, locale ?? "en"));
+  });
+
+  app.post("/burn-all", async (c) => {
+    const user = c.get("user");
+    if (!user) throw new HTTPException(401, { message: "auth_required" });
+    const result = await burnAllForUser(user.sub);
+    return c.json(result);
   });
 
   return app;
