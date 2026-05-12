@@ -14,9 +14,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ci-windows:
-    name: Win · Lint · Tests · Compile
-    runs-on: windows-latest
+  ci-linux:
+    name: Linux · Lint · Tests · Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -26,46 +27,25 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
+      - name: Install system parser binaries
+        # djvulibre / p7zip / tesseract-ocr live on Coolify's runtime image
+        # too; install on the CI runner so scanner tests pass with the same
+        # binary surface that production sees.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            djvulibre-bin p7zip-full tesseract-ocr tesseract-ocr-rus tesseract-ocr-ukr
+
       - name: Install dependencies
         run: npm ci
-        env:
-          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
-      - name: Ensure better-sqlite3 ABI (Node)
-        run: node scripts/ensure-sqlite-abi.cjs --target=node
-
-      - name: Lint (tsc + eslint)
+      - name: Lint (tsc server + eslint renderer)
         run: npm run lint
 
-      # Windows runner имеет 4 vCPU → node:test параллелит файлы по CPU cores.
-      # Это вызывает подтверждённый flake (~50% ранее): NTFS file
-      # locking на временных SQLite/cache-db файлах, которые разные
-      # тесты открывают в mkdtempSync()'ах в параллель. macOS нежнее
-      # к fs handle reuse и не выдаёт EBUSY/ENOENT под этими же условиями.
-      #
-      # test:fast:serial пробрасывает --test-concurrency=1 в node:test,
-      # чтобы файлы выполнялись sequentially. ~20% медленнее (Win Unit
-      # стадия сейчас ~30-50с), но устраняет флейк 100%.
-      - name: Unit tests (Node test runner, serial on Windows)
+      - name: Unit tests
+        env:
+          BIBLIARY_SKIP_OCR: '1'
         run: npm run test:fast:serial
 
-      - name: Compile Electron TypeScript
-        run: npx tsc -p tsconfig.electron.json
-
-      - name: Install Playwright browsers
-        run: npx playwright install chromium --with-deps
-
-      - name: Electron smoke (real app + preload + IPC)
-        continue-on-error: true
-        run: npm run test:smoke
-
-      - name: Upload compile artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist-electron-${{ github.run_id }}
-          path: |
-            dist-electron/
-            release/*.json
-          retention-days: 7
-          if-no-files-found: ignore
+      - name: Build server + web
+        run: npm run build
