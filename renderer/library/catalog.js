@@ -9,7 +9,9 @@ import { buildCollectionPicker } from "../components/collection-picker.js";
 import { CATALOG, STATE } from "./state.js";
 import { filterCatalog as filterCatalogPure, qualityClass, statusClass } from "./catalog-filter.js";
 import { fmtWords, fmtQuality, fmtUniqueness } from "./format.js";
-import { guardAndCrystallize, cancelBatchExtraction } from "./batch-actions.js";
+/* Phase 13a — legacy datasetV2 batch dispatcher retired. The new
+ * "Crystallize" button (Phase 9) uses POST /api/library/batches/start
+ * with server-side quality gate; no in-renderer state machine needed. */
 import { openBook } from "./reader.js";
 import { openTagCloudModal } from "./tag-cloud.js";
 import { displayBookTitle, displayBookAuthor, bookTitleTooltip } from "./display-meta.js";
@@ -773,29 +775,12 @@ export function buildCatalogBottomBar(root, deps) {
     }),
   }, t("library.catalog.btn.reparse"));
 
-  const chunksBtn = el("button", {
-    type: "button", class: "lib-btn lib-btn-primary",
-    title: t("library.catalog.tooltip.createChunks"),
-    onclick: () => void guardAndCrystallize(root, deps),
-  }, t("library.catalog.btn.createChunks"));
-
-  const cancelBatchBtn = el("button", {
-    type: "button", class: "lib-btn lib-btn-danger lib-btn-cancel-batch",
-    title: t("library.catalog.batch.confirmCancel"),
-    style: "display: none",
-    onclick: () => void cancelBatchExtraction(),
-  }, t("library.catalog.btn.cancelBatch"));
-
-  /* Иt 8Е.3: «Откатить извлечение» — удалить точки книг из активной коллекции
-     (для книг которые уже crystallized). Backend: scanner.deleteFromCollection. */
-  const revertBtn = el("button", {
-    type: "button", class: "lib-btn lib-btn-ghost",
-    title: t("library.catalog.revert.tooltip"),
-    onclick: (ev) => void withButtonBusy(ev, async () => {
-      const { revertCrystallizationForSelected } = await import("./batch-actions.js");
-      await revertCrystallizationForSelected(root, deps);
-    }),
-  }, t("library.catalog.revert.btn"));
+  /* Phase 13a — chunksBtn (legacy "Create chunks" with datasetV2.startBatch),
+   * cancelBatchBtn (legacy in-renderer cancel) and revertBtn
+   * (scanner.deleteFromCollection — Electron only) removed. The Phase 9
+   * Crystallize button above replaces createChunks; per-job cancel is
+   * available via /api/library/jobs/:id/cancel and surfaced in the
+   * job-list UI (not in the bottom bar). */
 
   const burnAllBtn = el("button", {
     type: "button", class: "lib-btn lib-btn-danger",
@@ -838,7 +823,7 @@ export function buildCatalogBottomBar(root, deps) {
     el("div", { class: "lib-catalog-bottom-actions" }, [
       selectAllBtn, clearBtn, reevaluateBtn,
       ...(crystallizeBtn ? [crystallizeBtn] : []),
-      reparseBtn, purgeDeadBtn, deleteBtn, burnAllBtn, chunksBtn, revertBtn, cancelBatchBtn,
+      reparseBtn, purgeDeadBtn, deleteBtn, burnAllBtn,
     ]),
     batchSummary,
   ]);

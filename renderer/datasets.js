@@ -305,21 +305,10 @@ function buildCard(root, r) {
         },
         t("datasets.card.open"),
       ),
-      el(
-        "button",
-        {
-          class: "cv-btn",
-          type: "button",
-          onclick: async () => {
-            try {
-              await window.api.datasetV2.openFolder(r.outputDir);
-            } catch (e) {
-              await showAlert(e instanceof Error ? e.message : String(e));
-            }
-          },
-        },
-        t("datasets.card.folder"),
-      ),
+      /* Phase 13a — "Open folder" button removed in web mode. The
+       * native shell.openPath call lived on the Electron preload's
+       * datasetV2 surface; web mode has no equivalent and the dataset
+       * exports are reachable as downloads from the history list. */
       el(
         "button",
         {

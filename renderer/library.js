@@ -22,7 +22,10 @@ import { buildCatalogPane, renderCatalog, renderCatalogTable, highlightCatalogBo
 import { buildImportPane, renderImport, pushImportPaneLog } from "./library/import-pane.js";
 import { mountCollectionViews } from "./library/collection-views.js";
 import { refreshEvaluatorState } from "./library/evaluator.js";
-import { applyBatchEvent } from "./library/batch-actions.js";
+/* Phase 13a — applyBatchEvent (datasetV2 SSE handler) retired with the
+ * legacy crystallization wizard. Batch progress in Phase 9 is observed
+ * via per-book extractor_events:created events; no in-renderer
+ * aggregator needed. */
 import { closeReader, isReaderOpen, openBook } from "./library/reader.js";
 
 function switchTab(tab, root) {
@@ -104,7 +107,6 @@ export async function mountLibrary(root) {
 
   if (typeof CATALOG.unsubEvaluator === "function") CATALOG.unsubEvaluator();
   if (typeof CATALOG.unsubExtractor === "function") CATALOG.unsubExtractor();
-  if (typeof CATALOG.unsubBatch === "function") CATALOG.unsubBatch();
 
   installWindowDropGuards(root);
 
@@ -183,28 +185,11 @@ export async function mountLibrary(root) {
     CATALOG.unsubExtractor = window.api.library.onExtractorEvent(onPipelineEvent);
   }
 
-  CATALOG.unsubBatch = window.api.datasetV2.onEvent((ev) => {
-    applyBatchEvent(root, ev, catalogDeps);
-    if (ev && ev.stage === "config" && ev.phase === "delta-models") {
-      const chainArr = Array.isArray(ev.extractModelChain) ? ev.extractModelChain : [];
-      const chainText = chainArr.join(" → ");
-      const cross = Boolean(ev.deltaCrossModel);
-      const msg = cross
-        ? t("library.extraction.deltaChain", { chain: chainText })
-        : t("library.extraction.deltaChainSingle", { model: String(ev.extractModel ?? chainArr[0] ?? "") });
-      pushImportPaneLog({
-        level: "info",
-        category: "extraction.delta-models",
-        message: msg,
-        details: {
-          extractModel: ev.extractModel,
-          extractModelChain: chainArr,
-          rawDeltaChain: ev.rawDeltaChain,
-          deltaCrossModel: ev.deltaCrossModel,
-        },
-      });
-    }
-  });
+  /* Phase 13a — legacy datasetV2.onEvent subscription removed. The
+   * extractor_events:created channel above already carries every event
+   * the old datasetV2 bridge multiplexed (including the delta-models
+   * "config" notification, which now arrives as part of the extractor
+   * pipeline event stream). */
 
   void renderCatalog(root);
   renderImport(root);
@@ -227,10 +212,6 @@ export function unmountLibrary() {
   if (typeof CATALOG.unsubEvaluator === "function") {
     CATALOG.unsubEvaluator();
     CATALOG.unsubEvaluator = null;
-  }
-  if (typeof CATALOG.unsubBatch === "function") {
-    CATALOG.unsubBatch();
-    CATALOG.unsubBatch = null;
   }
   if (typeof CATALOG._unsubDownload === "function") {
     CATALOG._unsubDownload();

@@ -18,7 +18,7 @@ import { llm } from "./api-client/llm.js";
 import { lmstudio } from "./api-client/lmstudio.js";
 import { preferences } from "./api-client/preferences.js";
 import { scanner } from "./api-client/scanner.js";
-import { appMenu, datasetV2, resilience } from "./api-client/stubs.js";
+import { appMenu, resilience } from "./api-client/stubs.js";
 import { system } from "./api-client/system.js";
 import { getCollections, vectordb } from "./api-client/vectordb.js";
 
@@ -27,7 +27,6 @@ const api = {
   appMenu,
   auth,
   datasets,
-  datasetV2,
   getCollections,
   library,
   llm,

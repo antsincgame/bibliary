@@ -1,6 +1,5 @@
 import { mountModels, unmountModels } from "./models/models-page.js";
 import { mountLibrary, isLibraryBusy, unmountLibrary, checkPendingLibraryNav } from "./library.js";
-import { mountCrystal, isCrystalBusy } from "./dataset-v2.js";
 import { mountDatasets } from "./datasets.js";
 import { mountSettings } from "./settings.js";
 import { applyI18n, getLocale, setLocale, listLocales, onLocaleChange, t } from "./i18n.js";
@@ -9,10 +8,9 @@ import { openWelcomeWizard } from "./components/welcome-wizard.js";
 import { mountVersionBadge } from "./components/version-badge.js";
 import { mountAuthPage } from "./auth/auth-pages.js";
 
-const ROUTES = ["models", "library", "crystal", "datasets", "settings"];
+const ROUTES = ["models", "library", "datasets", "settings"];
 const REMOUNT_ON_LOCALE = new Set([
   "library",
-  "crystal",
   "datasets",
   "models",
   "settings",
@@ -21,7 +19,6 @@ const mounted = new Set();
 
 function mountRoute(name) {
   if (name === "library") mountLibrary(document.getElementById("library-root"));
-  else if (name === "crystal") mountCrystal(document.getElementById("crystal-root"));
   else if (name === "datasets") mountDatasets(document.getElementById("datasets-root"));
   else if (name === "models") mountModels(document.getElementById("models-root"));
   else if (name === "settings") mountSettings(document.getElementById("settings-root"));
@@ -50,7 +47,6 @@ function showRoute(name) {
 
 function canRemount(name) {
   if (name === "library" && isLibraryBusy()) return false;
-  if (name === "crystal" && isCrystalBusy()) return false;
   return true;
 }
 
