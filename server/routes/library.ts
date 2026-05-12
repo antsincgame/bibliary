@@ -15,6 +15,7 @@ import {
   queryByYear,
   queryTagStats,
 } from "../lib/library/aggregations.js";
+import { writeAuditEvent } from "../lib/audit/log.js";
 import { burnAllForUser } from "../lib/library/burn.js";
 import { evaluateBookViaBridge } from "../lib/library/evaluator-bridge.js";
 import { importFiles } from "../lib/library/import-pipeline.js";
@@ -251,6 +252,23 @@ export function libraryRoutes(): Hono<AppEnv> {
     const user = c.get("user");
     if (!user) throw new HTTPException(401, { message: "auth_required" });
     const result = await burnAllForUser(user.sub);
+    /* Phase 11c — burn-all is the most destructive user-facing action;
+     * always audit it. The acting user IS the target (self-burn). */
+    void writeAuditEvent({
+      userId: user.sub,
+      action: "library.burn_all",
+      target: user.sub,
+      metadata: {
+        booksDeleted: result.booksDeleted,
+        conceptsDeleted: result.conceptsDeleted,
+        chunksDeleted: result.chunksDeleted,
+        vectorRowsDeleted: result.vectorRowsDeleted,
+        storageFilesRemoved: result.storageFilesRemoved,
+      },
+      ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ??
+        c.req.header("x-real-ip") ?? null,
+      userAgent: c.req.header("user-agent") ?? null,
+    });
     return c.json(result);
   });
 

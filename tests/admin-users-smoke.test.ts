@@ -95,6 +95,29 @@ describe("admin route shape — invariants", () => {
   });
 });
 
+describe("Phase 11c — audit log surface", () => {
+  it("audit module exports writeAuditEvent + listAuditEvents", async () => {
+    const audit = await import("../server/lib/audit/log.ts");
+    assert.equal(typeof audit.writeAuditEvent, "function");
+    assert.equal(typeof audit.listAuditEvents, "function");
+  });
+
+  it("GET /api/admin/audit without auth → 401", async () => {
+    const { buildApp } = await import("../server/app.ts");
+    const app = buildApp();
+    const res = await app.request("/api/admin/audit");
+    assert.equal(res.status, 401);
+  });
+
+  it("GET /api/admin/audit with bad query → 401|400 (auth before validator)", async () => {
+    const { buildApp } = await import("../server/app.ts");
+    const app = buildApp();
+    /* limit cap is 200; 9999 should fail zod. Without auth → 401 first. */
+    const res = await app.request("/api/admin/audit?limit=9999");
+    assert.ok(res.status === 401 || res.status === 400, `got ${res.status}`);
+  });
+});
+
 describe("Phase 11b — admin jobs + storage auth guard", () => {
   it("GET /api/admin/jobs without auth → 401", async () => {
     const { buildApp } = await import("../server/app.ts");

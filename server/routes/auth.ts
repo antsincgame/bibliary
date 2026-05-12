@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import type { AppEnv } from "../app.js";
 import { getAdminEmails, loadConfig } from "../config.js";
+import { writeAuditEvent } from "../lib/audit/log.js";
 import {
   clearAuthCookies,
   readRefreshCookie,
@@ -104,6 +105,18 @@ export function authRoutes(): Hono<AppEnv> {
     setAccessCookie(c, tokens.accessToken, tokens.accessTtlSec, cfg);
     setRefreshCookie(c, tokens.refreshToken, tokens.refreshExpiresAt, cfg);
 
+    /* Phase 11c — audit registration. Captures first-user / admin-whitelist
+     * promotion so an operator can audit how somebody got admin role. */
+    void writeAuditEvent({
+      userId: user.$id,
+      action: "auth.register",
+      target: user.$id,
+      metadata: { email: user.email, role: user.role, autoAdmin: role === "admin" },
+      ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ??
+        c.req.header("x-real-ip") ?? null,
+      userAgent: c.req.header("user-agent") ?? null,
+    });
+
     return c.json(
       {
         user: toPublicUser(user),
@@ -136,6 +149,19 @@ export function authRoutes(): Hono<AppEnv> {
     );
     setAccessCookie(c, tokens.accessToken, tokens.accessTtlSec, cfg);
     setRefreshCookie(c, tokens.refreshToken, tokens.refreshExpiresAt, cfg);
+
+    /* Phase 11c — audit login. Successful login only; failed login
+     * attempts are noisy and would clutter the log. Pre-auth failure
+     * audit is a separate concern (rate-limit metrics handle it). */
+    void writeAuditEvent({
+      userId: user.$id,
+      action: "auth.login",
+      target: user.$id,
+      metadata: { email: user.email, role: user.role },
+      ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ??
+        c.req.header("x-real-ip") ?? null,
+      userAgent: c.req.header("user-agent") ?? null,
+    });
 
     return c.json({
       user: toPublicUser(user),

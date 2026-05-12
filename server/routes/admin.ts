@@ -4,6 +4,7 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 
 import type { AppEnv } from "../app.js";
+import { listAuditEvents, writeAuditEvent, type AuditAction } from "../lib/audit/log.js";
 import { revokeAllForUser } from "../lib/auth/sessions.js";
 import { burnAllForUser } from "../lib/library/burn.js";
 import { getExtractionQueue } from "../lib/queue/extraction-queue.js";
@@ -36,6 +37,39 @@ import { requireAuth } from "../middleware/auth.js";
  *   - cannot deactivate yourself (would log yourself out mid-action)
  *   - cannot delete yourself (would orphan the request)
  */
+/** Phase 11c — capture IP + UA from the request for the audit row. */
+function reqContext(c: { req: { header: (k: string) => string | undefined } }): {
+  ip: string | null;
+  userAgent: string | null;
+} {
+  const xff = c.req.header("x-forwarded-for");
+  /* X-Forwarded-For can be a comma-list; first entry is the original
+   * client unless the proxy chain is hostile. Trust the front of the
+   * list. */
+  const ip = xff ? xff.split(",")[0].trim() : c.req.header("x-real-ip") ?? null;
+  const userAgent = c.req.header("user-agent") ?? null;
+  return { ip: ip || null, userAgent: userAgent || null };
+}
+
+/** Phase 11c — fire-and-forget audit write inside an admin handler. */
+function audit(
+  c: { req: { header: (k: string) => string | undefined } },
+  actorId: string | null,
+  action: AuditAction,
+  target: string | null,
+  metadata?: Record<string, unknown>,
+): void {
+  const { ip, userAgent } = reqContext(c);
+  void writeAuditEvent({
+    userId: actorId,
+    action,
+    target,
+    ...(metadata ? { metadata } : {}),
+    ip,
+    userAgent,
+  });
+}
+
 export function adminRoutes(): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   app.use("*", requireAuth);
@@ -76,6 +110,7 @@ export function adminRoutes(): Hono<AppEnv> {
    * no-op return. Always-safe operation: never reduces privileges.
    */
   app.post("/users/:userId/promote", async (c) => {
+    const me = c.get("user");
     const userId = c.req.param("userId");
     const u = await findUserById(userId);
     if (!u) throw new HTTPException(404, { message: "user_not_found" });
@@ -83,6 +118,7 @@ export function adminRoutes(): Hono<AppEnv> {
       return c.json({ ok: true, alreadyAdmin: true });
     }
     await setUserRole(userId, "admin");
+    audit(c, me?.sub ?? null, "admin.user.promote", userId, { email: u.email });
     return c.json({ ok: true });
   });
 
@@ -106,6 +142,7 @@ export function adminRoutes(): Hono<AppEnv> {
       throw new HTTPException(409, { message: "cannot_demote_last_admin" });
     }
     await setUserRole(userId, "user");
+    audit(c, me.sub, "admin.user.demote", userId, { email: u.email });
     return c.json({ ok: true });
   });
 
@@ -125,14 +162,20 @@ export function adminRoutes(): Hono<AppEnv> {
     if (!u) throw new HTTPException(404, { message: "user_not_found" });
     await setUserDeactivated(userId, true);
     const revoked = await revokeAllForUser(userId);
+    audit(c, me.sub, "admin.user.deactivate", userId, {
+      email: u.email,
+      sessionsRevoked: revoked,
+    });
     return c.json({ ok: true, sessionsRevoked: revoked });
   });
 
   app.post("/users/:userId/reactivate", async (c) => {
+    const me = c.get("user");
     const userId = c.req.param("userId");
     const u = await findUserById(userId);
     if (!u) throw new HTTPException(404, { message: "user_not_found" });
     await setUserDeactivated(userId, false);
+    audit(c, me?.sub ?? null, "admin.user.reactivate", userId, { email: u.email });
     return c.json({ ok: true });
   });
 
@@ -177,6 +220,7 @@ export function adminRoutes(): Hono<AppEnv> {
    * disappeared, admin needs to clear the queue).
    */
   app.post("/jobs/:jobId/cancel", async (c) => {
+    const me = c.get("user");
     const jobId = c.req.param("jobId");
     /* getJob is per-user scoped; admin paths need to discover the
      * owner first then cancel under that user's identity. Listing by
@@ -187,6 +231,13 @@ export function adminRoutes(): Hono<AppEnv> {
     if (!job) throw new HTTPException(404, { message: "job_not_found" });
     const queue = getExtractionQueue();
     const ok = await queue.cancel(job.userId, jobId);
+    if (ok) {
+      audit(c, me?.sub ?? null, "admin.job.cancel", jobId, {
+        targetUserId: job.userId,
+        bookId: job.bookId,
+        priorState: job.state,
+      });
+    }
     return c.json({ ok });
   });
 
@@ -210,6 +261,29 @@ export function adminRoutes(): Hono<AppEnv> {
    * job-store's getJob import resolvable from this file. */
   void getJob;
 
+  /**
+   * Phase 11c — read the audit log. Paginated, sorted newest first.
+   * Optional filters: action exact match, userId (admin doing or
+   * target — depends on which one was recorded).
+   */
+  const ListAuditQuery = z.object({
+    limit: z.coerce.number().int().positive().max(200).optional(),
+    offset: z.coerce.number().int().nonnegative().optional(),
+    action: z.string().min(1).max(100).optional(),
+    userId: z.string().min(1).max(64).optional(),
+  });
+
+  app.get("/audit", zValidator("query", ListAuditQuery), async (c) => {
+    const q = c.req.valid("query");
+    const opts: Parameters<typeof listAuditEvents>[0] = {};
+    if (q.limit !== undefined) opts.limit = q.limit;
+    if (q.offset !== undefined) opts.offset = q.offset;
+    if (q.action) opts.action = q.action;
+    if (q.userId) opts.userId = q.userId;
+    const result = await listAuditEvents(opts);
+    return c.json(result);
+  });
+
   app.delete("/users/:userId", async (c) => {
     const me = c.get("user");
     if (!me) throw new HTTPException(401, { message: "auth_required" });
@@ -230,6 +304,16 @@ export function adminRoutes(): Hono<AppEnv> {
     const burn = await burnAllForUser(userId);
     const graph = deleteGraphForUser(userId);
     await deleteUserDocument(userId);
+    audit(c, me.sub, "admin.user.delete", userId, {
+      email: u.email,
+      role: u.role,
+      sessionsRevoked,
+      booksDeleted: burn.booksDeleted,
+      conceptsDeleted: burn.conceptsDeleted,
+      vectorRowsDeleted: burn.vectorRowsDeleted,
+      relationsDeleted: graph.relationsDeleted,
+      entitiesDeleted: graph.entitiesDeleted,
+    });
     return c.json({
       ok: true,
       sessionsRevoked,
