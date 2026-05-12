@@ -24,8 +24,8 @@ import {
 import { cleanChapterParagraphs } from "./chunk-cleanup.js";
 import {
   chunkSections,
-  groupSectionsForExtraction,
-  splitMarkdownIntoSections,
+  iterateExtractionUnits,
+  iterateMarkdownSections,
   type SectionAwareChunk,
 } from "./chunker.js";
 import {
@@ -417,9 +417,12 @@ export async function extractBookViaBridge(
    * descendants. Every emitted chunk carries pathTitles breadcrumb so
    * the crystallizer prompt can disambiguate ("Part II > Ch 3 > §2"
    * NOT just "§2"). LLM cost stays at one extractChapter() call per
-   * unit — same grain as legacy chapter loop. */
-  const sections = splitMarkdownIntoSections(markdown);
-  const units = groupSectionsForExtraction(sections);
+   * unit — same grain as legacy chapter loop.
+   *
+   * Risk-register streaming fix: use the generator pair so peak RAM
+   * is O(largest unit), not O(whole book). Sections + their wrappers
+   * are GC'd as soon as the unit they feed into is processed. */
+  const unitsIter = iterateExtractionUnits(iterateMarkdownSections(markdown));
 
   /* Phase Δb — re-extraction must not leave stale L1 chunks behind. If
    * this book was already extracted (e.g. user clicked Crystallize a
@@ -463,9 +466,10 @@ export async function extractBookViaBridge(
     );
   }
 
-  for (let i = 0; i < units.length; i++) {
+  let i = -1;
+  for (const unit of unitsIter) {
+    i += 1;
     if (opts.signal?.aborted) break;
-    const unit = units[i];
     /* Phase 8e: strip metadata noise (page markers, ISBN/copyright,
      * decorative dividers, repeated running headers, footnote markers)
      * ПЕРЕД chunking. «Плод знаний без шелухи» → больше signal на

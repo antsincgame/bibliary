@@ -262,48 +262,68 @@ export interface Section {
 }
 
 export function splitMarkdownIntoSections(markdown: string): Section[] {
-  const cleaned = markdown.replace(FRONTMATTER_RE, "").trim();
-  if (cleaned.length === 0) return [];
+  const out: Section[] = [];
+  for (const s of iterateMarkdownSections(markdown)) out.push(s);
+  return out;
+}
 
-  const lines = cleaned.split(/\r?\n/);
-  const sections: Section[] = [];
-  /* Open section we're currently appending paragraphs to. */
+/**
+ * Streaming variant of splitMarkdownIntoSections — yields one Section
+ * at a time. Caller can process and discard each section without
+ * accumulating the whole array. Peak RAM for chunker output drops
+ * from O(book) to O(largest-section). The input `markdown` string
+ * itself is still fully loaded (Appwrite SDK doesn't expose a true
+ * Readable stream), but downstream allocations stay bounded.
+ *
+ * Used by extractor-bridge to process units lazily and let GC reclaim
+ * each unit's intermediate arrays before the next unit's are
+ * allocated.
+ */
+export function* iterateMarkdownSections(markdown: string): Generator<Section> {
+  const cleaned = markdown.replace(FRONTMATTER_RE, "").trim();
+  if (cleaned.length === 0) return;
+
   let level: Section["level"] = 0;
   let title = "";
-  let pathStack: string[] = []; // [H1, H2, H3, ...] in scope so far
+  let pathStack: string[] = [];
   let paragraphs: string[] = [];
   let buffer: string[] = [];
   let order = 0;
+  let sawAnySection = false;
 
-  const flushBuffer = (): void => {
-    const para = buffer.join(" ").trim();
-    if (para) paragraphs.push(para);
-    buffer = [];
-  };
-  const flushSection = (): void => {
-    flushBuffer();
-    /* Drop entirely-empty leading section (no preface text before H1). */
-    if (paragraphs.length > 0 || level > 0) {
-      order += 1;
-      sections.push({
-        level,
-        title,
-        pathTitles: [...pathStack],
-        order,
-        paragraphs,
-      });
-    }
-    paragraphs = [];
-  };
+  let lineStart = 0;
+  /* Walk the markdown one line at a time without materializing the
+   * full `lines` array. `lastIndexOf("\n")` would be O(n) per call;
+   * we hand-roll the scanner. */
+  for (let i = 0; i <= cleaned.length; i++) {
+    if (i !== cleaned.length && cleaned.charCodeAt(i) !== 10 /* \n */) continue;
+    const rawLine = cleaned.slice(lineStart, i);
+    /* Strip a trailing \r if present (Windows newlines). */
+    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+    lineStart = i + 1;
 
-  for (const line of lines) {
     const trimmed = line.trim();
     const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
     if (headingMatch) {
-      flushSection();
+      /* Flush current open section. */
+      const para = buffer.join(" ").trim();
+      if (para) paragraphs.push(para);
+      buffer = [];
+      if (paragraphs.length > 0 || level > 0) {
+        order += 1;
+        sawAnySection = true;
+        yield {
+          level,
+          title,
+          pathTitles: [...pathStack],
+          order,
+          paragraphs,
+        };
+      }
+      paragraphs = [];
+
       const newLevel = headingMatch[1].length as Section["level"];
       const newTitle = headingMatch[2].trim();
-      /* Pop stack to parent depth, then push our title. */
       pathStack = pathStack.slice(0, newLevel - 1);
       pathStack.push(newTitle);
       level = newLevel;
@@ -311,30 +331,47 @@ export function splitMarkdownIntoSections(markdown: string): Section[] {
       continue;
     }
     if (trimmed === "") {
-      flushBuffer();
+      const para = buffer.join(" ").trim();
+      if (para) paragraphs.push(para);
+      buffer = [];
     } else {
       buffer.push(trimmed);
     }
   }
-  flushSection();
+  /* Flush trailing section. */
+  const trailingPara = buffer.join(" ").trim();
+  if (trailingPara) paragraphs.push(trailingPara);
+  if (paragraphs.length > 0 || level > 0) {
+    order += 1;
+    sawAnySection = true;
+    yield {
+      level,
+      title,
+      pathTitles: [...pathStack],
+      order,
+      paragraphs,
+    };
+  }
 
-  /* No headings found → single body Section at level 0. */
-  if (sections.length === 0 && cleaned) {
+  /* No-heading fallback: emit single body section. We have to walk
+   * `cleaned` again with a different paragraph rule (split on blank
+   * lines, not headings) so the test for "plain text → one body" stays
+   * back-compat. Falls back rarely so the double-walk is fine. */
+  if (!sawAnySection) {
     const paras = cleaned
       .split(/\n{2,}/)
       .map((p) => p.replace(/\n/g, " ").trim())
       .filter(Boolean);
     if (paras.length > 0) {
-      sections.push({
+      yield {
         level: 0,
         title: "",
         pathTitles: [],
         order: 1,
         paragraphs: paras,
-      });
+      };
     }
   }
-  return sections;
 }
 
 /**
@@ -426,12 +463,27 @@ export interface ExtractionUnit {
   sections: Section[];
 }
 
-export function groupSectionsForExtraction(sections: Section[]): ExtractionUnit[] {
-  const units: ExtractionUnit[] = [];
+export function groupSectionsForExtraction(sections: Iterable<Section>): ExtractionUnit[] {
+  const out: ExtractionUnit[] = [];
+  for (const u of iterateExtractionUnits(sections)) out.push(u);
+  return out;
+}
+
+/**
+ * Streaming variant of groupSectionsForExtraction — yields a fully
+ * assembled ExtractionUnit each time a new H1/H2 (or EOF) closes the
+ * previous one. Peak RAM is bounded by a single unit's sections array,
+ * not the whole book. Used in conjunction with iterateMarkdownSections
+ * so the extractor-bridge can process and discard each unit before the
+ * next is materialized.
+ */
+export function* iterateExtractionUnits(
+  sections: Iterable<Section>,
+): Generator<ExtractionUnit> {
   let current: ExtractionUnit | null = null;
   for (const s of sections) {
     if (s.level <= 2) {
-      if (current) units.push(current);
+      if (current) yield current;
       current = {
         thesisTitle: s.title || "Body",
         rootPath: s.pathTitles.length > 0 ? [...s.pathTitles] : [],
@@ -452,6 +504,5 @@ export function groupSectionsForExtraction(sections: Section[]): ExtractionUnit[
       };
     }
   }
-  if (current) units.push(current);
-  return units;
+  if (current) yield current;
 }
