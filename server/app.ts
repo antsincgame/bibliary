@@ -5,6 +5,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { HTTPException } from "hono/http-exception";
 
 import { getCorsOrigins, loadConfig } from "./config.js";
+import { rateLimit } from "./middleware/rate-limit.js";
 import { authRoutes } from "./routes/auth.js";
 import { datasetsRoutes } from "./routes/datasets.js";
 import { eventsRoutes } from "./routes/events.js";
@@ -37,7 +38,73 @@ export function buildApp(): Hono<AppEnv> {
   });
 
   app.use("*", logger());
-  app.use("*", secureHeaders());
+
+  /**
+   * Strict CSP в production; в development разрешаем 'unsafe-inline'
+   * + 'unsafe-eval' для Vite HMR (его инжект runtime'а нужен для
+   * dev-перезагрузки). Renderer + backend сервируются same-origin
+   * в production — 'self' покрывает всё.
+   *
+   * connectSrc включает Appwrite endpoint (cross-origin XHR из
+   * renderer'а в Appwrite Storage SDK, Phase 4).
+   *
+   * Frame-ancestors 'none' защищает от clickjacking; X-Frame-Options
+   * добавляется хедером secureHeaders по умолчанию.
+   */
+  const appwriteOrigin = (() => {
+    try {
+      const u = new URL(cfg.APPWRITE_ENDPOINT);
+      return `${u.protocol}//${u.host}`;
+    } catch {
+      return undefined;
+    }
+  })();
+  const isProd = cfg.NODE_ENV === "production";
+  const scriptSrc: string[] = isProd ? ["'self'"] : ["'self'", "'unsafe-inline'", "'unsafe-eval'"];
+  const styleSrc: string[] = ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"];
+  const connectSrc: string[] = ["'self'"];
+  if (appwriteOrigin) {
+    connectSrc.push(appwriteOrigin);
+    /* WebSocket для Appwrite Realtime (если когда подключим прямую
+     * браузер-к-Appwrite подписку). */
+    connectSrc.push(appwriteOrigin.replace(/^https?:/, "wss:"));
+  }
+
+  app.use(
+    "*",
+    secureHeaders({
+      contentSecurityPolicy: {
+        defaultSrc: ["'self'"],
+        scriptSrc,
+        styleSrc,
+        fontSrc: ["'self'", "https://fonts.gstatic.com"],
+        imgSrc: ["'self'", "data:", "https:", "blob:"],
+        connectSrc,
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        frameAncestors: ["'none'"],
+      },
+      crossOriginEmbedderPolicy: false,
+      crossOriginOpenerPolicy: "same-origin-allow-popups",
+      crossOriginResourcePolicy: "same-site",
+      referrerPolicy: "strict-origin-when-cross-origin",
+    }),
+  );
+
+  /**
+   * Auth-flow rate limit: 20 req/min per-IP. Покрывает login + register +
+   * refresh + password change. Защищает от credential-stuffing и
+   * брутфорса refresh tokens. Authenticated routes лимитируются на
+   * application layer (Phase 7 workers).
+   */
+  app.use("/api/auth/*", rateLimit("auth", 20, 60_000));
+
+  /**
+   * Upload rate limit: 50 файлов в 10 минут на IP. Multipart upload —
+   * самый дорогой endpoint (filesize bytes + parser CPU); brute через
+   * него самый эффективный DoS vector.
+   */
+  app.use("/api/library/upload", rateLimit("upload", 50, 10 * 60_000));
 
   const allowedOrigins = getCorsOrigins(cfg);
   app.use(
