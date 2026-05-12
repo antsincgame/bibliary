@@ -167,6 +167,53 @@ export async function listQueuedJobs(): Promise<JobDoc[]> {
   return all;
 }
 
+/**
+ * Jobs застрявшие в state="running" дольше staleAfterMs — kандидаты
+ * для orphan-reset (backend крашнул mid-extraction, jobs не получили
+ * финальный transition). Caller сравнивает updatedAt с now - staleAfterMs.
+ */
+export async function listStaleRunningJobs(staleAfterMs: number): Promise<JobDoc[]> {
+  const { databases, databaseId } = getAppwrite();
+  const all: JobDoc[] = [];
+  const threshold = new Date(Date.now() - staleAfterMs).toISOString();
+  let offset = 0;
+  const pageSize = 100;
+  while (true) {
+    const list = await databases.listDocuments<RawJob>(
+      databaseId,
+      COLLECTIONS.datasetJobs,
+      [
+        Query.equal("state", "running"),
+        Query.lessThan("updatedAt", threshold),
+        Query.orderAsc("updatedAt"),
+        Query.limit(pageSize),
+        Query.offset(offset),
+      ],
+    );
+    all.push(...list.documents.map(toJob));
+    if (list.documents.length < pageSize) break;
+    offset += pageSize;
+  }
+  return all;
+}
+
+/**
+ * Touch updatedAt без других изменений — heartbeat для worker'а во
+ * время длинного run'а. Не вызывает transitionJob — просто updateDocument
+ * с пустым patch (Appwrite автоматом ставит свой $updatedAt, плюс мы
+ * пишем кастомный updatedAt поле для query consistency).
+ */
+export async function touchJob(jobId: string): Promise<void> {
+  const { databases, databaseId } = getAppwrite();
+  try {
+    await databases.updateDocument(databaseId, COLLECTIONS.datasetJobs, jobId, {
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    if (!isAppwriteCode(err, 404)) throw err;
+  }
+}
+
 export interface UpdateJobPatch {
   state?: JobState;
   stage?: string;

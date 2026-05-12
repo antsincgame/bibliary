@@ -5,10 +5,25 @@ import {
   getJob,
   getJobRaw,
   listQueuedJobs,
+  listStaleRunningJobs,
+  touchJob,
   transitionJob,
   updateJob,
 } from "./job-store.js";
 import { isTerminalState, type JobDoc } from "./types.js";
+
+/**
+ * Worker считается ASCII если updatedAt < now - STALE_TIMEOUT. На boot
+ * мы reset'нём такие jobs в queued для replay. 5 минут — компромисс:
+ *   - меньше → false-positive при медленном Anthropic call (одна глава
+ *     может занять 30-90s × pages); если 2-3 главы подряд — 5min
+ *     уже close to ceiling.
+ *   - больше → жертва UX, jobs дольше остаются «мёртвыми» после crash.
+ */
+const STALE_TIMEOUT_MS = 5 * 60_000;
+
+/** Heartbeat interval — updates job's updatedAt to defeat stale-detection. */
+const HEARTBEAT_INTERVAL_MS = 30_000;
 
 /**
  * In-process extraction queue для single-pod backend.
@@ -102,23 +117,50 @@ class ExtractionQueueImpl {
   }
 
   /**
-   * Read state=queued jobs из Appwrite при boot и добавь в pending[].
-   * Идемпотентно — повторный вызов в running-worker no-op (pending уже
-   * содержит эти IDs ИЛИ они уже в active).
+   * Two-phase recovery на boot:
+   *   1. Orphan reset: jobs застрявшие в state="running" с stale
+   *      updatedAt → transition обратно в queued (worker crashed
+   *      mid-extraction). Возвращаются в pending для replay.
+   *   2. Queued resume: jobs которые были queued в предыдущей session
+   *      → push в pending для drain.
+   *
+   * Идемпотентно: повторный вызов не дублирует pending entries.
    */
-  async resumeFromAppwrite(): Promise<number> {
+  async resumeFromAppwrite(): Promise<{ orphansReset: number; queuedAdded: number }> {
+    let orphansReset = 0;
+    try {
+      const stale = await listStaleRunningJobs(STALE_TIMEOUT_MS);
+      for (const job of stale) {
+        const ok = await transitionJob(job.id, "queued", { stage: "orphan-reset" });
+        if (ok) {
+          orphansReset += 1;
+          publishUser(job.userId, "extractor_events:created", {
+            bookId: job.bookId,
+            jobId: job.id,
+            event: "queued",
+            payload: { kind: "extraction", reason: "orphan-reset" },
+          });
+        }
+      }
+    } catch (err) {
+      console.warn(
+        "[extraction-queue] listStaleRunningJobs failed:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+
     const queued = await listQueuedJobs();
-    let added = 0;
+    let queuedAdded = 0;
     for (const job of queued) {
       if (this.pending.includes(job.id)) continue;
       if (this.active.has(job.id)) continue;
       this.pending.push(job.id);
-      added += 1;
+      queuedAdded += 1;
     }
-    if (added > 0 && !this.running) {
+    if (queuedAdded > 0 && !this.running) {
       setImmediate(() => void this.drain());
     }
-    return added;
+    return { orphansReset, queuedAdded };
   }
 
   /** Test helper — reset internal state. */
@@ -170,6 +212,18 @@ class ExtractionQueueImpl {
       },
     });
 
+    /* Heartbeat: каждые 30s touchJob(jobId) → updatedAt свежий. На boot
+     * orphan detection не reset'нет нас в queued. Cleared в finally. */
+    const heartbeat = setInterval(() => {
+      void touchJob(jobId).catch((err) => {
+        console.warn(
+          `[extraction-queue] heartbeat failed for ${jobId}:`,
+          err instanceof Error ? err.message : err,
+        );
+      });
+    }, HEARTBEAT_INTERVAL_MS);
+    heartbeat.unref();
+
     try {
       const result = await extractBookViaBridge(
         job.userId,
@@ -215,6 +269,7 @@ class ExtractionQueueImpl {
         payload: { reason: msg },
       });
     } finally {
+      clearInterval(heartbeat);
       this.active.delete(jobId);
     }
   }
@@ -234,9 +289,16 @@ export function getExtractionQueue(): ExtractionQueueImpl {
 export function startExtractionWorker(): void {
   void queue
     .resumeFromAppwrite()
-    .then((count) => {
-      if (count > 0) {
-        console.log(`[extraction-queue] resumed ${count} queued jobs from Appwrite`);
+    .then(({ orphansReset, queuedAdded }) => {
+      if (orphansReset > 0) {
+        console.log(
+          `[extraction-queue] reset ${orphansReset} stale 'running' jobs (orphans) to queued`,
+        );
+      }
+      if (queuedAdded > 0) {
+        console.log(
+          `[extraction-queue] resumed ${queuedAdded} queued jobs from Appwrite`,
+        );
       }
     })
     .catch((err) => {

@@ -22,7 +22,13 @@ import type { KnipConfig } from "knip";
  */
 const config: KnipConfig = {
   entry: [
-    /* Electron main + preload */
+    /* Hono server entry + Vite renderer entry (web mode). */
+    "server/main.ts",
+    "vite.config.ts",
+    "renderer/api-client.js",
+    "renderer/router.js",
+
+    /* Electron legacy (до Phase 13). */
     "electron/main.ts",
     "electron/preload.ts",
 
@@ -51,9 +57,20 @@ const config: KnipConfig = {
     /* `esbuild` требуется только в scripts/bench-djvu.cjs — manual benchmark,
        не в CI. Доступен транзитивно через electron-builder и др. */
     "esbuild",
+    /* False positives — knip не видит transitively-used server deps когда
+       imports проходят через barrels или type-only refs: */
+    "@hono/zod-validator", // server/routes/*.ts
+    "bcryptjs",            // server/lib/auth/passwords.ts
+    "jose",                // server/lib/auth/jwt.ts
+    "openai",              // server/lib/llm/providers/openai.ts
+    "sqlite-vec",          // server/lib/vectordb/db.ts (loaded as SQLite extension)
+    "@anthropic-ai/sdk",   // server/lib/llm/providers/anthropic.ts
   ],
 
   project: [
+    "server/**/*.ts",
+    "shared/**/*.ts",
+    "renderer/**/*.js",
     "electron/**/*.ts",
     "scripts/**/*.{ts,cjs}",
     "tests/**/*.ts",

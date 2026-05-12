@@ -84,7 +84,6 @@
     "marked": "^18.0.0",
     "node-appwrite": "^15.0.0",
     "openai": "^4.70.0",
-    "p-queue": "^8.0.1",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^4.10.38",
     "proper-lockfile": "^4.1.2",
