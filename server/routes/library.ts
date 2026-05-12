@@ -13,6 +13,7 @@ import {
   queryTagStats,
 } from "../lib/library/aggregations.js";
 import { burnAllForUser } from "../lib/library/burn.js";
+import { importFiles } from "../lib/library/import-pipeline.js";
 import {
   deleteBook,
   getBookById,
@@ -241,6 +242,26 @@ export function libraryRoutes(): Hono<AppEnv> {
     const result = await burnAllForUser(user.sub);
     return c.json(result);
   });
+
+  app.post(
+    "/import-files",
+    zValidator(
+      "json",
+      z.object({
+        fileIds: z
+          .array(z.string().min(1).max(64))
+          .min(1)
+          .max(200),
+      }),
+    ),
+    async (c) => {
+      const user = c.get("user");
+      if (!user) throw new HTTPException(401, { message: "auth_required" });
+      const { fileIds } = c.req.valid("json");
+      const result = await importFiles(user.sub, fileIds);
+      return c.json(result);
+    },
+  );
 
   return app;
 }
