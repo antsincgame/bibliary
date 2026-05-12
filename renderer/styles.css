@@ -3621,6 +3621,44 @@ body[data-ui-mode="advanced"] [data-mode-min="pro"] {
   font-size: 0.82rem;
   color: rgba(255, 255, 255, 0.55);
 }
+.providers-assignments {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.role-assignments-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) minmax(120px, 1fr) minmax(160px, 1.5fr);
+  gap: 0.5rem 1rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+.role-assignment-row {
+  display: contents;
+}
+.role-assignment-label {
+  font-size: 0.88rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+.role-assignment-provider,
+.role-assignment-model {
+  padding: 0.35rem 0.55rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 5px;
+  color: inherit;
+  font-size: 0.85rem;
+  font-family: inherit;
+  width: 100%;
+}
+.role-assignment-model[disabled] {
+  opacity: 0.4;
+}
+.providers-assignments-actions {
+  margin-top: 0.5rem;
+  display: flex;
+  gap: 0.5rem;
+}
 
 /* ===== Settings page ===== */
 .settings-actions {
