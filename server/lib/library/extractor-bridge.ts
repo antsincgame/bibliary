@@ -5,6 +5,11 @@ import { extractChapter } from "../llm/extractor.js";
 import { publishUser } from "../realtime/event-bus.js";
 import { buildConceptEmbedText, embedPassage } from "../embedder/index.js";
 import {
+  deleteAllChunksForBook,
+  insertChunk,
+  linkChunkSiblings,
+} from "../vectordb/chunks.js";
+import {
   findSimilarConcepts,
   insertConceptVector,
   type SimilarConceptRow,
@@ -14,6 +19,7 @@ import {
   chunkSections,
   groupSectionsForExtraction,
   splitMarkdownIntoSections,
+  type SectionAwareChunk,
 } from "./chunker.js";
 import {
   getBookById,
@@ -70,6 +76,64 @@ async function loadMarkdown(bucketId: string, fileId: string): Promise<string> {
   const view = await storage.getFileDownload(bucketId, fileId);
   const bytes = view instanceof Uint8Array ? view : new Uint8Array(view as ArrayBuffer);
   return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+}
+
+/**
+ * Phase Δb — embed every L1 section chunk and persist to chunks +
+ * chunks_vec BEFORE extraction. Returns the rowids of the inserted
+ * chunks (1:1 with input order) so the caller can later link siblings,
+ * back-reference from concepts, or use as parents for L0 propositions.
+ *
+ * Embedder failures degrade gracefully: a chunk whose embedding throws
+ * is skipped (we record a warning) but extraction still proceeds — the
+ * narrative pipeline doesn't depend on chunks being vectorized.
+ */
+async function embedAndStoreChunks(
+  userId: string,
+  bookId: string,
+  chunks: SectionAwareChunk[],
+  onWarning: (msg: string) => void,
+): Promise<Array<number | null>> {
+  const rowIds: Array<number | null> = [];
+  for (const chunk of chunks) {
+    try {
+      const embedding = await embedPassage(chunk.text);
+      const rowid = insertChunk({
+        userId,
+        bookId,
+        level: 1,
+        embedding,
+        text: chunk.text,
+        pathTitles: chunk.pathTitles,
+        sectionLevel: chunk.sectionLevel,
+        sectionOrder: chunk.sectionOrder,
+        partN: chunk.partN,
+        partOf: chunk.partOf,
+      });
+      rowIds.push(rowid);
+    } catch (err) {
+      onWarning(
+        `chunk embed failed (${err instanceof Error ? err.message : String(err)})`,
+      );
+      rowIds.push(null);
+    }
+  }
+  /* Link siblings within the same section. We group by sectionOrder
+   * because cross-section sibling links would distort tree-proximity
+   * scoring later (Δf). */
+  const bySection = new Map<number, number[]>();
+  for (let i = 0; i < chunks.length; i++) {
+    const rowid = rowIds[i];
+    if (rowid === null) continue;
+    const key = chunks[i].sectionOrder;
+    const arr = bySection.get(key) ?? [];
+    arr.push(rowid);
+    bySection.set(key, arr);
+  }
+  for (const arr of bySection.values()) {
+    if (arr.length > 1) linkChunkSiblings(arr);
+  }
+  return rowIds;
 }
 
 /**
@@ -272,7 +336,18 @@ export async function extractBookViaBridge(
    * unit — same grain as legacy chapter loop. */
   const sections = splitMarkdownIntoSections(markdown);
   const units = groupSectionsForExtraction(sections);
+
+  /* Phase Δb — re-extraction must not leave stale L1 chunks behind. If
+   * this book was already extracted (e.g. user clicked Crystallize a
+   * second time), wipe its chunks rows + vectors so the freshly
+   * embedded set is the only one queryable. Concepts dedup separately
+   * via Phase 10c. */
+  const purgedChunks = deleteAllChunksForBook(userId, bookId);
+
   const accumulatedWarnings: string[] = [];
+  if (purgedChunks > 0) {
+    accumulatedWarnings.push(`pre-extract: purged ${purgedChunks} stale chunks`);
+  }
   let chaptersProcessed = 0;
   let chunksTotal = 0;
   let conceptsAccepted = 0;
@@ -292,7 +367,7 @@ export async function extractBookViaBridge(
     }));
     const rawChunks = chunkSections(cleanedSections);
     /* Phase 8e: token budget guard. */
-    const chunks = rawChunks.map((chunk) => ({
+    const chunks: SectionAwareChunk[] = rawChunks.map((chunk) => ({
       partN: chunk.partN,
       text: trimToTokenBudget(chunk.text, CHUNK_TOKEN_BUDGET).text,
       pathTitles: chunk.pathTitles,
@@ -305,6 +380,15 @@ export async function extractBookViaBridge(
       chaptersProcessed += 1;
       continue;
     }
+
+    /* Phase Δb — embed + persist every L1 chunk BEFORE LLM extraction.
+     * Pre-persist so a mid-extraction crash leaves the chunk tree
+     * intact for resume; the queue can rerun extractChapter without
+     * re-embedding. Failures here only warn — we still extract. */
+    await embedAndStoreChunks(userId, bookId, chunks, (msg) =>
+      accumulatedWarnings.push(`unit-${i}: ${msg}`),
+    );
+
     publishUser(userId, "extractor_events:created", {
       bookId,
       event: "started",

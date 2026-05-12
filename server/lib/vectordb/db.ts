@@ -80,6 +80,42 @@ function initSchema(db: DbType, dim: number): void {
       +book_id TEXT
     );
   `);
+  /* Phase Δb — relational chunks metadata. Lives in the SAME sqlite
+   * file next to vec0 virtual tables so KNN rowid ↔ meta join is a
+   * cheap PK lookup. We avoid graph edges in Appwrite (joins would
+   * explode quota) and keep the topology core local. vec_rowid is the
+   * chunks_vec rowid — owned by sqlite-vec auto-increment, never
+   * minted manually.
+   *
+   *   level 0 — atomic proposition (Δe; lazy)
+   *   level 1 — section chunk (Δb; primary retrieval unit)
+   *   level 2 — chapter summary (Δd; RAPTOR bottom-up)
+   *
+   * parent_vec_rowid points to the L2 summary that subsumes an L1
+   * chunk, or the L1 chunk a proposition came from. prev/next pointers
+   * link siblings in document order within the same section — used
+   * for narrative-flow tree-proximity scoring at retrieval (Δf). */
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chunks (
+      vec_rowid INTEGER PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      book_id TEXT NOT NULL,
+      level INTEGER NOT NULL,
+      section_order INTEGER,
+      section_level INTEGER,
+      path_titles TEXT,
+      part_n INTEGER,
+      part_of INTEGER,
+      text TEXT NOT NULL,
+      parent_vec_rowid INTEGER,
+      prev_vec_rowid INTEGER,
+      next_vec_rowid INTEGER,
+      created_at TEXT NOT NULL
+    );
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_chunks_user_book ON chunks(user_id, book_id);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_chunks_parent ON chunks(parent_vec_rowid);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_chunks_level ON chunks(level);`);
 }
 
 /**
