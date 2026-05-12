@@ -51,25 +51,33 @@ export function resetVectorDbForTesting(): void {
 }
 
 /**
- * Two vec0 virtual tables: chunks for raw book text embeddings, concepts
- * for crystallized concepts (collection-name partitioned). Both are
- * user-partitioned via auxiliary `user_id` column.
+ * Two vec0 virtual tables. PARTITION KEY allows WHERE filtering before
+ * KNN search (auxiliary `+` columns не filterable в KNN per sqlite-vec
+ * 0.1.6 docs — Phase 10 schema rev).
+ *
+ * NOTE: changing this schema with existing data requires DROP TABLE +
+ * re-insert. Pre-production это OK; Phase 11+ deploy migration —
+ * docs/deployment.md.
  */
 function initSchema(db: DbType, dim: number): void {
+  /* distance_metric=cosine — для normalized E5 embeddings cosine
+   * distance корректно отражает semantic similarity. Default vec0
+   * L2 даёт некалибрированный distance для unit vectors
+   * (max=√2 ≈ 1.414, not 1.0). */
   db.exec(`
     CREATE VIRTUAL TABLE IF NOT EXISTS chunks_vec USING vec0(
-      embedding float[${dim}],
-      +user_id TEXT,
-      +book_id TEXT,
+      user_id TEXT PARTITION KEY,
+      book_id TEXT PARTITION KEY,
+      embedding float[${dim}] distance_metric=cosine,
       +chunk_index INTEGER
     );
   `);
   db.exec(`
     CREATE VIRTUAL TABLE IF NOT EXISTS concepts_vec USING vec0(
-      embedding float[${dim}],
-      +user_id TEXT,
-      +book_id TEXT,
-      +collection_name TEXT
+      user_id TEXT PARTITION KEY,
+      collection_name TEXT PARTITION KEY,
+      embedding float[${dim}] distance_metric=cosine,
+      +book_id TEXT
     );
   `);
 }

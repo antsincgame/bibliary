@@ -3,6 +3,12 @@ import { ID, Permission, Role } from "node-appwrite";
 import { BUCKETS, COLLECTIONS, getAppwrite, isAppwriteCode } from "../appwrite.js";
 import { extractChapter } from "../llm/extractor.js";
 import { publishUser } from "../realtime/event-bus.js";
+import { buildConceptEmbedText, embedPassage } from "../embedder/index.js";
+import {
+  findSimilarConcepts,
+  insertConceptVector,
+  type SimilarConceptRow,
+} from "../vectordb/concepts.js";
 import { cleanChapterParagraphs } from "./chunk-cleanup.js";
 import { chunkChapter, splitMarkdownIntoChapters } from "./chunker.js";
 import {
@@ -17,6 +23,13 @@ import { trimToTokenBudget } from "./token-budget.js";
  * с длинными абзацами умещаются, и нет риска полу-предложений
  * обрезанных в самом интересном месте. */
 const CHUNK_TOKEN_BUDGET = 2000;
+
+/** Phase 10c: cross-collection semantic dedup threshold. Cosine
+ * similarity > 0.9 = "this delta is essentially same as existing".
+ * Conservative — 0.92 был бы too aggressive для legitimately rephrased
+ * insights, 0.85 пропустил бы near-duplicates. 0.9 — компромисс из
+ * Magpie research recommendations. */
+const DEDUP_SIMILARITY_THRESHOLD = 0.9;
 import type { DeltaKnowledge } from "../../../shared/llm/extractor-schema.js";
 
 /**
@@ -55,32 +68,120 @@ async function loadMarkdown(bucketId: string, fileId: string): Promise<string> {
   return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
 }
 
+/**
+ * Phase 10b: embed delta + INSERT в sqlite-vec → возвращает rowid.
+ * Если embedder упал (network / cold-start timeout), возвращаем null
+ * и concept всё равно persistится (без vectorRowId) — semantic
+ * features degrade gracefully, dataset export по-прежнему работает.
+ */
+async function embedAndStore(
+  userId: string,
+  bookId: string,
+  collectionName: string,
+  delta: DeltaKnowledge,
+): Promise<{ rowid: number; embedding: Float32Array } | null> {
+  try {
+    const text = buildConceptEmbedText(delta);
+    const embedding = await embedPassage(text);
+    const rowid = insertConceptVector({
+      userId,
+      bookId,
+      collectionName,
+      embedding,
+    });
+    return { rowid, embedding };
+  } catch (err) {
+    console.warn(
+      `[extractor-bridge] embed failed for concept (${err instanceof Error ? err.message : err}); persisting без vectorRowId`,
+    );
+    return null;
+  }
+}
+
+/**
+ * Phase 10c: cross-collection semantic dedup. Если уже есть accepted
+ * concept в той же user+collection partition с cosine > threshold →
+ * return existing rowid + indicate skip. Caller записывает warning
+ * вместо create.
+ */
+function checkSemanticDuplicate(
+  userId: string,
+  collectionName: string,
+  embedding: Float32Array,
+): SimilarConceptRow | null {
+  try {
+    const similar = findSimilarConcepts({
+      userId,
+      collectionName,
+      embedding,
+      limit: 1,
+      minSimilarity: DEDUP_SIMILARITY_THRESHOLD,
+    });
+    return similar[0] ?? null;
+  } catch (err) {
+    console.warn(
+      `[extractor-bridge] dedup search failed (${err instanceof Error ? err.message : err}); proceeding без dedup`,
+    );
+    return null;
+  }
+}
+
 async function persistConcept(
   userId: string,
   bookId: string,
   collectionName: string,
   delta: DeltaKnowledge,
-): Promise<boolean> {
+): Promise<{ persisted: boolean; dedupSkipped: boolean }> {
+  /* Phase 10b: embed first, потому что результат нужен и для dedup,
+   * и для vectorRowId на create document. */
+  const embeddedResult = await embedAndStore(userId, bookId, collectionName, delta);
+
+  /* Phase 10c: если embedding получен, semantic dedup pass ДО create.
+   * Optimization: insertConceptVector выше уже добавил наш own vector —
+   * теперь findSimilar найдёт его как nearest (distance 0). Нужно
+   * исключить self-match. */
+  let dedupSkipped = false;
+  if (embeddedResult) {
+    const similar = checkSemanticDuplicate(
+      userId,
+      collectionName,
+      embeddedResult.embedding,
+    );
+    /* similar.rowid === embeddedResult.rowid когда match — это наш свежий.
+     * Real duplicate: similar.rowid OTHER than just-inserted. */
+    if (similar && similar.rowid !== embeddedResult.rowid) {
+      dedupSkipped = true;
+      /* Откатываем insert — мы скопировали существующий concept. */
+      try {
+        const { deleteConceptVector } = await import("../vectordb/concepts.js");
+        deleteConceptVector(embeddedResult.rowid);
+      } catch {
+        /* swallow — orphan vector не критично */
+      }
+      return { persisted: false, dedupSkipped: true };
+    }
+  }
+
   const { databases, databaseId } = getAppwrite();
   const nowIso = new Date().toISOString();
-  /* Payload — full DeltaKnowledge JSON (для downstream synthesis +
-   * UI inspection). Cap по size attribute (20000 в bootstrap). */
   const payload = JSON.stringify(delta).slice(0, CONCEPT_PAYLOAD_MAX_CHARS);
   try {
+    const doc: Record<string, unknown> = {
+      userId,
+      bookId,
+      collectionName,
+      payload,
+      accepted: true,
+      createdAt: nowIso,
+    };
+    if (embeddedResult) {
+      doc["vectorRowId"] = embeddedResult.rowid;
+    }
     await databases.createDocument(
       databaseId,
       COLLECTIONS.concepts,
       ID.unique(),
-      {
-        userId,
-        bookId,
-        collectionName,
-        payload,
-        accepted: true,
-        /* vectorRowId оставляем не выставленным — Phase 7 worker
-         * embed'нет и поставит rowid в sqlite-vec concepts_vec. */
-        createdAt: nowIso,
-      },
+      doc,
       [
         Permission.read(Role.user(userId)),
         Permission.update(Role.user(userId)),
@@ -88,10 +189,10 @@ async function persistConcept(
         Permission.read(Role.team("admin")),
       ],
     );
-    return true;
+    return { persisted: true, dedupSkipped };
   } catch (err) {
     /* Дубликаты по vectorRowId возможны при retry — игнорируем 409. */
-    if (isAppwriteCode(err, 409)) return false;
+    if (isAppwriteCode(err, 409)) return { persisted: false, dedupSkipped };
     throw err;
   }
 }
@@ -218,9 +319,13 @@ export async function extractBookViaBridge(
 
     for (const delta of result.accepted) {
       try {
-        const persisted = await persistConcept(userId, bookId, collection, delta);
-        if (persisted) conceptsAccepted += 1;
-        else conceptsFailed += 1;
+        const result = await persistConcept(userId, bookId, collection, delta);
+        if (result.persisted) conceptsAccepted += 1;
+        else if (result.dedupSkipped) {
+          accumulatedWarnings.push(
+            `chapter-${i}: semantic dedup skipped (cosine > ${DEDUP_SIMILARITY_THRESHOLD})`,
+          );
+        } else conceptsFailed += 1;
       } catch (err) {
         conceptsFailed += 1;
         accumulatedWarnings.push(

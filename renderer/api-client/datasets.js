@@ -97,6 +97,15 @@ export const datasets = {
   downloadUrl: (jobId) =>
     `/api/datasets/exports/${encodeURIComponent(jobId)}/download`,
 
+  /**
+   * Phase 10d — semantic search over collection concept embeddings.
+   * Returns top-K ranked DeltaKnowledge с similarity score.
+   *
+   * @param {{q: string, collection: string, limit?: number, minSimilarity?: number}} args
+   * @returns {Promise<{rows: Array<{conceptId: string, bookId: string, similarity: number, delta: any}>, total: number}>}
+   */
+  search: (args) => http.get("/api/datasets/search", { query: args }),
+
   /* Electron native folder picker — недоступен в web. */
   pickFolder: notImplemented("pickFolder"),
 };

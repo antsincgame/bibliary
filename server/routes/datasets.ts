@@ -1,15 +1,19 @@
+import { Query } from "node-appwrite";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 
 import type { AppEnv } from "../app.js";
+import { COLLECTIONS, getAppwrite, type RawDoc } from "../lib/appwrite.js";
 import { buildDataset, downloadExport } from "../lib/datasets/build-bridge.js";
+import { embedQuery } from "../lib/embedder/index.js";
 import {
   getExportJob,
   listExports,
   readJsonlHead,
 } from "../lib/library/datasets.js";
+import { findSimilarConcepts } from "../lib/vectordb/concepts.js";
 import { requireAuth } from "../middleware/auth.js";
 
 const ListQuery = z.object({
@@ -114,6 +118,107 @@ export function datasetsRoutes(): Hono<AppEnv> {
       "content-length": String(result.size),
     });
   });
+
+  /**
+   * Phase 10d — semantic search over user's concept embeddings.
+   * Query text → embedQuery → sqlite-vec KNN → fetch Appwrite docs
+   * → return ranked results with delta payload + cosine similarity.
+   *
+   * Use cases:
+   *   - "Find concepts about FEM convergence" → returns top-10
+   *     с relevance scores.
+   *   - Pre-build dataset preview ("какие концепты войдут в датасет
+   *     X").
+   *   - User exploration: «что я знаю про topic Y из своих книг».
+   */
+  app.get(
+    "/search",
+    zValidator(
+      "query",
+      z.object({
+        q: z.string().min(2).max(500),
+        collection: z
+          .string()
+          .min(1)
+          .max(100)
+          .regex(/^[a-zA-Z0-9_-]+$/, "collection must be [a-zA-Z0-9_-]"),
+        limit: z.coerce.number().int().positive().max(50).default(10),
+        minSimilarity: z.coerce.number().min(0).max(1).default(0).optional(),
+      }),
+    ),
+    async (c) => {
+      const user = c.get("user");
+      if (!user) throw new HTTPException(401, { message: "auth_required" });
+      const { q, collection, limit, minSimilarity } = c.req.valid("query");
+
+      let queryVec: Float32Array;
+      try {
+        queryVec = await embedQuery(q);
+      } catch (err) {
+        throw new HTTPException(503, {
+          message:
+            err instanceof Error
+              ? `embedder_unavailable: ${err.message}`
+              : "embedder_unavailable",
+        });
+      }
+
+      const opts: Parameters<typeof findSimilarConcepts>[0] = {
+        userId: user.sub,
+        collectionName: collection,
+        embedding: queryVec,
+        limit,
+      };
+      if (minSimilarity !== undefined) opts.minSimilarity = minSimilarity;
+      const similar = findSimilarConcepts(opts);
+
+      if (similar.length === 0) {
+        return c.json({ rows: [], total: 0 });
+      }
+
+      /* Fetch Appwrite concept documents для top-K rowid. Один listDocuments
+       * with $in filter — Appwrite supports Query.equal с array value. */
+      const { databases, databaseId } = getAppwrite();
+      const rowIds = similar.map((s) => s.rowid);
+      const docs = await databases.listDocuments<
+        RawDoc & {
+          userId: string;
+          bookId: string;
+          collectionName: string;
+          payload: string;
+          vectorRowId: number;
+        }
+      >(databaseId, COLLECTIONS.concepts, [
+        Query.equal("userId", user.sub),
+        Query.equal("collectionName", collection),
+        Query.equal("vectorRowId", rowIds),
+        Query.limit(limit),
+      ]);
+
+      /* Sort docs in the same order как sqlite-vec returned (best similarity first). */
+      const byRowId = new Map(docs.documents.map((d) => [d.vectorRowId, d]));
+      const rows = similar
+        .map((s) => {
+          const doc = byRowId.get(s.rowid);
+          if (!doc) return null;
+          let delta: unknown = null;
+          try {
+            delta = JSON.parse(doc.payload);
+          } catch {
+            delta = null;
+          }
+          return {
+            conceptId: doc.$id,
+            bookId: doc.bookId,
+            similarity: s.similarity,
+            delta,
+          };
+        })
+        .filter((r): r is NonNullable<typeof r> => r !== null);
+
+      return c.json({ rows, total: rows.length });
+    },
+  );
 
   return app;
 }
