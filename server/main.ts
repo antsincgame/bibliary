@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
+import { prewarmEmbedderInBackground } from "./lib/embedder/index.js";
 import { startExtractionWorker } from "./lib/queue/extraction-queue.js";
 
 async function main(): Promise<void> {
@@ -22,6 +23,11 @@ async function main(): Promise<void> {
        * restart, дальше работает на enqueue triggers. Fire-and-forget
        * — ошибки логируются внутри. */
       startExtractionWorker();
+      /* Pre-warm the embedder so the first user-facing /search or
+       * crystallization extraction doesn't pay the 5-15s ONNX cold
+       * start. Fire-and-forget; failures fall back to lazy load on
+       * first real call. */
+      prewarmEmbedderInBackground();
     },
   );
 

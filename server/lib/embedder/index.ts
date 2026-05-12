@@ -151,7 +151,40 @@ export function buildConceptEmbedText(delta: {
   ].join("\n");
 }
 
-/** Test helpers — drop cached pipelines между тестами. */
+/**
+ * Pre-warm hook for server startup. Triggers cold-start in the
+ * background so the first user-facing embed call doesn't pay the
+ * ~5-15s ONNX model load latency. Fire-and-forget — failures here are
+ * non-fatal (the lazy path will retry on the first real call).
+ *
+ * Call once from server bootstrap AFTER the HTTP listener is bound,
+ * so the warm-up never blocks the readiness probe.
+ *
+ * Skipped via BIBLIARY_SKIP_EMBEDDER_PREWARM=1 (useful in CI and on
+ * resource-constrained dev machines).
+ */
+export function prewarmEmbedderInBackground(): void {
+  if (process.env["BIBLIARY_SKIP_EMBEDDER_PREWARM"] === "1") return;
+  void getEmbedder()
+    .then(async (extractor) => {
+      /* One tiny inference primes the ONNX session graph + kernel
+       * caches so the first real embed isn't slow either. */
+      try {
+        await extractor("query: warm", { pooling: "mean", normalize: true });
+      } catch {
+        /* tolerate — primary getEmbedder already succeeded; the warm
+         * inference is best-effort */
+      }
+    })
+    .catch((err) => {
+      console.warn(
+        "[embedder] pre-warm failed:",
+        err instanceof Error ? err.message : err,
+      );
+    });
+}
+
+/** Test helpers — drop cached pipelines between tests. */
 export function _resetEmbedderForTesting(): void {
   cache.clear();
 }
