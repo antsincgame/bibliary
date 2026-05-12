@@ -1,5 +1,6 @@
 import type { BrowserWindow } from "electron";
 import { coordinator } from "./batch-coordinator";
+import { type EventSink, noopEventSink } from "./event-sink";
 import * as telemetry from "./telemetry";
 import {
   HEALTH_FAIL_THRESHOLD,
@@ -40,7 +41,7 @@ let pollCycleCounter = 0;
 let lastPressureRatio = 0;
 let unsubStart: (() => void) | null = null;
 let unsubEnd: (() => void) | null = null;
-let getMainWindow: (() => BrowserWindow | null) | null = null;
+let eventSink: EventSink = noopEventSink;
 
 interface WatchdogConfig {
   pollIntervalMs: number;
@@ -87,13 +88,40 @@ export function configureWatchdog(partial: Partial<WatchdogConfig>): void {
   }
 }
 
-export function startWatchdog(windowGetter: () => BrowserWindow | null): void {
+/**
+ * Start the watchdog. Push events go through `sink` — in Electron pass
+ * `electron-event-sink.ts#fromBrowserWindowGetter(getter)`; in `server/`
+ * pass a sink that writes to Appwrite collection / Realtime channel.
+ *
+ * Overload: a function returning `BrowserWindow | null` is accepted too
+ * for backward compatibility with the existing Electron call site —
+ * internally promoted to an EventSink via webContents.send.
+ */
+export function startWatchdog(
+  sink: EventSink | (() => BrowserWindow | null),
+): void {
   if (unsubStart || unsubEnd) return;
-  getMainWindow = windowGetter;
+  eventSink = normalizeSink(sink);
   unsubStart = coordinator.onBatchStart(() => activate());
   unsubEnd = coordinator.onBatchEnd(() => {
     if (!coordinator.isAnyActive()) deactivate();
   });
+}
+
+function normalizeSink(
+  sink: EventSink | (() => BrowserWindow | null),
+): EventSink {
+  /* EventSink — exactly 2-arity (channel, payload). The legacy
+     windowGetter has 0-arity. We disambiguate by .length so callers can
+     pass either shape during the Electron → web transition. */
+  if (sink.length === 2) return sink as EventSink;
+  const getter = sink as () => BrowserWindow | null;
+  return (channel, payload) => {
+    const win = getter();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(channel, payload);
+    }
+  };
 }
 
 export function stopWatchdog(): void {
@@ -106,7 +134,7 @@ export function stopWatchdog(): void {
     unsubEnd();
     unsubEnd = null;
   }
-  getMainWindow = null;
+  eventSink = noopEventSink;
 }
 
 function activate(): void {
@@ -279,8 +307,11 @@ async function checkLiveness(): Promise<boolean> {
 }
 
 function emit(channel: string, payload: unknown): void {
-  const win = getMainWindow?.();
-  if (win && !win.isDestroyed()) {
-    win.webContents.send(channel, payload);
+  try {
+    eventSink(channel, payload);
+  } catch (err) {
+    /* Push events are best-effort — a broken sink (UI destroyed,
+       network blip to Appwrite) must NOT abort the polling loop. */
+    console.warn("[watchdog] eventSink threw:", err instanceof Error ? err.message : err);
   }
 }

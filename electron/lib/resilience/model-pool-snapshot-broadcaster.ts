@@ -25,6 +25,7 @@
  */
 
 import type { BrowserWindow } from "electron";
+import { type EventSink, noopEventSink } from "./event-sink.js";
 import { getModelPool } from "../llm/model-pool.js";
 import type { ModelWeight } from "../llm/model-size-classifier.js";
 
@@ -49,7 +50,8 @@ export interface ModelPoolSnapshotPayload {
 
 interface BroadcasterState {
   timer: NodeJS.Timeout | null;
-  getWindow: (() => BrowserWindow | null) | null;
+  sink: EventSink;
+  active: boolean;
   intervalMs: number;
   lastSnapshotJson: string;
   ticksSinceBroadcast: number;
@@ -57,22 +59,35 @@ interface BroadcasterState {
 
 const state: BroadcasterState = {
   timer: null,
-  getWindow: null,
+  sink: noopEventSink,
+  active: false,
   intervalMs: DEFAULT_POLL_INTERVAL_MS,
   lastSnapshotJson: "",
   ticksSinceBroadcast: 0,
 };
 
+function normalizeSink(
+  sink: EventSink | (() => BrowserWindow | null),
+): EventSink {
+  if (sink.length === 2) return sink as EventSink;
+  const getter = sink as () => BrowserWindow | null;
+  return (channel, payload) => {
+    const win = getter();
+    if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
+  };
+}
+
 /**
  * Запустить периодический broadcast snapshot'ов.
  *
- * Идемпотентна: повторный вызов — no-op (только обновляет windowGetter).
+ * Идемпотентна: повторный вызов — no-op (только обновляет sink).
  */
 export function startModelPoolSnapshotBroadcaster(
-  windowGetter: () => BrowserWindow | null,
+  sink: EventSink | (() => BrowserWindow | null),
   opts: { intervalMs?: number } = {},
 ): void {
-  state.getWindow = windowGetter;
+  state.sink = normalizeSink(sink);
+  state.active = true;
   if (typeof opts.intervalMs === "number" && opts.intervalMs > 0) {
     state.intervalMs = opts.intervalMs;
   }
@@ -86,7 +101,8 @@ export function stopModelPoolSnapshotBroadcaster(): void {
     clearTimeout(state.timer);
     state.timer = null;
   }
-  state.getWindow = null;
+  state.sink = noopEventSink;
+  state.active = false;
   state.lastSnapshotJson = "";
   state.ticksSinceBroadcast = 0;
 }
@@ -97,7 +113,7 @@ export function stopModelPoolSnapshotBroadcaster(): void {
  * немедленно (например после успешного withModel в большом import-batch).
  */
 export function forceBroadcastModelPoolSnapshot(): void {
-  if (!state.getWindow) return;
+  if (!state.active) return;
   const snapshot = buildPayload();
   emitSnapshot(snapshot);
   state.lastSnapshotJson = JSON.stringify(snapshot);
@@ -111,7 +127,7 @@ function scheduleNext(): void {
 
 function tick(): void {
   state.timer = null;
-  if (!state.getWindow) return;
+  if (!state.active) return;
 
   try {
     const snapshot = buildPayload();
@@ -126,7 +142,7 @@ function tick(): void {
   } catch (err) {
     console.warn("[model-pool-snapshot-broadcaster] tick failed:", err instanceof Error ? err.message : err);
   } finally {
-    if (state.getWindow !== null) scheduleNext();
+    if (state.active) scheduleNext();
   }
 }
 
@@ -148,9 +164,14 @@ function buildPayload(): ModelPoolSnapshotPayload {
 }
 
 function emitSnapshot(snapshot: ModelPoolSnapshotPayload): void {
-  const win = state.getWindow?.();
-  if (!win || win.isDestroyed()) return;
-  win.webContents.send("resilience:model-pool-snapshot", snapshot);
+  try {
+    state.sink("resilience:model-pool-snapshot", snapshot);
+  } catch (err) {
+    console.warn(
+      "[model-pool-snapshot-broadcaster] sink threw:",
+      err instanceof Error ? err.message : err,
+    );
+  }
 }
 
 /* ─── Test helpers ─────────────────────────────────────────────────── */
