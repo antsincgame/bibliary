@@ -126,6 +126,57 @@ export async function mountLibrary(root) {
         }
       }
     }
+    /* Δ-ui-a — log Δ-topology counters when an extraction finishes.
+     * The bridge emits a single 'done' event per book with the full
+     * tally; surface it in the import-pane log so users see how much
+     * structure was produced beyond the headline conceptsAccepted. */
+    const p = ev && ev.payload;
+    if (ev && ev.event === "done" && p && p.kind === "extraction") {
+      const parts = [];
+      if (typeof p.conceptsAccepted === "number") {
+        parts.push(`${p.conceptsAccepted} concepts`);
+      }
+      if (typeof p.chunksTotal === "number") {
+        parts.push(`${p.chunksTotal} L1 chunks`);
+      }
+      if (typeof p.entitiesTouched === "number" && p.entitiesTouched > 0) {
+        parts.push(`${p.entitiesTouched} entities`);
+      }
+      if (typeof p.relationsInserted === "number" && p.relationsInserted > 0) {
+        parts.push(`${p.relationsInserted} relations`);
+      }
+      if (typeof p.propositionsInserted === "number" && p.propositionsInserted > 0) {
+        parts.push(`${p.propositionsInserted} propositions`);
+      }
+      if (parts.length > 0) {
+        pushImportPaneLog({
+          level: "info",
+          category: "extraction.topology",
+          message: `Topology: ${parts.join(" · ")}`,
+          details: {
+            bookId: ev.bookId,
+            chaptersProcessed: p.chaptersProcessed,
+            conceptsAccepted: p.conceptsAccepted,
+            conceptsFailed: p.conceptsFailed,
+            entitiesTouched: p.entitiesTouched,
+            relationsInserted: p.relationsInserted,
+            propositionsInserted: p.propositionsInserted,
+            usingFallback: p.usingFallback,
+          },
+        });
+      }
+    }
+    /* Phase 9 — surface the batch:filtered SSE so users immediately
+     * see "queued 27/30, skipped 3" instead of waiting for first
+     * child job to start. */
+    if (ev && ev.event === "batch:filtered" && p && p.kind === "batch") {
+      pushImportPaneLog({
+        level: "info",
+        category: "extraction.batch",
+        message: `Batch → '${p.collection}': ${p.eligible}/${p.total} eligible, ${p.skipped} skipped (minQuality ${p.minQuality})`,
+        details: { batchId: ev.batchId, ...p },
+      });
+    }
   };
   CATALOG.unsubEvaluator = window.api.library.onEvaluatorEvent(onPipelineEvent);
   if (typeof window.api.library.onExtractorEvent === "function") {

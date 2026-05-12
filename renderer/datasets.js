@@ -8,6 +8,7 @@ import {
   recordDataset,
   onHistoryChange,
 } from "./datasets-history.js";
+import { buildSearchChunksPanel } from "./datasets-search.js";
 /**
  * Раздел «Датасеты» — простой список созданных датасетов с возможностью
  * посмотреть Q/A в человекочитаемом виде, поискать по тексту, открыть
@@ -597,11 +598,18 @@ export function mountDatasets(root) {
 
   const layout = el("div", { class: "ds-list-page" }, [
     buildTopBar(root),
+    /* Δ-ui-b — graph-aware semantic search sits above the export
+     * history so it's the first thing a returning user sees. The
+     * panel is self-contained; deps on window.api.datasets.searchChunks
+     * only (feature-detect via existence of the method). */
+    typeof /** @type {any} */ (window.api?.datasets)?.searchChunks === "function"
+      ? buildSearchChunksPanel()
+      : null,
     el("div", { class: "ds-list-grid" }, [
       buildList(),
       el("div", { class: "ds-detail", id: "ds-detail" }),
     ]),
-  ]);
+  ].filter(Boolean));
   root.append(layout);
 
   renderListBody(root);
