@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { zValidator } from "@hono/zod-validator";
+import { ID, Permission, Role } from "node-appwrite";
+import { InputFile } from "node-appwrite/file";
 import { z } from "zod";
 
 import type { AppEnv } from "../app.js";
@@ -262,6 +264,52 @@ export function libraryRoutes(): Hono<AppEnv> {
       return c.json(result);
     },
   );
+
+  /**
+   * Browser drag&drop / file picker → multipart upload. Backend forwards
+   * the file body to Appwrite Storage (`book-originals`) с per-user
+   * permissions, возвращает `fileId` который renderer прокидывает в
+   * POST /import-files для запуска парсера.
+   *
+   * Single-file per request чтобы избежать all-or-nothing semantics при
+   * нескольких книгах в одном multipart payload — renderer вызывает
+   * этот endpoint в цикле, ошибка одного файла не блокирует остальные.
+   *
+   * Bandwidth note: backend buffer'ит весь file body в RAM (Hono
+   * parseBody возвращает File с full bytes). Для 5GB книги это
+   * требует heap ≥ filesize. Оптимизация (direct browser→Appwrite
+   * через Appwrite Account JWT) — отдельный коммит.
+   */
+  app.post("/upload", async (c) => {
+    const user = c.get("user");
+    if (!user) throw new HTTPException(401, { message: "auth_required" });
+
+    const body = await c.req.parseBody();
+    const file = body["file"];
+    if (!(file instanceof File)) {
+      throw new HTTPException(400, { message: "file_field_required" });
+    }
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const fileName = file.name || "upload.bin";
+
+    const { storage } = getAppwrite();
+    const stored = await storage.createFile(
+      BUCKETS.bookOriginals,
+      ID.unique(),
+      InputFile.fromBuffer(buffer, fileName),
+      [
+        Permission.read(Role.user(user.sub)),
+        Permission.update(Role.user(user.sub)),
+        Permission.delete(Role.user(user.sub)),
+        Permission.read(Role.team("admin")),
+      ],
+    );
+    return c.json({
+      fileId: stored.$id,
+      name: fileName,
+      size: buffer.byteLength,
+    });
+  });
 
   return app;
 }

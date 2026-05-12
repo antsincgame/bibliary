@@ -1,5 +1,6 @@
 import { http } from "./http.js";
 import { subscribe } from "./realtime.js";
+import { attachDropZone, uploadAndImport, uploadFile } from "./upload.js";
 
 /**
  * Library catalog + aggregations + import + destructive ops.
@@ -70,15 +71,33 @@ export const library = {
   /** sphere — legacy SQLite concept; web returns empty list для UI safety. */
   collectionBySphere: async () => /** @type {Array<{label: string, count: number, bookIds: string[]}>} */ ([]),
 
-  /* ─── Import (Phase 2k MVP) ────────────────────────────────────── */
+  /* ─── Import (Phase 2k MVP + Phase 4 uploads) ──────────────────── */
 
   /**
-   * Browser uploaded files to Appwrite Storage (book-originals bucket);
-   * pass returned fileIds here, backend parses + creates books.
-   *
-   * @param {string[]} fileIds
+   * @param {string[]} fileIds — IDs already-uploaded в `book-originals`.
    */
   importFiles: (fileIds) => http.post("/api/library/import-files", { json: { fileIds } }),
+
+  /**
+   * Single-file upload helper. Multipart POST /api/library/upload →
+   * { fileId, name, size }. Renderer прокидывает fileId в importFiles
+   * (или batched через uploadAndImport).
+   */
+  uploadFile,
+
+  /**
+   * Full drag&drop → upload → import flow:
+   *   - sequential per-file upload (со per-file onProgress callback)
+   *   - aggregate fileIds → importFiles
+   *   - errors per-file capture в `uploadErrors`, не abort batch.
+   */
+  uploadAndImport,
+
+  /**
+   * Attach drag handlers to a container. Returns detach function.
+   * Browser drop events нативные, не зависят от Electron.
+   */
+  attachDropZone,
 
   /* ─── Destructive ──────────────────────────────────────────────── */
 
