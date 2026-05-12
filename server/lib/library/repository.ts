@@ -265,14 +265,22 @@ export async function createBook(input: CreateBookInput): Promise<BookDoc> {
 export interface UpdateBookInput {
   title?: string;
   titleRu?: string;
+  author?: string;
+  authorRu?: string;
   status?: BookStatus;
   qualityScore?: number | null;
   isFictionOrWater?: boolean | null;
+  conceptualDensity?: number | null;
+  originality?: number | null;
   evaluatorModel?: string | null;
   evaluatedAt?: string | null;
   verdictReason?: string | null;
   wordCount?: number;
   domain?: string | null;
+  language?: string;
+  year?: number | null;
+  tags?: string[];
+  tagsRu?: string[];
 }
 
 export async function updateBook(

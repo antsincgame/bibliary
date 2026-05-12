@@ -123,7 +123,7 @@ export const library = {
   rebuildCache: notImplemented("rebuildCache"),
   reparseBook: notImplemented("reparseBook"),
 
-  /* ─── Evaluator queue (Phase 6) ────────────────────────────────── */
+  /* ─── Evaluator (Phase 6c) ─────────────────────────────────────── */
 
   evaluatorStatus: async () => ({
     running: false,
@@ -135,7 +135,16 @@ export const library = {
     totalFailed: 0,
   }),
   evaluatorResume: async () => true,
-  reevaluate: notImplemented("reevaluate"),
+  /**
+   * Synchronous evaluate one book — loads markdown, surrogate, через
+   * configured evaluator provider (Settings → Providers → assignments).
+   * Прогресс летит через SSE channel evaluator_events:created.
+   *
+   * @param {string} bookId
+   * @returns {Promise<{ok: boolean, bookId: string, warnings: string[], error?: string}>}
+   */
+  reevaluate: (bookId) =>
+    http.post(`/api/library/books/${encodeURIComponent(bookId)}/evaluate`),
 
   /* ─── Electron-only dialogs (replaced by drag&drop / browser file picker) ─── */
 
