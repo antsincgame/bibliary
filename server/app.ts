@@ -7,6 +7,8 @@ import { HTTPException } from "hono/http-exception";
 import { getCorsOrigins, loadConfig } from "./config.js";
 import { authRoutes } from "./routes/auth.js";
 import { healthRoutes } from "./routes/health.js";
+import { preferencesRoutes } from "./routes/preferences.js";
+import { systemRoutes } from "./routes/system.js";
 
 export type AppEnv = {
   Variables: {
@@ -45,6 +47,8 @@ export function buildApp(): Hono<AppEnv> {
 
   app.route("/", healthRoutes());
   app.route("/api/auth", authRoutes());
+  app.route("/api/preferences", preferencesRoutes());
+  app.route("/api/system", systemRoutes());
 
   app.onError((err, c) => {
     if (err instanceof HTTPException) {
