@@ -22,6 +22,9 @@ const ConfigSchema = z.object({
   LM_STUDIO_URL: z.string().default("http://localhost:1234"),
   LM_STUDIO_PROBE_TIMEOUT_MS: z.coerce.number().int().positive().default(3000),
 
+  BIBLIARY_VECTORS_DB_PATH: z.string().optional(),
+  BIBLIARY_EMBEDDING_DIM: z.coerce.number().int().positive().default(384),
+
   COOKIE_SECURE: z.coerce.boolean().default(false),
   COOKIE_DOMAIN: z.string().optional(),
   CORS_ORIGINS: z.string().default("http://localhost:5173,http://localhost:3000"),

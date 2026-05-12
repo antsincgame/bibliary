@@ -10,6 +10,7 @@ import { healthRoutes } from "./routes/health.js";
 import { lmstudioRoutes } from "./routes/lmstudio.js";
 import { preferencesRoutes } from "./routes/preferences.js";
 import { systemRoutes } from "./routes/system.js";
+import { vectordbRoutes } from "./routes/vectordb.js";
 
 export type AppEnv = {
   Variables: {
@@ -51,6 +52,7 @@ export function buildApp(): Hono<AppEnv> {
   app.route("/api/preferences", preferencesRoutes());
   app.route("/api/system", systemRoutes());
   app.route("/api/lmstudio", lmstudioRoutes());
+  app.route("/api/vectordb", vectordbRoutes());
 
   app.onError((err, c) => {
     if (err instanceof HTTPException) {
