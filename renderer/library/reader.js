@@ -489,20 +489,37 @@ function renderReader(root) {
     onclick: () => openCoverLightbox(coverDataUrl, shownTitle),
   }) : null;
 
-  const toolbar = el("div", { class: "lib-reader-actions-toolbar" }, [
-    el("button", {
-      class: "lib-btn lib-btn-ghost lib-reader-action",
-      type: "button",
-      title: t("library.reader.action.openOriginal.tooltip"),
-      onclick: async () => {
-        const r = await window.api.library.openOriginal(currentBook.bookId);
-        if (!r.ok) {
-          const { showAlert } = await import("../components/ui-dialog.js");
-          await showAlert(t("library.reader.action.openOriginal.failed", { reason: r.reason || "" }));
-        }
-      },
-    }, t("library.reader.action.openOriginal")),
-    el("button", {
+  /* Web-mode: openOriginal / revealInFolder заменяем на browser download
+   * через /api/library/books/:id/original (existing route). Electron-mode
+   * сохраняет native file-system actions. */
+  const isWebMode = /** @type {any} */ (window.api).runtime === "web";
+  const openOriginalBtn = el("button", {
+    class: "lib-btn lib-btn-ghost lib-reader-action",
+    type: "button",
+    title: t("library.reader.action.openOriginal.tooltip"),
+    onclick: async () => {
+      if (isWebMode) {
+        const url = `/api/library/books/${encodeURIComponent(currentBook.bookId)}/original`;
+        const a = document.createElement("a");
+        a.href = url;
+        a.target = "_blank";
+        a.rel = "noopener";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        return;
+      }
+      const r = await window.api.library.openOriginal(currentBook.bookId);
+      if (!r.ok) {
+        const { showAlert } = await import("../components/ui-dialog.js");
+        await showAlert(t("library.reader.action.openOriginal.failed", { reason: r.reason || "" }));
+      }
+    },
+  }, t("library.reader.action.openOriginal"));
+
+  const revealBtn = isWebMode
+    ? null
+    : el("button", {
       class: "lib-btn lib-btn-ghost lib-reader-action",
       type: "button",
       title: t("library.reader.action.revealInFolder.tooltip"),
@@ -513,7 +530,11 @@ function renderReader(root) {
           await showAlert(t("library.reader.action.revealInFolder.failed", { reason: r.reason || "" }));
         }
       },
-    }, t("library.reader.action.revealInFolder")),
+    }, t("library.reader.action.revealInFolder"));
+
+  const toolbar = el("div", { class: "lib-reader-actions-toolbar" }, [
+    openOriginalBtn,
+    revealBtn,
     coverDataUrl ? el("button", {
       class: "lib-btn lib-btn-ghost lib-reader-action",
       type: "button",

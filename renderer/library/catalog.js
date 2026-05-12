@@ -4,7 +4,7 @@
  */
 import { el, clear } from "../dom.js";
 import { t, getLocale } from "../i18n.js";
-import { showAlert, showConfirm } from "../components/ui-dialog.js";
+import { showAlert, showConfirm, showPrompt } from "../components/ui-dialog.js";
 import { buildCollectionPicker } from "../components/collection-picker.js";
 import { CATALOG, STATE } from "./state.js";
 import { filterCatalog as filterCatalogPure, qualityClass, statusClass } from "./catalog-filter.js";
@@ -595,6 +595,73 @@ export function buildCatalogBottomBar(root, deps) {
     }),
   }, t("library.catalog.btn.reevaluate"));
 
+  /* Phase 8 cube-assembly: «Crystallize» button → POST /api/library/books/:id/extract
+   * async. Запускает background extraction job через extraction-queue,
+   * прогресс летит в SSE channel extractor_events:created → catalog
+   * слушает onExtractorEvent и refresh'нёт row на завершение.
+   *
+   * Видимость: только в advanced mode (рядом с reevaluate) — для не-power
+   * users автоматическая crystallization запустится из batch-actions
+   * после evaluate-pass.
+   *
+   * Feature-detect: window.api.library.extract существует с Phase 6e.
+   * В Electron-режиме preload не выставляет — кнопка просто не рендерится. */
+  const crystallizeBtn =
+    typeof /** @type {any} */ (window.api.library).extract === "function"
+      ? el(
+          "button",
+          {
+            type: "button",
+            class: "lib-btn lib-btn-ghost",
+            "data-mode-min": "advanced",
+            title: "Crystallize selected books — extract delta-knowledge to collection",
+            onclick: (ev) =>
+              void withButtonBusy(ev, async () => {
+                if (CATALOG.selected.size === 0) {
+                  setCatalogStatus(root, t("library.catalog.toast.nothingSelected"));
+                  return;
+                }
+                const collection =
+                  (await showPrompt(
+                    "Target collection name (alphanumeric, dashes, underscores):",
+                    "default",
+                    {
+                      title: "Crystallize → collection",
+                      okText: "Queue extraction",
+                    },
+                  )) ?? "";
+                if (!collection || !/^[a-zA-Z0-9_-]+$/.test(collection)) {
+                  if (collection) await showAlert("Collection name must match [a-zA-Z0-9_-]+");
+                  return;
+                }
+                const ids = Array.from(CATALOG.selected);
+                let queued = 0;
+                /** @type {string[]} */
+                const errors = [];
+                for (const bookId of ids) {
+                  try {
+                    const r = /** @type {any} */ (
+                      await window.api.library.extract(bookId, { collection })
+                    );
+                    if (r?.ok) queued += 1;
+                    else errors.push(`${bookId.slice(0, 8)}…: ${compactError(r?.error || "not ok")}`);
+                  } catch (e) {
+                    errors.push(`${bookId.slice(0, 8)}…: ${compactError(catalogErrMsg(e))}`);
+                  }
+                }
+                if (errors.length > 0) {
+                  await showAlert(
+                    `Queued ${queued}/${ids.length} books. Errors:\n${errors.slice(0, 5).join("\n")}`,
+                  );
+                } else {
+                  setCatalogStatus(root, `Queued ${queued} books for crystallization → '${collection}'`);
+                }
+              }),
+          },
+          "Crystallize",
+        )
+      : null;
+
   /* refactor 1.0.22: AI illustration enrichment удалён (vision_illustration role). */
 
   /* v1.0.2: Sweep dead imports (incomplete-torrent files). Always visible
@@ -753,7 +820,9 @@ export function buildCatalogBottomBar(root, deps) {
   return el("div", { class: "lib-catalog-bottombar" }, [
     metaRow,
     el("div", { class: "lib-catalog-bottom-actions" }, [
-      selectAllBtn, clearBtn, reevaluateBtn, reparseBtn, purgeDeadBtn, deleteBtn, burnAllBtn, chunksBtn, revertBtn, cancelBatchBtn,
+      selectAllBtn, clearBtn, reevaluateBtn,
+      ...(crystallizeBtn ? [crystallizeBtn] : []),
+      reparseBtn, purgeDeadBtn, deleteBtn, burnAllBtn, chunksBtn, revertBtn, cancelBatchBtn,
     ]),
     batchSummary,
   ]);

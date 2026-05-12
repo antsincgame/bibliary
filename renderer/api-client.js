@@ -36,6 +36,14 @@ const api = {
   resilience,
   scanner,
   smokeMode: false,
+  /**
+   * Runtime marker — UI uses to feature-detect web vs Electron mode.
+   * Electron preload не выставляет это поле; renderer проверяет
+   * `window.api.runtime === "web"` чтобы hide Electron-only buttons
+   * (openOriginal / revealInFolder / pickFolder / batch crystallization
+   * UI) и показать web alternatives (download links, drag&drop).
+   */
+  runtime: "web",
   system,
   vectordb,
 };
