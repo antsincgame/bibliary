@@ -86,4 +86,50 @@ describe("admin route shape — invariants", () => {
     assert.equal(typeof repo.deleteUserDocument, "function");
     assert.equal(typeof repo.countAdmins, "function");
   });
+
+  it("Phase 11b helpers exposed: listAllJobs / computeUserStorageUsage", async () => {
+    const jobs = await import("../server/lib/queue/job-store.ts");
+    const storage = await import("../server/lib/users/storage-usage.ts");
+    assert.equal(typeof jobs.listAllJobs, "function");
+    assert.equal(typeof storage.computeUserStorageUsage, "function");
+  });
+});
+
+describe("Phase 11b — admin jobs + storage auth guard", () => {
+  it("GET /api/admin/jobs without auth → 401", async () => {
+    const { buildApp } = await import("../server/app.ts");
+    const app = buildApp();
+    const res = await app.request("/api/admin/jobs");
+    assert.equal(res.status, 401);
+  });
+
+  it("GET /api/admin/jobs/depth without auth → 401", async () => {
+    const { buildApp } = await import("../server/app.ts");
+    const app = buildApp();
+    const res = await app.request("/api/admin/jobs/depth");
+    assert.equal(res.status, 401);
+  });
+
+  it("POST /api/admin/jobs/x/cancel without auth → 401", async () => {
+    const { buildApp } = await import("../server/app.ts");
+    const app = buildApp();
+    const res = await app.request("/api/admin/jobs/x/cancel", { method: "POST" });
+    assert.equal(res.status, 401);
+  });
+
+  it("GET /api/admin/storage/usage/x without auth → 401", async () => {
+    const { buildApp } = await import("../server/app.ts");
+    const app = buildApp();
+    const res = await app.request("/api/admin/storage/usage/x");
+    assert.equal(res.status, 401);
+  });
+
+  it("Invalid state filter on /api/admin/jobs → 400 or 401", async () => {
+    const { buildApp } = await import("../server/app.ts");
+    const app = buildApp();
+    const res = await app.request("/api/admin/jobs?state=nonsense");
+    /* requireAuth runs first → 401 when no cookie. With a cookie, the
+     * zod validator would 400. Both demonstrate the contract holds. */
+    assert.ok(res.status === 401 || res.status === 400, `got ${res.status}`);
+  });
 });

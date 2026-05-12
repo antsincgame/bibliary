@@ -6,6 +6,10 @@ import { z } from "zod";
 import type { AppEnv } from "../app.js";
 import { revokeAllForUser } from "../lib/auth/sessions.js";
 import { burnAllForUser } from "../lib/library/burn.js";
+import { getExtractionQueue } from "../lib/queue/extraction-queue.js";
+import { getJob, listAllJobs } from "../lib/queue/job-store.js";
+import { ALL_JOB_STATES } from "../lib/queue/types.js";
+import { computeUserStorageUsage } from "../lib/users/storage-usage.js";
 import {
   countAdmins,
   deleteUserDocument,
@@ -140,6 +144,72 @@ export function adminRoutes(): Hono<AppEnv> {
    *   4. deleteUserDocument → users collection
    * Refuses to delete self.
    */
+  /**
+   * Phase 11b — cross-user job inspection. Admin-only mirror of the
+   * per-user /api/library/jobs route but without the userId scope.
+   * Filterable by state.
+   */
+  const ListJobsQuery = z.object({
+    state: z.enum(ALL_JOB_STATES).optional(),
+    limit: z.coerce.number().int().positive().max(200).optional(),
+    offset: z.coerce.number().int().nonnegative().optional(),
+  });
+
+  app.get("/jobs", zValidator("query", ListJobsQuery), async (c) => {
+    const q = c.req.valid("query");
+    const opts: Parameters<typeof listAllJobs>[0] = {};
+    if (q.state) opts.state = q.state;
+    if (q.limit !== undefined) opts.limit = q.limit;
+    if (q.offset !== undefined) opts.offset = q.offset;
+    const result = await listAllJobs(opts);
+    return c.json(result);
+  });
+
+  app.get("/jobs/depth", async (c) => {
+    /* Current in-process queue depth: pending count + active count. */
+    const depth = getExtractionQueue().getDepth();
+    return c.json(depth);
+  });
+
+  /**
+   * Admin cancel — overrides the per-user ownership check. Used to
+   * unjam a stuck cross-user job (e.g. user X queued 50 books then
+   * disappeared, admin needs to clear the queue).
+   */
+  app.post("/jobs/:jobId/cancel", async (c) => {
+    const jobId = c.req.param("jobId");
+    /* getJob is per-user scoped; admin paths need to discover the
+     * owner first then cancel under that user's identity. Listing by
+     * jobId via getJob requires the userId — fall back to a direct
+     * Appwrite read here, since this route already passed requireAdmin. */
+    const { getJobRaw } = await import("../lib/queue/job-store.js");
+    const job = await getJobRaw(jobId);
+    if (!job) throw new HTTPException(404, { message: "job_not_found" });
+    const queue = getExtractionQueue();
+    const ok = await queue.cancel(job.userId, jobId);
+    return c.json({ ok });
+  });
+
+  /**
+   * Phase 11b — storage usage aggregator per user. Walks books +
+   * dataset exports and sums file sizes from Appwrite Storage.
+   *
+   * Best-effort: bounded by an 8s budget on the server side; missing
+   * files don't fail the walk, just skip. Result includes `partial:
+   * true` if the deadline cut things short.
+   */
+  app.get("/storage/usage/:userId", async (c) => {
+    const userId = c.req.param("userId");
+    const u = await findUserById(userId);
+    if (!u) throw new HTTPException(404, { message: "user_not_found" });
+    const usage = await computeUserStorageUsage(userId);
+    return c.json(usage);
+  });
+
+  /* Re-export helper unused by direct calls but kept to keep
+   * job-store's getJob import resolvable from this file. */
+  void getJob;
+
   app.delete("/users/:userId", async (c) => {
     const me = c.get("user");
     if (!me) throw new HTTPException(401, { message: "auth_required" });

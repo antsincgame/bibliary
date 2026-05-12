@@ -143,6 +143,32 @@ export async function listUserJobs(
   return { rows: list.documents.map(toJob), total: list.total };
 }
 
+/**
+ * Phase 11b — cross-user job listing for the admin panel. Same shape
+ * as listUserJobs but without the userId equality clause, so admins
+ * can survey queue depth, failures, and stuck running jobs across all
+ * users from one place.
+ */
+export async function listAllJobs(opts: {
+  state?: JobState;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<{ rows: JobDoc[]; total: number }> {
+  const { databases, databaseId } = getAppwrite();
+  const queries: string[] = [
+    Query.orderDesc("createdAt"),
+    Query.limit(Math.min(200, Math.max(1, opts.limit ?? 50))),
+    Query.offset(Math.max(0, opts.offset ?? 0)),
+  ];
+  if (opts.state) queries.push(Query.equal("state", opts.state));
+  const list = await databases.listDocuments<RawJob>(
+    databaseId,
+    COLLECTIONS.datasetJobs,
+    queries,
+  );
+  return { rows: list.documents.map(toJob), total: list.total };
+}
+
 /** Все queued jobs (всех users) — для re-queue на server bootstrap. */
 export async function listQueuedJobs(): Promise<JobDoc[]> {
   const { databases, databaseId } = getAppwrite();
