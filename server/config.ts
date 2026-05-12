@@ -19,6 +19,9 @@ const ConfigSchema = z.object({
   BIBLIARY_ADMIN_EMAILS: z.string().optional(),
   BIBLIARY_DATA_DIR: z.string().default("./data"),
 
+  LM_STUDIO_URL: z.string().default("http://localhost:1234"),
+  LM_STUDIO_PROBE_TIMEOUT_MS: z.coerce.number().int().positive().default(3000),
+
   COOKIE_SECURE: z.coerce.boolean().default(false),
   COOKIE_DOMAIN: z.string().optional(),
   CORS_ORIGINS: z.string().default("http://localhost:5173,http://localhost:3000"),

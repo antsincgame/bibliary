@@ -7,6 +7,7 @@ import { HTTPException } from "hono/http-exception";
 import { getCorsOrigins, loadConfig } from "./config.js";
 import { authRoutes } from "./routes/auth.js";
 import { healthRoutes } from "./routes/health.js";
+import { lmstudioRoutes } from "./routes/lmstudio.js";
 import { preferencesRoutes } from "./routes/preferences.js";
 import { systemRoutes } from "./routes/system.js";
 
@@ -49,6 +50,7 @@ export function buildApp(): Hono<AppEnv> {
   app.route("/api/auth", authRoutes());
   app.route("/api/preferences", preferencesRoutes());
   app.route("/api/system", systemRoutes());
+  app.route("/api/lmstudio", lmstudioRoutes());
 
   app.onError((err, c) => {
     if (err instanceof HTTPException) {
