@@ -2,7 +2,7 @@
  * Phase 8b — ShareGPT synthesizer smoke. Тестируем pure-функции
  * без Appwrite/LLM:
  *   - buildShareGptLine: shape сборки conversations + metadata
- *   - QASchema validation: длины question/answer enforced
+ *   - QAPairSchema validation: длины question/answer enforced
  *
  * Real LLM Q&A generation (через crystallizer role) — integration test
  * с docker compose + Appwrite, не в этом suite.
@@ -11,7 +11,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { QASchema, buildShareGptLine, type QAPair } from "../server/lib/datasets/sharegpt.ts";
+import { QAPairSchema, buildShareGptLine, type QAPair } from "../server/lib/datasets/sharegpt.ts";
 import type { JsonlLine } from "../server/lib/datasets/synthesize.ts";
 import type { DeltaKnowledge } from "../shared/llm/extractor-schema.ts";
 
@@ -100,17 +100,17 @@ describe("ShareGPT line builder", () => {
 
 describe("ShareGPT QA schema", () => {
   it("rejects question < 20 chars", () => {
-    const r = QASchema.safeParse({ question: "Too short.", answer: "x".repeat(50) });
+    const r = QAPairSchema.safeParse({ question: "Too short.", answer: "x".repeat(50) });
     assert.equal(r.success, false);
   });
 
   it("rejects answer < 40 chars", () => {
-    const r = QASchema.safeParse({ question: "x".repeat(40), answer: "Too short answer." });
+    const r = QAPairSchema.safeParse({ question: "x".repeat(40), answer: "Too short answer." });
     assert.equal(r.success, false);
   });
 
   it("accepts valid Q&A within length bounds", () => {
-    const r = QASchema.safeParse({
+    const r = QAPairSchema.safeParse({
       question: "Why does uniform mesh enable quadratic convergence?",
       answer:
         "Because the interpolation error of piecewise linear functions is bounded above by a constant times h squared times the L2 norm of second derivatives — and this bound is sharp on uniform meshes.",
@@ -119,7 +119,7 @@ describe("ShareGPT QA schema", () => {
   });
 
   it("rejects answer > 2000 chars (sanity hard cap)", () => {
-    const r = QASchema.safeParse({
+    const r = QAPairSchema.safeParse({
       question: "x".repeat(40),
       answer: "z".repeat(2001),
     });

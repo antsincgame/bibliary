@@ -5,7 +5,12 @@ import { withProvider } from "../llm/model-resolver.js";
 import { BUCKETS, COLLECTIONS, getAppwrite, isAppwriteCode, type RawDoc } from "../appwrite.js";
 import { publishUser } from "../realtime/event-bus.js";
 import { renderChatMlLine } from "./chatml.js";
-import { generateQAPair, buildShareGptLine } from "./sharegpt.js";
+import {
+  buildTieredLines,
+  dedupShareGptLines,
+  generateTieredQA,
+  type ShareGptLine,
+} from "./sharegpt.js";
 import { openTempJsonlWriter } from "./stream-writer.js";
 import {
   iterateAcceptedConcepts,
@@ -189,8 +194,9 @@ export async function buildDataset(
         lineCount += 1;
       }
     } else {
-      /* sharegpt + chatml оба зависят от Q&A pair generation через
-       * crystallizer role. Single iteration с условным рендером. */
+      /* sharegpt + chatml — multi-tier Q&A (Phase 8e). One LLM call
+       * per concept → T1+T2+T3 lines. Final Jaccard dedup pass дропает
+       * accidental rephrasings. */
       const sourceLines: Array<Awaited<ReturnType<typeof iterateAcceptedConcepts>> extends AsyncGenerator<infer T> ? T : never> = [];
       for await (const src of iterateAcceptedConcepts({
         userId: input.userId,
@@ -200,23 +206,20 @@ export async function buildDataset(
         sourceLines.push(src);
       }
 
+      /** Buffer всех ShareGptLines до dedup. Multi-tier ↑3× concept_count. */
+      const bufferedLines: ShareGptLine[] = [];
+
       if (sourceLines.length > 0) {
         await withProvider(input.userId, "crystallizer", async (provider, model) => {
           let processed = 0;
           for (const src of sourceLines) {
             try {
-              const qa = await generateQAPair(provider, model, src.delta);
-              if (!qa) {
-                warnings.push(`concept ${src.conceptId}: QA generation failed`);
+              const tiered = await generateTieredQA(provider, model, src.delta);
+              if (!tiered) {
+                warnings.push(`concept ${src.conceptId}: tiered QA generation failed`);
                 continue;
               }
-              const sharegptLine = buildShareGptLine(src, qa);
-              const output =
-                format === "chatml"
-                  ? renderChatMlLine(sharegptLine)
-                  : sharegptLine;
-              await writer.writeLine(JSON.stringify(output));
-              lineCount += 1;
+              bufferedLines.push(...buildTieredLines(src, tiered));
             } catch (err) {
               warnings.push(
                 `concept ${src.conceptId}: synthesizer threw: ${err instanceof Error ? err.message : String(err)}`,
@@ -236,6 +239,18 @@ export async function buildDataset(
             }
           }
         });
+      }
+
+      /* Jaccard dedup pass — within-tier similarity > 0.92 → drop. */
+      const { kept, dropped } = dedupShareGptLines(bufferedLines, 0.92);
+      if (dropped > 0) {
+        warnings.push(`dedup: dropped ${dropped} near-duplicate lines (Jaccard > 0.92)`);
+      }
+      for (const sharegptLine of kept) {
+        const output =
+          format === "chatml" ? renderChatMlLine(sharegptLine) : sharegptLine;
+        await writer.writeLine(JSON.stringify(output));
+        lineCount += 1;
       }
     }
 

@@ -3,11 +3,20 @@ import { ID, Permission, Role } from "node-appwrite";
 import { BUCKETS, COLLECTIONS, getAppwrite, isAppwriteCode } from "../appwrite.js";
 import { extractChapter } from "../llm/extractor.js";
 import { publishUser } from "../realtime/event-bus.js";
+import { cleanChapterParagraphs } from "./chunk-cleanup.js";
 import { chunkChapter, splitMarkdownIntoChapters } from "./chunker.js";
 import {
   getBookById,
   updateBook,
 } from "./repository.js";
+import { trimToTokenBudget } from "./token-budget.js";
+
+/** Per-chunk budget — соответствует .claude/rules/02-extraction.md
+ * "Для коротких chunks (<300 токенов) — 3B+ thinking", "Для длинных
+ * (>800) — 14B+". Стартуем с 2000 cap для safety: даже худшие книги
+ * с длинными абзацами умещаются, и нет риска полу-предложений
+ * обрезанных в самом интересном месте. */
+const CHUNK_TOKEN_BUDGET = 2000;
 import type { DeltaKnowledge } from "../../../shared/llm/extractor-schema.js";
 
 /**
@@ -161,10 +170,22 @@ export async function extractBookViaBridge(
   for (let i = 0; i < chapters.length; i++) {
     if (opts.signal?.aborted) break;
     const ch = chapters[i];
-    const chunks = chunkChapter({
-      paragraphs: ch.paragraphs,
+    /* Phase 8e: strip metadata noise (page markers, ISBN/copyright,
+     * decorative dividers, repeated running headers, footnote markers)
+     * ПЕРЕД chunking. «Плод знаний без шелухи» → больше signal на
+     * tokens budget. */
+    const cleanedParagraphs = cleanChapterParagraphs(ch.paragraphs);
+    const rawChunks = chunkChapter({
+      paragraphs: cleanedParagraphs,
       chapterTitle: ch.chapterTitle,
     });
+    /* Phase 8e: token budget guard. Если chunk превышает CHUNK_TOKEN_BUDGET,
+     * trim at sentence boundary — LLM context window saved + per-chunk
+     * focus retained. */
+    const chunks = rawChunks.map((chunk) => ({
+      ...chunk,
+      text: trimToTokenBudget(chunk.text, CHUNK_TOKEN_BUDGET).text,
+    }));
     chunksTotal += chunks.length;
     if (chunks.length === 0) {
       chaptersProcessed += 1;
