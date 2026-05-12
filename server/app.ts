@@ -10,6 +10,7 @@ import { datasetsRoutes } from "./routes/datasets.js";
 import { eventsRoutes } from "./routes/events.js";
 import { healthRoutes } from "./routes/health.js";
 import { libraryRoutes } from "./routes/library.js";
+import { llmRoutes } from "./routes/llm.js";
 import { lmstudioRoutes } from "./routes/lmstudio.js";
 import { preferencesRoutes } from "./routes/preferences.js";
 import { scannerRoutes } from "./routes/scanner.js";
@@ -56,6 +57,7 @@ export function buildApp(): Hono<AppEnv> {
   app.route("/api/preferences", preferencesRoutes());
   app.route("/api/system", systemRoutes());
   app.route("/api/lmstudio", lmstudioRoutes());
+  app.route("/api/llm", llmRoutes());
   app.route("/api/vectordb", vectordbRoutes());
   app.route("/api/scanner", scannerRoutes());
   app.route("/api/library", libraryRoutes());

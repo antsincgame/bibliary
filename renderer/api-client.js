@@ -14,6 +14,7 @@
 import { auth } from "./api-client/auth.js";
 import { datasets } from "./api-client/datasets.js";
 import { library } from "./api-client/library.js";
+import { llm } from "./api-client/llm.js";
 import { lmstudio } from "./api-client/lmstudio.js";
 import { preferences } from "./api-client/preferences.js";
 import { scanner } from "./api-client/scanner.js";
@@ -29,6 +30,7 @@ const api = {
   datasetV2,
   getCollections,
   library,
+  llm,
   lmstudio,
   preferences,
   resilience,
