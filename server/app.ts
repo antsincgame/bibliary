@@ -6,6 +6,7 @@ import { HTTPException } from "hono/http-exception";
 
 import { getCorsOrigins, loadConfig } from "./config.js";
 import { rateLimit } from "./middleware/rate-limit.js";
+import { adminRoutes } from "./routes/admin.js";
 import { authRoutes } from "./routes/auth.js";
 import { datasetsRoutes } from "./routes/datasets.js";
 import { eventsRoutes } from "./routes/events.js";
@@ -121,6 +122,7 @@ export function buildApp(): Hono<AppEnv> {
 
   app.route("/", healthRoutes());
   app.route("/api/auth", authRoutes());
+  app.route("/api/admin", adminRoutes());
   app.route("/api/preferences", preferencesRoutes());
   app.route("/api/system", systemRoutes());
   app.route("/api/lmstudio", lmstudioRoutes());
