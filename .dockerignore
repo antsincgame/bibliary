@@ -1,0 +1,52 @@
+# Build artifacts — пересоберём в builder stage.
+dist-electron/
+dist-server/
+dist-renderer/
+dist-portable/
+release/
+
+# Local toolchain / cache.
+node_modules/
+.electron-rebuild-stash/
+.husky/
+.git/
+.github/
+
+# Electron-only stuff не нужен в backend image.
+electron/main.ts
+electron/preload.ts
+electron/lmstudio-client.ts
+electron/ipc/
+build/
+electron-builder.yml
+tsconfig.electron.json
+
+# Tests / dev only.
+tests/
+playwright.config.*
+
+# IDE / OS.
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Local secrets / runtime data.
+.env
+.env.*
+!.env.example
+data/
+
+# Vendor binaries (downloaded by setup:* scripts).
+vendor/djvulibre/
+vendor/7zip/
+vendor/tessdata/
+
+# Docs / cursor only.
+.cursor/
+docs/
+.claude/
+
+# Logs / caches.
+*.log
+.cache/
