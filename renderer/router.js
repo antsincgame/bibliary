@@ -2,18 +2,20 @@ import { mountModels, unmountModels } from "./models/models-page.js";
 import { mountLibrary, isLibraryBusy, unmountLibrary, checkPendingLibraryNav } from "./library.js";
 import { mountDatasets } from "./datasets.js";
 import { mountSettings } from "./settings.js";
+import { mountAdmin } from "./admin.js";
 import { applyI18n, getLocale, setLocale, listLocales, onLocaleChange, t } from "./i18n.js";
 import { mountResilienceBar } from "./components/resilience-bar.js";
 import { openWelcomeWizard } from "./components/welcome-wizard.js";
 import { mountVersionBadge } from "./components/version-badge.js";
 import { mountAuthPage } from "./auth/auth-pages.js";
 
-const ROUTES = ["models", "library", "datasets", "settings"];
+const ROUTES = ["models", "library", "datasets", "settings", "admin"];
 const REMOUNT_ON_LOCALE = new Set([
   "library",
   "datasets",
   "models",
   "settings",
+  "admin",
 ]);
 const mounted = new Set();
 
@@ -22,6 +24,7 @@ function mountRoute(name) {
   else if (name === "datasets") mountDatasets(document.getElementById("datasets-root"));
   else if (name === "models") mountModels(document.getElementById("models-root"));
   else if (name === "settings") mountSettings(document.getElementById("settings-root"));
+  else if (name === "admin") mountAdmin(document.getElementById("admin-root"));
   mounted.add(name);
 }
 
@@ -112,7 +115,10 @@ async function requireAuth() {
     return; /* Electron preload — без gate. */
   }
   const current = await auth.meOrNull();
-  if (current) return;
+  if (current) {
+    revealAdminUiIfAdmin(current);
+    return;
+  }
   const authRoot = ensureAuthRoot();
   document.querySelectorAll(".route").forEach((el) => el.classList.remove("route-active"));
   document.querySelector(".sidebar")?.setAttribute("hidden", "true");
@@ -120,6 +126,20 @@ async function requireAuth() {
   await mountAuthPage(authRoot);
   authRoot.classList.remove("route-active");
   document.querySelector(".sidebar")?.removeAttribute("hidden");
+  /* After auth completes meOrNull has the role; re-check. */
+  try {
+    const after = await auth.meOrNull();
+    if (after) revealAdminUiIfAdmin(after);
+  } catch { /* tolerate */ }
+}
+
+/** Phase 11d — reveal the admin sidebar icon only for users with role==="admin". */
+function revealAdminUiIfAdmin(user) {
+  if (user && user.role === "admin") {
+    document.getElementById("sidebar-admin")?.removeAttribute("hidden");
+  } else {
+    document.getElementById("sidebar-admin")?.setAttribute("hidden", "true");
+  }
 }
 
 function ensureAuthRoot() {

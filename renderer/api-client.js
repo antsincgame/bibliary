@@ -11,6 +11,7 @@
  * Phase 3b добавит Appwrite Realtime adapter.
  */
 
+import { admin } from "./api-client/admin.js";
 import { auth } from "./api-client/auth.js";
 import { datasets } from "./api-client/datasets.js";
 import { library } from "./api-client/library.js";
@@ -24,6 +25,7 @@ import { getCollections, vectordb } from "./api-client/vectordb.js";
 
 /** @type {Record<string, unknown>} */
 const api = {
+  admin,
   appMenu,
   auth,
   datasets,
