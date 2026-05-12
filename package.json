@@ -3,7 +3,7 @@
   "version": "2.0.1",
   "type": "module",
   "main": "dist-server/server/main.js",
-  "description": "Local book library → structured Markdown → Δ-topology knowledge graph → ChatML JSONL fine-tuning datasets",
+  "description": "Self-hosted web service turning book libraries into Δ-topology knowledge graphs and ChatML JSONL fine-tuning datasets",
   "engines": {
     "node": ">=22"
   },
