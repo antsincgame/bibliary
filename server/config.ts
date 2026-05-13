@@ -102,6 +102,14 @@ export function loadConfig(): Config {
   return cached;
 }
 
+/** Test helper — drop the cached Config so subsequent loadConfig()
+ * calls re-read process.env. Tests that flip env vars at runtime
+ * (e.g. BIBLIARY_REGISTRATION_DISABLED) call this to make the
+ * change take effect. Never call from production code. */
+export function resetConfigForTesting(): void {
+  cached = null;
+}
+
 export function getAdminEmails(cfg: Config): Set<string> {
   if (!cfg.BIBLIARY_ADMIN_EMAILS) return new Set();
   return new Set(
