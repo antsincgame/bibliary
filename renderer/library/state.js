@@ -94,25 +94,12 @@ export const CATALOG = {
   },
   loading: false,
   unsubEvaluator: /** @type {null | (() => void)} */ (null),
-  unsubBatch: /** @type {null | (() => void)} */ (null),
 };
 
-export const BATCH = {
-  active: false,
-  batchId: /** @type {string|null} */ (null),
-  total: 0,
-  done: 0,
-  skipped: 0,
-  failed: 0,
-  /** @type {string|null} */
-  currentBookId: null,
-  /** @type {string|null} */
-  currentBookTitle: null,
-  /** @type {string|null} */
-  lastJobId: null,
-  /** @type {string|null} */
-  collection: null,
-};
+/* Phase 13a — legacy datasetV2 batch state struct retired. The new
+ * Phase 9 batch flow keeps no client-side state: a single POST returns
+ * the gate result, per-job progress flows through extractor_events,
+ * and there is no aggregator to reconcile. */
 
 /** @typedef {{
  *   filePath: string;

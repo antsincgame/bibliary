@@ -5,6 +5,7 @@ import { buildNeonHero, neonDivider } from "./components/neon-helpers.js";
 import { openWelcomeWizard, resetWelcomeWizard } from "./components/welcome-wizard.js";
 import { showAlert, showConfirm } from "./components/ui-dialog.js";
 import { SECTIONS } from "./settings/sections.js";
+import { mountProvidersPanel } from "./settings/providers-panel.js";
 
 /** @returns {any} */
 function api() { return /** @type {any} */ (window).api; }
@@ -340,6 +341,15 @@ function render(root) {
   root.appendChild(neonDivider());
 
   root.appendChild(renderPanelContent(root));
+
+  /* Providers panel mounted после основной формы. Загрузка
+   * асинхронна — UI показывает placeholder до загрузки providers. */
+  const providersContainer = el("section", { class: "settings-providers-panel" });
+  root.appendChild(neonDivider());
+  root.appendChild(providersContainer);
+  if (api().llm && typeof api().llm.listProviders === "function") {
+    void mountProvidersPanel(providersContainer);
+  }
 
   const actions = el("div", { class: "settings-actions" }, [
     el("span", { id: "settings-unsaved-count", class: "settings-unsaved-count" }, ""),

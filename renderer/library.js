@@ -22,7 +22,10 @@ import { buildCatalogPane, renderCatalog, renderCatalogTable, highlightCatalogBo
 import { buildImportPane, renderImport, pushImportPaneLog } from "./library/import-pane.js";
 import { mountCollectionViews } from "./library/collection-views.js";
 import { refreshEvaluatorState } from "./library/evaluator.js";
-import { applyBatchEvent } from "./library/batch-actions.js";
+/* Phase 13a — applyBatchEvent (datasetV2 SSE handler) retired with the
+ * legacy crystallization wizard. Batch progress in Phase 9 is observed
+ * via per-book extractor_events:created events; no in-renderer
+ * aggregator needed. */
 import { closeReader, isReaderOpen, openBook } from "./library/reader.js";
 
 function switchTab(tab, root) {
@@ -103,11 +106,17 @@ export async function mountLibrary(root) {
   root.append(layout);
 
   if (typeof CATALOG.unsubEvaluator === "function") CATALOG.unsubEvaluator();
-  if (typeof CATALOG.unsubBatch === "function") CATALOG.unsubBatch();
+  if (typeof CATALOG.unsubExtractor === "function") CATALOG.unsubExtractor();
 
   installWindowDropGuards(root);
 
-  CATALOG.unsubEvaluator = window.api.library.onEvaluatorEvent((ev) => {
+  /**
+   * Phase 6f split: evaluator events (POST /evaluate) и extractor events
+   * (POST /extract) идут на разные SSE channels. Тот же callback
+   * рефрешит UI на обоих — book row может изменить score (evaluator)
+   * или статус indexed/failed (extractor).
+   */
+  const onPipelineEvent = (ev) => {
     if (STATE.tab === "catalog") void renderCatalog(root);
     if (STATE.tab === "import") void refreshEvaluatorState(root);
     if (ev.bookId && STATE.tab !== "catalog" && STATE.tab !== "import") {
@@ -119,30 +128,68 @@ export async function mountLibrary(root) {
         }
       }
     }
-  });
-
-  CATALOG.unsubBatch = window.api.datasetV2.onEvent((ev) => {
-    applyBatchEvent(root, ev, catalogDeps);
-    if (ev && ev.stage === "config" && ev.phase === "delta-models") {
-      const chainArr = Array.isArray(ev.extractModelChain) ? ev.extractModelChain : [];
-      const chainText = chainArr.join(" → ");
-      const cross = Boolean(ev.deltaCrossModel);
-      const msg = cross
-        ? t("library.extraction.deltaChain", { chain: chainText })
-        : t("library.extraction.deltaChainSingle", { model: String(ev.extractModel ?? chainArr[0] ?? "") });
+    /* Δ-ui-a — log Δ-topology counters when an extraction finishes.
+     * The bridge emits a single 'done' event per book with the full
+     * tally; surface it in the import-pane log so users see how much
+     * structure was produced beyond the headline conceptsAccepted. */
+    const p = ev && ev.payload;
+    if (ev && ev.event === "done" && p && p.kind === "extraction") {
+      const parts = [];
+      if (typeof p.conceptsAccepted === "number") {
+        parts.push(`${p.conceptsAccepted} concepts`);
+      }
+      if (typeof p.chunksTotal === "number") {
+        parts.push(`${p.chunksTotal} L1 chunks`);
+      }
+      if (typeof p.entitiesTouched === "number" && p.entitiesTouched > 0) {
+        parts.push(`${p.entitiesTouched} entities`);
+      }
+      if (typeof p.relationsInserted === "number" && p.relationsInserted > 0) {
+        parts.push(`${p.relationsInserted} relations`);
+      }
+      if (typeof p.propositionsInserted === "number" && p.propositionsInserted > 0) {
+        parts.push(`${p.propositionsInserted} propositions`);
+      }
+      if (parts.length > 0) {
+        pushImportPaneLog({
+          level: "info",
+          category: "extraction.topology",
+          message: `Topology: ${parts.join(" · ")}`,
+          details: {
+            bookId: ev.bookId,
+            chaptersProcessed: p.chaptersProcessed,
+            conceptsAccepted: p.conceptsAccepted,
+            conceptsFailed: p.conceptsFailed,
+            entitiesTouched: p.entitiesTouched,
+            relationsInserted: p.relationsInserted,
+            propositionsInserted: p.propositionsInserted,
+            usingFallback: p.usingFallback,
+          },
+        });
+      }
+    }
+    /* Phase 9 — surface the batch:filtered SSE so users immediately
+     * see "queued 27/30, skipped 3" instead of waiting for first
+     * child job to start. */
+    if (ev && ev.event === "batch:filtered" && p && p.kind === "batch") {
       pushImportPaneLog({
         level: "info",
-        category: "extraction.delta-models",
-        message: msg,
-        details: {
-          extractModel: ev.extractModel,
-          extractModelChain: chainArr,
-          rawDeltaChain: ev.rawDeltaChain,
-          deltaCrossModel: ev.deltaCrossModel,
-        },
+        category: "extraction.batch",
+        message: `Batch → '${p.collection}': ${p.eligible}/${p.total} eligible, ${p.skipped} skipped (minQuality ${p.minQuality})`,
+        details: { batchId: ev.batchId, ...p },
       });
     }
-  });
+  };
+  CATALOG.unsubEvaluator = window.api.library.onEvaluatorEvent(onPipelineEvent);
+  if (typeof window.api.library.onExtractorEvent === "function") {
+    CATALOG.unsubExtractor = window.api.library.onExtractorEvent(onPipelineEvent);
+  }
+
+  /* Phase 13a — legacy datasetV2.onEvent subscription removed. The
+   * extractor_events:created channel above already carries every event
+   * the old datasetV2 bridge multiplexed (including the delta-models
+   * "config" notification, which now arrives as part of the extractor
+   * pipeline event stream). */
 
   void renderCatalog(root);
   renderImport(root);
@@ -158,13 +205,13 @@ export function isLibraryBusy() {
  * Called by router.js before unmounting (locale switch / remount).
  */
 export function unmountLibrary() {
+  if (typeof CATALOG.unsubExtractor === "function") {
+    CATALOG.unsubExtractor();
+    CATALOG.unsubExtractor = null;
+  }
   if (typeof CATALOG.unsubEvaluator === "function") {
     CATALOG.unsubEvaluator();
     CATALOG.unsubEvaluator = null;
-  }
-  if (typeof CATALOG.unsubBatch === "function") {
-    CATALOG.unsubBatch();
-    CATALOG.unsubBatch = null;
   }
   if (typeof CATALOG._unsubDownload === "function") {
     CATALOG._unsubDownload();

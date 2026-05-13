@@ -1,6 +1,8 @@
 node_modules/
 dist/
 dist-electron/
+dist-renderer/
+dist-server/
 release/
 .env
 .cache/
@@ -51,6 +53,18 @@ data/library/
 data/bibliary-cache.db
 data/bibliary-cache.db-wal
 data/bibliary-cache.db-shm
+
+# Web-mode sqlite-vec runtime state (server/lib/vectordb/db.ts opens
+# BIBLIARY_VECTORS_DB_PATH or ./data/vectors.db). Per-pod runtime,
+# never committed. WAL + SHM companion files included.
+data/vectors.db
+data/vectors.db-wal
+data/vectors.db-shm
+
+# HuggingFace ONNX model cache (server/lib/embedder/index.ts points
+# TRANSFORMERS_CACHE at BIBLIARY_DATA_DIR/models). Auto-downloaded
+# at first embed call (or via prewarm); never committed.
+data/models/
 
 # Converter output cache (EPUB/PDF/TXT artifacts; не для VCS)
 data/converters-cache/

@@ -8,6 +8,7 @@ import {
   recordDataset,
   onHistoryChange,
 } from "./datasets-history.js";
+import { buildSearchChunksPanel } from "./datasets-search.js";
 /**
  * Раздел «Датасеты» — простой список созданных датасетов с возможностью
  * посмотреть Q/A в человекочитаемом виде, поискать по тексту, открыть
@@ -79,49 +80,147 @@ function buildTopBar(root) {
     },
   });
 
-  const importBtn = el(
-    "button",
-    {
-      class: "cv-btn",
-      type: "button",
-      onclick: async () => {
-        try {
-          const dir = await window.api.datasets.pickFolder();
-          if (!dir) return;
-          const meta = await window.api.datasets.readMeta(dir);
-          if (!meta.ok || !meta.meta) {
-            await showAlert(meta.error || t("datasets.import.invalid"));
-            return;
-          }
-          const m = meta.meta;
-          recordDataset({
-            outputDir: dir,
-            collection: String(m.sourceCollection ?? ""),
-            format: String(m.format ?? "sharegpt"),
-            method: m.method === "llm-synth" ? "llm-synth" : "template",
-            model: typeof m.model === "string" ? m.model : undefined,
-            concepts: Number(m.concepts ?? 0),
-            totalLines: Number(m.totalLines ?? 0),
-            trainLines: Number(m.trainLines ?? 0),
-            valLines: Number(m.valLines ?? 0),
-            durationMs: typeof m.durationMs === "number" ? m.durationMs : undefined,
-            createdAt: String(m.generatedAt ?? new Date().toISOString()),
-          });
-        } catch (e) {
-          await showAlert(e instanceof Error ? e.message : String(e));
-        }
-      },
-    },
-    t("datasets.import.btn"),
-  );
+  /* Electron-only «Import from folder» — Electron preload даёт pickFolder.
+   * Feature-detect через typeof — в web-режиме (вместо folder picker)
+   * показываем «Build» кнопку которая ходит на POST /api/datasets/build. */
+  const importBtn =
+    typeof /** @type {any} */ (window.api.datasets).pickFolder === "function" &&
+    !String(/** @type {any} */ (window.api.datasets).pickFolder)
+      .toString()
+      .includes("not yet implemented")
+      ? el(
+          "button",
+          {
+            class: "cv-btn",
+            type: "button",
+            onclick: async () => {
+              try {
+                const dir = await window.api.datasets.pickFolder();
+                if (!dir) return;
+                const meta = await window.api.datasets.readMeta(dir);
+                if (!meta.ok || !meta.meta) {
+                  await showAlert(meta.error || t("datasets.import.invalid"));
+                  return;
+                }
+                const m = meta.meta;
+                recordDataset({
+                  outputDir: dir,
+                  collection: String(m.sourceCollection ?? ""),
+                  format: String(m.format ?? "sharegpt"),
+                  method: m.method === "llm-synth" ? "llm-synth" : "template",
+                  model: typeof m.model === "string" ? m.model : undefined,
+                  concepts: Number(m.concepts ?? 0),
+                  totalLines: Number(m.totalLines ?? 0),
+                  trainLines: Number(m.trainLines ?? 0),
+                  valLines: Number(m.valLines ?? 0),
+                  durationMs:
+                    typeof m.durationMs === "number" ? m.durationMs : undefined,
+                  createdAt: String(m.generatedAt ?? new Date().toISOString()),
+                });
+              } catch (e) {
+                await showAlert(e instanceof Error ? e.message : String(e));
+              }
+            },
+          },
+          t("datasets.import.btn"),
+        )
+      : null;
+
+  /* Phase 8a Cube-assembly: «Build dataset» button — feature-detected
+   * для web mode (api.datasets.build только в Phase 8a). Открывает
+   * inline-prompt для collection name + format, дёргает sync build,
+   * показывает {lineCount, bytes} + Download link. */
+  const buildBtn =
+    typeof /** @type {any} */ (window.api.datasets).build === "function"
+      ? el(
+          "button",
+          {
+            class: "cv-btn",
+            type: "button",
+            onclick: () => void runBuildDataset(),
+          },
+          "Build dataset",
+        )
+      : null;
 
   return el("div", { class: "ds-list-topbar" }, [
     el("div", { class: "ds-list-title" }, [
       el("h1", { class: "ds-list-h" }, t("datasets.title")),
       el("p", { class: "ds-list-sub" }, t("datasets.subtitle")),
     ]),
-    el("div", { class: "ds-list-tools" }, [search, importBtn]),
+    el(
+      "div",
+      { class: "ds-list-tools" },
+      [search, importBtn, buildBtn].filter(Boolean),
+    ),
   ]);
+}
+
+async function runBuildDataset() {
+  const { showPrompt } = await import("./components/ui-dialog.js");
+  const collection = await showPrompt(
+    "Source collection name (must match concepts accumulated via Crystallize):",
+    "default",
+    { title: "Build dataset", okText: "Next" },
+  );
+  if (!collection || !/^[a-zA-Z0-9_-]+$/.test(collection)) {
+    if (collection) await showAlert("Collection name must match [a-zA-Z0-9_-]+");
+    return;
+  }
+  const formatRaw = await showPrompt(
+    "Format: 'jsonl' (raw delta, instant) | 'sharegpt' (Q&A pairs, ~5s/concept) | 'chatml' (Q&A rendered как <|im_start|> template):",
+    "jsonl",
+    { title: "Format", okText: "Build" },
+  );
+  if (!formatRaw) return;
+  const trimmed = formatRaw.trim();
+  const format =
+    trimmed === "sharegpt"
+      ? "sharegpt"
+      : trimmed === "chatml"
+        ? "chatml"
+        : "jsonl";
+  try {
+    const result = /** @type {any} */ (
+      await window.api.datasets.build({ collection, format })
+    );
+    if (!result?.ok) {
+      await showAlert(
+        result?.error === "no_concepts_in_collection"
+          ? `Collection '${collection}' is empty — accept some concepts first.`
+          : `Build failed: ${result?.error ?? "unknown"}`,
+      );
+      return;
+    }
+    /* Add to local history for visibility + open Download link. */
+    recordDataset({
+      outputDir: result.jobId,
+      collection,
+      format,
+      method: format === "sharegpt" ? "llm-synth" : "template",
+      concepts: result.lineCount ?? 0,
+      totalLines: result.lineCount ?? 0,
+      trainLines: result.lineCount ?? 0,
+      valLines: 0,
+      createdAt: new Date().toISOString(),
+    });
+    const url = /** @type {any} */ (window.api.datasets).downloadUrl(result.jobId);
+    /* Trigger browser save-as via <a download>. */
+    const ext =
+      format === "chatml"
+        ? "chatml.jsonl"
+        : format === "sharegpt"
+          ? "sharegpt.jsonl"
+          : "jsonl";
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${collection}-${Date.now()}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } catch (e) {
+    await showAlert(e instanceof Error ? e.message : String(e));
+  }
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -206,21 +305,10 @@ function buildCard(root, r) {
         },
         t("datasets.card.open"),
       ),
-      el(
-        "button",
-        {
-          class: "cv-btn",
-          type: "button",
-          onclick: async () => {
-            try {
-              await window.api.datasetV2.openFolder(r.outputDir);
-            } catch (e) {
-              await showAlert(e instanceof Error ? e.message : String(e));
-            }
-          },
-        },
-        t("datasets.card.folder"),
-      ),
+      /* Phase 13a — "Open folder" button removed in web mode. The
+       * native shell.openPath call lived on the Electron preload's
+       * datasetV2 surface; web mode has no equivalent and the dataset
+       * exports are reachable as downloads from the history list. */
       el(
         "button",
         {
@@ -499,11 +587,18 @@ export function mountDatasets(root) {
 
   const layout = el("div", { class: "ds-list-page" }, [
     buildTopBar(root),
+    /* Δ-ui-b — graph-aware semantic search sits above the export
+     * history so it's the first thing a returning user sees. The
+     * panel is self-contained; deps on window.api.datasets.searchChunks
+     * only (feature-detect via existence of the method). */
+    typeof /** @type {any} */ (window.api?.datasets)?.searchChunks === "function"
+      ? buildSearchChunksPanel()
+      : null,
     el("div", { class: "ds-list-grid" }, [
       buildList(),
       el("div", { class: "ds-detail", id: "ds-detail" }),
     ]),
-  ]);
+  ].filter(Boolean));
   root.append(layout);
 
   renderListBody(root);

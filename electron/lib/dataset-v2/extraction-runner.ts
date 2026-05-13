@@ -35,7 +35,13 @@ import { getModelProfile } from "./model-profile.js";
 import { buildDeltaKnowledgeResponseFormat } from "./json-schemas.js";
 import { ALLOWED_DOMAINS } from "./crystallizer-constants.js";
 import { getModelPool } from "../llm/model-pool.js";
-import { activeJobs, DEFAULT_COLLECTION } from "../../ipc/dataset-v2-ipc-state.js";
+/* Phase 13c-light: IPC state module was deleted alongside the
+ * Electron preload. activeJobs was its abort-controller registry;
+ * since the IPC cancel handler is gone, no external caller reads it.
+ * Keep a local Map so the .set/.delete calls below stay valid (write
+ * to a sink), and inline DEFAULT_COLLECTION. */
+const activeJobs = new Map<string, AbortController>();
+const DEFAULT_COLLECTION = "delta-knowledge";
 import { getChunksBulkhead } from "../resilience/bulkhead.js";
 
 export interface StartExtractionArgs {

@@ -4,12 +4,14 @@
  */
 import { el, clear } from "../dom.js";
 import { t, getLocale } from "../i18n.js";
-import { showAlert, showConfirm } from "../components/ui-dialog.js";
+import { showAlert, showConfirm, showPrompt } from "../components/ui-dialog.js";
 import { buildCollectionPicker } from "../components/collection-picker.js";
 import { CATALOG, STATE } from "./state.js";
 import { filterCatalog as filterCatalogPure, qualityClass, statusClass } from "./catalog-filter.js";
 import { fmtWords, fmtQuality, fmtUniqueness } from "./format.js";
-import { guardAndCrystallize, cancelBatchExtraction } from "./batch-actions.js";
+/* Phase 13a — legacy datasetV2 batch dispatcher retired. The new
+ * "Crystallize" button (Phase 9) uses POST /api/library/batches/start
+ * with server-side quality gate; no in-renderer state machine needed. */
 import { openBook } from "./reader.js";
 import { openTagCloudModal } from "./tag-cloud.js";
 import { displayBookTitle, displayBookAuthor, bookTitleTooltip } from "./display-meta.js";
@@ -197,6 +199,11 @@ export async function loadMoreCatalog(root = null) {
 export function renderCatalogTable(root) {
   const tbody = root.querySelector(".lib-catalog-tbody");
   if (!tbody) return;
+  /* Drop the existing observer targets before clearing the tbody so
+   * the detached <td>s don't linger as observed-but-orphan refs.
+   * disconnect() resets all targets without destroying the observer
+   * instance — the new rows below will observe() afresh. */
+  if (COVER_OBSERVER) COVER_OBSERVER.disconnect();
   clear(tbody);
 
   const filtered = filterCatalog(CATALOG.rows);
@@ -595,6 +602,89 @@ export function buildCatalogBottomBar(root, deps) {
     }),
   }, t("library.catalog.btn.reevaluate"));
 
+  /* Phase 8 cube-assembly: «Crystallize» button → POST /api/library/books/:id/extract
+   * async. Запускает background extraction job через extraction-queue,
+   * прогресс летит в SSE channel extractor_events:created → catalog
+   * слушает onExtractorEvent и refresh'нёт row на завершение.
+   *
+   * Видимость: только в advanced mode (рядом с reevaluate) — для не-power
+   * users автоматическая crystallization запустится из batch-actions
+   * после evaluate-pass.
+   *
+   * Feature-detect: window.api.library.extract существует с Phase 6e.
+   * В Electron-режиме preload не выставляет — кнопка просто не рендерится. */
+  const crystallizeBtn =
+    typeof /** @type {any} */ (window.api.library).startBatch === "function"
+      ? el(
+          "button",
+          {
+            type: "button",
+            class: "lib-btn lib-btn-ghost",
+            "data-mode-min": "advanced",
+            title: "Crystallize selected books — extract delta-knowledge to collection",
+            onclick: (ev) =>
+              void withButtonBusy(ev, async () => {
+                if (CATALOG.selected.size === 0) {
+                  setCatalogStatus(root, t("library.catalog.toast.nothingSelected"));
+                  return;
+                }
+                const collection =
+                  (await showPrompt(
+                    "Target collection name (alphanumeric, dashes, underscores):",
+                    "default",
+                    {
+                      title: "Crystallize → collection",
+                      okText: "Queue extraction",
+                    },
+                  )) ?? "";
+                if (!collection || !/^[a-zA-Z0-9_-]+$/.test(collection)) {
+                  if (collection) await showAlert("Collection name must match [a-zA-Z0-9_-]+");
+                  return;
+                }
+                const ids = Array.from(CATALOG.selected);
+                try {
+                  /* Phase 9 — single batch call. Server runs the quality
+                   * gate; per-book results come back as a single response
+                   * + downstream SSE per child job. */
+                  const r = /** @type {any} */ (
+                    await window.api.library.startBatch({
+                      bookIds: ids,
+                      collection,
+                    })
+                  );
+                  /* Group skipped reasons for a tighter toast. */
+                  /** @type {Record<string, number>} */
+                  const reasons = {};
+                  for (const s of r.skipped ?? []) {
+                    const key = String(s.reason ?? "unknown");
+                    reasons[key] = (reasons[key] ?? 0) + 1;
+                  }
+                  const skipSummary = Object.keys(reasons).length
+                    ? " · Skipped: " +
+                      Object.entries(reasons)
+                        .map(([k, n]) => `${n} ${k.replace(/_/g, " ")}`)
+                        .join(", ")
+                    : "";
+                  setCatalogStatus(
+                    root,
+                    `Queued ${r.eligible}/${r.total} → '${collection}'${skipSummary}`,
+                  );
+                  if ((r.skipped?.length ?? 0) > 0 && r.eligible === 0) {
+                    await showAlert(
+                      `No books were eligible.${skipSummary}\n\nEvaluate first (qualityScore ≥ 5) to unlock crystallization.`,
+                    );
+                  }
+                } catch (e) {
+                  await showAlert(
+                    `Batch failed: ${compactError(catalogErrMsg(e))}`,
+                  );
+                }
+              }),
+          },
+          "Crystallize",
+        )
+      : null;
+
   /* refactor 1.0.22: AI illustration enrichment удалён (vision_illustration role). */
 
   /* v1.0.2: Sweep dead imports (incomplete-torrent files). Always visible
@@ -690,29 +780,12 @@ export function buildCatalogBottomBar(root, deps) {
     }),
   }, t("library.catalog.btn.reparse"));
 
-  const chunksBtn = el("button", {
-    type: "button", class: "lib-btn lib-btn-primary",
-    title: t("library.catalog.tooltip.createChunks"),
-    onclick: () => void guardAndCrystallize(root, deps),
-  }, t("library.catalog.btn.createChunks"));
-
-  const cancelBatchBtn = el("button", {
-    type: "button", class: "lib-btn lib-btn-danger lib-btn-cancel-batch",
-    title: t("library.catalog.batch.confirmCancel"),
-    style: "display: none",
-    onclick: () => void cancelBatchExtraction(),
-  }, t("library.catalog.btn.cancelBatch"));
-
-  /* Иt 8Е.3: «Откатить извлечение» — удалить точки книг из активной коллекции
-     (для книг которые уже crystallized). Backend: scanner.deleteFromCollection. */
-  const revertBtn = el("button", {
-    type: "button", class: "lib-btn lib-btn-ghost",
-    title: t("library.catalog.revert.tooltip"),
-    onclick: (ev) => void withButtonBusy(ev, async () => {
-      const { revertCrystallizationForSelected } = await import("./batch-actions.js");
-      await revertCrystallizationForSelected(root, deps);
-    }),
-  }, t("library.catalog.revert.btn"));
+  /* Phase 13a — chunksBtn (legacy "Create chunks" with datasetV2.startBatch),
+   * cancelBatchBtn (legacy in-renderer cancel) and revertBtn
+   * (scanner.deleteFromCollection — Electron only) removed. The Phase 9
+   * Crystallize button above replaces createChunks; per-job cancel is
+   * available via /api/library/jobs/:id/cancel and surfaced in the
+   * job-list UI (not in the bottom bar). */
 
   const burnAllBtn = el("button", {
     type: "button", class: "lib-btn lib-btn-danger",
@@ -753,7 +826,9 @@ export function buildCatalogBottomBar(root, deps) {
   return el("div", { class: "lib-catalog-bottombar" }, [
     metaRow,
     el("div", { class: "lib-catalog-bottom-actions" }, [
-      selectAllBtn, clearBtn, reevaluateBtn, reparseBtn, purgeDeadBtn, deleteBtn, burnAllBtn, chunksBtn, revertBtn, cancelBatchBtn,
+      selectAllBtn, clearBtn, reevaluateBtn,
+      ...(crystallizeBtn ? [crystallizeBtn] : []),
+      reparseBtn, purgeDeadBtn, deleteBtn, burnAllBtn,
     ]),
     batchSummary,
   ]);

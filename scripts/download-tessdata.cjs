@@ -22,7 +22,11 @@ const https = require("https");
 const ROOT = path.resolve(__dirname, "..");
 const TESSDATA_DIR = path.join(ROOT, "vendor", "tessdata");
 const URL_BASE = "https://github.com/tesseract-ocr/tessdata_fast/raw/main";
-const LANGUAGES = ["rus", "ukr", "eng"];
+/* Focus on three language families: Cyrillic (rus, ukr), Chinese
+ * (chi_sim simplified, chi_tra traditional), English. tessdata_fast
+ * ~3-5MB each — total ~25MB. Phase 13b decision: keep CPU-only, no
+ * PaddleOCR or Python sidecar. */
+const LANGUAGES = ["rus", "ukr", "eng", "chi_sim", "chi_tra"];
 
 function downloadFile(url, destPath) {
   return new Promise((resolve, reject) => {
