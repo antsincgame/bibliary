@@ -6,6 +6,7 @@ import { InputFile } from "node-appwrite/file";
 import { z } from "zod";
 
 import type { AppEnv } from "../app.js";
+import { loadConfig } from "../config.js";
 import { BUCKETS, getAppwrite } from "../lib/appwrite.js";
 import { importFiles } from "../lib/library/import-pipeline.js";
 
@@ -59,10 +60,27 @@ export function registerIngestionRoutes(app: Hono<AppEnv>): void {
     const user = c.get("user");
     if (!user) throw new HTTPException(401, { message: "auth_required" });
 
+    const cfg = loadConfig();
+    /* Hono parseBody buffers the whole multipart body in RAM — without
+     * a size cap a single rogue upload OOMs the pod. Default 200 MB
+     * via BIBLIARY_UPLOAD_MAX_BYTES; tune up in .env for giant scanned
+     * PDF corpora. Content-Length is set by browsers; we double-check
+     * the actual buffered size below in case of chunked encoding. */
+    const contentLength = Number(c.req.header("content-length") ?? "0");
+    if (contentLength > cfg.BIBLIARY_UPLOAD_MAX_BYTES) {
+      throw new HTTPException(413, { message: "upload_too_large" });
+    }
+
     const body = await c.req.parseBody();
     const file = body["file"];
     if (!(file instanceof File)) {
       throw new HTTPException(400, { message: "file_field_required" });
+    }
+    if (file.size === 0) {
+      throw new HTTPException(400, { message: "upload_empty" });
+    }
+    if (file.size > cfg.BIBLIARY_UPLOAD_MAX_BYTES) {
+      throw new HTTPException(413, { message: "upload_too_large" });
     }
     const buffer = Buffer.from(await file.arrayBuffer());
     const fileName = file.name || "upload.bin";

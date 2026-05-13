@@ -1,3 +1,4 @@
+import bcrypt from "bcryptjs";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { zValidator } from "@hono/zod-validator";
@@ -44,6 +45,21 @@ const ChangePasswordBody = z.object({
   currentPassword: z.string().min(1).max(256),
   newPassword: z.string().min(8).max(256),
 });
+
+/* Constant-time placeholder hash for /login when the user doesn't
+ * exist or is deactivated. bcrypt.compare against this hash takes the
+ * same CPU profile as a real verify (~250ms at cost 12), so an
+ * attacker can't enumerate registered emails by timing the response.
+ *
+ * Computed lazily on first /login call (not at module load) so boot
+ * cold-start stays fast. Subsequent requests reuse the cached hash. */
+let dummyBcryptHashCache: string | null = null;
+function getDummyBcryptHash(): string {
+  if (!dummyBcryptHashCache) {
+    dummyBcryptHashCache = bcrypt.hashSync("never_matches_anything", 12);
+  }
+  return dummyBcryptHashCache;
+}
 
 interface PublicUser {
   id: string;
@@ -166,12 +182,18 @@ export function authRoutes(): Hono<AppEnv> {
     const cfg = loadConfig();
     const body = c.req.valid("json");
 
+    /* Constant-time timing discipline: always run bcrypt.compare even
+     * when the user doesn't exist or is deactivated. Without this, an
+     * attacker can enumerate registered emails by measuring response
+     * latency: nonexistent-email returns instantly (~5ms), wrong-
+     * password returns slow (~250ms with bcrypt cost 12). Both paths
+     * now take the slow bcrypt path. DUMMY_HASH is a real bcrypt-hashed
+     * placeholder so verifyPassword does identical CPU work. */
     const user = await findUserByEmail(body.email);
-    if (!user || user.deactivated) {
-      throw new HTTPException(401, { message: "invalid_credentials" });
-    }
-    const ok = await verifyPassword(body.password, user.passwordHash);
-    if (!ok) {
+    const targetHash =
+      user && !user.deactivated ? user.passwordHash : getDummyBcryptHash();
+    const ok = await verifyPassword(body.password, targetHash);
+    if (!user || user.deactivated || !ok) {
       throw new HTTPException(401, { message: "invalid_credentials" });
     }
 

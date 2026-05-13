@@ -173,10 +173,21 @@ export function registerCatalogRoutes(app: Hono<AppEnv>): void {
     }
     try {
       const { body, mime } = await streamFile(BUCKETS.bookOriginals, book.originalFileId);
-      const filename = `${book.title.replace(/[^a-z0-9._-]/gi, "_")}.${book.originalExtension ?? "bin"}`;
+      /* Pre-release: stricter filename sanitization. Title may contain
+       * Unicode (Cyrillic, CJK) so we (a) strip control chars + quote
+       * + backslash for the ASCII fallback, (b) UTF-8-percent-encode
+       * for RFC 5987 `filename*`. Browsers prefer filename* when both
+       * are present, falling back to filename for legacy. */
+      const safeAscii = book.title
+        .replace(/[\x00-\x1f"\\/:*?<>|]/g, "_")
+        .replace(/[^\x20-\x7e]/g, "_")
+        .slice(0, 200);
+      const ext = (book.originalExtension ?? "bin").replace(/[^a-z0-9]/gi, "");
+      const asciiName = `${safeAscii || "book"}.${ext}`;
+      const utf8Name = encodeURIComponent(`${book.title.slice(0, 200)}.${ext}`);
       return c.body(body, 200, {
         "content-type": mime ?? "application/octet-stream",
-        "content-disposition": `attachment; filename="${filename}"`,
+        "content-disposition": `attachment; filename="${asciiName}"; filename*=UTF-8''${utf8Name}`,
       });
     } catch (err) {
       if (isAppwriteCode(err, 404)) {
