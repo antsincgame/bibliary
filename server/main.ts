@@ -3,6 +3,7 @@ import { serve } from "@hono/node-server";
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { prewarmEmbedderInBackground } from "./lib/embedder/index.js";
+import { startExportWorker } from "./lib/queue/export-queue.js";
 import { startExtractionWorker } from "./lib/queue/extraction-queue.js";
 import { closeVectorDb } from "./lib/vectordb/db.js";
 
@@ -20,10 +21,13 @@ async function main(): Promise<void> {
       console.log(
         `[bibliary] listening on http://${info.address}:${info.port} (${cfg.NODE_ENV})`,
       );
-      /* Background worker: resumes queued dataset_jobs из Appwrite после
-       * restart, дальше работает на enqueue triggers. Fire-and-forget
-       * — ошибки логируются внутри. */
+      /* Background workers: each resumes its own queued docs from the
+       * shared dataset_jobs collection (extraction filters out
+       * stage="build:*", export filters those IN — see
+       * job-store.isExportJobStage). Both are fire-and-forget; errors
+       * are logged inside the worker. */
       startExtractionWorker();
+      startExportWorker();
       /* Pre-warm the embedder so the first user-facing /search or
        * crystallization extraction doesn't pay the 5-15s ONNX cold
        * start. Fire-and-forget; failures fall back to lazy load on

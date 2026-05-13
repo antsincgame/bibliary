@@ -4,6 +4,7 @@ import {
   createJob,
   getJob,
   getJobRaw,
+  isExportJobStage,
   listQueuedJobs,
   listStaleRunningJobs,
   touchJob,
@@ -131,6 +132,10 @@ class ExtractionQueueImpl {
     try {
       const stale = await listStaleRunningJobs(STALE_TIMEOUT_MS);
       for (const job of stale) {
+        /* Phase 8b: dataset_jobs collection now hosts both extraction
+         * and export build docs. Skip exports — they have their own
+         * queue which preserves the build:<format> stage on reset. */
+        if (isExportJobStage(job.stage)) continue;
         const ok = await transitionJob(job.id, "queued", { stage: "orphan-reset" });
         if (ok) {
           orphansReset += 1;
@@ -152,6 +157,8 @@ class ExtractionQueueImpl {
     const queued = await listQueuedJobs();
     let queuedAdded = 0;
     for (const job of queued) {
+      /* Same export-stage filter as the orphan-reset loop above. */
+      if (isExportJobStage(job.stage)) continue;
       if (this.pending.includes(job.id)) continue;
       if (this.active.has(job.id)) continue;
       this.pending.push(job.id);
@@ -196,6 +203,12 @@ class ExtractionQueueImpl {
     if (!job) return; // deleted / orphan
     /* Если уже cancelled (race с POST /cancel до пиклапа) — skip. */
     if (job.state !== "queued") return;
+    /* Belt-and-braces: export build docs share the dataset_jobs
+     * collection. resumeFromAppwrite filters them out, but if anyone
+     * push'ed an export jobId into this.pending by mistake, skip it
+     * rather than try to run extractBookViaBridge against a bookId
+     * that's null. */
+    if (isExportJobStage(job.stage)) return;
 
     const claimed = await transitionJob(jobId, "running", { stage: "running" });
     if (!claimed) return; // race lost (or cancelled meanwhile)

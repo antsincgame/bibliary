@@ -85,6 +85,60 @@ export async function createJob(input: CreateJobInput): Promise<JobDoc> {
   return toJob(raw);
 }
 
+/**
+ * Phase 8b — export build job (sibling to extraction `createJob`). Same
+ * `dataset_jobs` collection, distinguished by `stage` prefix `build:` so
+ * the two queues (extraction-queue and export-queue) can each filter
+ * their own queued docs on boot resume without a schema migration.
+ *
+ *   stage  = `build:<format>`  (jsonl / sharegpt / chatml)
+ *   state  = "queued"           → worker pickup
+ *   bookId = null               (export is collection-wide, not book-scoped)
+ */
+export async function createExportJob(input: {
+  userId: string;
+  collection: string;
+  format: string;
+}): Promise<JobDoc> {
+  const { databases, databaseId } = getAppwrite();
+  const nowIso = new Date().toISOString();
+  const doc: Record<string, unknown> = {
+    userId: input.userId,
+    state: "queued" as JobState,
+    stage: `build:${input.format}`,
+    booksTotal: 0,
+    booksProcessed: 0,
+    conceptsExtracted: 0,
+    targetCollection: input.collection,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  };
+  const raw = await databases.createDocument<RawJob>(
+    databaseId,
+    COLLECTIONS.datasetJobs,
+    ID.unique(),
+    doc,
+    [
+      Permission.read(Role.user(input.userId)),
+      Permission.update(Role.user(input.userId)),
+      Permission.delete(Role.user(input.userId)),
+      Permission.read(Role.team("admin")),
+    ],
+  );
+  return toJob(raw);
+}
+
+/**
+ * True if the job's stage marker identifies it as an export build, not
+ * an extraction. Used by each queue's resumeFromAppwrite() to skip the
+ * other queue's queued docs. Keep this predicate in one place so the
+ * stage convention can't drift between writer (createExportJob) and
+ * readers.
+ */
+export function isExportJobStage(stage: string | null | undefined): boolean {
+  return typeof stage === "string" && stage.startsWith("build:");
+}
+
 export async function getJob(userId: string, jobId: string): Promise<JobDoc | null> {
   const { databases, databaseId } = getAppwrite();
   try {

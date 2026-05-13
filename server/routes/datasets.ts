@@ -6,13 +6,14 @@ import { z } from "zod";
 
 import type { AppEnv } from "../app.js";
 import { COLLECTIONS, getAppwrite, type RawDoc } from "../lib/appwrite.js";
-import { buildDataset, downloadExport } from "../lib/datasets/build-bridge.js";
+import { downloadExport } from "../lib/datasets/build-bridge.js";
 import { embedQuery } from "../lib/embedder/index.js";
 import {
   getExportJob,
   listExports,
   readJsonlHead,
 } from "../lib/library/datasets.js";
+import { getExportQueue } from "../lib/queue/export-queue.js";
 import { findSimilarChunks } from "../lib/vectordb/chunks.js";
 import { findSimilarConcepts } from "../lib/vectordb/concepts.js";
 import {
@@ -74,9 +75,15 @@ export function datasetsRoutes(): Hono<AppEnv> {
   });
 
   /**
-   * Phase 8a — dataset build. Synthesizes accepted concepts из
-   * collection в JSONL → uploads в `dataset-exports` bucket → returns
-   * jobId. Phase 8b добавит ShareGPT / ChatML formats.
+   * Phase 8b — dataset build enqueue. Creates a `dataset_jobs` doc
+   * (state=queued, stage=`build:<format>`) and hands the jobId back
+   * immediately as HTTP 202. The export-queue worker drains in the
+   * background; the client polls GET /exports/:jobId or subscribes
+   * to `extractor_events:created` SSE.
+   *
+   * Pre-8b this endpoint blocked the request thread for the entire
+   * build (potentially minutes for ShareGPT on a large collection),
+   * which timed out browsers and proxies before the upload finished.
    */
   app.post(
     "/build",
@@ -95,18 +102,44 @@ export function datasetsRoutes(): Hono<AppEnv> {
       const user = c.get("user");
       if (!user) throw new HTTPException(401, { message: "auth_required" });
       const body = c.req.valid("json");
-      const result = await buildDataset({
+      const job = await getExportQueue().enqueue({
         userId: user.sub,
-        collectionName: body.collection,
+        collection: body.collection,
         format: body.format ?? "jsonl",
       });
-      if (!result.ok) {
-        const status = result.error === "no_concepts_in_collection" ? 409 : 502;
-        return c.json(result, status);
-      }
-      return c.json(result, 201);
+      return c.json(
+        {
+          ok: true,
+          jobId: job.id,
+          state: job.state,
+          stage: job.stage,
+          collection: body.collection,
+          format: body.format ?? "jsonl",
+        },
+        202,
+      );
     },
   );
+
+  /**
+   * Cancel a queued or running export build. State machine:
+   *   - queued  → cancelled (worker pickup will skip)
+   *   - running → AbortSignal fired + cancelled transition (build
+   *               returns cancelled: true before upload)
+   *   - terminal → 409 (already finished or cancelled)
+   *
+   * Mirrors the extraction queue cancel route at /books/:id/cancel.
+   */
+  app.post("/exports/:jobId/cancel", async (c) => {
+    const user = c.get("user");
+    if (!user) throw new HTTPException(401, { message: "auth_required" });
+    const jobId = c.req.param("jobId");
+    const ok = await getExportQueue().cancel(user.sub, jobId);
+    if (!ok) {
+      throw new HTTPException(409, { message: "cannot_cancel_in_current_state" });
+    }
+    return c.json({ ok: true, jobId });
+  });
 
   /**
    * Download generated export. Returns 404 если job not found / not
