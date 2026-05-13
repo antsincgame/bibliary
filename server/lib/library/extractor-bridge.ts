@@ -235,8 +235,12 @@ export async function extractBookViaBridge(
      * re-embedding. Failures here only warn — we still extract.
      * rowIds parallels chunks[]: rowIds[i] is the chunks_vec.rowid of
      * chunks[i], or null if embed failed. */
-    const rowIds = await embedAndStoreChunks(userId, bookId, chunks, (msg) =>
-      accumulatedWarnings.push(`unit-${i}: ${msg}`),
+    const rowIds = await embedAndStoreChunks(
+      userId,
+      bookId,
+      chunks,
+      (msg) => accumulatedWarnings.push(`unit-${i}: ${msg}`),
+      opts.signal,
     );
 
     publishUser(userId, "extractor_events:created", {

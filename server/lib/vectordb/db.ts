@@ -59,7 +59,60 @@ export function resetVectorDbForTesting(): void {
  * re-insert. Pre-production это OK; Phase 11+ deploy migration —
  * docs/deployment.md.
  */
+/**
+ * Detect vec0 dim drift before the first insert. If the existing
+ * chunks_vec/concepts_vec virtual table was created with a different
+ * embedding dim than BIBLIARY_EMBEDDING_DIM now demands, refuse to
+ * boot rather than crash with a cryptic sqlite-vec error on the first
+ * persist. Operator should either restore the old dim, or wipe
+ * /data/vectors.db (warning: loses all embeddings) and re-run
+ * extraction with the new model.
+ *
+ * Probe approach: select 0 rows with embedding column from each table.
+ * If the table exists with a different dim, sqlite-vec rejects the
+ * statement at prepare time. We trap that and surface a clean message.
+ */
+function detectDimDrift(db: DbType, expectedDim: number): void {
+  for (const table of [TABLE_CHUNKS, TABLE_CONCEPTS]) {
+    /* The table may not exist on a fresh DB — that's fine, the
+     * CREATE TABLE IF NOT EXISTS below will create it at expectedDim.
+     * Only error if table EXISTS and has wrong dim. */
+    const exists = db
+      .prepare(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name=?`,
+      )
+      .get(table) as { name?: string } | undefined;
+    if (!exists?.name) continue;
+    /* vec0 stores schema as virtual columns; query the column info.
+     * Reading the dim from PRAGMA table_info reports the column type
+     * verbatim, e.g. "float[384]". Compare against expected. */
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{
+      name: string;
+      type: string;
+    }>;
+    const emb = cols.find((c) => c.name === "embedding");
+    if (!emb) continue;
+    const m = /float\[(\d+)\]/.exec(emb.type);
+    if (!m) continue;
+    const actualDim = Number(m[1]);
+    if (actualDim !== expectedDim) {
+      throw new Error(
+        `[vectordb] dim drift on ${table}: existing schema has float[${actualDim}], ` +
+          `BIBLIARY_EMBEDDING_DIM expects ${expectedDim}. ` +
+          `Either reset BIBLIARY_EMBEDDING_DIM=${actualDim} or wipe ${BUCKETS_DATA_HINT}/vectors.db (LOSES all embeddings).`,
+      );
+    }
+  }
+}
+
+/** Hint string for the operator error message. */
+const BUCKETS_DATA_HINT = "$BIBLIARY_DATA_DIR";
+
 function initSchema(db: DbType, dim: number): void {
+  /* Phase post-merge: refuse to boot if vec0 tables already exist with
+   * a different dim than configured — would crash cryptically on first
+   * insert otherwise. */
+  detectDimDrift(db, dim);
   /* distance_metric=cosine — для normalized E5 embeddings cosine
    * distance корректно отражает semantic similarity. Default vec0
    * L2 даёт некалибрированный distance для unit vectors

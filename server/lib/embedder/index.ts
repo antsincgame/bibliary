@@ -109,7 +109,13 @@ export async function embedPassage(
     EMBED_CALL_TIMEOUT_MS,
     "embedPassage",
   );
-  return new Float32Array(out.data as Float32Array);
+  /* @xenova/transformers returns out.data as a typed array; if it's
+   * already Float32Array reuse it directly (avoid the 1.5 KB copy per
+   * call). Falls through to allocation only when the backend hands
+   * back a different ArrayBufferView class. */
+  return out.data instanceof Float32Array
+    ? out.data
+    : new Float32Array(out.data as unknown as ArrayBufferLike);
 }
 
 /**
@@ -126,7 +132,9 @@ export async function embedQuery(
     EMBED_CALL_TIMEOUT_MS,
     "embedQuery",
   );
-  return new Float32Array(out.data as Float32Array);
+  return out.data instanceof Float32Array
+    ? out.data
+    : new Float32Array(out.data as unknown as ArrayBufferLike);
 }
 
 /**
