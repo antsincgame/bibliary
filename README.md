@@ -64,7 +64,12 @@ First registered user automatically becomes admin. Optionally pre-seed
 admins via `BIBLIARY_ADMIN_EMAILS=alice@example.com,bob@example.com`
 in `.env`.
 
-For Coolify deployment + production hardening see
+**For a production-grade copy-paste runbook see
+[`docs/RELEASE-DEPLOY.md`](docs/RELEASE-DEPLOY.md)** — covers JWT
+keygen, AES master, Appwrite bootstrap, first-admin seeding,
+post-bootstrap lockdown, troubleshooting.
+
+For Coolify deployment + hardening checklist see
 [`docs/deployment.md`](docs/deployment.md).
 
 For migrating from the legacy Windows Electron build see
