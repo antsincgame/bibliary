@@ -4,6 +4,7 @@ import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { prewarmEmbedderInBackground } from "./lib/embedder/index.js";
 import { startExtractionWorker } from "./lib/queue/extraction-queue.js";
+import { closeVectorDb } from "./lib/vectordb/db.js";
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
@@ -36,12 +37,31 @@ async function main(): Promise<void> {
     server.close((err) => {
       if (err) {
         console.error("[bibliary] error during shutdown:", err);
-        process.exit(1);
       }
-      process.exit(0);
+      /* Flush sqlite-vec WAL before exit — without this the 10s
+       * force-exit fallback can leave the WAL un-checkpointed and the
+       * next boot's WAL recovery may roll back un-committed pages.
+       * better-sqlite3.close() runs sqlite3_close() which forces a
+       * full WAL checkpoint synchronously. */
+      try {
+        closeVectorDb();
+      } catch (closeErr) {
+        console.warn(
+          "[bibliary] closeVectorDb during shutdown failed:",
+          closeErr instanceof Error ? closeErr.message : closeErr,
+        );
+      }
+      process.exit(err ? 1 : 0);
     });
     setTimeout(() => {
       console.error("[bibliary] forced shutdown after 10s timeout");
+      try {
+        /* Last-ditch attempt to flush WAL even when server.close()
+         * never resolved (stuck SSE / multipart upload). */
+        closeVectorDb();
+      } catch {
+        /* swallow — we're force-exiting anyway */
+      }
       process.exit(1);
     }, 10_000).unref();
   };

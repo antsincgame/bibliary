@@ -47,10 +47,10 @@ describe("server boot smoke", () => {
     assert.equal(typeof app.request, "function");
   });
 
-  it("/health responds 200 with {ok: true, version, uptime, timestamp}", async () => {
+  it("/health/live always responds 200 — pure liveness probe", async () => {
     const { buildApp } = await import("../server/app.ts");
     const app = buildApp();
-    const res = await app.request("/health");
+    const res = await app.request("/health/live");
     assert.equal(res.status, 200);
     const body = (await res.json()) as {
       ok: boolean;
@@ -63,6 +63,25 @@ describe("server boot smoke", () => {
     assert.equal(typeof body.uptime, "number");
     assert.ok(body.uptime >= 0);
     assert.match(body.timestamp, /^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it("/health returns 503 + checks map when Appwrite unreachable (test env)", async () => {
+    const { buildApp } = await import("../server/app.ts");
+    const app = buildApp();
+    const res = await app.request("/health");
+    /* In smoke tests Appwrite is a fake URL → probe fails → readiness
+     * returns 503. The contract we test is: NEVER returns 200 when
+     * deps are broken. With real Appwrite in production this returns
+     * 200; we can't smoke-test the happy path without a live backend. */
+    assert.equal(res.status, 503);
+    const body = (await res.json()) as {
+      ok: boolean;
+      checks?: { appwrite?: { ok: boolean }; vec?: { ok: boolean } };
+    };
+    assert.equal(body.ok, false);
+    assert.ok(body.checks, "checks block missing");
+    assert.equal(typeof body.checks?.appwrite?.ok, "boolean");
+    assert.equal(typeof body.checks?.vec?.ok, "boolean");
   });
 
   it("unknown route returns 404 JSON", async () => {

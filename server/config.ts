@@ -1,34 +1,89 @@
 import { z } from "zod";
 
-const ConfigSchema = z.object({
-  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  PORT: z.coerce.number().int().positive().default(3000),
-  HOST: z.string().default("0.0.0.0"),
+const ConfigSchema = z
+  .object({
+    NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+    PORT: z.coerce.number().int().positive().default(3000),
+    HOST: z.string().default("0.0.0.0"),
 
-  APPWRITE_ENDPOINT: z.string().url(),
-  APPWRITE_PROJECT_ID: z.string().min(1),
-  APPWRITE_API_KEY: z.string().min(1),
-  APPWRITE_DATABASE_ID: z.string().default("bibliary"),
+    APPWRITE_ENDPOINT: z.string().url(),
+    APPWRITE_PROJECT_ID: z.string().min(1),
+    APPWRITE_API_KEY: z.string().min(1),
+    APPWRITE_DATABASE_ID: z.string().default("bibliary"),
 
-  JWT_PRIVATE_KEY_PEM: z.string().min(1).optional(),
-  JWT_PUBLIC_KEY_PEM: z.string().min(1).optional(),
-  JWT_ACCESS_TTL_SEC: z.coerce.number().int().positive().default(900),
-  JWT_REFRESH_TTL_SEC: z.coerce.number().int().positive().default(60 * 60 * 24 * 30),
+    /* JWT keys are .optional() in the schema so dev/test can boot
+     * without a keypair (smoke tests don't touch /auth). The refine
+     * below promotes them to required when NODE_ENV === "production"
+     * so we fail at boot rather than 500ing on the first /login. */
+    JWT_PRIVATE_KEY_PEM: z.string().min(1).optional(),
+    JWT_PUBLIC_KEY_PEM: z.string().min(1).optional(),
+    JWT_ACCESS_TTL_SEC: z.coerce.number().int().positive().default(900),
+    JWT_REFRESH_TTL_SEC: z.coerce.number().int().positive().default(60 * 60 * 24 * 30),
 
-  BIBLIARY_ENCRYPTION_KEY: z.string().min(32).optional(),
-  BIBLIARY_ADMIN_EMAILS: z.string().optional(),
-  BIBLIARY_DATA_DIR: z.string().default("./data"),
+    /* Same story for the AES master key — without it provider secrets
+     * cannot encrypt/decrypt; runtime crashes on first /llm/providers
+     * POST. Make it required in production. */
+    BIBLIARY_ENCRYPTION_KEY: z.string().min(32).optional(),
+    BIBLIARY_ADMIN_EMAILS: z.string().optional(),
+    BIBLIARY_DATA_DIR: z.string().default("./data"),
 
-  LM_STUDIO_URL: z.string().default("http://localhost:1234"),
-  LM_STUDIO_PROBE_TIMEOUT_MS: z.coerce.number().int().positive().default(3000),
+    LM_STUDIO_URL: z.string().default("http://localhost:1234"),
+    LM_STUDIO_PROBE_TIMEOUT_MS: z.coerce.number().int().positive().default(3000),
 
-  BIBLIARY_VECTORS_DB_PATH: z.string().optional(),
-  BIBLIARY_EMBEDDING_DIM: z.coerce.number().int().positive().default(384),
+    BIBLIARY_VECTORS_DB_PATH: z.string().optional(),
+    BIBLIARY_EMBEDDING_DIM: z.coerce.number().int().positive().default(384),
 
-  COOKIE_SECURE: z.coerce.boolean().default(false),
-  COOKIE_DOMAIN: z.string().optional(),
-  CORS_ORIGINS: z.string().default("http://localhost:5173,http://localhost:3000"),
-});
+    COOKIE_SECURE: z.coerce.boolean().default(false),
+    COOKIE_DOMAIN: z.string().optional(),
+    CORS_ORIGINS: z.string().default("http://localhost:5173,http://localhost:3000"),
+
+    /* Multipart upload size cap. Hono's parseBody() buffers the whole
+     * body in RAM, so an unbounded value can OOM a modest-server pod.
+     * Default 200 MB covers most books; tune via env if your corpus
+     * includes giant scanned PDFs. */
+    BIBLIARY_UPLOAD_MAX_BYTES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(200 * 1024 * 1024),
+
+    /* Phase pre-release: lock down public registration after the first
+     * admin is seeded. Set BIBLIARY_REGISTRATION_DISABLED=true to
+     * refuse /api/auth/register with 403; existing users keep working. */
+    BIBLIARY_REGISTRATION_DISABLED: z.coerce.boolean().default(false),
+  })
+  .superRefine((cfg, ctx) => {
+    if (cfg.NODE_ENV !== "production") return;
+    if (!cfg.JWT_PRIVATE_KEY_PEM) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["JWT_PRIVATE_KEY_PEM"],
+        message: "required when NODE_ENV=production",
+      });
+    }
+    if (!cfg.JWT_PUBLIC_KEY_PEM) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["JWT_PUBLIC_KEY_PEM"],
+        message: "required when NODE_ENV=production",
+      });
+    }
+    if (!cfg.BIBLIARY_ENCRYPTION_KEY) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["BIBLIARY_ENCRYPTION_KEY"],
+        message: "required when NODE_ENV=production (≥32 chars)",
+      });
+    }
+    if (!cfg.COOKIE_SECURE) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["COOKIE_SECURE"],
+        message:
+          "must be true when NODE_ENV=production (refresh tokens are intercepted over plain HTTP)",
+      });
+    }
+  });
 
 export type Config = z.infer<typeof ConfigSchema>;
 
