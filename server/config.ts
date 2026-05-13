@@ -1,5 +1,34 @@
 import { z } from "zod";
 
+/**
+ * Parse env-var boolean correctly. `z.coerce.boolean()` is BROKEN for
+ * env strings: it uses JS's `Boolean()` constructor which returns
+ * `true` for any non-empty string. So:
+ *   COOKIE_SECURE=false → coerced to TRUE (opposite of intent)
+ *   COOKIE_SECURE=0     → coerced to TRUE
+ *   COOKIE_SECURE=true  → coerced to TRUE (correct by accident)
+ * This helper accepts the common forms explicitly. Anything else
+ * yields a Zod error so misspellings ("flase") fail at boot rather
+ * than silently flipping behaviour.
+ */
+const envBool = (defaultValue: boolean) =>
+  z
+    .union([z.boolean(), z.string()])
+    .default(defaultValue)
+    .transform((v, ctx) => {
+      if (typeof v === "boolean") return v;
+      const s = v.trim().toLowerCase();
+      if (s === "true" || s === "1" || s === "yes" || s === "on") return true;
+      if (s === "false" || s === "0" || s === "no" || s === "off" || s === "") {
+        return false;
+      }
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `expected one of: true/false/1/0/yes/no/on/off (got "${v}")`,
+      });
+      return z.NEVER;
+    });
+
 const ConfigSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -33,7 +62,7 @@ const ConfigSchema = z
     BIBLIARY_VECTORS_DB_PATH: z.string().optional(),
     BIBLIARY_EMBEDDING_DIM: z.coerce.number().int().positive().default(384),
 
-    COOKIE_SECURE: z.coerce.boolean().default(false),
+    COOKIE_SECURE: envBool(false),
     COOKIE_DOMAIN: z.string().optional(),
     CORS_ORIGINS: z.string().default("http://localhost:5173,http://localhost:3000"),
 
@@ -50,7 +79,7 @@ const ConfigSchema = z
     /* Phase pre-release: lock down public registration after the first
      * admin is seeded. Set BIBLIARY_REGISTRATION_DISABLED=true to
      * refuse /api/auth/register with 403; existing users keep working. */
-    BIBLIARY_REGISTRATION_DISABLED: z.coerce.boolean().default(false),
+    BIBLIARY_REGISTRATION_DISABLED: envBool(false),
   })
   .superRefine((cfg, ctx) => {
     if (cfg.NODE_ENV !== "production") return;
