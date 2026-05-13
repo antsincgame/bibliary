@@ -64,6 +64,15 @@ First registered user automatically becomes admin. Optionally pre-seed
 admins via `BIBLIARY_ADMIN_EMAILS=alice@example.com,bob@example.com`
 in `.env`.
 
+> **Single-pod assumption**: the auto-admin guard relies on an
+> in-process mutex over `POST /api/auth/register` (serializes the
+> count-then-create check). In a multi-pod deployment this race is
+> NOT mitigated — two pods can both observe `users count == 0` and
+> both promote first-arriving users to admin. Multi-pod deployers
+> should pre-seed via `BIBLIARY_ADMIN_EMAILS` instead of relying on
+> auto-promotion, or set `BIBLIARY_REGISTRATION_DISABLED=true` and
+> create the first admin directly in Appwrite console.
+
 **For a production-grade copy-paste runbook see
 [`docs/RELEASE-DEPLOY.md`](docs/RELEASE-DEPLOY.md)** — covers JWT
 keygen, AES master, Appwrite bootstrap, first-admin seeding,

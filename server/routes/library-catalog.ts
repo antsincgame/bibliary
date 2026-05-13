@@ -174,17 +174,31 @@ export function registerCatalogRoutes(app: Hono<AppEnv>): void {
     try {
       const { body, mime } = await streamFile(BUCKETS.bookOriginals, book.originalFileId);
       /* Pre-release: stricter filename sanitization. Title may contain
-       * Unicode (Cyrillic, CJK) so we (a) strip control chars + quote
-       * + backslash for the ASCII fallback, (b) UTF-8-percent-encode
+       * Unicode (Cyrillic, CJK, emoji) so we (a) strip control chars +
+       * quote + backslash for the ASCII fallback, (b) UTF-8-percent-encode
        * for RFC 5987 `filename*`. Browsers prefer filename* when both
-       * are present, falling back to filename for legacy. */
+       * are present, falling back to filename for legacy.
+       *
+       * Post-merge fix: slicing the title with String.slice operates on
+       * UTF-16 code units, so a title ending in a surrogate pair (emoji,
+       * SMP CJK) cut at position 200 leaves a lone surrogate →
+       * encodeURIComponent throws URIError → 500 on download. Use Array
+       * spread to iterate code points then slice + rejoin. Also
+       * encodeURIComponent leaves the single-quote uncoded, but that
+       * char isn't valid in RFC 5987 attr-char without encoding — patch
+       * it via a follow-up replace. */
       const safeAscii = book.title
         .replace(/[\x00-\x1f"\\/:*?<>|]/g, "_")
         .replace(/[^\x20-\x7e]/g, "_")
         .slice(0, 200);
-      const ext = (book.originalExtension ?? "bin").replace(/[^a-z0-9]/gi, "");
+      const ext = (book.originalExtension ?? "bin").replace(/[^a-z0-9]/gi, "") || "bin";
       const asciiName = `${safeAscii || "book"}.${ext}`;
-      const utf8Name = encodeURIComponent(`${book.title.slice(0, 200)}.${ext}`);
+      /* Codepoint-safe slice — avoid splitting surrogate pairs. */
+      const titleCp = Array.from(book.title).slice(0, 200).join("");
+      const utf8Name = encodeURIComponent(`${titleCp}.${ext}`).replace(
+        /'/g,
+        "%27",
+      );
       return c.body(body, 200, {
         "content-type": mime ?? "application/octet-stream",
         "content-disposition": `attachment; filename="${asciiName}"; filename*=UTF-8''${utf8Name}`,
