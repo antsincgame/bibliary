@@ -47,7 +47,7 @@ jobs:
 
       # Web-stack smoke suite — REQUIRED. Covers the Δ-topology pipeline
       # (chunker, embedder, vectordb concepts/chunks/graph, PPR, server
-      # boot, routes, queue, dataset export). 170+ cases, ~5 sec on a
+      # boot, routes, queue, dataset export). 200+ cases, ~5 sec on a
       # warm runner. If THIS goes red the web service is broken.
       - name: Web stack smoke (required)
         env:

@@ -206,8 +206,9 @@ docker compose exec bibliary sqlite3 /data/vectors.db \
 The repository ships with `.github/workflows/ci.yml` — Linux-only,
 Node 22, installs djvulibre + p7zip + tesseract-ocr (rus / ukr /
 chi-sim / chi-tra). Required step is the Δ-topology smoke suite
-(~170 tests); a best-effort step runs the full `tests/*.test.ts` and
-won't block merge on pre-existing legacy failures.
+(205 cases across 42 suites); a best-effort step runs the full
+`tests/*.test.ts` and won't block merge on pre-existing legacy
+failures.
 
 No Windows pipeline — the Electron build path was retired in
 Phase 13b.

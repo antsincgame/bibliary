@@ -95,7 +95,7 @@ Deliberately **deferred** from the audit:
 |-------|--------|
 | Docker + Coolify image | ✅ Multi-stage Dockerfile (builder + slim runtime); djvulibre + p7zip + tesseract(rus/ukr/eng/chi-sim/chi-tra) |
 | Coolify deployment doc | ✅ docs/deployment.md with modest-server tuning |
-| CI workflow | ✅ Linux-only; required smoke (170 cases) + best-effort legacy suite; apt-installs the production binary surface |
+| CI workflow | ✅ Linux-only; required smoke (205 cases / 42 suites) + best-effort legacy suite; apt-installs the production binary surface |
 | Audit log | ✅ 12 action types; admin operations + auth.login/register + library.burn_all |
 
 ---
@@ -156,7 +156,7 @@ corpus scaffold is the gate.
 
 ## Test footprint at close
 
-**~170 web-stack smoke cases** required to merge (CI), covering:
+**205 web-stack smoke cases across 42 suites** required to merge (CI), covering:
 
 - Server boot + health route
 - Auth route guards
