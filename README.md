@@ -232,7 +232,9 @@ tests/*.test.ts as a regression net.
 
 ## License
 
-See LICENSE.
+MIT — see [`LICENSE`](LICENSE). Bundled third-party deps retain their
+own licenses; notably `jszip` is dual-licensed MIT / GPL-3.0-or-later
+and Bibliary uses it under its MIT terms.
 
 ---
 

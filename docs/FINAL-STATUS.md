@@ -5,7 +5,44 @@ refactor. It catalogs every phase that closed, every primitive
 that's wired, and every decision that's intentionally deferred with
 the reasoning written down so future contributors don't re-litigate.
 
-Last updated: end of the closing session.
+Last updated: post pre-release hardening sweep.
+
+---
+
+## Pre-release hardening sweep (4 commits)
+
+A 4-agent parallel audit (security / data integrity / operational
+readiness / UX + legal) surfaced 10 ☠ critical + 20 🟡 medium + 8 🟢
+minor findings. The closing 4-commit sweep addresses all critical +
+the highest-ROI mediums:
+
+| Commit | Closes |
+|--------|--------|
+| `31f5e10` | **Legal + build hygiene + CVE remediation**: LICENSE (MIT), source maps off, protobufjs RCE override (CVE), marked/xmldom non-breaking bumps, jszip MIT dual-license election |
+| `1fb686c` | **Boot hardening**: `/health` probes Appwrite + sqlite-vec → 503 on dep failure, `/health/live` for pure liveness, shutdown flushes sqlite-vec WAL, config schema promotes JWT keys + AES key + COOKIE_SECURE to *required* when NODE_ENV=production |
+| `509df0e` | **Data integrity**: vec-row rollback when Appwrite createDocument fails (concept-persistence.ts), burnAllForUser returns ok=false on partial storage failures, first-user race serialized via in-process mutex, BIBLIARY_REGISTRATION_DISABLED env toggle |
+| `ceb23cc` | **Security hardening**: bcrypt timing constant for /login (defeats email enumeration), BIBLIARY_UPLOAD_MAX_BYTES dual-checked (Content-Length + post-parseBody), Content-Disposition uses RFC 5987 dual-filename + strips control + quote chars |
+
+`npm audit --omit=dev` went from **1 critical + 2 high + 5 moderate
+→ 1 moderate** (fast-xml-parser XMLBuilder CVE in unused codepath —
+documented in FINAL-STATUS as not-a-blocker).
+
+Deliberately **deferred** from the audit:
+
+| Item | Reason |
+|------|--------|
+| X-Forwarded-For proxy validation | Reverse-proxy contract belongs in deployment.md, not code; documented there |
+| Memory-bound rate limiter → Redis SETNX | Multi-pod scale-out concern, out of scope for single-pod target |
+| Hono JSON body size cap | Hono default 10MB is fine for current endpoints; tighter cap would require per-route config |
+| API key logging risk in /providers/secret | Verified Hono `logger()` middleware doesn't log request bodies by default |
+| `/metrics` endpoint | Feature work, not a release blocker |
+| `aria-label`s on sidebar buttons | Accessibility polish, deferred |
+| OCR language picker in UI | UI feature; languages installed at OS level work today |
+| Error code i18n map | UI polish; codes are stable enough for now |
+| GDPR retention docs | Operator concern; mention added to deployment.md |
+| SSE replay buffer | Edge case; reconnect-then-refetch pattern works |
+| Audit fire-and-forget on critical ops | Design discussion needed |
+| 0-byte file upload reject | Fixed as part of upload cap commit |
 
 ---
 

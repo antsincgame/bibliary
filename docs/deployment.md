@@ -116,15 +116,45 @@ For a 2 vCPU / 2 GB RAM host:
 
 ## Production hardening checklist
 
-- [ ] `COOKIE_SECURE=true` + HTTPS via Coolify/Traefik
-- [ ] Strong `BIBLIARY_ENCRYPTION_KEY` (rotation requires re-wrap of
-      `providerSecretsEncrypted` for every user — not yet automated)
+- [ ] `COOKIE_SECURE=true` + HTTPS via Coolify/Traefik. *(Boot now
+      fails if false when `NODE_ENV=production`.)*
+- [ ] `JWT_PRIVATE_KEY_PEM` + `JWT_PUBLIC_KEY_PEM` set. *(Boot fails
+      if missing in production.)*
+- [ ] Strong `BIBLIARY_ENCRYPTION_KEY` (≥32 chars). *(Boot fails if
+      missing in production.)* Rotation requires re-wrap of
+      `providerSecretsEncrypted` for every user — not yet automated.
+- [ ] Seed the first admin via initial register, then set
+      `BIBLIARY_REGISTRATION_DISABLED=true` to close public sign-ups.
+      Existing users keep working.
+- [ ] `BIBLIARY_UPLOAD_MAX_BYTES` (default 200 MB) — tune up if your
+      corpus has giant scanned PDFs; tune down to constrain abuse.
+- [ ] Reverse proxy MUST strip caller-supplied `X-Forwarded-For` and
+      replace with the real client IP. Bibliary trusts the first
+      entry for audit log + rate limiter; without a proxy, attackers
+      can spoof the header. Coolify's Traefik handles this correctly
+      out of the box.
 - [ ] `_APP_STORAGE_LIMIT` env on Appwrite ≥ max book size
 - [ ] Reverse-proxy timeout > 30s (SSE event stream)
 - [ ] Disk quota on `/data` volume (sqlite-vec grows with embedded
       chunks)
 - [ ] Backup strategy: Appwrite MariaDB dumps + `/data/vectors.db`
-- [ ] Set `BIBLIARY_ADMIN_EMAILS` before opening to public registration
+      (+ WAL + SHM companion files)
+- [ ] GDPR: audit log captures IP + user-agent. Indefinite retention
+      by default. If your jurisdiction requires bounded retention,
+      add a periodic prune query against `audit_log` collection
+      filtered on `createdAt < now - N days`.
+
+## Health probes
+
+Bibliary exposes two health endpoints with different semantics:
+
+| Endpoint | Behavior | Use for |
+|----------|----------|---------|
+| `GET /health/live` | Always 200 if process is alive. No dependency probes. | Liveness probe (restart-on-failure orchestration) |
+| `GET /health` | Probes Appwrite + sqlite-vec concurrently. Returns 200 only when both reach within 2.5s; 503 + `{ checks }` map otherwise. | Readiness probe (route-or-drain orchestration). **This is what Coolify's healthcheck should hit.** |
+
+Default Dockerfile `HEALTHCHECK` hits `/health` already — broken
+Appwrite correctly drops the pod from rotation.
 
 ---
 
