@@ -27,6 +27,10 @@ export default defineConfig({
   build: {
     outDir: "../dist-renderer",
     emptyOutDir: true,
-    sourcemap: true,
+    /* sourcemap: production builds ship without .map files to avoid
+     * leaking original source paths + comments to the web client.
+     * Set BIBLIARY_RENDERER_SOURCEMAPS=1 locally to debug a built
+     * bundle with maps. */
+    sourcemap: process.env["BIBLIARY_RENDERER_SOURCEMAPS"] === "1",
   },
 });

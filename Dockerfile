@@ -96,6 +96,11 @@ COPY --from=builder /app/dist-server ./dist-server
 COPY --from=builder /app/dist-renderer ./dist-renderer
 COPY --from=builder /app/electron/lib ./electron/lib
 
+# Strip any stray source maps before they ship — tsconfig.server has
+# sourceMap=false and Vite has sourcemap gated on BIBLIARY_RENDERER_SOURCEMAPS,
+# but belt-and-braces in case a future config drift re-enables them.
+RUN find /app/dist-server /app/dist-renderer -name "*.map" -delete 2>/dev/null || true
+
 # Non-root execution.
 RUN useradd --system --uid 1500 --shell /bin/bash --create-home bibliary && \
     mkdir -p /data && chown -R bibliary:bibliary /app /data
