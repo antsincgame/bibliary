@@ -165,9 +165,30 @@ export async function persistConcept(
     );
     return { persisted: true, dedupSkipped: false };
   } catch (err) {
-    /* Duplicates by vectorRowId can happen on retry — ignore 409. */
+    /* Pre-release fix: roll back the orphan vector row when Appwrite
+     * concept-doc creation fails. Without this rollback, the vec0
+     * partition accumulates "ghost" entries that match KNN queries
+     * but have no Appwrite doc to surface — silently corrupting
+     * /api/datasets/search results over time.
+     *
+     * Duplicate (409) is a known idempotent retry — keep the vector,
+     * the existing doc already references it. */
     if (isAppwriteCode(err, 409)) {
       return { persisted: false, dedupSkipped: false };
+    }
+    if (embeddedResult) {
+      try {
+        deleteConceptVector(embeddedResult.rowid);
+      } catch (rollbackErr) {
+        /* Best-effort rollback. The orphan is at worst a wasted vec
+         * row that won't ever be referenced from concepts — better
+         * than crashing the whole extraction with a half-committed
+         * state. */
+        console.warn(
+          "[concept-persistence] vec rollback after Appwrite create failure failed:",
+          rollbackErr instanceof Error ? rollbackErr.message : rollbackErr,
+        );
+      }
     }
     throw err;
   }

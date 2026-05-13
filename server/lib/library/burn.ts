@@ -127,13 +127,19 @@ export async function burnAllForUser(userId: string): Promise<BurnAllResult> {
 
   const vectorRowsDeleted = wipeVectorRows(userId);
 
+  const storageFilesFailed =
+    mdRemoval.failed + origRemoval.failed + coverRemoval.failed;
+  /* Pre-release fix: don't return ok=true when storage deletions
+   * partially failed. The caller (route + audit log) needs to know
+   * the burn was incomplete so the user can retry; before this fix
+   * the API surface lied about success when files were left behind. */
   return {
-    ok: true,
+    ok: storageFilesFailed === 0,
     booksDeleted,
     chunksDeleted,
     conceptsDeleted,
     storageFilesRemoved: mdRemoval.removed + origRemoval.removed + coverRemoval.removed,
-    storageFilesFailed: mdRemoval.failed + origRemoval.failed + coverRemoval.failed,
+    storageFilesFailed,
     vectorRowsDeleted,
   };
 }

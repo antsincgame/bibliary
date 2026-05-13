@@ -72,29 +72,64 @@ function toPublicUser(u: {
   };
 }
 
+/* In-process serialization for /register so the first-user-becomes-admin
+ * check is race-free on a single-pod deployment. Two simultaneous
+ * registrations on an empty users collection could both observe
+ * count == 0 and both promote to admin without this serialization.
+ *
+ * Multi-pod deployments would need Redis SETNX or Appwrite teams
+ * membership-based admin instead; documented in FINAL-STATUS as a
+ * deferred scale-out concern.
+ */
+let registerInFlight: Promise<unknown> = Promise.resolve();
+async function withRegisterLock<T>(fn: () => Promise<T>): Promise<T> {
+  const prev = registerInFlight;
+  let release: () => void;
+  registerInFlight = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  try {
+    await prev;
+    return await fn();
+  } finally {
+    release!();
+  }
+}
+
 export function authRoutes(): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.post("/register", zValidator("json", RegisterBody), async (c) => {
     const cfg = loadConfig();
+    /* Pre-release: lock down public registration via env toggle. After
+     * the first admin is seeded, the operator can flip
+     * BIBLIARY_REGISTRATION_DISABLED=true to refuse new sign-ups; the
+     * admin panel still allows seeded creation via Appwrite console
+     * (programmatic /admin/users create endpoint deferred). */
+    if (cfg.BIBLIARY_REGISTRATION_DISABLED) {
+      throw new HTTPException(403, { message: "registration_disabled" });
+    }
     const body = c.req.valid("json");
 
-    const existing = await findUserByEmail(body.email);
-    if (existing) {
-      throw new HTTPException(409, { message: "email_already_registered" });
-    }
-
-    const isFirstUser = (await countUsers()) === 0;
-    const adminEmails = getAdminEmails(cfg);
-    const role: "user" | "admin" =
-      isFirstUser || adminEmails.has(body.email) ? "admin" : "user";
-
-    const passwordHash = await hashPassword(body.password);
-    const user = await createUser({
-      email: body.email,
-      name: body.name ?? null,
-      passwordHash,
-      role,
+    /* Wrap the count-then-create sequence in the mutex so two
+     * concurrent first-user registrations don't both promote. */
+    const { user, role } = await withRegisterLock(async () => {
+      const existing = await findUserByEmail(body.email);
+      if (existing) {
+        throw new HTTPException(409, { message: "email_already_registered" });
+      }
+      const isFirstUser = (await countUsers()) === 0;
+      const adminEmails = getAdminEmails(cfg);
+      const role: "user" | "admin" =
+        isFirstUser || adminEmails.has(body.email) ? "admin" : "user";
+      const passwordHash = await hashPassword(body.password);
+      const created = await createUser({
+        email: body.email,
+        name: body.name ?? null,
+        passwordHash,
+        role,
+      });
+      return { user: created, role };
     });
 
     const tokens = await createSession(
