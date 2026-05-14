@@ -14,7 +14,7 @@
 #   - Только runtime-deps в node_modules (npm ci --omit=dev).
 #   - Volume mount-points /data (sqlite-vec, temps) и /tmp (per-import).
 #
-# Health-check бьёт /health (Hono → public route, не требует Appwrite).
+# Health-check hits /health (Hono public route — no external deps).
 
 ARG NODE_VERSION=22-bookworm
 ARG NODE_VERSION_SLIM=22-bookworm-slim
@@ -45,7 +45,6 @@ COPY tsconfig.json tsconfig.server.json vite.config.ts ./
 COPY server ./server
 COPY renderer ./renderer
 COPY shared ./shared
-COPY scripts/appwrite-bootstrap.ts ./scripts/appwrite-bootstrap.ts
 
 # Electron/lib пока требуется server-side через parsers-bridge.ts:
 # scanner core ещё не выехал в server/lib (Phase 12 prep). До тех пор
@@ -72,7 +71,7 @@ ENV NODE_ENV=production \
 #     Focus on three families: Cyrillic (rus, ukr), Chinese (chi-sim,
 #     chi-tra), English (eng). Each pack ~30MB → 4 packs add ~120MB to
 #     the runtime image. Total CPU OCR; no GPU, no Python sidecar.
-#   - ca-certificates → HTTPS к Anthropic/OpenAI/Appwrite
+#   - ca-certificates → HTTPS to Anthropic / OpenAI
 RUN apt-get update && apt-get install -y --no-install-recommends \
       djvulibre-bin \
       p7zip-full \

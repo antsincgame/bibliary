@@ -130,7 +130,7 @@ export async function createExportJob(input: {
 
 /**
  * True if the job's stage marker identifies it as an export build, not
- * an extraction. Used by each queue's resumeFromAppwrite() to skip the
+ * an extraction. Used by each queue's resumeFromStore() to skip the
  * other queue's queued docs. Keep this predicate in one place so the
  * stage convention can't drift between writer (createExportJob) and
  * readers.
