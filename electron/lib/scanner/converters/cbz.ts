@@ -28,7 +28,7 @@ import { tmpdir } from "os";
 import { randomUUID } from "crypto";
 import { spawn } from "child_process";
 import { killChildTree } from "../../resilience/kill-tree.js";
-import { existsSync } from "fs";
+import { existsSync, chmodSync } from "fs";
 import { createRequire } from "module";
 import JSZip from "jszip";
 import { PDFDocument } from "pdf-lib";
@@ -103,7 +103,14 @@ function resolve7zBinaryForCbr(): string | null {
     try {
       const mod = req(pkg) as { path7z?: string; path7za?: string };
       const resolved = mod.path7z ?? mod.path7za;
-      if (typeof resolved === "string" && existsSync(resolved)) return resolved;
+      if (typeof resolved === "string" && existsSync(resolved)) {
+        /* npm tarballs sometimes drop the execute bit — restore it so the
+           7z spawn doesn't fail with EACCES. Absolute paths only. */
+        if (path.isAbsolute(resolved)) {
+          try { chmodSync(resolved, 0o755); } catch { /* read-only fs */ }
+        }
+        return resolved;
+      }
     } catch {
       /* optional helper package not present */
     }

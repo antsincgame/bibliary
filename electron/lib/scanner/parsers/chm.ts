@@ -31,6 +31,7 @@ import { tmpdir } from "os";
 import { spawn } from "child_process";
 import { killChildTree } from "../../resilience/kill-tree.js";
 import { randomUUID } from "crypto";
+import { createRequire } from "module";
 import { platformVendorDirsWithLegacy, platformExeName } from "../../platform.js";
 import {
   detectCompositeHtmlDir,
@@ -38,12 +39,18 @@ import {
 } from "../../library/composite-html-detector.js";
 import type { BookParser, ParseOptions, ParseResult } from "./types.js";
 
+const req = createRequire(path.join(process.cwd(), "package.json"));
+
 const CHM_EXTRACT_TIMEOUT_MS = 60_000;
 
 /**
- * Находит 7z бинарник в vendor/ (Win/Linux/macOS) или системный PATH.
- * Зеркалит resolve7zBinary из archive-extractor.ts, но без `7zip-bin` npm
- * fallback (тут достаточно vendor).
+ * Resolves a 7-Zip binary: `BIBLIARY_7Z_PATH` env → vendored `vendor/7zip`
+ * → the bundled `7z-bin` / `7zip-bin` npm package → bare `7z` on PATH.
+ *
+ * The npm fallback matters outside Electron (web service, CI, containers):
+ * there is no `process.resourcesPath` bundle and `7z` is often absent from
+ * PATH, so without it every CHM parse fails with `spawn 7z ENOENT`. Mirrors
+ * `library/archive-extractor.ts` and `scanner/converters/cbz.ts`.
  */
 async function resolve7zBinary(): Promise<string | null> {
   const env = process.env.BIBLIARY_7Z_PATH?.trim();
@@ -73,7 +80,27 @@ async function resolve7zBinary(): Promise<string | null> {
       /* try next */
     }
   }
-  /* Linux/macOS — обычно 7z в PATH через apt/brew. */
+  /* Bundled npm binary — covers Linux/macOS/Windows where vendor/ is absent
+     (web service, CI, Docker). `7z-bin` exposes `path7z`, `7zip-bin` `path7za`. */
+  for (const pkg of ["7z-bin", "7zip-bin"]) {
+    try {
+      const mod = req(pkg) as { path7z?: string; path7za?: string };
+      const resolved = mod.path7z ?? mod.path7za;
+      if (typeof resolved === "string" && resolved.length > 0) {
+        await fs.access(resolved);
+        /* npm tarballs sometimes drop the execute bit — restore it so the
+           spawn below doesn't fail with EACCES. Absolute paths only (a bare
+           "7z" from USE_SYSTEM_7Z is left for PATH lookup). */
+        if (path.isAbsolute(resolved)) {
+          await fs.chmod(resolved, 0o755).catch(() => {});
+        }
+        return resolved;
+      }
+    } catch {
+      /* optional helper package not present / path missing */
+    }
+  }
+  /* Last resort — bare `7z` on PATH (apt/brew installs). */
   if (process.platform !== "win32") return "7z";
   return null;
 }
@@ -131,6 +158,42 @@ function run7zExtract(
 }
 
 /**
+ * 7z extracts a CHM into whatever internal folder layout it used — O'Reilly
+ * titles nest every HTML page under an ISBN directory while the extraction
+ * root holds only CHM metadata (#SYSTEM, #TOPICS, *.hhc). Walk the tree and
+ * return the directory holding the largest HTML cluster, so the composite
+ * detector is pointed at the content rather than the metadata root.
+ */
+async function findHtmlClusterDir(root: string): Promise<string> {
+  let bestDir = root;
+  let bestCount = -1;
+  const stack: string[] = [root];
+  while (stack.length > 0) {
+    const dir = stack.pop()!;
+    let entries: import("fs").Dirent[];
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    let htmlCount = 0;
+    for (const e of entries) {
+      if (e.isDirectory()) {
+        stack.push(path.join(dir, e.name));
+      } else if (e.isFile()) {
+        const lower = e.name.toLowerCase();
+        if (lower.endsWith(".html") || lower.endsWith(".htm")) htmlCount++;
+      }
+    }
+    if (htmlCount > bestCount) {
+      bestCount = htmlCount;
+      bestDir = dir;
+    }
+  }
+  return bestDir;
+}
+
+/**
  * Парсит CHM файл: 7z extract → composite-html assembler → ParseResult.
  *
  * Graceful degradation:
@@ -161,10 +224,11 @@ async function parseChm(filePath: string, opts: ParseOptions = {}): Promise<Pars
       return { metadata: { title: baseName, warnings }, sections: [], rawCharCount: 0 };
     }
 
-    /* composite-html-detector ищет в директории HTML-файлы (>= 10 шт) и собирает
-       их в одну книгу. Если CHM содержит < 10 HTML — composite не сработает,
-       но это редкий случай (минимальный CHM обычно содержит десятки страниц). */
-    const composite = await detectCompositeHtmlDir(extractDir);
+    /* 7z extracts CHM internals verbatim — the HTML cluster is usually nested
+       in a subdirectory (e.g. an ISBN folder), not at the extraction root.
+       Point the detector at the directory holding the actual pages. */
+    const htmlDir = await findHtmlClusterDir(extractDir);
+    const composite = await detectCompositeHtmlDir(htmlDir);
     if (!composite) {
       warnings.push(
         `chm: extracted ${extractDir} did not yield composite HTML book (<10 HTML files)`,
