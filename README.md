@@ -1,222 +1,165 @@
 # Bibliary
 
-> Self-hosted web service for dataset creators: upload books, get
-> atomic knowledge with topological relations for LLM fine-tuning.
+> Turn a library of books into a **topological knowledge graph** and
+> training-ready datasets — entities, relations and causal chains kept
+> intact, not flattened into Q&A pairs.
 
-Bibliary turns a library of books (PDF / EPUB / DJVU / DOCX / FB2 /
-MOBI / CHM / RTF / HTML / TXT) into a structured knowledge graph and
-training-ready datasets. Multi-user, runs on a modest single-pod
-Coolify deployment, bring-your-own LLM provider keys.
+Most tools that "process books for LLMs" land in one of two buckets:
+doc parsers hand you **markdown**, dataset builders hand you **flat
+Q&A pairs**. Both throw away the *topology* — which concept causes
+which, which entity relates to which, the chain that makes the
+knowledge reusable. Bibliary keeps it.
 
----
+Point it at 35 GB of PDFs, EPUBs and DJVUs and get back a portable
+`subject → predicate → object` graph plus JSONL / ShareGPT / ChatML
+datasets you can fine-tune on directly.
 
-## Why
-
-Plenty of tools turn books into RAG indexes. Bibliary's goal is the
-**opposite end of the pipeline** — produce *training data* you'd
-actually fine-tune a model on:
-
-- **Topology-preserving extraction** — every concept ships with at
-  least one `subject → predicate → object` triple, so the dataset is
-  graph-ready without post-processing.
-- **AURA filter** — refuses to extract banalities. A concept must
-  satisfy ≥2 of *authorship / specialization / revision / causality*
-  or the chunk gets skipped.
-- **Δ-topology** — hierarchy-aware chunking (H1>H2>H3 path on every
-  chunk), L0 propositions / L1 section chunks / L2 chapter summaries,
-  entity graph with canonicalization + aliases, PPR-blended retrieval.
-- **Per-user provider keys** — your Anthropic / OpenAI key lives
-  AES-256-GCM encrypted at rest, decrypted only in process memory.
-  LM Studio supported as a shared local LLM.
-- **Async queue with crash recovery** — load 100 books, come back in
-  an hour, dataset is ready. Heartbeat + orphan reset means a backend
-  restart resumes cleanly.
-- **Three export formats** — JSONL (atomic), ShareGPT (turn-based),
-  ChatML (HuggingFace SFT convention). Multi-tier Q&A synthesis with
-  Jaccard dedup.
-- **CPU-only OCR** for Russian / Ukrainian / Chinese / English (native
-  Tesseract via apt, no GPU, no Python sidecar).
+Runs as **one container** — SQLite + the local filesystem, no external
+database, no message broker. `docker compose up` and you're in.
 
 ---
 
-## Quick start (Docker)
+## Quick start
 
 ```bash
 git clone <this-repo> bibliary && cd bibliary
-cp .env.example .env
-
-# Generate JWT keypair + AES master key, paste into .env:
-openssl genpkey -algorithm RSA -out jwt-private.pem -pkeyopt rsa_keygen_bits:2048
-openssl rsa -in jwt-private.pem -pubout -out jwt-public.pem
-openssl rand -hex 32   # → BIBLIARY_ENCRYPTION_KEY
-
-# Bring up backend + Appwrite + MariaDB + Redis stack:
-docker compose -f docker-compose.prod.yml up -d
-
-# First-run Appwrite bootstrap (idempotent):
-docker compose exec bibliary npm run appwrite:bootstrap
-
-# Open the app:
-open http://localhost:3000
+docker compose up --build
+# → http://localhost:3000  — register; the first user becomes admin
 ```
 
-First registered user automatically becomes admin. Optionally pre-seed
-admins via `BIBLIARY_ADMIN_EMAILS=alice@example.com,bob@example.com`
-in `.env`.
+No database to provision, no API keys required just to boot. Bring your
+own LLM provider (Anthropic / OpenAI / a local LM Studio) and configure
+it per-user in **Settings → Providers** once you're in.
 
-> **Single-pod assumption**: the auto-admin guard relies on an
-> in-process mutex over `POST /api/auth/register` (serializes the
-> count-then-create check). In a multi-pod deployment this race is
-> NOT mitigated — two pods can both observe `users count == 0` and
-> both promote first-arriving users to admin. Multi-pod deployers
-> should pre-seed via `BIBLIARY_ADMIN_EMAILS` instead of relying on
-> auto-promotion, or set `BIBLIARY_REGISTRATION_DISABLED=true` and
-> create the first admin directly in Appwrite console.
+<details>
+<summary>Production hardening</summary>
 
-**For a production-grade copy-paste runbook see
-[`docs/RELEASE-DEPLOY.md`](docs/RELEASE-DEPLOY.md)** — covers JWT
-keygen, AES master, Appwrite bootstrap, first-admin seeding,
-post-bootstrap lockdown, troubleshooting.
+For an internet-facing deployment, set these in `.env` before
+`docker compose up` (the app boots fine without them in development):
 
-For Coolify deployment + hardening checklist see
-[`docs/deployment.md`](docs/deployment.md).
+- `NODE_ENV=production`
+- `JWT_PRIVATE_KEY_PEM` / `JWT_PUBLIC_KEY_PEM` — an RS256 keypair
+  (`openssl genpkey -algorithm RSA -out jwt-private.pem -pkeyopt rsa_keygen_bits:2048`)
+- `BIBLIARY_ENCRYPTION_KEY` — 32+ chars, encrypts per-user provider
+  keys at rest (`openssl rand -hex 32`)
+- `COOKIE_SECURE=true` — behind HTTPS
+- `BIBLIARY_REGISTRATION_DISABLED=true` — once you've seeded your account
 
-For migrating from the legacy Windows Electron build see
-[`docs/migration-from-electron.md`](docs/migration-from-electron.md).
+</details>
 
 ---
 
-## Architecture
+## Why topology, not flashcards
+
+A flat Q&A dataset answers *"what"*. A topological one also encodes
+*"why"* and *"how it connects"* — and that's the part that makes a
+fine-tune reason instead of recite.
+
+- **Topology-preserving extraction** — every accepted concept ships
+  with at least one `subject → predicate → object` triple, so the
+  dataset is graph-ready with no post-processing.
+- **Δ-topology layers** — hierarchy-aware chunking (every chunk carries
+  its `H1 > H2 > H3` breadcrumb), L0 propositions / L1 section chunks /
+  L2 chapter summaries, plus a canonicalized **entity graph** with
+  alias capture and typed relations.
+- **AURA filter** — refuses to extract banalities. A concept must
+  satisfy ≥2 of *authorship / specialization / revision / causality*
+  or the chunk is skipped — so the dataset is signal, not filler.
+- **Graph-blended retrieval** — chunk search scores `α·cosine + β·PPR`
+  (Personalized PageRank seeded from query entities), tunable per request.
+- **Three export formats** — JSONL (atomic), ShareGPT (turn-based),
+  ChatML (HuggingFace SFT). Multi-tier Q&A synthesis with Jaccard dedup.
+
+---
+
+## Supported formats
+
+The obvious ones — and the long tail almost nothing else reads:
+
+| Format | Notes |
+|--------|-------|
+| **PDF** | pdfjs + a Tesseract OCR cascade for scanned pages |
+| **EPUB** | OPF spine + NCX nav, with a spine fallback for broken NCX |
+| **DJVU** | djvu.js (WASM) + djvulibre CLI fallback; OCR cascade for image DjVu |
+| **MOBI / AZW / AZW3 / PDB / PRC** | pure-JS PalmDoc + EXTH / KF8 |
+| **FB2** | nested sections |
+| **CHM** | Microsoft Compiled HTML (7z + composite-HTML) |
+| **DOCX / ODT** | heading-style mapping |
+| **RTF** | control-code text extraction |
+| **HTML / TXT** | encoding-aware (BOM → meta → chardet) |
+| **CBZ / CBR** | comic archives |
+| **TIFF / PNG / JPEG** | image-only → OCR pipeline |
+
+OCR is **CPU-only** — native Tesseract for **rus / ukr / eng / chi-sim /
+chi-tra**, no GPU and no Python sidecar. A vision-capable LLM (any
+provider you've configured) is the Tier-2 fallback.
+
+---
+
+## How it works
 
 ```
-                ┌──────────────────────────────┐
-                │  Renderer (Vanilla JS + Vite)│
-                │   /library  /datasets  /admin│
-                └──────────────┬───────────────┘
-                               │ cookie-based fetch + SSE
-                ┌──────────────▼───────────────┐
-                │   Hono backend (Node 22)     │
-                │   /api/{auth,library,        │
-                │        datasets,admin,llm}   │
-                └─────┬──────────────────┬─────┘
-                      │                  │
-                ┌─────▼──────┐    ┌──────▼──────┐
-                │  Appwrite  │    │  sqlite-vec │
-                │  • users   │    │  • chunks   │
-                │  • books   │    │  • concepts │
-                │  • concepts│    │  • chunks   │
-                │  • jobs    │    │  • graph    │
-                │  • audit   │    │    entities │
-                │  Storage:  │    │    relations│
-                │  originals,│    └─────────────┘
-                │  markdown, │
-                │  covers,   │
-                │  datasets  │
-                └────────────┘
+        ┌────────────────────────────────┐
+        │ Browser UI (Vanilla JS + Vite) │
+        │   /library  /datasets  /admin  │
+        └───────────────┬────────────────┘
+                        │ cookie auth + SSE
+        ┌───────────────▼────────────────┐
+        │     Hono backend (Node 22)     │
+        └───────┬────────────────┬───────┘
+                │                │
+        ┌───────▼──────┐  ┌──────▼───────┐
+        │ SQLite       │  │ sqlite-vec   │
+        │ documents +  │  │ chunks +     │
+        │ file store   │  │ concepts +   │
+        │ (bibliary.db)│  │ entity graph │
+        └──────────────┘  └──────────────┘
 ```
 
-**Δ-topology layers** (every accepted DeltaKnowledge produces all of):
-1. **L1 chunks** — section text + breadcrumb, embedded as 384-dim
-   multilingual-e5 vectors. Primary retrieval grain.
-2. **L2 summaries** — RAPTOR-style chapter throughline, also embedded.
-   Children L1 chunks reparented up via `parent_vec_rowid`.
-3. **L0 propositions** *(only for books with `qualityScore ≥ 7` AND
-   `!isFictionOrWater`)* — each triple gets its own embedded sentence,
-   parented at the source L1.
-4. **Entity graph** — canonical entities + alias capture; relations
-   table holds typed edges with `source_chunk_vec_rowid` back-pointer.
+Books upload to the local filesystem; metadata, jobs and extracted
+concepts live in `bibliary.db`; embeddings and the topology graph live
+in `vectors.db` (sqlite-vec). One process, two SQLite files, a `/data`
+volume — that's the whole footprint.
 
-**Retrieval**: `GET /api/datasets/search-chunks` returns chunks scored
-by `α·cosine + β·normalized_PPR(entities seeded from query tokens)`.
-Defaults `α=0.7 β=0.3`; tunable per request.
+The pipeline: **import** (parse → markdown) → **evaluate** (an LLM
+scores the book 0-10) → **crystallize** (extract Δ-topology) →
+**export** (stream a dataset). It's an async, crash-recoverable queue —
+load 100 books, come back later, the dataset is ready; a restart
+resumes in-flight jobs cleanly.
 
 ---
 
-## Roles & LLM providers
+## LLM providers
 
-Each user assigns providers per *role* in **Settings → Providers**:
+Bring your own keys — Bibliary never ships you an inference bill.
+Assign a provider per *role* in **Settings → Providers**:
 
-| Role | Used by | Notes |
-|------|---------|-------|
-| `evaluator` | `POST /books/:id/evaluate` | Scores 0-10 + `isFictionOrWater` flag |
-| `crystallizer` | `POST /books/:id/extract` | DeltaKnowledge JSON extraction |
-| `crystallizer` | L2 chapter summarizer | Reuses crystallizer role |
-| `synthesizer` (= crystallizer) | ShareGPT / ChatML export | Multi-tier Q&A |
+| Role | Does |
+|------|------|
+| `evaluator` | Scores a book 0-10, flags fiction / filler |
+| `crystallizer` | Extracts Δ-topology JSON; also drives L2 summaries + dataset Q&A |
 
-Three provider implementations are interchangeable:
-
-- **Anthropic** — Claude Opus / Sonnet / Haiku, supports
-  prompt caching, extended thinking.
-- **OpenAI** — GPT-4o / o1 with JSON response format + vision.
-- **LM Studio** — OpenAI-compatible local server (Qwen / Llama / etc).
-
-Per-user API keys are stored AES-256-GCM-encrypted; the master
-`BIBLIARY_ENCRYPTION_KEY` lives only in process env.
+Three interchangeable backends: **Anthropic** (Claude — prompt caching
++ extended thinking), **OpenAI** (GPT-4o / o1 — JSON mode + vision),
+**LM Studio** (any OpenAI-compatible local model — Qwen, Llama, …).
+Per-user keys are AES-256-GCM encrypted at rest.
 
 ---
 
-## Modest-server sizing
+## Sizing
 
-Bibliary is built to run on a **single small VPS**, not a Kubernetes
-cluster. Tested target:
+Built for **one small VPS**, not a cluster:
 
-| Resource | Minimum | Recommended |
-|----------|---------|-------------|
-| CPU | 2 vCPU | 4 vCPU |
-| RAM | 2 GB | 4 GB |
-| Disk | 20 GB | 100 GB |
-| Network | 100 Mbps | 1 Gbps |
+|        | Minimum | Recommended |
+|--------|---------|-------------|
+| CPU    | 2 vCPU  | 4 vCPU      |
+| RAM    | 2 GB    | 4 GB        |
+| Disk   | 20 GB   | 100 GB+     |
 
-What runs in-pod: Hono backend + sqlite-vec + Tesseract + djvulibre +
-7zip + the @xenova/transformers embedder (~120MB ONNX model). All
-CPU-only. No GPU, no Python sidecars.
-
-What runs separately: Appwrite stack (MariaDB + Redis + Appwrite +
-nginx) — another ~2 GB RAM. Coolify's Appwrite template handles this
-cleanly.
-
-Heavy LLM inference does NOT run on the Bibliary pod — it goes out to
-your configured provider (Anthropic / OpenAI cloud, or a separately
-hosted LM Studio).
-
----
-
-## Supported book formats
-
-| Format | Parser | Notes |
-|--------|--------|-------|
-| PDF | pdfjs-dist + worker | + Tesseract OCR cascade for scanned PDFs |
-| EPUB | jszip + fast-xml-parser | OPF spine + NCX nav |
-| DJVU | djvu.js (WASM) + djvulibre CLI fallback | OCR cascade for image DjVu |
-| DOCX | mammoth | Heading style mapping |
-| FB2 | fast-xml-parser | Nested sections |
-| CHM | 7z subprocess + composite-html | Microsoft Compiled HTML |
-| MOBI / AZW / AZW3 / PDB / PRC | pure JS PalmDoc + EXTH | KF8 / AZW3 metadata only |
-| RTF | pure JS | Control-code text extraction |
-| HTML / HTM | chardet + iconv-lite | BOM → meta → chardet fallback |
-| ODT | jszip + fast-xml-parser | OpenDocument |
-| TIFF / PNG / JPEG | sharp + Tesseract | Tier-1 OCR pipeline |
-| CBZ / CBR | jszip + pdf-lib | Comic ZIP → PDF |
-| TXT | chardet | Encoding-aware |
-
-OCR languages bundled: **rus, ukr, eng, chi-sim, chi-tra** (Tesseract
-native, ~120 MB total). Vision LLM (any user-configured provider with
-vision capability) is Tier-2 fallback.
-
----
-
-## Project state
-
-Web service is **feature-complete** for the dataset-creator workflow.
-See [`docs/FINAL-STATUS.md`](docs/FINAL-STATUS.md) for the full audit
-of what shipped, what's deferred, and the upgrade paths once a golden
-corpus benchmark exists.
-
-Legacy Electron desktop build is **retired** at the renderer + build
-tooling level (Phase 13a-b-c-light). The scanner core stays under
-`electron/lib/scanner/` consumed at runtime via
-`server/lib/scanner/parsers-bridge.ts`; full lift-and-shift is gated
-on a golden corpus benchmark to avoid silent parsing regressions.
+Everything CPU-only and in-process: the Hono backend, both SQLite
+databases, Tesseract + djvulibre + 7zip, and the ~120 MB
+multilingual-e5 ONNX embedder. Heavy LLM inference goes *out* to your
+configured provider — it never runs on the Bibliary pod.
 
 ---
 
@@ -224,43 +167,34 @@ on a golden corpus benchmark to avoid silent parsing regressions.
 
 ```bash
 npm install
-cp .env.example .env  # fill in Appwrite + JWT + AES keys
+cp .env.example .env        # boots as-is in development
 
-# Dev — concurrently runs server (tsx watch) + Vite:
-npm run dev
-
-# Type-check + lint + unit tests:
-npm run lint
-npm run test:fast:serial
-
-# Build server + web bundle:
-npm run build
+npm run dev                 # server (tsx watch) + Vite, concurrently
+npm run lint                # typecheck + eslint
+npm run test:fast:serial    # unit suite (node:test)
+npm run build               # server + web bundle
 ```
 
-Tests run via Node's built-in test runner (`node --test`). The
-`Web stack smoke (required)` CI step covers the Δ-topology pipeline
-end-to-end; the `Legacy unit suite (best-effort)` step runs the full
-tests/*.test.ts as a regression net.
+`npm run golden:check` runs the
+[golden-corpus](tests/golden-corpus/README.md) regression gate for
+scanner changes (inert until you add fixtures).
 
 ---
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE). Bundled third-party deps retain their
-own licenses; notably `jszip` is dual-licensed MIT / GPL-3.0-or-later
-and Bibliary uses it under its MIT terms.
+MIT — see [`LICENSE`](LICENSE). Bundled dependencies keep their own
+licenses; `jszip` is dual-licensed MIT / GPL-3.0-or-later and Bibliary
+uses it under MIT.
 
 ---
 
 ## Acknowledgements
 
-- **GraphRAG** (Microsoft) — community-detection inspiration; we
-  ultimately chose LightRAG-style entity merge over Leiden for cost.
-- **RAPTOR** (Stanford) — bottom-up summary tree pattern (our L2 layer).
-- **HippoRAG** (OSU NLP) — Personalized PageRank seeded from query
-  entities (our `/search-chunks` graph score).
-- **LightRAG** (HKUDS) — entity-merged dual-level retrieval.
-- **multilingual-e5** (Xenova / Microsoft) — embedding model.
-- **sqlite-vec** (Alex Garcia) — embedded vector store.
-- **Hono** — tiny, fast HTTP framework.
-- **Appwrite** — BaaS that makes multi-user self-host actually doable.
+Standing on the shoulders of **GraphRAG** (Microsoft) — entity-merge
+inspiration · **RAPTOR** (Stanford) — the bottom-up L2 summary tree ·
+**HippoRAG** (OSU NLP) — Personalized PageRank from query entities ·
+**LightRAG** (HKUDS) — dual-level entity-merged retrieval ·
+**multilingual-e5** (Microsoft / Xenova) — the embedder ·
+**sqlite-vec** (Alex Garcia) — the embedded vector store · **Hono** —
+the HTTP framework.

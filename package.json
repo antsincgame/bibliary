@@ -3,7 +3,7 @@
   "version": "2.0.1",
   "type": "module",
   "main": "dist-server/server/main.js",
-  "description": "Self-hosted web service turning book libraries into Δ-topology knowledge graphs and ChatML JSONL fine-tuning datasets",
+  "description": "Turn book libraries into a topological knowledge graph and LLM fine-tuning datasets — topology preserved, not flattened to Q&A",
   "engines": {
     "node": ">=22"
   },
