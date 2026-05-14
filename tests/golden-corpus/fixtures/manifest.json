@@ -14,5 +14,21 @@
     "referenceMarkdown": "02-lean-websites.ref.md",
     "minSimilarity": 0.95,
     "notes": "Operator-supplied fixture — Barbara Bermes, Lean Websites (2015). EPUB: pure-JS parser, OPF spine + NCX nav."
+  },
+  {
+    "name": "03-salesforce-architect.epub",
+    "format": "epub",
+    "language": "eng",
+    "referenceMarkdown": "03-salesforce-architect.ref.md",
+    "minSimilarity": 0.95,
+    "notes": "Operator-supplied fixture — Bahri, Becoming a Salesforce Certified Technical Architect, 2nd ed. (2023). Large EPUB (~29 MB) — stresses spine/zip handling."
+  },
+  {
+    "name": "04-rails-up-and-running.chm",
+    "format": "chm",
+    "language": "eng",
+    "referenceMarkdown": "04-rails-up-and-running.ref.md",
+    "minSimilarity": 0.95,
+    "notes": "Operator-supplied fixture — Hibbs & Tate, Ruby on Rails: Up and Running (O'Reilly, 2005). CHM exercises the 7z extraction path."
   }
 ]
