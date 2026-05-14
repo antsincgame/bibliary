@@ -7,7 +7,7 @@
 
 import { describe, it } from "node:test";
 import { expect } from "./helpers/expect-shim.ts";
-import { scoreTextQuality } from "../electron/lib/scanner/extractors/quality-heuristic.js";
+import { scoreTextQuality } from "../server/lib/scanner/extractors/quality-heuristic.js";
 
 describe("scoreTextQuality — диапазон [0, 1]", () => {
   it("пустая строка → 0", () => {
@@ -78,7 +78,7 @@ describe("scoreTextQuality — монотонность", () => {
 
 describe("scoreTextQuality vs isQualityText согласованность", () => {
   it("score >= 0.5 ⟺ isQualityText вернёт true", async () => {
-    const { isQualityText } = await import("../electron/lib/scanner/extractors/quality-heuristic.js");
+    const { isQualityText } = await import("../server/lib/scanner/extractors/quality-heuristic.js");
     const cases = [
       "",
       "short",

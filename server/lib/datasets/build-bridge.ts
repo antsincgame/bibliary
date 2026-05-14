@@ -1,8 +1,8 @@
-import { ID, Permission, Role } from "node-appwrite";
-import { InputFile } from "node-appwrite/file";
+import { ID, Permission, Role } from "../store/query.js";
+import { InputFile } from "../store/input-file.js";
 
 import { withProvider } from "../llm/model-resolver.js";
-import { BUCKETS, COLLECTIONS, getAppwrite, isAppwriteCode, type RawDoc } from "../appwrite.js";
+import { BUCKETS, COLLECTIONS, getDatastore, isStoreErrorCode, type RawDoc } from "../datastore.js";
 import { publishUser } from "../realtime/event-bus.js";
 import { renderChatMlLine } from "./chatml.js";
 import {
@@ -48,7 +48,7 @@ async function uploadFromPath(
   filename: string,
   filePath: string,
 ): Promise<{ fileId: string }> {
-  const { storage } = getAppwrite();
+  const { storage } = getDatastore();
   const fileId = ID.unique();
   const file = await storage.createFile(
     BUCKETS.datasetExports,
@@ -225,12 +225,12 @@ export async function downloadExport(
   userId: string,
   jobId: string,
 ): Promise<{ body: Uint8Array<ArrayBuffer>; filename: string; size: number } | null> {
-  const { databases, databaseId, storage } = getAppwrite();
+  const { databases, databaseId, storage } = getDatastore();
   let job: RawJob;
   try {
     job = await databases.getDocument<RawJob>(databaseId, COLLECTIONS.datasetJobs, jobId);
   } catch (err) {
-    if (isAppwriteCode(err, 404)) return null;
+    if (isStoreErrorCode(err, 404)) return null;
     throw err;
   }
   if (job.userId !== userId) return null;
@@ -251,7 +251,7 @@ export async function downloadExport(
       size: body.byteLength,
     };
   } catch (err) {
-    if (isAppwriteCode(err, 404)) return null;
+    if (isStoreErrorCode(err, 404)) return null;
     throw err;
   }
 }

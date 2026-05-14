@@ -19,7 +19,7 @@ import {
   getModelContext,
   resetOverflowGuard,
   ContextOverflowError,
-} from "../electron/lib/token/overflow-guard.ts";
+} from "../server/lib/scanner/_vendor/token/overflow-guard.ts";
 
 /* ─── registerModelContext / getModelContext ────────────────────── */
 

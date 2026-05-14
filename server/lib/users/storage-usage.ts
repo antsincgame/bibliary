@@ -1,6 +1,6 @@
-import { Query } from "node-appwrite";
+import { Query } from "../store/query.js";
 
-import { BUCKETS, COLLECTIONS, getAppwrite, isAppwriteCode, type RawDoc } from "../appwrite.js";
+import { BUCKETS, COLLECTIONS, getDatastore, isStoreErrorCode, type RawDoc } from "../datastore.js";
 
 /**
  * Phase 11b — per-user storage usage aggregator. Walks every book a
@@ -48,21 +48,21 @@ interface SizeResult {
 
 async function sizeOf(bucketId: string, fileId: string | undefined): Promise<SizeResult> {
   if (!fileId) return { bytes: 0, walkError: false };
-  const { storage } = getAppwrite();
+  const { storage } = getDatastore();
   try {
     const file = await storage.getFile(bucketId, fileId);
     return { bytes: Number(file.sizeOriginal ?? 0), walkError: false };
   } catch (err) {
     /* 404 = file deleted out of band → not a walk error, count as 0.
      * Network / perms / 5xx = walk error, surface via partial flag. */
-    if (isAppwriteCode(err, 404)) return { bytes: 0, walkError: false };
+    if (isStoreErrorCode(err, 404)) return { bytes: 0, walkError: false };
     return { bytes: 0, walkError: true };
   }
 }
 
 export async function computeUserStorageUsage(userId: string): Promise<UserStorageUsage> {
   const deadline = Date.now() + USER_BUDGET_MS;
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
 
   let bookCount = 0;
   let bytesOriginal = 0;

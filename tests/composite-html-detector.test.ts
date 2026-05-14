@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import * as os from "node:os";
 import * as path from "node:path";
 import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
-import { detectCompositeHtmlDir, assembleCompositeHtmlBook } from "../electron/lib/library/composite-html-detector.ts";
+import { detectCompositeHtmlDir, assembleCompositeHtmlBook } from "../server/lib/scanner/_vendor/library/composite-html-detector.ts";
 
 async function makeTempDir(): Promise<{ dir: string; cleanup: () => Promise<void> }> {
   const dir = await mkdtemp(path.join(os.tmpdir(), "bibliary-comp-html-"));

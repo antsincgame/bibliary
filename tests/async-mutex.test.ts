@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AsyncMutex, KeyedAsyncMutex } from "../electron/lib/llm/async-mutex.js";
+import { AsyncMutex, KeyedAsyncMutex } from "../server/lib/scanner/_vendor/llm/async-mutex.js";
 
 test("AsyncMutex: serializes concurrent calls in FIFO order", async () => {
   const m = new AsyncMutex();

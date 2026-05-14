@@ -1,0 +1,63 @@
+# ─────────────────────────────────────────────────────────────────────
+# Bibliary — one container, no external database.
+#
+# The whole service runs on SQLite (documents + vectors) plus the local
+# filesystem (uploaded books, markdown, dataset exports). This is the
+# "try it in 60 seconds" path and the single-operator self-host path.
+#
+# Quick start:
+#   docker compose up --build
+#   open http://localhost:3000  → register the first user (auto-admin)
+#
+# Everything lands in the `bibliary-data` volume:
+#   /data/bibliary.db   — documents (books, jobs, concepts, users, …)
+#   /data/vectors.db    — sqlite-vec embeddings + topology graph
+#   /data/storage/<bucket>/<id> — uploaded files & dataset exports
+#   /data/models/       — the multilingual-e5 ONNX model (first run)
+#
+# Hardening for a real deployment (optional — boots without any of this
+# in development):
+#   - NODE_ENV=production
+#   - JWT_PRIVATE_KEY_PEM / JWT_PUBLIC_KEY_PEM  (RS256 keypair)
+#   - BIBLIARY_ENCRYPTION_KEY  (≥32 chars — encrypts per-user provider keys)
+#   - COOKIE_SECURE=true  (behind HTTPS)
+#   - BIBLIARY_REGISTRATION_DISABLED=true  (after seeding your account)
+# ─────────────────────────────────────────────────────────────────────
+
+services:
+  bibliary:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bibliary:latest
+    container_name: bibliary
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # development keeps the boot requirement list empty (no JWT
+      # keypair / encryption key needed just to try it). See the
+      # hardening notes above before exposing this to the internet.
+      - NODE_ENV=development
+      - PORT=3000
+      - HOST=0.0.0.0
+      - BIBLIARY_DATA_DIR=/data
+      # Bring-your-own-LLM — point this at an LM Studio on the host, or
+      # leave it and configure Anthropic / OpenAI keys per-user in
+      # Settings → Providers.
+      - LM_STUDIO_URL=${LM_STUDIO_URL:-http://host.docker.internal:1234}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
+    volumes:
+      - bibliary-data:/data
+    extra_hosts:
+      # Lets the container reach an LM Studio running on the host.
+      - "host.docker.internal:host-gateway"
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "5"
+        max-size: "10m"
+
+volumes:
+  bibliary-data:

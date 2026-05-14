@@ -1,6 +1,6 @@
-import { ID, Permission, Query, Role } from "node-appwrite";
+import { ID, Permission, Query, Role } from "../store/query.js";
 
-import { COLLECTIONS, getAppwrite, isAppwriteCode, type RawDoc } from "../appwrite.js";
+import { COLLECTIONS, getDatastore, isStoreErrorCode, type RawDoc } from "../datastore.js";
 
 export interface UserDoc {
   $id: string;
@@ -40,7 +40,7 @@ function toUserDoc(raw: RawUserDoc): UserDoc {
 }
 
 export async function findUserByEmail(email: string): Promise<UserDoc | null> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const list = await databases.listDocuments<RawUserDoc>(
     databaseId,
     COLLECTIONS.users,
@@ -50,7 +50,7 @@ export async function findUserByEmail(email: string): Promise<UserDoc | null> {
 }
 
 export async function findUserById(userId: string): Promise<UserDoc | null> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   try {
     const raw = await databases.getDocument<RawUserDoc>(
       databaseId,
@@ -59,13 +59,13 @@ export async function findUserById(userId: string): Promise<UserDoc | null> {
     );
     return toUserDoc(raw);
   } catch (err) {
-    if (isAppwriteCode(err, 404)) return null;
+    if (isStoreErrorCode(err, 404)) return null;
     throw err;
   }
 }
 
 export async function countUsers(): Promise<number> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const list = await databases.listDocuments(databaseId, COLLECTIONS.users, [
     Query.limit(1),
   ]);
@@ -80,7 +80,7 @@ export interface CreateUserInput {
 }
 
 export async function createUser(input: CreateUserInput): Promise<UserDoc> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const id = ID.unique();
   const nowIso = new Date().toISOString();
   const doc: Record<string, unknown> = {
@@ -107,7 +107,7 @@ export async function createUser(input: CreateUserInput): Promise<UserDoc> {
 }
 
 export async function markUserLoggedIn(userId: string): Promise<void> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   await databases.updateDocument(databaseId, COLLECTIONS.users, userId, {
     lastLoginAt: new Date().toISOString(),
   });
@@ -117,7 +117,7 @@ export async function updateUserPassword(
   userId: string,
   passwordHash: string,
 ): Promise<void> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   await databases.updateDocument(databaseId, COLLECTIONS.users, userId, {
     passwordHash,
   });
@@ -143,7 +143,7 @@ export async function listAllUsers(opts: {
   limit?: number;
   offset?: number;
 } = {}): Promise<{ rows: AdminUserRow[]; total: number }> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const limit = Math.max(1, Math.min(200, opts.limit ?? 50));
   const offset = Math.max(0, opts.offset ?? 0);
   const list = await databases.listDocuments<RawUserDoc>(
@@ -172,7 +172,7 @@ export async function setUserRole(
   userId: string,
   role: "user" | "admin",
 ): Promise<void> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   await databases.updateDocument(databaseId, COLLECTIONS.users, userId, { role });
 }
 
@@ -182,7 +182,7 @@ export async function setUserDeactivated(
   userId: string,
   deactivated: boolean,
 ): Promise<void> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   await databases.updateDocument(databaseId, COLLECTIONS.users, userId, {
     deactivated,
   });
@@ -191,17 +191,17 @@ export async function setUserDeactivated(
 /** Phase 11a — hard delete user document. Use AFTER burnAllForUser +
  * deleteGraphForUser + refresh-token revoke. */
 export async function deleteUserDocument(userId: string): Promise<void> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   try {
     await databases.deleteDocument(databaseId, COLLECTIONS.users, userId);
   } catch (err) {
-    if (!isAppwriteCode(err, 404)) throw err;
+    if (!isStoreErrorCode(err, 404)) throw err;
   }
 }
 
 /** Phase 11a — count admins. Used to refuse demoting the last admin. */
 export async function countAdmins(): Promise<number> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const list = await databases.listDocuments(databaseId, COLLECTIONS.users, [
     Query.equal("role", "admin"),
     Query.limit(1),

@@ -4,7 +4,7 @@
 
 import { describe, it } from "node:test";
 import { expect } from "./helpers/expect-shim.ts";
-import { ImportTaskScheduler } from "../electron/lib/library/import-task-scheduler.js";
+import { ImportTaskScheduler } from "../server/lib/scanner/_vendor/library/import-task-scheduler.js";
 
 function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void; reject: (e: unknown) => void } {
   let resolve!: (v: T) => void;

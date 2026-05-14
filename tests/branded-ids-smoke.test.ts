@@ -11,7 +11,7 @@ import {
   asBookId,
   asCollectionName,
   asUserId,
-  isValidAppwriteId,
+  isValidStoreId,
   parseBookId,
   parseCollectionName,
   parseJobId,
@@ -32,22 +32,22 @@ describe("branded ID types", () => {
     assert.equal(u === raw, true);
   });
 
-  it("isValidAppwriteId accepts well-formed Appwrite-style ids", () => {
-    assert.equal(isValidAppwriteId("abc123"), true);
-    assert.equal(isValidAppwriteId("CamelCaseId"), true);
-    assert.equal(isValidAppwriteId("with_underscore"), true);
-    assert.equal(isValidAppwriteId("64chars"), true);
+  it("isValidStoreId accepts well-formed Appwrite-style ids", () => {
+    assert.equal(isValidStoreId("abc123"), true);
+    assert.equal(isValidStoreId("CamelCaseId"), true);
+    assert.equal(isValidStoreId("with_underscore"), true);
+    assert.equal(isValidStoreId("64chars"), true);
   });
 
-  it("isValidAppwriteId rejects empties, hyphens, dots, overlong", () => {
-    assert.equal(isValidAppwriteId(""), false);
-    assert.equal(isValidAppwriteId("has-hyphen"), false);
-    assert.equal(isValidAppwriteId("has.dot"), false);
-    assert.equal(isValidAppwriteId("has space"), false);
-    assert.equal(isValidAppwriteId("x".repeat(37)), false);
-    assert.equal(isValidAppwriteId(null), false);
-    assert.equal(isValidAppwriteId(undefined), false);
-    assert.equal(isValidAppwriteId(42), false);
+  it("isValidStoreId rejects empties, hyphens, dots, overlong", () => {
+    assert.equal(isValidStoreId(""), false);
+    assert.equal(isValidStoreId("has-hyphen"), false);
+    assert.equal(isValidStoreId("has.dot"), false);
+    assert.equal(isValidStoreId("has space"), false);
+    assert.equal(isValidStoreId("x".repeat(37)), false);
+    assert.equal(isValidStoreId(null), false);
+    assert.equal(isValidStoreId(undefined), false);
+    assert.equal(isValidStoreId(42), false);
   });
 
   it("parseUserId / parseBookId / parseJobId narrow at trust boundaries", () => {

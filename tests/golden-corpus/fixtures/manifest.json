@@ -1,0 +1,98 @@
+[
+  {
+    "name": "01-php-mysql.djvu",
+    "format": "djvu",
+    "language": "rus",
+    "referenceMarkdown": "01-php-mysql.ref.md",
+    "minSimilarity": 0.95,
+    "notes": "Operator-supplied fixture — scanned multi-page DjVu (PHP/MySQL). No text layer → exercises the OCR-disabled graceful path."
+  },
+  {
+    "name": "02-lean-websites.epub",
+    "format": "epub",
+    "language": "eng",
+    "referenceMarkdown": "02-lean-websites.ref.md",
+    "minSimilarity": 0.95,
+    "notes": "Operator-supplied fixture — Barbara Bermes, Lean Websites (2015). EPUB: pure-JS parser, OPF spine + NCX nav."
+  },
+  {
+    "name": "03-salesforce-architect.epub",
+    "format": "epub",
+    "language": "eng",
+    "referenceMarkdown": "03-salesforce-architect.ref.md",
+    "minSimilarity": 0.95,
+    "notes": "Operator-supplied fixture — Bahri, Becoming a Salesforce Certified Technical Architect, 2nd ed. (2023). Large EPUB (~29 MB)."
+  },
+  {
+    "name": "04-rails-up-and-running.chm",
+    "format": "chm",
+    "language": "eng",
+    "referenceMarkdown": "04-rails-up-and-running.ref.md",
+    "minSimilarity": 0.95,
+    "notes": "Operator-supplied fixture — Hibbs & Tate, Ruby on Rails: Up and Running (O'Reilly, 2005). CHM exercises 7z extract + composite-HTML assembly."
+  },
+  {
+    "name": "05-ru-1993.djvu",
+    "format": "djvu",
+    "language": "rus",
+    "referenceMarkdown": "05-ru-1993.ref.md",
+    "minSimilarity": 0.95,
+    "notes": "Operator-supplied fixture — multi-page DjVu (Russian, 1993). Exercises text-layer extraction vs OCR fallback."
+  },
+  {
+    "name": "06-aspnet-mvc.djvu",
+    "format": "djvu",
+    "language": "rus",
+    "referenceMarkdown": "06-aspnet-mvc.ref.md",
+    "minSimilarity": 0.95,
+    "notes": "Operator-supplied fixture — ASP.NET MVC Framework / C# book (DjVu, 2010)."
+  },
+  {
+    "name": "07-ru-2005.fb2",
+    "format": "fb2",
+    "language": "rus",
+    "referenceMarkdown": "07-ru-2005.ref.md",
+    "minSimilarity": 0.95,
+    "notes": "Operator-supplied fixture — FB2 (FictionBook 2.0, windows-1251, 2005). XML-based, pure-JS parser — exercises legacy-encoding handling."
+  },
+  {
+    "name": "08-ru-2017.fb2",
+    "format": "fb2",
+    "language": "rus",
+    "referenceMarkdown": "08-ru-2017.ref.md",
+    "minSimilarity": 0.95,
+    "notes": "Operator-supplied fixture — FB2 (FictionBook 2.0, UTF-8, 2017). XML-based, pure-JS parser."
+  },
+  {
+    "name": "09-ru-2006.docx",
+    "format": "docx",
+    "language": "rus",
+    "referenceMarkdown": "09-ru-2006.ref.md",
+    "minSimilarity": 0.95,
+    "notes": "Operator-supplied fixture — DOCX (Word 2007+, 2006). OOXML zip, pure-JS parser."
+  },
+  {
+    "name": "10-ru-classic.pdf",
+    "format": "pdf",
+    "language": "rus",
+    "referenceMarkdown": "10-ru-classic.ref.md",
+    "minSimilarity": 0.95,
+    "notes": "Generated fixture — public-domain Russian classics (Tolstoy / Pushkin / Dostoevsky) rendered to a born-digital PDF via scripts/gen-pdf-fixtures.mjs. Tests pdf.ts text-layer extraction + Cyrillic. Regenerate with: node scripts/gen-pdf-fixtures.mjs"
+  },
+  {
+    "name": "11-zh-classic.pdf",
+    "format": "pdf",
+    "language": "zho",
+    "referenceMarkdown": "11-zh-classic.ref.md",
+    "minSimilarity": 0.95,
+    "notes": "Generated fixture — public-domain classical Chinese (Laozi / Li Bai / Du Fu / Confucius) + article-style block, born-digital PDF via scripts/gen-pdf-fixtures.mjs. Tests pdf.ts text-layer extraction + Han. Regenerate with: node scripts/gen-pdf-fixtures.mjs"
+  },
+  {
+    "name": "12-ja-classic.pdf",
+    "format": "pdf",
+    "language": "jpn",
+    "referenceMarkdown": "12-ja-classic.ref.md",
+    "minSimilarity": 0.95,
+    "notes": "Generated fixture — public-domain Japanese (Bashō haiku, Natsume Sōseki) + article-style block, born-digital PDF via scripts/gen-pdf-fixtures.mjs. Tests pdf.ts text-layer extraction + kanji/hiragana/katakana. Regenerate with: node scripts/gen-pdf-fixtures.mjs"
+  }
+]

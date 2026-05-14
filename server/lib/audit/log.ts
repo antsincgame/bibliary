@@ -1,6 +1,6 @@
-import { ID } from "node-appwrite";
+import { ID } from "../store/query.js";
 
-import { COLLECTIONS, getAppwrite, type RawDoc } from "../appwrite.js";
+import { COLLECTIONS, getDatastore, type RawDoc } from "../datastore.js";
 
 /**
  * Phase 11c — append-only audit log writer. Lives next to the auth
@@ -75,7 +75,7 @@ function truncateValues(obj: Record<string, unknown>, max: number): Record<strin
 
 export async function writeAuditEvent(ev: AuditEvent): Promise<void> {
   try {
-    const { databases, databaseId } = getAppwrite();
+    const { databases, databaseId } = getDatastore();
     const nowIso = new Date().toISOString();
     const doc: Record<string, unknown> = {
       action: ev.action,
@@ -158,15 +158,15 @@ export interface AuditRow {
 export async function listAuditEvents(opts: {
   limit?: number;
   offset?: number;
-  /** Optional substring filter on action — exact match by Appwrite Query.equal. */
+  /** Optional substring filter on action — exact match by Query.equal. */
   action?: string;
   /** Optional userId filter (admin OR target). */
   userId?: string;
 } = {}): Promise<{ rows: AuditRow[]; total: number }> {
   /* Dynamic Query import — keeps the audit module light when only the
    * write path is used. */
-  const { Query } = await import("node-appwrite");
-  const { databases, databaseId } = getAppwrite();
+  const { Query } = await import("../store/query.js");
+  const { databases, databaseId } = getDatastore();
   const queries: string[] = [
     Query.orderDesc("createdAt"),
     Query.limit(Math.max(1, Math.min(200, opts.limit ?? 50))),

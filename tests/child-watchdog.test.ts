@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   spawnWithWatchdog,
   isChildWatchdogTimeoutError,
-} from "../electron/lib/resilience/child-watchdog.ts";
+} from "../server/lib/scanner/_vendor/resilience/child-watchdog.ts";
 
 const NODE_BIN = process.execPath;
 

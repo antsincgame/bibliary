@@ -19,19 +19,19 @@ import {
   getPreferencesStore,
   PreferencesSchema,
   type Preferences,
-} from "../electron/lib/preferences/store.ts";
+} from "../server/lib/scanner/_vendor/preferences/store.ts";
 
 import {
   getImportScheduler,
   applyImportSchedulerPrefs,
   _resetImportSchedulerForTests,
-} from "../electron/lib/library/import-task-scheduler.ts";
+} from "../server/lib/scanner/_vendor/library/import-task-scheduler.ts";
 
 import {
   HeavyLaneRateLimiter,
   applyHeavyLaneRateLimiterPrefs,
   getHeavyLaneRateLimiter,
-} from "../electron/lib/llm/heavy-lane-rate-limiter.ts";
+} from "../server/lib/scanner/_vendor/llm/heavy-lane-rate-limiter.ts";
 
 import {
   applyEvaluatorPrefs,

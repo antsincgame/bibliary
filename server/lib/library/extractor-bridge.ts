@@ -1,4 +1,4 @@
-import { BUCKETS, getAppwrite, isAppwriteCode } from "../appwrite.js";
+import { BUCKETS, getDatastore, isStoreErrorCode } from "../datastore.js";
 import { extractChapter } from "../llm/extractor.js";
 import { summarizeUnit } from "../llm/summarizer.js";
 import { publishUser } from "../realtime/event-bus.js";
@@ -76,7 +76,7 @@ export interface ExtractBookResult {
 const COLLECTION_NAME_DEFAULT = "default";
 
 async function loadMarkdown(bucketId: string, fileId: string): Promise<string> {
-  const { storage } = getAppwrite();
+  const { storage } = getDatastore();
   const view = await storage.getFileDownload(bucketId, fileId);
   const bytes = view instanceof Uint8Array ? view : new Uint8Array(view as ArrayBuffer);
   return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
@@ -126,7 +126,7 @@ export async function extractBookViaBridge(
   try {
     markdown = await loadMarkdown(BUCKETS.bookMarkdowns, book.markdownFileId);
   } catch (err) {
-    const msg = isAppwriteCode(err, 404)
+    const msg = isStoreErrorCode(err, 404)
       ? "markdown_file_missing"
       : err instanceof Error ? err.message : String(err);
     await updateBook(userId, bookId, { status: "failed" });

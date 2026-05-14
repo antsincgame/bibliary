@@ -8,7 +8,7 @@
  * жирной thinking-модели (например qwen/qwen3.6-35b-a3b), а не мелкой 4b.
  */
 
-import { listLoaded, listDownloaded } from "../electron/lmstudio-client.js";
+import { listLoaded, listDownloaded } from "../server/lib/scanner/_vendor/lmstudio-client.js";
 import { getModelProfile } from "../electron/lib/dataset-v2/model-profile.js";
 
 const THINKING_NAME_MARKERS = ["thinking", "reasoning", "deepseek-r1", "qwq", "r1-distill", "gpt-oss"];

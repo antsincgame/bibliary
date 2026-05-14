@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 
 import type { AppEnv } from "../app.js";
-import { getAppwrite } from "../lib/appwrite.js";
+import { getDatastore } from "../lib/datastore.js";
 import { probeVectorDb } from "../lib/vectordb/db.js";
 import { getVersionInfo } from "../lib/version.js";
 
@@ -9,21 +9,17 @@ import { getVersionInfo } from "../lib/version.js";
  * Health probe contract:
  *
  *   GET /health          — liveness + readiness, with dependency probes.
- *                          Returns 200 only if Appwrite + sqlite-vec are
- *                          reachable. Returns 503 with a `checks` map
- *                          when any probe fails so orchestrators
- *                          (Coolify, Traefik, k8s) can stop routing.
+ *                          Returns 200 only if the SQLite store +
+ *                          sqlite-vec are reachable. Returns 503 with a
+ *                          `checks` map when any probe fails so
+ *                          orchestrators (Coolify, Traefik, k8s) can
+ *                          stop routing.
  *   GET /health/live     — pure liveness, no probes. For platforms that
  *                          need a "is the process alive" check distinct
  *                          from "is it ready to serve traffic".
  *
- * Probes are bounded by HEALTH_PROBE_TIMEOUT_MS so a slow Appwrite
+ * Probes are bounded by HEALTH_PROBE_TIMEOUT_MS so a wedged DB handle
  * doesn't push /health past Coolify's 5s default healthcheck timeout.
- *
- * Phase pre-release fix: previously /health always returned 200 with
- * no dependency probes, so a dead Appwrite still passed readiness and
- * Coolify routed traffic into a broken pod. The audit flagged this as
- * release-blocker #2.
  */
 
 const HEALTH_PROBE_TIMEOUT_MS = 2_500;
@@ -50,10 +46,10 @@ async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-async function probeAppwrite(): Promise<CheckResult> {
+async function probeStore(): Promise<CheckResult> {
   const t0 = Date.now();
   try {
-    const { databases, databaseId } = getAppwrite();
+    const { databases, databaseId } = getDatastore();
     /* Cheapest call we can make: get the database metadata. Doesn't
      * touch any collection or list documents. */
     await withTimeout(databases.get(databaseId), HEALTH_PROBE_TIMEOUT_MS);
@@ -97,23 +93,23 @@ export function healthRoutes(): Hono<AppEnv> {
     });
   });
 
-  /* Readiness — probes Appwrite + sqlite-vec. Returns 503 on any
-   * failure so the orchestrator stops routing traffic to a degraded
+  /* Readiness — probes the SQLite store + sqlite-vec. Returns 503 on
+   * any failure so the orchestrator stops routing traffic to a degraded
    * pod. */
   app.get("/health", async (c) => {
     const v = getVersionInfo();
-    const [appwrite, vec] = await Promise.all([
-      probeAppwrite(),
+    const [store, vec] = await Promise.all([
+      probeStore(),
       Promise.resolve(probeVec()),
     ]);
-    const ok = appwrite.ok && vec.ok;
+    const ok = store.ok && vec.ok;
     const body = {
       ok,
       version: v.version,
       commit: v.commit,
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
-      checks: { appwrite, vec },
+      checks: { store, vec },
     };
     return c.json(body, ok ? 200 : 503);
   });

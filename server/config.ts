@@ -35,10 +35,10 @@ const ConfigSchema = z
     PORT: z.coerce.number().int().positive().default(3000),
     HOST: z.string().default("0.0.0.0"),
 
-    APPWRITE_ENDPOINT: z.string().url(),
-    APPWRITE_PROJECT_ID: z.string().min(1),
-    APPWRITE_API_KEY: z.string().min(1),
-    APPWRITE_DATABASE_ID: z.string().default("bibliary"),
+    /* Override the document DB path — defaults to
+     * $BIBLIARY_DATA_DIR/bibliary.db. Mainly for tests, which point it
+     * at a temp file or ":memory:" for isolation. */
+    BIBLIARY_DB_PATH: z.string().optional(),
 
     /* JWT keys are .optional() in the schema so dev/test can boot
      * without a keypair (smoke tests don't touch /auth). The refine

@@ -1,11 +1,11 @@
-import { Query } from "node-appwrite";
+import { Query } from "../lib/store/query.js";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 
 import type { AppEnv } from "../app.js";
-import { COLLECTIONS, getAppwrite, type RawDoc } from "../lib/appwrite.js";
+import { COLLECTIONS, getDatastore, type RawDoc } from "../lib/datastore.js";
 import { downloadExport } from "../lib/datasets/build-bridge.js";
 import { embedQuery } from "../lib/embedder/index.js";
 import {
@@ -217,7 +217,7 @@ export function datasetsRoutes(): Hono<AppEnv> {
 
       /* Fetch Appwrite concept documents для top-K rowid. Один listDocuments
        * with $in filter — Appwrite supports Query.equal с array value. */
-      const { databases, databaseId } = getAppwrite();
+      const { databases, databaseId } = getDatastore();
       const rowIds = similar.map((s) => s.rowid);
       const docs = await databases.listDocuments<
         RawDoc & {

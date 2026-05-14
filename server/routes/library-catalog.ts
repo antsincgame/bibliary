@@ -4,7 +4,7 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 
 import type { AppEnv } from "../app.js";
-import { BUCKETS, getAppwrite, isAppwriteCode } from "../lib/appwrite.js";
+import { BUCKETS, getDatastore, isStoreErrorCode } from "../lib/datastore.js";
 import {
   queryByAuthor,
   queryByDomain,
@@ -79,7 +79,7 @@ async function streamFile(
   bucketId: string,
   fileId: string,
 ): Promise<{ body: Uint8Array<ArrayBuffer>; mime?: string }> {
-  const { storage } = getAppwrite();
+  const { storage } = getDatastore();
   const view = await storage.getFileDownload(bucketId, fileId);
   const ab = new ArrayBuffer(view.byteLength);
   new Uint8Array(ab).set(view instanceof Uint8Array ? view : new Uint8Array(view as ArrayBuffer));
@@ -137,7 +137,7 @@ export function registerCatalogRoutes(app: Hono<AppEnv>): void {
       const { body } = await streamFile(BUCKETS.bookMarkdowns, book.markdownFileId);
       return c.body(body, 200, { "content-type": "text/markdown; charset=utf-8" });
     } catch (err) {
-      if (isAppwriteCode(err, 404)) {
+      if (isStoreErrorCode(err, 404)) {
         throw new HTTPException(404, { message: "markdown_file_missing" });
       }
       throw err;
@@ -156,7 +156,7 @@ export function registerCatalogRoutes(app: Hono<AppEnv>): void {
       const { body, mime } = await streamFile(BUCKETS.bookCovers, book.coverFileId);
       return c.body(body, 200, { "content-type": mime ?? "image/jpeg" });
     } catch (err) {
-      if (isAppwriteCode(err, 404)) {
+      if (isStoreErrorCode(err, 404)) {
         throw new HTTPException(404, { message: "cover_file_missing" });
       }
       throw err;
@@ -204,7 +204,7 @@ export function registerCatalogRoutes(app: Hono<AppEnv>): void {
         "content-disposition": `attachment; filename="${asciiName}"; filename*=UTF-8''${utf8Name}`,
       });
     } catch (err) {
-      if (isAppwriteCode(err, 404)) {
+      if (isStoreErrorCode(err, 404)) {
         throw new HTTPException(404, { message: "original_file_missing" });
       }
       throw err;
@@ -220,14 +220,14 @@ export function registerCatalogRoutes(app: Hono<AppEnv>): void {
 
     const removedFiles: string[] = [];
     if (q.deleteFiles) {
-      const { storage } = getAppwrite();
+      const { storage } = getDatastore();
       const drop = async (bucketId: string, fileId: string | null): Promise<void> => {
         if (!fileId) return;
         try {
           await storage.deleteFile(bucketId, fileId);
           removedFiles.push(`${bucketId}/${fileId}`);
         } catch (err) {
-          if (!isAppwriteCode(err, 404)) throw err;
+          if (!isStoreErrorCode(err, 404)) throw err;
         }
       };
       await drop(BUCKETS.bookMarkdowns, book.markdownFileId);

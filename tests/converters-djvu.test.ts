@@ -17,8 +17,8 @@ import { expect } from "./helpers/expect-shim.ts";
 import { mkdtemp, writeFile, rm, readFile } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { convertDjvu } from "../electron/lib/scanner/converters/djvu.js";
-import { setCachedConvert, clearConverterCache } from "../electron/lib/scanner/converters/cache.js";
+import { convertDjvu } from "../server/lib/scanner/converters/djvu.js";
+import { setCachedConvert, clearConverterCache } from "../server/lib/scanner/converters/cache.js";
 
 describe("convertDjvu — graceful degradation", () => {
   it("невалидный DjVu → text-extracted с пустым text + warnings, не throw", async () => {

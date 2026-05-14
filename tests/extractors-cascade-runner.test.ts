@@ -12,12 +12,12 @@
 
 import { describe, it } from "node:test";
 import { expect } from "./helpers/expect-shim.ts";
-import { runExtractionCascade } from "../electron/lib/scanner/extractors/cascade-runner.js";
+import { runExtractionCascade } from "../server/lib/scanner/extractors/cascade-runner.js";
 import type {
   ExtractionAttempt,
   ExtractOptions,
   TextExtractor,
-} from "../electron/lib/scanner/extractors/types.js";
+} from "../server/lib/scanner/extractors/types.js";
 
 interface CallLog {
   tier0Calls: number;

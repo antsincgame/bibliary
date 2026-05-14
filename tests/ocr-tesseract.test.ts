@@ -24,7 +24,7 @@ import {
   recognizeWithTesseract,
   disposeTesseract,
   _resetTesseractForTesting,
-} from "../electron/lib/scanner/ocr/tesseract.ts";
+} from "../server/lib/scanner/ocr/tesseract.ts";
 
 const TESSDATA_DIR = path.resolve("vendor/tessdata");
 const HAS_TESSDATA =

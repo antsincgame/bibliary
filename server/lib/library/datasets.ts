@@ -1,6 +1,6 @@
-import { Query } from "node-appwrite";
+import { Query } from "../store/query.js";
 
-import { BUCKETS, COLLECTIONS, getAppwrite, isAppwriteCode, type RawDoc } from "../appwrite.js";
+import { BUCKETS, COLLECTIONS, getDatastore, isStoreErrorCode, type RawDoc } from "../datastore.js";
 
 export type DatasetJobState = "queued" | "running" | "done" | "failed" | "cancelled";
 
@@ -70,7 +70,7 @@ export async function listExports(
   userId: string,
   opts: ListExportsOptions = {},
 ): Promise<{ rows: DatasetJobDoc[]; total: number }> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const limit = Math.min(PAGE_LIMIT_MAX, Math.max(1, opts.limit ?? PAGE_LIMIT_DEFAULT));
   const offset = Math.max(0, opts.offset ?? 0);
 
@@ -97,7 +97,7 @@ export async function getExportJob(
   userId: string,
   jobId: string,
 ): Promise<DatasetJobDoc | null> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   try {
     const raw = await databases.getDocument<RawDatasetJob>(
       databaseId,
@@ -107,7 +107,7 @@ export async function getExportJob(
     if (raw.userId !== userId) return null;
     return toJob(raw);
   } catch (err) {
-    if (isAppwriteCode(err, 404)) return null;
+    if (isStoreErrorCode(err, 404)) return null;
     throw err;
   }
 }
@@ -138,7 +138,7 @@ export async function readJsonlHead(
   limitRaw: number,
 ): Promise<JsonlHeadResult | null> {
   const limit = Math.min(MAX_LINE_LIMIT, Math.max(1, Math.floor(limitRaw)));
-  const { storage } = getAppwrite();
+  const { storage } = getDatastore();
   /* Ownership check via dataset_jobs lookup BEFORE downloading bytes —
    * cheaper to refuse early than to fetch and discard a 100MB file. */
   const owns = await ownsExportFile(userId, fileId);
@@ -149,7 +149,7 @@ export async function readJsonlHead(
     const view = await storage.getFileDownload(BUCKETS.datasetExports, fileId);
     bytes = view instanceof Uint8Array ? view : new Uint8Array(view as ArrayBuffer);
   } catch (err) {
-    if (isAppwriteCode(err, 404)) return null;
+    if (isStoreErrorCode(err, 404)) return null;
     throw err;
   }
 
@@ -173,7 +173,7 @@ export async function readJsonlHead(
 }
 
 async function ownsExportFile(userId: string, fileId: string): Promise<boolean> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const matches = await databases.listDocuments<RawDatasetJob>(
     databaseId,
     COLLECTIONS.datasetJobs,

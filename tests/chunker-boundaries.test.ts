@@ -23,7 +23,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chunkBook } from "../electron/lib/scanner/chunker.ts";
-import type { BookSection, ParseResult } from "../electron/lib/scanner/parsers/index.ts";
+import type { BookSection, ParseResult } from "../server/lib/scanner/parsers/index.ts";
 
 function makeParseResult(sections: BookSection[], language?: string, title = "Test Book", author?: string): ParseResult {
   return {

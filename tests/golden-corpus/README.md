@@ -69,24 +69,27 @@ The first time you add a book:
 After that, the test runner compares the live parser output against
 this reference using Levenshtein-similarity (token level).
 
-### Helper script
+### Helper scripts (shipped)
 
-(Not shipped yet — write it locally when you start using the corpus.)
+A generator + a runner, plus a shared `harness.ts` so both render a
+parse through the exact same code path:
 
 ```bash
-# Pseudocode for scripts/golden-corpus-generate.ts:
-import { parseBook } from "../../server/lib/scanner/parsers-bridge";
-import { writeFileSync } from "node:fs";
-const result = await parseBook(filePath);
-writeFileSync(refPath, result.sections.map(s => s.title + "\n\n" + s.text).join("\n\n"));
+npm run golden:generate             # (re)generate every .ref.md
+npm run golden:generate 01-x.epub   # just the named fixture(s)
+npm run golden:check                # run the regression gate
 ```
+
+`golden:generate` parses each fixture with the current scanner and
+writes its rendered parse to `<name>.ref.md`. Hand-verify each one (the
+checklist above) before committing — that verified snapshot is the gate.
 
 ---
 
 ## What the test runner enforces
 
-`tests/golden-corpus.test.ts` (also empty until you populate the
-fixtures) walks every entry in `manifest.json` and:
+`tests/golden-corpus.test.ts` walks every entry in
+`fixtures/manifest.json` and:
 
 1. Calls `parseBook(fixture.path)`
 2. Reads the reference markdown
@@ -96,11 +99,11 @@ fixtures) walks every entry in `manifest.json` and:
 A typical threshold is 0.95. Below that, the test fails with a diff
 preview pointing at the divergent region.
 
-The runner is **not registered** in the CI workflow. It's intended
+The runner is **not registered** in the required CI step. It's intended
 to be invoked manually before/after a scanner change:
 
 ```bash
-node --import tsx --test tests/golden-corpus.test.ts
+npm run golden:check
 ```
 
 If a scanner change is planned, the workflow is:

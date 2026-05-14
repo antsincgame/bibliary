@@ -18,8 +18,8 @@
 
 import { describe, it, beforeEach } from "node:test";
 import { expect } from "./helpers/expect-shim.ts";
-import { ModelPool, type PoolAcquireOptions } from "../electron/lib/llm/model-pool.js";
-import type { LoadedModelInfo, DownloadedModelInfo, LoadOptions } from "../electron/lmstudio-client.js";
+import { ModelPool, type PoolAcquireOptions } from "../server/lib/scanner/_vendor/llm/model-pool.js";
+import type { LoadedModelInfo, DownloadedModelInfo, LoadOptions } from "../server/lib/scanner/_vendor/lmstudio-client.js";
 
 class RaceFakeLmStudio {
   loaded: LoadedModelInfo[] = [];

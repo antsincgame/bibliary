@@ -8,7 +8,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 
-import { parseBook } from "../electron/lib/scanner/parsers/index.ts";
+import { parseBook } from "../server/lib/scanner/parsers/index.ts";
 
 async function tmpFile(name: string, content: string | Buffer): Promise<string> {
   const dir = await mkdtemp(path.join(os.tmpdir(), "html-edge-"));

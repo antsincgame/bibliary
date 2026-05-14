@@ -1,6 +1,6 @@
-import { Query } from "node-appwrite";
+import { Query } from "../store/query.js";
 
-import { COLLECTIONS, getAppwrite, type RawDoc } from "../appwrite.js";
+import { COLLECTIONS, getDatastore, type RawDoc } from "../datastore.js";
 
 export interface CollectionGroup {
   label: string;
@@ -35,7 +35,7 @@ async function fetchAllUserBooks<T extends AggregateRow = AggregateRow>(
   userId: string,
   selectFields: string[],
 ): Promise<T[]> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const out: T[] = [];
   let offset = 0;
   /* Always need $id for bookIds and `userId` for the per-user filter. */

@@ -16,8 +16,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 
-import { parseBook } from "../electron/lib/scanner/parsers/index.ts";
-import { decodeTextAuto } from "../electron/lib/scanner/parsers/txt.ts";
+import { parseBook } from "../server/lib/scanner/parsers/index.ts";
+import { decodeTextAuto } from "../server/lib/scanner/parsers/txt.ts";
 
 async function tmpDir(): Promise<string> {
   return mkdtemp(path.join(os.tmpdir(), "bibliary-dirty-"));

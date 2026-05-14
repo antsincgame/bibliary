@@ -10,7 +10,7 @@
  * через `cleanupExtractedDir(tempDir)`.
  */
 
-import { promises as fs, existsSync } from "fs";
+import { promises as fs, existsSync, chmodSync } from "fs";
 import type { FileHandle } from "fs/promises";
 import * as path from "path";
 import * as os from "os";
@@ -198,7 +198,15 @@ function resolve7zBinary(): string | null {
     try {
       const mod = req(pkg) as { path7z?: string; path7za?: string };
       const resolved = resolveExistingBinary(mod.path7z ?? mod.path7za);
-      if (resolved) return resolved;
+      if (resolved) {
+        /* npm tarballs sometimes drop the execute bit — restore it so the
+           7z spawn doesn't fail with EACCES. Absolute paths only (a bare
+           "7z"/"7za" from USE_SYSTEM_7Z is left for PATH lookup). */
+        if (path.isAbsolute(resolved)) {
+          try { chmodSync(resolved, 0o755); } catch { /* read-only fs */ }
+        }
+        return resolved;
+      }
     } catch {
       /* optional helper package is not available */
     }

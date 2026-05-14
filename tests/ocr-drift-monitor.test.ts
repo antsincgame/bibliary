@@ -13,7 +13,7 @@
 
 import { describe, it } from "node:test";
 import { expect } from "./helpers/expect-shim.ts";
-import { OcrDriftMonitor, type OcrDriftEvent } from "../electron/lib/scanner/ocr-drift-monitor.js";
+import { OcrDriftMonitor, type OcrDriftEvent } from "../server/lib/scanner/ocr-drift-monitor.js";
 
 class TestClock {
   private t = 1_000_000;

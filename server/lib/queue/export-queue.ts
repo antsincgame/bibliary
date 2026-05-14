@@ -1,4 +1,4 @@
-import { COLLECTIONS, getAppwrite, isAppwriteCode } from "../appwrite.js";
+import { COLLECTIONS, getDatastore, isStoreErrorCode } from "../datastore.js";
 import { runDatasetBuild } from "../datasets/build-bridge.js";
 import type { DatasetFormat } from "../datasets/synthesize.js";
 import { publishUser } from "../realtime/event-bus.js";
@@ -33,7 +33,7 @@ import { isTerminalState, type JobDoc } from "./types.js";
  *
  * Both queues share the `dataset_jobs` Appwrite collection. The two
  * are distinguished by the `stage` field — export jobs are tagged
- * `build:<format>` from creation. `resumeFromAppwrite` filters on
+ * `build:<format>` from creation. `resumeFromStore` filters on
  * that prefix so each queue picks up only its own queued docs after
  * a backend restart.
  *
@@ -126,7 +126,7 @@ class ExportQueueImpl {
    * picks up only export builds, leaving extraction-queue's queued
    * docs alone.
    */
-  async resumeFromAppwrite(): Promise<{
+  async resumeFromStore(): Promise<{
     orphansReset: number;
     queuedAdded: number;
   }> {
@@ -344,7 +344,7 @@ async function writeExportFileMeta(
   exportFileId: string,
   lineCount: number,
 ): Promise<void> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   try {
     await databases.updateDocument(databaseId, COLLECTIONS.datasetJobs, jobId, {
       exportFileId,
@@ -352,7 +352,7 @@ async function writeExportFileMeta(
       updatedAt: new Date().toISOString(),
     });
   } catch (err) {
-    if (!isAppwriteCode(err, 404)) throw err;
+    if (!isStoreErrorCode(err, 404)) throw err;
   }
 }
 
@@ -369,7 +369,7 @@ export function getExportQueue(): ExportQueueImpl {
  */
 export function startExportWorker(): void {
   void queue
-    .resumeFromAppwrite()
+    .resumeFromStore()
     .then(({ orphansReset, queuedAdded }) => {
       if (orphansReset > 0) {
         console.log(
@@ -384,7 +384,7 @@ export function startExportWorker(): void {
     })
     .catch((err) => {
       console.warn(
-        "[export-queue] resumeFromAppwrite failed:",
+        "[export-queue] resumeFromStore failed:",
         err instanceof Error ? err.message : err,
       );
     });

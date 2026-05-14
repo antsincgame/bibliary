@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {
   isWorkerPdfEnabled,
   parsePdfInWorker,
-} from "../electron/lib/scanner/parsers/pdf-worker-host.ts";
+} from "../server/lib/scanner/parsers/pdf-worker-host.ts";
 
 test("isWorkerPdfEnabled: false by default (no env)", (t) => {
   const prev = process.env.BIBLIARY_PARSE_WORKERS;

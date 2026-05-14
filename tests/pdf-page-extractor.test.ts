@@ -18,7 +18,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createPdfPageExtractor } from "../electron/lib/scanner/parsers/pdf-page-extractor.js";
+import { createPdfPageExtractor } from "../server/lib/scanner/parsers/pdf-page-extractor.js";
 
 test("createPdfPageExtractor: возвращает TextExtractor с Tier 1 + Tier 2 методами (без Tier 0)", () => {
   const fakeBuffer = Buffer.alloc(100, 0xff);

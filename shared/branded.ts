@@ -92,20 +92,20 @@ export const asEntityId = (n: number): EntityId => n as EntityId;
 
 const APPWRITE_ID_RE = /^[a-zA-Z0-9_]{1,36}$/;
 
-export function isValidAppwriteId(s: unknown): s is string {
+export function isValidStoreId(s: unknown): s is string {
   return typeof s === "string" && APPWRITE_ID_RE.test(s);
 }
 
 export function parseUserId(s: unknown): UserId | null {
-  return isValidAppwriteId(s) ? (s as UserId) : null;
+  return isValidStoreId(s) ? (s as UserId) : null;
 }
 
 export function parseBookId(s: unknown): BookId | null {
-  return isValidAppwriteId(s) ? (s as BookId) : null;
+  return isValidStoreId(s) ? (s as BookId) : null;
 }
 
 export function parseJobId(s: unknown): JobId | null {
-  return isValidAppwriteId(s) ? (s as JobId) : null;
+  return isValidStoreId(s) ? (s as JobId) : null;
 }
 
 const COLLECTION_RE = /^[a-zA-Z0-9_-]{1,100}$/;

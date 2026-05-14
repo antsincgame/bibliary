@@ -8,7 +8,7 @@
 
 import { describe, it } from "node:test";
 import { expect } from "./helpers/expect-shim.ts";
-import { detectLatinCyrillicConfusion } from "../electron/lib/scanner/extractors/quality-heuristic.js";
+import { detectLatinCyrillicConfusion } from "../server/lib/scanner/extractors/quality-heuristic.js";
 
 describe("detectLatinCyrillicConfusion — Ukrainian safety (i/ï whitelist)", () => {
   it("valid Ukrainian text with Latin i for і should NOT be confused", () => {

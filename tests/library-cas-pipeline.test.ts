@@ -80,7 +80,7 @@ describe("Phase 1 gate: markdown has no Base64 Data URIs", () => {
 
 describe("title heuristics", () => {
   it("prefers meaningful filename title over section-like metadata", async () => {
-    const { pickBestBookTitle, isLowValueBookTitle } = await import("../electron/lib/library/title-heuristics.js");
+    const { pickBestBookTitle, isLowValueBookTitle } = await import("../server/lib/scanner/_vendor/library/title-heuristics.js");
 
     assert.equal(isLowValueBookTitle("Предисловие"), true);
     assert.equal(isLowValueBookTitle("Contents"), true);
@@ -173,7 +173,7 @@ describe("Phase 2 gate: illustrations.json shape", () => {
 
 describe("Phase 2 gate: vision graceful skip when no models", () => {
   it("recognizeWithVisionLlm returns error gracefully when no models available", async () => {
-    const { recognizeWithVisionLlm } = await import("../electron/lib/llm/vision-ocr.js");
+    const { recognizeWithVisionLlm } = await import("../server/lib/scanner/_vendor/llm/vision-ocr.js");
 
     // Mock: pickVisionModels returns [] by setting env to prevent real LM Studio calls
     const originalEnv = process.env.BIBLIARY_VISION_MODEL_MARKERS;

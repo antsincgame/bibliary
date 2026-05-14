@@ -11,7 +11,7 @@ import {
   decodeBuffer,
   detectBom,
   isEncodingSupported,
-} from "../electron/lib/scanner/encoding-detector.js";
+} from "../server/lib/scanner/encoding-detector.js";
 
 const RU_TEXT = "Война и мир — Лев Толстой";
 

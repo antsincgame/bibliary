@@ -6,7 +6,7 @@ import {
   evictionPriority,
   LIGHT_MAX_MB,
   MEDIUM_MAX_MB,
-} from "../electron/lib/llm/model-size-classifier.js";
+} from "../server/lib/scanner/_vendor/llm/model-size-classifier.js";
 
 describe("model-size-classifier", () => {
   it("light: <= 8 GB → light", () => {

@@ -3,13 +3,14 @@ import { mountLibrary, isLibraryBusy, unmountLibrary, checkPendingLibraryNav } f
 import { mountDatasets } from "./datasets.js";
 import { mountSettings } from "./settings.js";
 import { mountAdmin } from "./admin.js";
+import { mountGraph } from "./graph.js";
 import { applyI18n, getLocale, setLocale, listLocales, onLocaleChange, t } from "./i18n.js";
 import { mountResilienceBar } from "./components/resilience-bar.js";
 import { openWelcomeWizard } from "./components/welcome-wizard.js";
 import { mountVersionBadge } from "./components/version-badge.js";
 import { mountAuthPage } from "./auth/auth-pages.js";
 
-const ROUTES = ["models", "library", "datasets", "settings", "admin"];
+const ROUTES = ["models", "library", "datasets", "graph", "settings", "admin"];
 const REMOUNT_ON_LOCALE = new Set([
   "library",
   "datasets",
@@ -22,6 +23,7 @@ const mounted = new Set();
 function mountRoute(name) {
   if (name === "library") mountLibrary(document.getElementById("library-root"));
   else if (name === "datasets") mountDatasets(document.getElementById("datasets-root"));
+  else if (name === "graph") mountGraph(document.getElementById("graph-root"));
   else if (name === "models") mountModels(document.getElementById("models-root"));
   else if (name === "settings") mountSettings(document.getElementById("settings-root"));
   else if (name === "admin") mountAdmin(document.getElementById("admin-root"));

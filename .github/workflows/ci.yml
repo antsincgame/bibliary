@@ -72,11 +72,13 @@ jobs:
             tests/evaluator-provider-smoke.test.ts \
             tests/extractor-provider-smoke.test.ts \
             tests/extraction-queue-state-smoke.test.ts \
+            tests/export-queue-smoke.test.ts \
             tests/datasets-jsonl-smoke.test.ts \
             tests/datasets-sharegpt-smoke.test.ts \
             tests/datasets-chatml-smoke.test.ts \
             tests/datasets-stream-writer-smoke.test.ts \
-            tests/sharegpt-tiered-smoke.test.ts
+            tests/sharegpt-tiered-smoke.test.ts \
+            tests/store-smoke.test.ts
 
       # Legacy unit suite — BEST EFFORT. Targets electron/lib/* tests
       # that haven't been retired yet (Phase 13c full migration is still

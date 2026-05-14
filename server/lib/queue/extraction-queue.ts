@@ -154,7 +154,7 @@ class ExtractionQueueImpl {
    *
    * Идемпотентно: повторный вызов не дублирует pending entries.
    */
-  async resumeFromAppwrite(): Promise<{ orphansReset: number; queuedAdded: number }> {
+  async resumeFromStore(): Promise<{ orphansReset: number; queuedAdded: number }> {
     let orphansReset = 0;
     try {
       const stale = await listStaleRunningJobs(STALE_TIMEOUT_MS);
@@ -235,7 +235,7 @@ class ExtractionQueueImpl {
     /* Если уже cancelled (race с POST /cancel до пиклапа) — skip. */
     if (job.state !== "queued") return;
     /* Belt-and-braces: export build docs share the dataset_jobs
-     * collection. resumeFromAppwrite filters them out, but if anyone
+     * collection. resumeFromStore filters them out, but if anyone
      * push'ed an export jobId into this.pending by mistake, skip it
      * rather than try to run extractBookViaBridge against a bookId
      * that's null. */
@@ -342,7 +342,7 @@ export function getExtractionQueue(): ExtractionQueueImpl {
  */
 export function startExtractionWorker(): void {
   void queue
-    .resumeFromAppwrite()
+    .resumeFromStore()
     .then(({ orphansReset, queuedAdded }) => {
       if (orphansReset > 0) {
         console.log(
@@ -357,7 +357,7 @@ export function startExtractionWorker(): void {
     })
     .catch((err) => {
       console.warn(
-        "[extraction-queue] resumeFromAppwrite failed:",
+        "[extraction-queue] resumeFromStore failed:",
         err instanceof Error ? err.message : err,
       );
     });

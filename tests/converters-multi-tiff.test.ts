@@ -16,7 +16,7 @@ import { expect } from "./helpers/expect-shim.ts";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { convertMultiTiff, getTiffPageCount } from "../electron/lib/scanner/converters/multi-tiff.js";
+import { convertMultiTiff, getTiffPageCount } from "../server/lib/scanner/converters/multi-tiff.js";
 
 describe("convertMultiTiff — graceful behavior", () => {
   it("Невалидный TIFF → text-extracted (не throw)", async (t) => {

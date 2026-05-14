@@ -8,7 +8,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { z } from "zod";
-import { createCheckpointStore } from "../electron/lib/resilience/checkpoint-store.ts";
+import { createCheckpointStore } from "../server/lib/scanner/_vendor/resilience/checkpoint-store.ts";
 
 const SnapshotSchema = z.object({
   step: z.number(),

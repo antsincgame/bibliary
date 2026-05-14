@@ -1,6 +1,6 @@
-import { ID, Permission, Query, Role } from "node-appwrite";
+import { ID, Permission, Query, Role } from "../store/query.js";
 
-import { COLLECTIONS, getAppwrite, isAppwriteCode, type RawDoc } from "../appwrite.js";
+import { COLLECTIONS, getDatastore, isStoreErrorCode, type RawDoc } from "../datastore.js";
 
 export type BookStatus =
   | "imported"
@@ -143,7 +143,7 @@ function buildOrderQueries(orderBy: CatalogQuery["orderBy"], orderDir: CatalogQu
 }
 
 export async function queryCatalog(userId: string, q: CatalogQuery = {}): Promise<CatalogResult> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const limit = Math.min(MAX_LIMIT, Math.max(1, q.limit ?? DEFAULT_LIMIT));
   const offset = Math.max(0, q.offset ?? 0);
 
@@ -182,13 +182,13 @@ export async function queryCatalog(userId: string, q: CatalogQuery = {}): Promis
 }
 
 export async function getBookById(userId: string, bookId: string): Promise<BookDoc | null> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   try {
     const raw = await databases.getDocument<RawBookDoc>(databaseId, COLLECTIONS.books, bookId);
     if (raw.userId !== userId) return null;
     return toBook(raw);
   } catch (err) {
-    if (isAppwriteCode(err, 404)) return null;
+    if (isStoreErrorCode(err, 404)) return null;
     throw err;
   }
 }
@@ -196,7 +196,7 @@ export async function getBookById(userId: string, bookId: string): Promise<BookD
 export async function deleteBook(userId: string, bookId: string): Promise<boolean> {
   const book = await getBookById(userId, bookId);
   if (!book) return false;
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   await databases.deleteDocument(databaseId, COLLECTIONS.books, bookId);
   return true;
 }
@@ -222,7 +222,7 @@ export interface CreateBookInput {
 }
 
 export async function createBook(input: CreateBookInput): Promise<BookDoc> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const id = ID.unique();
   const nowIso = new Date().toISOString();
   const doc: Record<string, unknown> = {
@@ -290,7 +290,7 @@ export async function updateBook(
 ): Promise<BookDoc | null> {
   const existing = await getBookById(userId, bookId);
   if (!existing) return null;
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const doc: Record<string, unknown> = { updatedAt: new Date().toISOString() };
   for (const [k, v] of Object.entries(patch)) {
     if (v !== undefined) doc[k] = v;

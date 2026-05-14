@@ -14,7 +14,7 @@ import {
   repairParseResultAllStrategies,
   isSevereMojibakeParseResult,
 } from "../electron/lib/scanner/text-mojibake-repair.js";
-import type { ParseResult } from "../electron/lib/scanner/parsers/types.js";
+import type { ParseResult } from "../server/lib/scanner/parsers/types.js";
 
 function makeParsed(sections: Array<{ title: string; paragraphs: string[] }>): ParseResult {
   return {

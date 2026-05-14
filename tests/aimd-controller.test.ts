@@ -17,7 +17,7 @@ import { expect } from "./helpers/expect-shim.ts";
 import {
   AimdController,
   type AimdAdjustedEvent,
-} from "../electron/lib/llm/aimd-controller.js";
+} from "../server/lib/scanner/_vendor/llm/aimd-controller.js";
 
 class TestClock {
   private t = 1_000_000;
