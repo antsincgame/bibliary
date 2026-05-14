@@ -19,28 +19,20 @@ function api() {
   return /** @type {any} */ (window).api;
 }
 
+/* Only the two roles the server actually resolves (see server's
+ * LLMRole type). The legacy Electron build had a wider taxonomy
+ * (vision, translator, lang_detector, ukrainian_specialist) — re-add
+ * a role here only when the server grows a real resolver call site
+ * for it, otherwise the Settings UI offers an assignment dropdown
+ * that does nothing. */
 const ROLES = /** @type {const} */ ([
   "crystallizer",
   "evaluator",
-  "vision_meta",
-  "vision_ocr",
-  "vision_illustration",
-  "layout_assistant",
-  "ukrainian_specialist",
-  "lang_detector",
-  "translator",
 ]);
 
 const ROLE_LABEL = {
   crystallizer: "Crystallizer (извлечение знаний)",
   evaluator: "Evaluator (оценка качества)",
-  vision_meta: "Vision · обложки",
-  vision_ocr: "Vision · OCR",
-  vision_illustration: "Vision · иллюстрации",
-  layout_assistant: "Layout assistant",
-  ukrainian_specialist: "Украинский специалист",
-  lang_detector: "Lang detector",
-  translator: "Translator",
 };
 
 const STATE = {

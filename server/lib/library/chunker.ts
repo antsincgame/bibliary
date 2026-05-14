@@ -1,14 +1,10 @@
 /**
- * Structural chunker — Phase 6d MVP без embedder-based drift detection.
- *
- * Делит главу на чанки 300..1500 слов, режет по subheadings и пустым
- * блокам-разделителям. НЕ использует cosine similarity (нет embedder
- * в server/ до Phase 7) — но для большинства книг structural split
- * даёт sensible chunks; thematic drift лишь optimization.
- *
- * Когда embedder подъедет в server/lib/embedder/, можно поднять
- * `electron/lib/dataset-v2/semantic-chunker.ts` целиком и заменить
- * structural-only путь.
+ * Structural chunker — делит главу на чанки 300..1500 слов, режет по
+ * subheadings и пустым блокам-разделителям. НЕ использует cosine
+ * similarity для drift detection: для подавляющего большинства книг
+ * structural split даёт sensible chunks, а thematic drift — marginal
+ * refinement, не correctness issue. Embedder в server/lib/embedder/
+ * есть, но он зарезервирован под retrieval, не под chunk boundaries.
  */
 
 import type { ExtractorInputChunk } from "../../../shared/llm/extractor-schema.js";

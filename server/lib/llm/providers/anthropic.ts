@@ -15,7 +15,8 @@ import type {
  *   - Prompt caching (`cache_control: {type: "ephemeral"}`) на system
  *     prompt + первом user-block — критично для крупных контекстов
  *     (Bibliary crystallizer часто шлёт 30K+ tokens книги).
- *   - Vision (image blocks) для роли vision_meta / vision_illustration.
+ *   - Vision (image blocks) через ChatAttachment kind="image" — adapter
+ *     умеет их собирать, но server-side роли, которая их шлёт, пока нет.
  *   - Extended thinking для reasoning моделей (claude-4-*-thinking)
  *     — пока не передаётся явно, SDK выдаёт reasoning блоки в content.
  *
