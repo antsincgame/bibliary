@@ -37,7 +37,6 @@
  */
 
 import type {
-  ExtractOptions,
   ExtractionAttempt,
   TextExtractor,
 } from "../extractors/types.js";

@@ -90,9 +90,6 @@ function resolve7zBinaryForCbr(): string | null {
   const exeName = platformExeName("7z");
   const candidates: string[] = [];
   for (const subdir of platformVendorDirsWithLegacy()) {
-    if (typeof process.resourcesPath === "string") {
-      candidates.push(path.join(process.resourcesPath, "vendor", "7zip", subdir));
-    }
     candidates.push(path.join(process.cwd(), "vendor", "7zip", subdir));
   }
   for (const root of candidates) {

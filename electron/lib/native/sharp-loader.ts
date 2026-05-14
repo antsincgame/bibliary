@@ -36,9 +36,6 @@ export function ensureSharpDllPath(): void {
     /* sharp resolution failure will surface during import */
   }
 
-  if (typeof process.resourcesPath === "string") {
-    candidates.push(path.join(process.resourcesPath, "app.asar.unpacked", "node_modules", "sharp", "vendor"));
-  }
   candidates.push(path.join(process.cwd(), "node_modules", "sharp", "vendor"));
 
   for (const vendorBase of candidates) {

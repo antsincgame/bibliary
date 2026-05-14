@@ -5,7 +5,7 @@
  * Перед каждым chat() pipeline должен вызывать `assertFits(modelKey, messages, maxCompletion)` —
  * если не помещается, выбрасывается `ContextOverflowError` с подробностями.
  */
-import { TokenBudgetManager, type ChatMessage } from "./budget";
+import { TokenBudgetManager, type ChatMessage } from "./budget.js";
 
 export class ContextOverflowError extends Error {
   readonly modelKey: string;

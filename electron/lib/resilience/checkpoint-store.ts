@@ -1,8 +1,8 @@
 import { promises as fs } from "fs";
 import * as path from "path";
 import type { ZodSchema } from "zod";
-import { writeJsonAtomic } from "./atomic-write";
-import { withFileLock } from "./file-lock";
+import { writeJsonAtomic } from "./atomic-write.js";
+import { withFileLock } from "./file-lock.js";
 
 export interface CheckpointStore<T> {
   save(id: string, snapshot: T): Promise<void>;

@@ -64,8 +64,7 @@ let cachedSandbox: DjVuSandbox | null = null;
 let cachedBundlePath: string | null = null;
 
 /**
- * Найти bundle djvu.js. В dev — `vendor/djvu/djvu.js` относительно cwd.
- * В packaged Electron — `process.resourcesPath/vendor/djvu/djvu.js`.
+ * Найти bundle djvu.js — `vendor/djvu/djvu.js` относительно cwd.
  */
 function resolveBundlePath(): string {
   if (cachedBundlePath) return cachedBundlePath;
@@ -73,9 +72,6 @@ function resolveBundlePath(): string {
   const candidates: string[] = [];
   const cwd = process.cwd();
   candidates.push(path.join(cwd, "vendor", "djvu", "djvu.js"));
-  if (process.resourcesPath) {
-    candidates.push(path.join(process.resourcesPath, "vendor", "djvu", "djvu.js"));
-  }
   for (const p of candidates) {
     if (fsSync.existsSync(p)) {
       cachedBundlePath = p;

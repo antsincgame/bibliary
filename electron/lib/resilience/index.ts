@@ -1,14 +1,14 @@
-export { writeJsonAtomic, writeTextAtomic, renameWithRetry } from "./atomic-write";
+export { writeJsonAtomic, writeTextAtomic, renameWithRetry } from "./atomic-write.js";
 export {
   withFileLock,
   configureFileLockDefaults,
   type FileLockOptions,
-} from "./file-lock";
+} from "./file-lock.js";
 export {
   createCheckpointStore,
   type CheckpointStore,
   type CheckpointStoreOptions,
-} from "./checkpoint-store";
+} from "./checkpoint-store.js";
 export {
   withPolicy,
   buildRequestPolicy,
@@ -16,7 +16,7 @@ export {
   type RequestPolicy,
   type RequestPolicyContext,
   type PolicyContext,
-} from "./lm-request-policy";
+} from "./lm-request-policy.js";
 export {
   CircuitBreaker,
   CircuitOpenError,
@@ -34,8 +34,8 @@ export {
   type BulkheadOptions,
   type BulkheadStats,
 } from "./bulkhead.js";
-export * as telemetry from "./telemetry";
-export type { TelemetryEvent } from "./telemetry";
+export * as telemetry from "./telemetry.js";
+export type { TelemetryEvent } from "./telemetry.js";
 export {
   coordinator,
   type BatchCoordinator,
@@ -44,6 +44,6 @@ export {
   type PipelineName,
   type BatchStartListener,
   type BatchEndListener,
-} from "./batch-coordinator";
-export { initResilienceLayer, type ResilienceInitOptions } from "./bootstrap";
-export * as constants from "./constants";
+} from "./batch-coordinator.js";
+export { initResilienceLayer, type ResilienceInitOptions } from "./bootstrap.js";
+export * as constants from "./constants.js";

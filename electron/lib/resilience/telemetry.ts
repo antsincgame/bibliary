@@ -1,6 +1,6 @@
 import { promises as fs } from "fs";
 import * as path from "path";
-import { TELEMETRY_MAX_BYTES } from "./constants";
+import { TELEMETRY_MAX_BYTES } from "./constants.js";
 
 export type TelemetryEvent =
   | { type: "batch.start"; batchId: string; pipeline: "extraction"; config: unknown; ts: string }

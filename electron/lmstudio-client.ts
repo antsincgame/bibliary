@@ -1,7 +1,7 @@
 import { LMStudioClient } from "@lmstudio/sdk";
-import { registerModelContext, unregisterModelContext } from "./lib/token/overflow-guard";
-import { withPolicy, buildRequestPolicy, type RequestPolicy, type PolicyContext } from "./lib/resilience/lm-request-policy";
-import { getPreferencesStore } from "./lib/preferences/store";
+import { registerModelContext, unregisterModelContext } from "./lib/token/overflow-guard.js";
+import { withPolicy, buildRequestPolicy, type RequestPolicy, type PolicyContext } from "./lib/resilience/lm-request-policy.js";
+import { getPreferencesStore } from "./lib/preferences/store.js";
 import { getLmStudioUrl, getLmStudioUrlSync } from "./lib/endpoints/index.js";
 import { runExclusiveOnModel } from "./lib/llm/model-inference-lock.js";
 

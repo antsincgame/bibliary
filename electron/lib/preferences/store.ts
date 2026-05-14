@@ -10,7 +10,7 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import { z } from "zod";
 
-import { writeJsonAtomic, withFileLock } from "../resilience";
+import { writeJsonAtomic, withFileLock } from "../resilience/index.js";
 
 // ---------------------------------------------------------------------------
 // Schema -- every field is optional (missing = use default)

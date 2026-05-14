@@ -57,12 +57,6 @@ function candidateRoots(): string[] {
     roots.add(path.join(cwd, "vendor", "djvulibre", subdir));
   }
   roots.add(path.join(cwd, "vendor", "djvulibre"));
-  if (process.resourcesPath) {
-    for (const subdir of platformVendorDirsWithLegacy()) {
-      roots.add(path.join(process.resourcesPath, "vendor", "djvulibre", subdir));
-    }
-    roots.add(path.join(process.resourcesPath, "vendor", "djvulibre"));
-  }
   if (process.platform === "win32") {
     const pf86 = process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)";
     const pf64 = process.env["ProgramFiles"] ?? "C:\\Program Files";

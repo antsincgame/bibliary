@@ -67,9 +67,6 @@ async function resolve7zBinary(): Promise<string | null> {
   const roots: string[] = [];
   for (const subdir of platformVendorDirsWithLegacy()) {
     roots.push(path.join(cwd, "vendor", "7zip", subdir));
-    if (process.resourcesPath) {
-      roots.push(path.join(process.resourcesPath, "vendor", "7zip", subdir));
-    }
   }
   for (const root of roots) {
     const candidate = path.join(root, exeName);

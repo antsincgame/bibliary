@@ -1,7 +1,7 @@
 import { promises as fs } from "fs";
 import * as path from "path";
 import lockfile from "proper-lockfile";
-import { LOCK_RETRIES, LOCK_STALE_MS } from "./constants";
+import { LOCK_RETRIES, LOCK_STALE_MS } from "./constants.js";
 
 export interface FileLockOptions {
   retries?: number;

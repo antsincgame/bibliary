@@ -20,7 +20,7 @@
  */
 
 export class BulkheadFullError extends Error {
-  readonly name = "BulkheadFullError";
+  override readonly name = "BulkheadFullError";
   readonly bulkheadName: string;
   readonly inflight: number;
   readonly queueDepth: number;

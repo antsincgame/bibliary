@@ -19,7 +19,7 @@ export interface ChildWatchdogResult {
 }
 
 export class ChildWatchdogTimeoutError extends Error {
-  readonly name = "ChildWatchdogTimeoutError";
+  override readonly name = "ChildWatchdogTimeoutError";
   readonly killed: boolean;
   readonly elapsedMs: number;
   readonly child: ChildProcess;

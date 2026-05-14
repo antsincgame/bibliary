@@ -5,7 +5,7 @@ import {
   POLICY_MAX_RETRIES,
   POLICY_MIN_OBSERVED_TPS,
   POLICY_TIMEOUT_BUFFER_MS,
-} from "./constants";
+} from "./constants.js";
 import { CircuitBreaker, getLmStudioCircuitBreaker } from "./circuit-breaker.js";
 
 export interface RequestPolicyContext {

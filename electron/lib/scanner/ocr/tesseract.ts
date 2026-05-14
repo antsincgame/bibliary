@@ -55,9 +55,8 @@ let workerInitPromise: Promise<TesseractWorker> | null = null;
 
 /**
  * Path к каталогу с .traineddata файлами. Поиск:
- *   1. Dev: `<cwd>/vendor/tessdata/`
- *   2. Packaged Electron: `<process.resourcesPath>/vendor/tessdata/`
- *   3. Override через ENV `BIBLIARY_TESSDATA_DIR` для тестов.
+ *   1. `<cwd>/vendor/tessdata/`
+ *   2. Override через ENV `BIBLIARY_TESSDATA_DIR` для тестов.
  */
 function resolveTessdataDir(): string | null {
   const override = process.env.BIBLIARY_TESSDATA_DIR;
@@ -65,11 +64,6 @@ function resolveTessdataDir(): string | null {
 
   const cwdCandidate = path.join(process.cwd(), "vendor", "tessdata");
   if (existsSync(path.join(cwdCandidate, "rus.traineddata"))) return cwdCandidate;
-
-  if (process.resourcesPath) {
-    const packaged = path.join(process.resourcesPath, "vendor", "tessdata");
-    if (existsSync(path.join(packaged, "rus.traineddata"))) return packaged;
-  }
 
   return null;
 }

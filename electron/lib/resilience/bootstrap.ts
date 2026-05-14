@@ -1,8 +1,8 @@
 import { promises as fs, existsSync, lstatSync, rmSync } from "fs";
 import * as path from "path";
-import { configureTelemetry } from "./telemetry";
-import { TELEMETRY_MAX_BYTES } from "./constants";
-import { initPromptStore } from "../prompts/store";
+import { configureTelemetry } from "./telemetry.js";
+import { TELEMETRY_MAX_BYTES } from "./constants.js";
+import { initPromptStore } from "../prompts/store.js";
 
 export interface ResilienceInitOptions {
   dataDir?: string;

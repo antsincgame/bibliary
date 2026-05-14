@@ -1,5 +1,5 @@
-import * as telemetry from "./telemetry";
-import type { CheckpointStore } from "./checkpoint-store";
+import * as telemetry from "./telemetry.js";
+import type { CheckpointStore } from "./checkpoint-store.js";
 
 export type PipelineName = "extraction";
 

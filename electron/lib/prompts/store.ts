@@ -1,8 +1,8 @@
 import { promises as fs } from "fs";
 import * as path from "path";
 import { z } from "zod";
-import { withFileLock } from "../resilience/file-lock";
-import { writeJsonAtomic, writeTextAtomic } from "../resilience/atomic-write";
+import { withFileLock } from "../resilience/file-lock.js";
+import { writeJsonAtomic, writeTextAtomic } from "../resilience/atomic-write.js";
 
 const SamplingPartialSchema = z
   .object({

@@ -76,7 +76,7 @@ export interface CircuitBreakerStats {
 }
 
 export class CircuitOpenError extends Error {
-  readonly name = "CircuitOpenError";
+  override readonly name = "CircuitOpenError";
   readonly circuitName: string;
   readonly nextHalfOpenAt: number;
   readonly currentResetTimeoutMs: number;
