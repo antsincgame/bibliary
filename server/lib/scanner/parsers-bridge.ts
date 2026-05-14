@@ -1,15 +1,12 @@
 import type { ParseOptions, ParseResult } from "./parser-types.js";
 
 /**
- * Runtime adapter that loads the real parser pipeline from
- * `electron/lib/scanner/parsers/` without dragging tsc into a transitive
- * type-check across the two trees (the electron tree compiles with
- * different module settings — extensionless imports, CJS, etc.).
+ * Runtime adapter for the parser pipeline at `./parsers/`.
  *
- * We load via a NON-literal `import(path)` expression so TypeScript's
- * static analyser cannot resolve the target file. The runtime is plain
- * Node ESM (tsx in dev, tsc-emitted JS in prod). Until Phase 12 moves
- * scanner core into `server/lib/scanner/`, this bridge is the seam.
+ * The scanner closure now lives in-tree under `server/lib/scanner/`. The
+ * variable-indirection `import(path)` is kept for now (rather than a static
+ * import) so the bridge stays a thin, dependency-light seam; a later cleanup
+ * can collapse it once the test-import codemod lands.
  */
 
 interface ParsersModule {
@@ -20,8 +17,8 @@ let cached: ParsersModule | null = null;
 
 async function load(): Promise<ParsersModule> {
   if (cached) return cached;
-  /* Variable indirection so tsc treats the import as runtime-only. */
-  const target = "../../../electron/lib/scanner/parsers/index.js";
+  /* Variable indirection keeps the bridge a thin runtime-only seam. */
+  const target = "./parsers/index.js";
   const mod = (await import(target)) as unknown as ParsersModule;
   cached = mod;
   return mod;
