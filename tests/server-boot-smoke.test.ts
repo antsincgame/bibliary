@@ -15,14 +15,12 @@ import assert from "node:assert/strict";
 const ENV_SNAPSHOT: Record<string, string | undefined> = {};
 
 before(() => {
-  ENV_SNAPSHOT["APPWRITE_ENDPOINT"] = process.env["APPWRITE_ENDPOINT"];
-  ENV_SNAPSHOT["APPWRITE_PROJECT_ID"] = process.env["APPWRITE_PROJECT_ID"];
-  ENV_SNAPSHOT["APPWRITE_API_KEY"] = process.env["APPWRITE_API_KEY"];
   ENV_SNAPSHOT["BIBLIARY_ENCRYPTION_KEY"] = process.env["BIBLIARY_ENCRYPTION_KEY"];
+  ENV_SNAPSHOT["BIBLIARY_DB_PATH"] = process.env["BIBLIARY_DB_PATH"];
 
-  process.env["APPWRITE_ENDPOINT"] = "http://localhost/v1";
-  process.env["APPWRITE_PROJECT_ID"] = "test-project";
-  process.env["APPWRITE_API_KEY"] = "test-key-not-used-at-boot";
+  /* In-memory store so /health's probe has a real DB to hit without
+   * leaving a bibliary.db behind in the repo's data dir. */
+  process.env["BIBLIARY_DB_PATH"] = ":memory:";
   if (!process.env["BIBLIARY_ENCRYPTION_KEY"]) {
     process.env["BIBLIARY_ENCRYPTION_KEY"] = "x".repeat(32);
   }
@@ -65,32 +63,27 @@ describe("server boot smoke", () => {
     assert.match(body.timestamp, /^\d{4}-\d{2}-\d{2}T/);
   });
 
-  it("/health returns 503 + checks map when Appwrite unreachable (test env)", async () => {
+  it("/health probes the store + vec; status is consistent with the checks map", async () => {
     const { buildApp } = await import("../server/app.ts");
     const app = buildApp();
     const res = await app.request("/health");
-    /* In smoke tests Appwrite is a fake URL → probe fails → readiness
-     * returns 503. The contract we test is: NEVER returns 200 when
-     * deps are broken. With real Appwrite in production this returns
-     * 200; we can't smoke-test the happy path without a live backend. */
-    assert.equal(res.status, 503);
     const body = (await res.json()) as {
       ok: boolean;
-      checks?: { appwrite?: { ok: boolean }; vec?: { ok: boolean } };
+      checks?: { store?: { ok: boolean }; vec?: { ok: boolean } };
     };
-    assert.equal(body.ok, false);
     assert.ok(body.checks, "checks block missing");
-    /* Smoke env uses a fake Appwrite URL — the probe MUST fail. If
-     * this asserts `true` someday it means we silently stopped
-     * probing or hard-coded ok=true. The vec probe may succeed or
-     * fail depending on whether a real sqlite-vec file exists in
-     * the test scratch; only assert the type for that one. */
-    assert.equal(
-      body.checks?.appwrite?.ok,
-      false,
-      "appwrite probe must fail against the fake URL in smoke env",
-    );
+    /* The document store is a local SQLite file (`:memory:` here) — it
+     * MUST open in a clean test env. If this ever asserts false the
+     * store probe is broken. The vec probe is env-dependent (a real
+     * sqlite-vec file may or may not exist in the test scratch), so
+     * only its type is guaranteed. */
+    assert.equal(body.checks?.store?.ok, true, "store probe must pass — SQLite is local");
     assert.equal(typeof body.checks?.vec?.ok, "boolean");
+    /* Readiness contract: ok === store && vec; HTTP status follows ok. */
+    const expectedOk =
+      (body.checks?.store?.ok ?? false) && (body.checks?.vec?.ok ?? false);
+    assert.equal(body.ok, expectedOk);
+    assert.equal(res.status, expectedOk ? 200 : 503);
   });
 
   it("unknown route returns 404 JSON", async () => {

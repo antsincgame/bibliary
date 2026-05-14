@@ -9,11 +9,11 @@ import { closeStoreDb } from "./lib/store/db.js";
 import { closeVectorDb } from "./lib/vectordb/db.js";
 
 /**
- * Flush both SQLite WALs before exit. The vector DB and (in solo mode)
- * the document DB are independent better-sqlite3 handles with WAL
- * journaling — `close()` runs a synchronous checkpoint so the next
- * boot's WAL recovery doesn't roll back un-committed pages.
- * `closeStoreDb` is a no-op when solo mode never opened a connection.
+ * Flush both SQLite WALs before exit. The vector DB and the document DB
+ * are independent better-sqlite3 handles with WAL journaling —
+ * `close()` runs a synchronous checkpoint so the next boot's WAL
+ * recovery doesn't roll back un-committed pages. Each close is a no-op
+ * if that DB was never opened.
  */
 function flushDatabases(): void {
   for (const [label, close] of [
@@ -45,11 +45,7 @@ async function main(): Promise<void> {
       console.log(
         `[bibliary] listening on http://${info.address}:${info.port} (${cfg.NODE_ENV})`,
       );
-      console.log(
-        cfg.BIBLIARY_SOLO
-          ? "[bibliary] storage: SOLO mode — SQLite + filesystem, no Appwrite"
-          : `[bibliary] storage: Appwrite (${cfg.APPWRITE_ENDPOINT ?? "?"})`,
-      );
+      console.log("[bibliary] storage: SQLite + filesystem");
       /* Background workers: each resumes its own queued docs from the
        * shared dataset_jobs collection (extraction filters out
        * stage="build:*", export filters those IN — see

@@ -18,20 +18,17 @@ const ENV_SNAPSHOT: Record<string, string | undefined> = {};
 
 before(() => {
   for (const k of [
-    "APPWRITE_ENDPOINT",
-    "APPWRITE_PROJECT_ID",
-    "APPWRITE_API_KEY",
     "BIBLIARY_ENCRYPTION_KEY",
     "BIBLIARY_UPLOAD_MAX_BYTES",
     "BIBLIARY_REGISTRATION_DISABLED",
+    "BIBLIARY_DB_PATH",
     "NODE_ENV",
   ]) {
     ENV_SNAPSHOT[k] = process.env[k];
   }
-  process.env["APPWRITE_ENDPOINT"] = "http://localhost/v1";
-  process.env["APPWRITE_PROJECT_ID"] = "test-project";
-  process.env["APPWRITE_API_KEY"] = "test-key";
   process.env["NODE_ENV"] = "test";
+  /* In-memory store so /health's probe has a real DB to hit. */
+  process.env["BIBLIARY_DB_PATH"] = ":memory:";
   if (!process.env["BIBLIARY_ENCRYPTION_KEY"]) {
     process.env["BIBLIARY_ENCRYPTION_KEY"] = "x".repeat(32);
   }
@@ -121,19 +118,22 @@ describe("/health vs /health/live contract", () => {
     assert.equal(body.ok, true);
   });
 
-  it("/health returns 503 + checks map when Appwrite probe fails", async () => {
+  it("/health reports a store + vec checks map; status follows ok", async () => {
     const { buildApp } = await import("../server/app.ts");
     const app = buildApp();
     const res = await app.request("/health");
-    assert.equal(res.status, 503);
     const body = (await res.json()) as {
       ok: boolean;
-      checks?: { appwrite?: { ok: boolean }; vec?: { ok: boolean } };
+      checks?: { store?: { ok: boolean }; vec?: { ok: boolean } };
     };
-    assert.equal(body.ok, false);
     assert.ok(body.checks, "checks block missing");
-    /* Appwrite probe MUST fail in this test env (fake URL). */
-    assert.equal(body.checks?.appwrite?.ok, false);
+    /* The SQLite store is local — its probe must pass in a clean env. */
+    assert.equal(body.checks?.store?.ok, true);
+    assert.equal(typeof body.checks?.vec?.ok, "boolean");
+    const expectedOk =
+      (body.checks?.store?.ok ?? false) && (body.checks?.vec?.ok ?? false);
+    assert.equal(body.ok, expectedOk);
+    assert.equal(res.status, expectedOk ? 200 : 503);
   });
 });
 

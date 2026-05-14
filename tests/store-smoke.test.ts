@@ -20,9 +20,9 @@ import Database from "better-sqlite3";
 import { Query } from "../server/lib/store/query.js";
 
 import type { Config } from "../server/config.ts";
-import { bootstrapStoreSchema } from "../server/lib/store/solo-bootstrap.ts";
-import { DocumentStore } from "../server/lib/store/sqlite-store.ts";
-import { FileStore } from "../server/lib/store/storage-shim.ts";
+import { bootstrapStoreSchema } from "../server/lib/store/schema-bootstrap.ts";
+import { DocumentStore } from "../server/lib/store/document-store.ts";
+import { FileStore } from "../server/lib/store/file-store.ts";
 import { translateQueries } from "../server/lib/store/query-translate.ts";
 
 const DB_ID = "bibliary";

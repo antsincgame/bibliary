@@ -42,37 +42,18 @@ export function buildApp(): Hono<AppEnv> {
   app.use("*", logger());
 
   /**
-   * Strict CSP в production; в development разрешаем 'unsafe-inline'
-   * + 'unsafe-eval' для Vite HMR (его инжект runtime'а нужен для
-   * dev-перезагрузки). Renderer + backend сервируются same-origin
-   * в production — 'self' покрывает всё.
+   * Strict CSP in production; in development we allow 'unsafe-inline' +
+   * 'unsafe-eval' for Vite HMR (its runtime injection needs them).
+   * Renderer + backend are served same-origin in production, so 'self'
+   * covers everything — there is no external data backend to allow.
    *
-   * connectSrc включает Appwrite endpoint (cross-origin XHR из
-   * renderer'а в Appwrite Storage SDK, Phase 4).
-   *
-   * Frame-ancestors 'none' защищает от clickjacking; X-Frame-Options
-   * добавляется хедером secureHeaders по умолчанию.
+   * Frame-ancestors 'none' guards against clickjacking; X-Frame-Options
+   * is added by secureHeaders by default.
    */
-  const appwriteOrigin = (() => {
-    try {
-      /* Empty string in solo mode (no APPWRITE_ENDPOINT) → URL throws →
-       * caught → undefined, so the CSP simply omits an Appwrite origin. */
-      const u = new URL(cfg.APPWRITE_ENDPOINT ?? "");
-      return `${u.protocol}//${u.host}`;
-    } catch {
-      return undefined;
-    }
-  })();
   const isProd = cfg.NODE_ENV === "production";
   const scriptSrc: string[] = isProd ? ["'self'"] : ["'self'", "'unsafe-inline'", "'unsafe-eval'"];
   const styleSrc: string[] = ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"];
   const connectSrc: string[] = ["'self'"];
-  if (appwriteOrigin) {
-    connectSrc.push(appwriteOrigin);
-    /* WebSocket для Appwrite Realtime (если когда подключим прямую
-     * браузер-к-Appwrite подписку). */
-    connectSrc.push(appwriteOrigin.replace(/^https?:/, "wss:"));
-  }
 
   app.use(
     "*",
