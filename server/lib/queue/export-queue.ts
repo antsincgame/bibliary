@@ -1,4 +1,4 @@
-import { COLLECTIONS, getAppwrite, isAppwriteCode } from "../appwrite.js";
+import { COLLECTIONS, getDatastore, isStoreErrorCode } from "../datastore.js";
 import { runDatasetBuild } from "../datasets/build-bridge.js";
 import type { DatasetFormat } from "../datasets/synthesize.js";
 import { publishUser } from "../realtime/event-bus.js";
@@ -344,7 +344,7 @@ async function writeExportFileMeta(
   exportFileId: string,
   lineCount: number,
 ): Promise<void> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   try {
     await databases.updateDocument(databaseId, COLLECTIONS.datasetJobs, jobId, {
       exportFileId,
@@ -352,7 +352,7 @@ async function writeExportFileMeta(
       updatedAt: new Date().toISOString(),
     });
   } catch (err) {
-    if (!isAppwriteCode(err, 404)) throw err;
+    if (!isStoreErrorCode(err, 404)) throw err;
   }
 }
 

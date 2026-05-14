@@ -35,10 +35,23 @@ const ConfigSchema = z
     PORT: z.coerce.number().int().positive().default(3000),
     HOST: z.string().default("0.0.0.0"),
 
-    APPWRITE_ENDPOINT: z.string().url(),
-    APPWRITE_PROJECT_ID: z.string().min(1),
-    APPWRITE_API_KEY: z.string().min(1),
+    /* Appwrite connection is .optional() so solo mode (BIBLIARY_SOLO=1)
+     * can boot with no BaaS at all — the SQLite shim takes over. The
+     * superRefine below promotes the three to required when
+     * BIBLIARY_SOLO is off, so multi-user deployments still fail loud
+     * at boot rather than 500ing on the first DB call. */
+    APPWRITE_ENDPOINT: z.string().url().optional(),
+    APPWRITE_PROJECT_ID: z.string().min(1).optional(),
+    APPWRITE_API_KEY: z.string().min(1).optional(),
     APPWRITE_DATABASE_ID: z.string().default("bibliary"),
+
+    /* Solo mode: run the whole service on SQLite alone — no Appwrite,
+     * no MariaDB, no Redis. `npm start` / one `docker run`. The
+     * multi-user Appwrite path stays available when this is off. */
+    BIBLIARY_SOLO: envBool(false),
+    /* Override the solo document DB path — mainly for tests, which
+     * point it at a temp file or ":memory:" for isolation. */
+    BIBLIARY_DB_PATH: z.string().optional(),
 
     /* JWT keys are .optional() in the schema so dev/test can boot
      * without a keypair (smoke tests don't touch /auth). The refine
@@ -82,6 +95,25 @@ const ConfigSchema = z
     BIBLIARY_REGISTRATION_DISABLED: envBool(false),
   })
   .superRefine((cfg, ctx) => {
+    /* Appwrite credentials are required whenever solo mode is OFF —
+     * regardless of NODE_ENV, because without them the multi-user
+     * backend cannot talk to its database at all. */
+    if (!cfg.BIBLIARY_SOLO) {
+      for (const key of [
+        "APPWRITE_ENDPOINT",
+        "APPWRITE_PROJECT_ID",
+        "APPWRITE_API_KEY",
+      ] as const) {
+        if (!cfg[key]) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: "required unless BIBLIARY_SOLO=true",
+          });
+        }
+      }
+    }
+
     if (cfg.NODE_ENV !== "production") return;
     if (!cfg.JWT_PRIVATE_KEY_PEM) {
       ctx.addIssue({

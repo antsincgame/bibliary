@@ -1,25 +1,19 @@
 /**
- * Idempotent bootstrap script: creates the Bibliary database, collections,
- * attributes, indexes, and storage buckets in a target Appwrite instance.
+ * Single source of truth for the Bibliary data schema — collection
+ * attributes, indexes, and storage buckets.
  *
- * Run after spinning up a fresh Appwrite (local docker-compose or Coolify):
- *   APPWRITE_ENDPOINT=... APPWRITE_PROJECT_ID=... APPWRITE_API_KEY=... \
- *     npm run appwrite:bootstrap
+ * Two bootstrap targets consume this:
+ *   - `scripts/appwrite-bootstrap.ts` translates the specs into Appwrite
+ *     collections / attributes / indexes / buckets (multi-user mode).
+ *   - `server/lib/store/solo-bootstrap.ts` translates the same specs into
+ *     SQLite `CREATE TABLE` / `CREATE INDEX` DDL + filesystem bucket
+ *     directories (solo mode — no Appwrite).
+ *
+ * Keeping the spec here means the two bootstrap paths cannot drift: a
+ * new attribute lands in both backends from one edit.
  */
 
-import {
-  Client,
-  Compression,
-  Databases,
-  IndexType,
-  Permission,
-  Role,
-  Storage,
-} from "node-appwrite";
-
-import { loadConfig } from "../server/config.js";
-
-interface AttributeSpec {
+export interface AttributeSpec {
   key: string;
   type: "string" | "integer" | "double" | "boolean" | "datetime" | "enum" | "email";
   required: boolean;
@@ -31,14 +25,14 @@ interface AttributeSpec {
   max?: number;
 }
 
-interface IndexSpec {
+export interface IndexSpec {
   key: string;
   type: "key" | "unique" | "fulltext";
   attributes: string[];
   orders?: ("ASC" | "DESC")[];
 }
 
-interface CollectionSpec {
+export interface CollectionSpec {
   id: string;
   name: string;
   documentSecurity: boolean;
@@ -46,7 +40,7 @@ interface CollectionSpec {
   indexes: IndexSpec[];
 }
 
-interface BucketSpec {
+export interface BucketSpec {
   id: string;
   name: string;
   permissions: string[];
@@ -57,7 +51,7 @@ interface BucketSpec {
   antivirus: boolean;
 }
 
-const COLLECTIONS: CollectionSpec[] = [
+export const COLLECTION_SPECS: CollectionSpec[] = [
   {
     id: "users",
     name: "Users",
@@ -319,7 +313,7 @@ const COLLECTIONS: CollectionSpec[] = [
 const FIVE_GB = 5_000_000_000;
 const TEN_MB = 10_000_000;
 
-const BUCKETS: BucketSpec[] = [
+export const BUCKET_SPECS: BucketSpec[] = [
   {
     id: "book-originals",
     name: "Book Originals",
@@ -382,259 +376,3 @@ const BUCKETS: BucketSpec[] = [
     antivirus: false,
   },
 ];
-
-function isAppwriteCode(err: unknown, code: number): boolean {
-  if (!err || typeof err !== "object") return false;
-  const e = err as { code?: number; response?: { code?: number } };
-  return e.code === code || e.response?.code === code;
-}
-
-async function ensureDatabase(databases: Databases, dbId: string): Promise<void> {
-  try {
-    await databases.get(dbId);
-    console.log(`[ok] database "${dbId}" exists`);
-  } catch (err) {
-    if (isAppwriteCode(err, 404)) {
-      await databases.create(dbId, "Bibliary");
-      console.log(`[+] database "${dbId}" created`);
-    } else {
-      throw err;
-    }
-  }
-}
-
-async function ensureCollection(
-  databases: Databases,
-  dbId: string,
-  spec: CollectionSpec,
-): Promise<void> {
-  try {
-    await databases.getCollection(dbId, spec.id);
-    console.log(`[ok] collection "${spec.id}" exists`);
-  } catch (err) {
-    if (isAppwriteCode(err, 404)) {
-      const permissions = [
-        Permission.create(Role.users()),
-        Permission.read(Role.users()),
-      ];
-      await databases.createCollection(dbId, spec.id, spec.name, permissions, spec.documentSecurity);
-      console.log(`[+] collection "${spec.id}" created`);
-    } else {
-      throw err;
-    }
-  }
-
-  for (const attr of spec.attributes) {
-    await ensureAttribute(databases, dbId, spec.id, attr);
-  }
-
-  await waitForAttributesAvailable(databases, dbId, spec.id, spec.attributes.map((a) => a.key));
-
-  for (const idx of spec.indexes) {
-    await ensureIndex(databases, dbId, spec.id, idx);
-  }
-}
-
-async function ensureAttribute(
-  databases: Databases,
-  dbId: string,
-  collectionId: string,
-  attr: AttributeSpec,
-): Promise<void> {
-  try {
-    await databases.getAttribute(dbId, collectionId, attr.key);
-    return;
-  } catch (err) {
-    if (!isAppwriteCode(err, 404)) throw err;
-  }
-
-  switch (attr.type) {
-    case "string":
-      await databases.createStringAttribute(
-        dbId,
-        collectionId,
-        attr.key,
-        attr.size ?? 255,
-        attr.required,
-        attr.default as string | undefined,
-        attr.array ?? false,
-      );
-      break;
-    case "email":
-      await databases.createEmailAttribute(
-        dbId,
-        collectionId,
-        attr.key,
-        attr.required,
-        attr.default as string | undefined,
-        attr.array ?? false,
-      );
-      break;
-    case "integer":
-      await databases.createIntegerAttribute(
-        dbId,
-        collectionId,
-        attr.key,
-        attr.required,
-        attr.min,
-        attr.max,
-        attr.default as number | undefined,
-        attr.array ?? false,
-      );
-      break;
-    case "double":
-      await databases.createFloatAttribute(
-        dbId,
-        collectionId,
-        attr.key,
-        attr.required,
-        attr.min,
-        attr.max,
-        attr.default as number | undefined,
-        attr.array ?? false,
-      );
-      break;
-    case "boolean":
-      await databases.createBooleanAttribute(
-        dbId,
-        collectionId,
-        attr.key,
-        attr.required,
-        attr.default as boolean | undefined,
-        attr.array ?? false,
-      );
-      break;
-    case "datetime":
-      await databases.createDatetimeAttribute(
-        dbId,
-        collectionId,
-        attr.key,
-        attr.required,
-        attr.default as string | undefined,
-        attr.array ?? false,
-      );
-      break;
-    case "enum":
-      if (!attr.elements?.length) {
-        throw new Error(`enum attribute ${attr.key} requires elements[]`);
-      }
-      await databases.createEnumAttribute(
-        dbId,
-        collectionId,
-        attr.key,
-        attr.elements,
-        attr.required,
-        attr.default as string | undefined,
-        attr.array ?? false,
-      );
-      break;
-  }
-  console.log(`  [+] attribute ${collectionId}.${attr.key} (${attr.type})`);
-}
-
-async function waitForAttributesAvailable(
-  databases: Databases,
-  dbId: string,
-  collectionId: string,
-  keys: string[],
-  timeoutMs = 30_000,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const list = await databases.listAttributes(dbId, collectionId);
-    const byKey = new Map(list.attributes.map((a) => [a.key, a.status]));
-    const pending = keys.filter((k) => byKey.get(k) !== "available");
-    if (pending.length === 0) return;
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  throw new Error(`Timed out waiting for attributes on ${collectionId}`);
-}
-
-async function ensureIndex(
-  databases: Databases,
-  dbId: string,
-  collectionId: string,
-  idx: IndexSpec,
-): Promise<void> {
-  try {
-    await databases.getIndex(dbId, collectionId, idx.key);
-    return;
-  } catch (err) {
-    if (!isAppwriteCode(err, 404)) throw err;
-  }
-
-  const indexTypeMap: Record<IndexSpec["type"], IndexType> = {
-    key: IndexType.Key,
-    unique: IndexType.Unique,
-    fulltext: IndexType.Fulltext,
-  };
-  await databases.createIndex(
-    dbId,
-    collectionId,
-    idx.key,
-    indexTypeMap[idx.type],
-    idx.attributes,
-    idx.orders,
-  );
-  console.log(`  [+] index ${collectionId}.${idx.key} (${idx.type})`);
-}
-
-async function ensureBucket(storage: Storage, spec: BucketSpec): Promise<void> {
-  try {
-    await storage.getBucket(spec.id);
-    console.log(`[ok] bucket "${spec.id}" exists`);
-    return;
-  } catch (err) {
-    if (!isAppwriteCode(err, 404)) throw err;
-  }
-
-  const permissions = [
-    Permission.create(Role.users()),
-    Permission.read(Role.users()),
-  ];
-  await storage.createBucket(
-    spec.id,
-    spec.name,
-    permissions,
-    spec.fileSecurity,
-    /* enabled */ true,
-    spec.maximumFileSize,
-    spec.allowedExtensions,
-    Compression.None,
-    spec.encryption,
-    spec.antivirus,
-  );
-  console.log(`[+] bucket "${spec.id}" created (max=${spec.maximumFileSize}B)`);
-}
-
-async function main(): Promise<void> {
-  const cfg = loadConfig();
-
-  const client = new Client()
-    .setEndpoint(cfg.APPWRITE_ENDPOINT)
-    .setProject(cfg.APPWRITE_PROJECT_ID)
-    .setKey(cfg.APPWRITE_API_KEY);
-
-  const databases = new Databases(client);
-  const storage = new Storage(client);
-
-  console.log(`[bootstrap] endpoint=${cfg.APPWRITE_ENDPOINT} project=${cfg.APPWRITE_PROJECT_ID}`);
-  console.log(`[bootstrap] database=${cfg.APPWRITE_DATABASE_ID}`);
-
-  await ensureDatabase(databases, cfg.APPWRITE_DATABASE_ID);
-
-  for (const spec of COLLECTIONS) {
-    await ensureCollection(databases, cfg.APPWRITE_DATABASE_ID, spec);
-  }
-
-  for (const spec of BUCKETS) {
-    await ensureBucket(storage, spec);
-  }
-
-  console.log("[bootstrap] done");
-}
-
-main().catch((err) => {
-  console.error("[bootstrap] failed:", err);
-  process.exit(1);
-});

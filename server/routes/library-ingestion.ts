@@ -1,13 +1,13 @@
 import type { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { zValidator } from "@hono/zod-validator";
-import { ID, Permission, Role } from "node-appwrite";
-import { InputFile } from "node-appwrite/file";
+import { ID, Permission, Role } from "../lib/store/query.js";
+import { InputFile } from "../lib/store/input-file.js";
 import { z } from "zod";
 
 import type { AppEnv } from "../app.js";
 import { loadConfig } from "../config.js";
-import { BUCKETS, getAppwrite } from "../lib/appwrite.js";
+import { BUCKETS, getDatastore } from "../lib/datastore.js";
 import { importFiles } from "../lib/library/import-pipeline.js";
 
 /**
@@ -85,7 +85,7 @@ export function registerIngestionRoutes(app: Hono<AppEnv>): void {
     const buffer = Buffer.from(await file.arrayBuffer());
     const fileName = file.name || "upload.bin";
 
-    const { storage } = getAppwrite();
+    const { storage } = getDatastore();
     const stored = await storage.createFile(
       BUCKETS.bookOriginals,
       ID.unique(),

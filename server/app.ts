@@ -55,7 +55,9 @@ export function buildApp(): Hono<AppEnv> {
    */
   const appwriteOrigin = (() => {
     try {
-      const u = new URL(cfg.APPWRITE_ENDPOINT);
+      /* Empty string in solo mode (no APPWRITE_ENDPOINT) → URL throws →
+       * caught → undefined, so the CSP simply omits an Appwrite origin. */
+      const u = new URL(cfg.APPWRITE_ENDPOINT ?? "");
       return `${u.protocol}//${u.host}`;
     } catch {
       return undefined;

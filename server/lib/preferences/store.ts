@@ -1,6 +1,6 @@
-import { ID, Permission, Query, Role } from "node-appwrite";
+import { ID, Permission, Query, Role } from "../store/query.js";
 
-import { COLLECTIONS, getAppwrite, isAppwriteCode, type RawDoc } from "../appwrite.js";
+import { COLLECTIONS, getDatastore, isStoreErrorCode, type RawDoc } from "../datastore.js";
 
 type RawPrefsDoc = RawDoc & {
   userId: string;
@@ -50,7 +50,7 @@ export function getPreferenceDefaults(): Preferences {
 }
 
 async function findPrefsDoc(userId: string): Promise<RawPrefsDoc | null> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const list = await databases.listDocuments<RawPrefsDoc>(
     databaseId,
     COLLECTIONS.userPreferences,
@@ -60,7 +60,7 @@ async function findPrefsDoc(userId: string): Promise<RawPrefsDoc | null> {
 }
 
 async function writePrefsDoc(userId: string, prefs: Preferences): Promise<void> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const data = JSON.stringify(prefs);
   const updatedAt = new Date().toISOString();
 
@@ -86,7 +86,7 @@ async function writePrefsDoc(userId: string, prefs: Preferences): Promise<void> 
       ],
     );
   } catch (err) {
-    if (isAppwriteCode(err, 409)) {
+    if (isStoreErrorCode(err, 409)) {
       /* Race with concurrent create — retry once via update path. */
       const again = await findPrefsDoc(userId);
       if (again) {

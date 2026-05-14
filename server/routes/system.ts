@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import type { AppEnv } from "../app.js";
 import { detectHardware } from "../lib/hardware/profiler.js";
-import { getAppwrite } from "../lib/appwrite.js";
+import { getDatastore } from "../lib/datastore.js";
 import { getVersionInfo } from "../lib/version.js";
 import { requireAuth } from "../middleware/auth.js";
 
@@ -20,19 +20,17 @@ interface ServiceProbeResult {
   message?: string;
 }
 
-async function probeAppwrite(): Promise<ServiceProbeResult> {
-  const { databases, databaseId, client } = getAppwrite();
-  const endpoint =
-    typeof (client as unknown as { config?: { endpoint?: string } }).config?.endpoint === "string"
-      ? (client as unknown as { config: { endpoint: string } }).config.endpoint
-      : "";
+async function probeStore(): Promise<ServiceProbeResult> {
+  const { databases, databaseId } = getDatastore();
+  /* The data layer is local SQLite — `databases.get()` runs a `SELECT 1`
+   * to confirm the handle is open. There is no remote endpoint to report. */
   try {
     await databases.get(databaseId);
-    return { online: true, url: endpoint, version: "appwrite" };
+    return { online: true, url: "sqlite", version: "sqlite" };
   } catch (err) {
     return {
       online: false,
-      url: endpoint,
+      url: "sqlite",
       message: err instanceof Error ? err.message : String(err),
     };
   }
@@ -76,8 +74,8 @@ export function systemRoutes(): Hono<AppEnv> {
   app.get("/probe-services", async (c) => {
     const user = c.get("user");
     if (!user) throw new HTTPException(401, { message: "auth_required" });
-    const [appwrite, lmStudio] = await Promise.all([probeAppwrite(), probeLmStudio()]);
-    return c.json({ appwrite, lmStudio });
+    const [store, lmStudio] = await Promise.all([probeStore(), probeLmStudio()]);
+    return c.json({ store, lmStudio });
   });
 
   return app;

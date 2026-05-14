@@ -1,7 +1,7 @@
 /**
  * Boot smoke for the Hono backend (Phase 0-6b cumulative).
  *
- * Не дёргает реальный Appwrite — `getAppwrite()` lazy-init, /health
+ * Не дёргает реальный Appwrite — `getDatastore()` lazy-init, /health
  * route не требует backend connections. Этот тест ловит:
  *   - буст-ошибки от загрузки модулей (импорт ломается, top-level await
  *     валит, циклические зависимости)

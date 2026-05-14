@@ -3,10 +3,10 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
 
-import { ID, Permission, Query, Role } from "node-appwrite";
-import { InputFile } from "node-appwrite/file";
+import { ID, Permission, Query, Role } from "../store/query.js";
+import { InputFile } from "../store/input-file.js";
 
-import { BUCKETS, COLLECTIONS, getAppwrite, isAppwriteCode, type RawDoc } from "../appwrite.js";
+import { BUCKETS, COLLECTIONS, getDatastore, isStoreErrorCode, type RawDoc } from "../datastore.js";
 import { publishUser } from "../realtime/event-bus.js";
 import { parseBook } from "../scanner/parsers-bridge.js";
 import {
@@ -114,7 +114,7 @@ async function importOne(
   ingestJobId: string,
   signal: AbortSignal | undefined,
 ): Promise<ImportFileResult> {
-  const { storage } = getAppwrite();
+  const { storage } = getDatastore();
   await updateIngestJob(ingestJobId, { stage: "fetch", progress: 0.05 });
 
   const meta = await storage.getFile(BUCKETS.bookOriginals, fileId);
@@ -192,13 +192,13 @@ function sha256Hex(bytes: Uint8Array): string {
 }
 
 async function downloadToBuffer(bucketId: string, fileId: string): Promise<Uint8Array> {
-  const { storage } = getAppwrite();
+  const { storage } = getDatastore();
   const view = await storage.getFileDownload(bucketId, fileId);
   return view instanceof Uint8Array ? view : new Uint8Array(view as ArrayBuffer);
 }
 
 async function findDuplicate(userId: string, sha256: string): Promise<string | null> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const list = await databases.listDocuments<RawDoc>(databaseId, COLLECTIONS.books, [
     Query.equal("userId", userId),
     Query.equal("sha256", sha256),
@@ -213,7 +213,7 @@ async function uploadMarkdown(
   originalName: string,
   markdown: string,
 ): Promise<string> {
-  const { storage } = getAppwrite();
+  const { storage } = getDatastore();
   const fileId = ID.unique();
   const filename = `${originalName.replace(/\.[^.]+$/, "")}.md`;
   const input = InputFile.fromBuffer(Buffer.from(markdown, "utf-8"), filename);
@@ -236,7 +236,7 @@ interface IngestPatch {
 }
 
 async function createIngestJob(userId: string, originalFileId: string): Promise<string> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const nowIso = new Date().toISOString();
   const doc = await databases.createDocument(
     databaseId,
@@ -262,7 +262,7 @@ async function createIngestJob(userId: string, originalFileId: string): Promise<
 }
 
 async function updateIngestJob(jobId: string, patch: IngestPatch): Promise<void> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
   if (patch.state !== undefined) updates["state"] = patch.state;
   if (patch.stage !== undefined) updates["stage"] = patch.stage;
@@ -289,7 +289,7 @@ async function updateIngestJob(jobId: string, patch: IngestPatch): Promise<void>
       bookId: patch.bookId,
     });
   } catch (err) {
-    if (!isAppwriteCode(err, 404)) throw err;
+    if (!isStoreErrorCode(err, 404)) throw err;
   }
 }
 

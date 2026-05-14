@@ -1,6 +1,6 @@
-import { ID, Permission, Role } from "node-appwrite";
+import { ID, Permission, Role } from "../store/query.js";
 
-import { COLLECTIONS, getAppwrite, isAppwriteCode } from "../appwrite.js";
+import { COLLECTIONS, getDatastore, isStoreErrorCode } from "../datastore.js";
 import { buildConceptEmbedText, embedPassage } from "../embedder/index.js";
 import {
   deleteConceptVector,
@@ -136,7 +136,7 @@ export async function persistConcept(
     }
   }
 
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const nowIso = new Date().toISOString();
   const payload = JSON.stringify(delta).slice(0, CONCEPT_PAYLOAD_MAX_CHARS);
   try {
@@ -173,7 +173,7 @@ export async function persistConcept(
      *
      * Duplicate (409) is a known idempotent retry — keep the vector,
      * the existing doc already references it. */
-    if (isAppwriteCode(err, 409)) {
+    if (isStoreErrorCode(err, 409)) {
       return { persisted: false, dedupSkipped: false };
     }
     if (embeddedResult) {

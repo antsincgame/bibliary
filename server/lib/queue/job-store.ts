@@ -1,6 +1,6 @@
-import { ID, Permission, Query, Role } from "node-appwrite";
+import { ID, Permission, Query, Role } from "../store/query.js";
 
-import { COLLECTIONS, getAppwrite, isAppwriteCode, type RawDoc } from "../appwrite.js";
+import { COLLECTIONS, getDatastore, isStoreErrorCode, type RawDoc } from "../datastore.js";
 import { canTransition, type JobDoc, type JobState } from "./types.js";
 
 /**
@@ -55,7 +55,7 @@ export interface CreateJobInput {
 }
 
 export async function createJob(input: CreateJobInput): Promise<JobDoc> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const nowIso = new Date().toISOString();
   const doc: Record<string, unknown> = {
     userId: input.userId,
@@ -100,7 +100,7 @@ export async function createExportJob(input: {
   collection: string;
   format: string;
 }): Promise<JobDoc> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const nowIso = new Date().toISOString();
   const doc: Record<string, unknown> = {
     userId: input.userId,
@@ -140,7 +140,7 @@ export function isExportJobStage(stage: string | null | undefined): boolean {
 }
 
 export async function getJob(userId: string, jobId: string): Promise<JobDoc | null> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   try {
     const raw = await databases.getDocument<RawJob>(
       databaseId,
@@ -150,14 +150,14 @@ export async function getJob(userId: string, jobId: string): Promise<JobDoc | nu
     if (raw.userId !== userId) return null;
     return toJob(raw);
   } catch (err) {
-    if (isAppwriteCode(err, 404)) return null;
+    if (isStoreErrorCode(err, 404)) return null;
     throw err;
   }
 }
 
 /** Bypass user-scope check — используется worker loop'ом. */
 export async function getJobRaw(jobId: string): Promise<JobDoc | null> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   try {
     const raw = await databases.getDocument<RawJob>(
       databaseId,
@@ -166,7 +166,7 @@ export async function getJobRaw(jobId: string): Promise<JobDoc | null> {
     );
     return toJob(raw);
   } catch (err) {
-    if (isAppwriteCode(err, 404)) return null;
+    if (isStoreErrorCode(err, 404)) return null;
     throw err;
   }
 }
@@ -181,7 +181,7 @@ export async function listUserJobs(
   userId: string,
   opts: ListJobsOptions = {},
 ): Promise<{ rows: JobDoc[]; total: number }> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const queries: string[] = [
     Query.equal("userId", userId),
     Query.orderDesc("createdAt"),
@@ -208,7 +208,7 @@ export async function listAllJobs(opts: {
   limit?: number;
   offset?: number;
 } = {}): Promise<{ rows: JobDoc[]; total: number }> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const queries: string[] = [
     Query.orderDesc("createdAt"),
     Query.limit(Math.min(200, Math.max(1, opts.limit ?? 50))),
@@ -225,7 +225,7 @@ export async function listAllJobs(opts: {
 
 /** Все queued jobs (всех users) — для re-queue на server bootstrap. */
 export async function listQueuedJobs(): Promise<JobDoc[]> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const all: JobDoc[] = [];
   let offset = 0;
   const pageSize = 100;
@@ -253,7 +253,7 @@ export async function listQueuedJobs(): Promise<JobDoc[]> {
  * финальный transition). Caller сравнивает updatedAt с now - staleAfterMs.
  */
 export async function listStaleRunningJobs(staleAfterMs: number): Promise<JobDoc[]> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const all: JobDoc[] = [];
   const threshold = new Date(Date.now() - staleAfterMs).toISOString();
   let offset = 0;
@@ -284,13 +284,13 @@ export async function listStaleRunningJobs(staleAfterMs: number): Promise<JobDoc
  * пишем кастомный updatedAt поле для query consistency).
  */
 export async function touchJob(jobId: string): Promise<void> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   try {
     await databases.updateDocument(databaseId, COLLECTIONS.datasetJobs, jobId, {
       updatedAt: new Date().toISOString(),
     });
   } catch (err) {
-    if (!isAppwriteCode(err, 404)) throw err;
+    if (!isStoreErrorCode(err, 404)) throw err;
   }
 }
 
@@ -312,7 +312,7 @@ export async function updateJob(
   jobId: string,
   patch: UpdateJobPatch,
 ): Promise<JobDoc | null> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const doc: Record<string, unknown> = { updatedAt: new Date().toISOString() };
   for (const [k, v] of Object.entries(patch)) {
     if (v !== undefined) doc[k] = v;
@@ -326,7 +326,7 @@ export async function updateJob(
     );
     return toJob(raw);
   } catch (err) {
-    if (isAppwriteCode(err, 404)) return null;
+    if (isStoreErrorCode(err, 404)) return null;
     throw err;
   }
 }

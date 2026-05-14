@@ -5,7 +5,31 @@ import { loadConfig } from "./config.js";
 import { prewarmEmbedderInBackground } from "./lib/embedder/index.js";
 import { startExportWorker } from "./lib/queue/export-queue.js";
 import { startExtractionWorker } from "./lib/queue/extraction-queue.js";
+import { closeStoreDb } from "./lib/store/db.js";
 import { closeVectorDb } from "./lib/vectordb/db.js";
+
+/**
+ * Flush both SQLite WALs before exit. The vector DB and (in solo mode)
+ * the document DB are independent better-sqlite3 handles with WAL
+ * journaling — `close()` runs a synchronous checkpoint so the next
+ * boot's WAL recovery doesn't roll back un-committed pages.
+ * `closeStoreDb` is a no-op when solo mode never opened a connection.
+ */
+function flushDatabases(): void {
+  for (const [label, close] of [
+    ["closeVectorDb", closeVectorDb],
+    ["closeStoreDb", closeStoreDb],
+  ] as const) {
+    try {
+      close();
+    } catch (err) {
+      console.warn(
+        `[bibliary] ${label} during shutdown failed:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+}
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
@@ -20,6 +44,11 @@ async function main(): Promise<void> {
     (info) => {
       console.log(
         `[bibliary] listening on http://${info.address}:${info.port} (${cfg.NODE_ENV})`,
+      );
+      console.log(
+        cfg.BIBLIARY_SOLO
+          ? "[bibliary] storage: SOLO mode — SQLite + filesystem, no Appwrite"
+          : `[bibliary] storage: Appwrite (${cfg.APPWRITE_ENDPOINT ?? "?"})`,
       );
       /* Background workers: each resumes its own queued docs from the
        * shared dataset_jobs collection (extraction filters out
@@ -42,30 +71,14 @@ async function main(): Promise<void> {
       if (err) {
         console.error("[bibliary] error during shutdown:", err);
       }
-      /* Flush sqlite-vec WAL before exit — without this the 10s
-       * force-exit fallback can leave the WAL un-checkpointed and the
-       * next boot's WAL recovery may roll back un-committed pages.
-       * better-sqlite3.close() runs sqlite3_close() which forces a
-       * full WAL checkpoint synchronously. */
-      try {
-        closeVectorDb();
-      } catch (closeErr) {
-        console.warn(
-          "[bibliary] closeVectorDb during shutdown failed:",
-          closeErr instanceof Error ? closeErr.message : closeErr,
-        );
-      }
+      flushDatabases();
       process.exit(err ? 1 : 0);
     });
     setTimeout(() => {
       console.error("[bibliary] forced shutdown after 10s timeout");
-      try {
-        /* Last-ditch attempt to flush WAL even when server.close()
-         * never resolved (stuck SSE / multipart upload). */
-        closeVectorDb();
-      } catch {
-        /* swallow — we're force-exiting anyway */
-      }
+      /* Last-ditch flush even when server.close() never resolved
+       * (stuck SSE / multipart upload). */
+      flushDatabases();
       process.exit(1);
     }, 10_000).unref();
   };

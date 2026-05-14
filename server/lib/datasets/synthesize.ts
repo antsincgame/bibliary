@@ -1,6 +1,6 @@
-import { Query } from "node-appwrite";
+import { Query } from "../store/query.js";
 
-import { COLLECTIONS, getAppwrite, type RawDoc } from "../appwrite.js";
+import { COLLECTIONS, getDatastore, type RawDoc } from "../datastore.js";
 import type { DeltaKnowledge } from "../../../shared/llm/extractor-schema.js";
 
 /**
@@ -58,7 +58,7 @@ export interface IterateOptions {
 export async function* iterateAcceptedConcepts(
   opts: IterateOptions,
 ): AsyncGenerator<JsonlLine, void, void> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   let offset = 0;
   while (true) {
     if (opts.signal?.aborted) return;

@@ -1,6 +1,6 @@
-import { Query } from "node-appwrite";
+import { Query } from "../store/query.js";
 
-import { BUCKETS, COLLECTIONS, getAppwrite, isAppwriteCode, type RawDoc } from "../appwrite.js";
+import { BUCKETS, COLLECTIONS, getDatastore, isStoreErrorCode, type RawDoc } from "../datastore.js";
 import { getVectorDb, TABLE_CHUNKS, TABLE_CONCEPTS } from "../vectordb/db.js";
 
 export interface BurnAllResult {
@@ -25,7 +25,7 @@ async function deleteAllInCollection(
   collectionId: string,
   userId: string,
 ): Promise<number> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   let total = 0;
   while (true) {
     const page = await databases.listDocuments(databaseId, collectionId, [
@@ -38,7 +38,7 @@ async function deleteAllInCollection(
         await databases.deleteDocument(databaseId, collectionId, doc.$id);
         total += 1;
       } catch (err) {
-        if (!isAppwriteCode(err, 404)) throw err;
+        if (!isStoreErrorCode(err, 404)) throw err;
       }
     }
     if (page.documents.length < PAGE_SIZE) break;
@@ -57,7 +57,7 @@ async function collectBookFileRefs(userId: string): Promise<{
   originals: string[];
   covers: string[];
 }> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const out = { markdowns: [] as string[], originals: [] as string[], covers: [] as string[] };
   let offset = 0;
   while (true) {
@@ -82,7 +82,7 @@ async function deleteStorageFiles(
   bucketId: string,
   fileIds: string[],
 ): Promise<{ removed: number; failed: number }> {
-  const { storage } = getAppwrite();
+  const { storage } = getDatastore();
   let removed = 0;
   let failed = 0;
   for (const id of fileIds) {
@@ -90,7 +90,7 @@ async function deleteStorageFiles(
       await storage.deleteFile(bucketId, id);
       removed += 1;
     } catch (err) {
-      if (isAppwriteCode(err, 404)) {
+      if (isStoreErrorCode(err, 404)) {
         /* Already gone — count as removed for idempotent UX. */
         removed += 1;
       } else {

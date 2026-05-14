@@ -1,7 +1,7 @@
-import { ID, Permission, Query, Role } from "node-appwrite";
+import { ID, Permission, Query, Role } from "../store/query.js";
 
 import { type Config, loadConfig } from "../../config.js";
-import { COLLECTIONS, getAppwrite, isAppwriteCode, type RawDoc } from "../appwrite.js";
+import { COLLECTIONS, getDatastore, isStoreErrorCode, type RawDoc } from "../datastore.js";
 
 import {
   type AccessTokenClaims,
@@ -76,7 +76,7 @@ export async function revokeRefreshByToken(refreshToken: string): Promise<boolea
 }
 
 export async function revokeAllForUser(userId: string): Promise<number> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   let revoked = 0;
   let failed = 0;
   /* Appwrite doesn't support bulk UPDATE; each token must be flipped
@@ -126,7 +126,7 @@ interface StoreRefreshInput {
 }
 
 async function storeRefreshToken(input: StoreRefreshInput): Promise<void> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const doc: Record<string, unknown> = {
     userId: input.userId,
     tokenHash: input.tokenHash,
@@ -149,7 +149,7 @@ async function storeRefreshToken(input: StoreRefreshInput): Promise<void> {
 }
 
 async function findRefreshByHash(tokenHash: string): Promise<RawRefreshDoc | null> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   const list = await databases.listDocuments<RawRefreshDoc>(
     databaseId,
     COLLECTIONS.refreshTokens,
@@ -159,12 +159,12 @@ async function findRefreshByHash(tokenHash: string): Promise<RawRefreshDoc | nul
 }
 
 async function revokeRefreshById(id: string): Promise<void> {
-  const { databases, databaseId } = getAppwrite();
+  const { databases, databaseId } = getDatastore();
   try {
     await databases.updateDocument(databaseId, COLLECTIONS.refreshTokens, id, {
       revoked: true,
     });
   } catch (err) {
-    if (!isAppwriteCode(err, 404)) throw err;
+    if (!isStoreErrorCode(err, 404)) throw err;
   }
 }
