@@ -70,5 +70,29 @@
     "referenceMarkdown": "09-ru-2006.ref.md",
     "minSimilarity": 0.95,
     "notes": "Operator-supplied fixture — DOCX (Word 2007+, 2006). OOXML zip, pure-JS parser."
+  },
+  {
+    "name": "10-ru-classic.pdf",
+    "format": "pdf",
+    "language": "rus",
+    "referenceMarkdown": "10-ru-classic.ref.md",
+    "minSimilarity": 0.95,
+    "notes": "Generated fixture — public-domain Russian classics (Tolstoy / Pushkin / Dostoevsky) rendered to a born-digital PDF via scripts/gen-pdf-fixtures.mjs. Tests pdf.ts text-layer extraction + Cyrillic. Regenerate with: node scripts/gen-pdf-fixtures.mjs"
+  },
+  {
+    "name": "11-zh-classic.pdf",
+    "format": "pdf",
+    "language": "zho",
+    "referenceMarkdown": "11-zh-classic.ref.md",
+    "minSimilarity": 0.95,
+    "notes": "Generated fixture — public-domain classical Chinese (Laozi / Li Bai / Du Fu / Confucius) + article-style block, born-digital PDF via scripts/gen-pdf-fixtures.mjs. Tests pdf.ts text-layer extraction + Han. Regenerate with: node scripts/gen-pdf-fixtures.mjs"
+  },
+  {
+    "name": "12-ja-classic.pdf",
+    "format": "pdf",
+    "language": "jpn",
+    "referenceMarkdown": "12-ja-classic.ref.md",
+    "minSimilarity": 0.95,
+    "notes": "Generated fixture — public-domain Japanese (Bashō haiku, Natsume Sōseki) + article-style block, born-digital PDF via scripts/gen-pdf-fixtures.mjs. Tests pdf.ts text-layer extraction + kanji/hiragana/katakana. Regenerate with: node scripts/gen-pdf-fixtures.mjs"
   }
 ]
