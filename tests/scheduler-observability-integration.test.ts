@@ -12,7 +12,7 @@ import {
   ImportTaskScheduler,
   _resetImportSchedulerForTests,
   getImportScheduler,
-} from "../electron/lib/library/import-task-scheduler.js";
+} from "../server/lib/scanner/_vendor/library/import-task-scheduler.js";
 
 beforeEach(() => {
   _resetImportSchedulerForTests();

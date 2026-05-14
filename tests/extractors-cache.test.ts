@@ -14,7 +14,7 @@ import {
   setCachedOcr,
   clearOcrCache,
   type OcrCacheEntry,
-} from "../electron/lib/scanner/extractors/ocr-cache.js";
+} from "../server/lib/scanner/extractors/ocr-cache.js";
 
 let cacheDir: string;
 

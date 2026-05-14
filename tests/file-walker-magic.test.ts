@@ -8,7 +8,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { walkSupportedFiles } from "../electron/lib/library/file-walker.ts";
-import type { SupportedExt } from "../electron/lib/scanner/parsers/index.ts";
+import type { SupportedExt } from "../server/lib/scanner/parsers/index.ts";
 
 const SUPPORTED: ReadonlySet<SupportedExt> = new Set(["pdf", "epub", "txt"]);
 

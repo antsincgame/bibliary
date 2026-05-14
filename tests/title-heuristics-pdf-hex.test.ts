@@ -19,7 +19,7 @@ import {
   decodePdfHexTitle,
   sanitizeRawTitle,
   pickBestBookTitle,
-} from "../electron/lib/library/title-heuristics.ts";
+} from "../server/lib/scanner/_vendor/library/title-heuristics.ts";
 
 test("decodePdfHexTitle: NULL для не-hex-string", () => {
   assert.equal(decodePdfHexTitle("Normal title"), undefined);

@@ -2,8 +2,8 @@ import { test } from "node:test";
 import { strict as assert } from "node:assert";
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
-import { tryParsePdfWithInspector } from "../electron/lib/scanner/parsers/pdf-inspector-parser.ts";
-import { parsePdfMain } from "../electron/lib/scanner/parsers/pdf.ts";
+import { tryParsePdfWithInspector } from "../server/lib/scanner/parsers/pdf-inspector-parser.ts";
+import { parsePdfMain } from "../server/lib/scanner/parsers/pdf.ts";
 
 /**
  * Integration tests на реальном книжном PDF из D:\Bibliarifull.

@@ -17,8 +17,8 @@ import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { parseBook } from "../electron/lib/scanner/parsers/index.js";
-import { runDjvutxtPage } from "../electron/lib/scanner/parsers/djvu-cli.js";
+import { parseBook } from "../server/lib/scanner/parsers/index.js";
+import { runDjvutxtPage } from "../server/lib/scanner/parsers/djvu-cli.js";
 
 test("parseDjvu provider=auto, ocrEnabled=false → не запускает convertDjvu→pdf cascade", async (t) => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "bibliary-djvu-cascade-"));

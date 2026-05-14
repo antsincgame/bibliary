@@ -14,7 +14,7 @@
 
 import { describe, it } from "node:test";
 import { expect } from "./helpers/expect-shim.ts";
-import { isQualityText } from "../electron/lib/scanner/parsers/djvu.js";
+import { isQualityText } from "../server/lib/scanner/parsers/djvu.js";
 
 describe("isQualityText — позитивные кейсы (real text)", () => {
   it("осмысленный английский абзац (>200 chars, реальные слова) → true", () => {

@@ -11,7 +11,7 @@ import { mkdtemp, writeFile, rm, readFile } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import JSZip from "jszip";
-import { convertCbz } from "../electron/lib/scanner/converters/cbz.js";
+import { convertCbz } from "../server/lib/scanner/converters/cbz.js";
 
 /* Минимальный валидный 1×1 PNG (89 bytes), серый пиксель. */
 const MINIMAL_PNG_BUFFER = Buffer.from([

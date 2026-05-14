@@ -21,7 +21,7 @@ import {
   setCachedConvert,
   clearConverterCache,
   getCacheStats,
-} from "../electron/lib/scanner/converters/cache.js";
+} from "../server/lib/scanner/converters/cache.js";
 
 describe("converters/cache — basic round-trip", () => {
   it("set + get → hit с тем же контентом", async (t) => {

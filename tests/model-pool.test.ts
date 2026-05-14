@@ -24,13 +24,13 @@ import {
   getModelPool,
   _resetModelPoolForTests,
   type PoolAcquireOptions,
-} from "../electron/lib/llm/model-pool.js";
+} from "../server/lib/scanner/_vendor/llm/model-pool.js";
 import type {
   LoadedModelInfo,
   DownloadedModelInfo,
   LoadOptions,
-} from "../electron/lmstudio-client.js";
-import { globalLlmLock } from "../electron/lib/llm/global-llm-lock.js";
+} from "../server/lib/scanner/_vendor/lmstudio-client.js";
+import { globalLlmLock } from "../server/lib/scanner/_vendor/llm/global-llm-lock.js";
 
 /* ─── Fake LM Studio ─────────────────────────────────────────────────── */
 

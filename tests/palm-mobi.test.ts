@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { promises as fs } from "fs";
 import * as path from "path";
 import * as os from "os";
-import { _internal, mobiParser } from "../electron/lib/scanner/parsers/palm-mobi.js";
+import { _internal, mobiParser } from "../server/lib/scanner/parsers/palm-mobi.js";
 
 const { decompressPalmDoc, stripMobiHtml, parsePdbHeader, parsePalmDocHeader } = _internal;
 

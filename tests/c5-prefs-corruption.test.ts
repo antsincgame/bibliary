@@ -18,7 +18,7 @@ import {
   FsPreferencesStore,
   takePrefsCorruptionEvent,
   DEFAULTS,
-} from "../electron/lib/preferences/store.ts";
+} from "../server/lib/scanner/_vendor/preferences/store.ts";
 
 async function makeTempDir(): Promise<string> {
   return await fs.mkdtemp(path.join(os.tmpdir(), "bibliary-prefs-test-"));

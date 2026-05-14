@@ -12,7 +12,7 @@ import { chunkChapter } from "../electron/lib/dataset-v2/semantic-chunker.js";
 import { extractDeltaKnowledge, clearPromptCache } from "../electron/lib/dataset-v2/delta-extractor.js";
 import { extractJsonFromReasoning, extractJsonObjectFromReasoning } from "../electron/lib/dataset-v2/reasoning-decoder.js";
 import { isNonContentSection } from "../electron/lib/dataset-v2/section-filter.js";
-import type { BookSection } from "../electron/lib/scanner/parsers/index.js";
+import type { BookSection } from "../server/lib/scanner/parsers/index.js";
 
 const COLOR = {
   reset: "\x1b[0m",

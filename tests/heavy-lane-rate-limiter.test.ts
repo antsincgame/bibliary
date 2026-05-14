@@ -8,7 +8,7 @@
 
 import { describe, it } from "node:test";
 import { expect } from "./helpers/expect-shim.ts";
-import { HeavyLaneRateLimiter } from "../electron/lib/llm/heavy-lane-rate-limiter.js";
+import { HeavyLaneRateLimiter } from "../server/lib/scanner/_vendor/llm/heavy-lane-rate-limiter.js";
 
 describe("HeavyLaneRateLimiter — basic acquire", () => {
   it("первые N acquire (N <= limit) проходят immediately", async () => {

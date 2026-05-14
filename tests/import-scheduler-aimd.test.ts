@@ -10,8 +10,8 @@
 
 import { describe, it } from "node:test";
 import { expect } from "./helpers/expect-shim.ts";
-import { ImportTaskScheduler } from "../electron/lib/library/import-task-scheduler.js";
-import { AimdController } from "../electron/lib/llm/aimd-controller.js";
+import { ImportTaskScheduler } from "../server/lib/scanner/_vendor/library/import-task-scheduler.js";
+import { AimdController } from "../server/lib/scanner/_vendor/llm/aimd-controller.js";
 
 class TestClock {
   private t = 1_000_000;

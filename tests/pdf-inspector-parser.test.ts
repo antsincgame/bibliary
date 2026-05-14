@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
-import { parseMarkdownToSections } from "../electron/lib/scanner/parsers/pdf-inspector-parser.ts";
+import { parseMarkdownToSections } from "../server/lib/scanner/parsers/pdf-inspector-parser.ts";
 
 /**
  * Юнит-тесты для адаптера markdown → BookSection[].

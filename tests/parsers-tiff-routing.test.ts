@@ -28,8 +28,8 @@ import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { detectExt, parseBook } from "../electron/lib/scanner/parsers/index.js";
-import { tiffParser, tiffAlternateParser } from "../electron/lib/scanner/parsers/tiff.js";
+import { detectExt, parseBook } from "../server/lib/scanner/parsers/index.js";
+import { tiffParser, tiffAlternateParser } from "../server/lib/scanner/parsers/tiff.js";
 
 test("Iter 6В: tiffParser зарегистрирован для .tif", () => {
   assert.equal(detectExt("/scan/page.tif"), "tif");

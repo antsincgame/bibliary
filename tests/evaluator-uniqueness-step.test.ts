@@ -22,8 +22,8 @@ import {
 } from "../electron/lib/library/uniqueness-evaluator.ts";
 import { closeCacheDb } from "../electron/lib/library/cache-db.ts";
 import { _resetLibraryRootCache } from "../electron/lib/library/paths.ts";
-import { initPreferencesStore as initPrefs, getPreferencesStore } from "../electron/lib/preferences/store.ts";
-import { _setResolverDepsForTesting, _resetResolverForTesting } from "../electron/lib/llm/model-resolver.ts";
+import { initPreferencesStore as initPrefs, getPreferencesStore } from "../server/lib/scanner/_vendor/preferences/store.ts";
+import { _setResolverDepsForTesting, _resetResolverForTesting } from "../server/lib/scanner/_vendor/llm/model-resolver.ts";
 import {
   initVectorDb,
   closeDb,

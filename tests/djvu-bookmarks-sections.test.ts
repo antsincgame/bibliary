@@ -10,7 +10,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { paragraphsToSections } from "../electron/lib/scanner/parsers/djvu.ts";
+import { paragraphsToSections } from "../server/lib/scanner/parsers/djvu.ts";
 
 test("paragraphsToSections: с bookmarks — главы получают titles из outline", () => {
   const paragraphs = [

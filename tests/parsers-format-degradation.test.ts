@@ -13,7 +13,7 @@ import * as fs from "fs/promises";
 import * as os from "os";
 import * as path from "path";
 
-const { parseBook } = await import("../electron/lib/scanner/parsers/index.js");
+const { parseBook } = await import("../server/lib/scanner/parsers/index.js");
 
 /* ────────────────────────────────────────────────────────────────────────── */
 /* Helpers                                                                    */

@@ -2,8 +2,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "fs";
 import * as path from "path";
-import { loadEdgeParse, _resetEdgeParseCacheForTests } from "../electron/lib/scanner/parsers/edgeparse-bridge.js";
-import { tryParsePdfWithEdgeParse } from "../electron/lib/scanner/parsers/edgeparse-parser.js";
+import { loadEdgeParse, _resetEdgeParseCacheForTests } from "../server/lib/scanner/parsers/edgeparse-bridge.js";
+import { tryParsePdfWithEdgeParse } from "../server/lib/scanner/parsers/edgeparse-parser.js";
 
 const CORPUS_DIR = "D:\\Bibliarifull";
 const hasCorpus = fs.existsSync(CORPUS_DIR);

@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import * as os from "node:os";
 import * as path from "node:path";
 import { mkdtemp, rm, access } from "node:fs/promises";
-import { withFileLock, configureFileLockDefaults } from "../electron/lib/resilience/file-lock.ts";
+import { withFileLock, configureFileLockDefaults } from "../server/lib/scanner/_vendor/resilience/file-lock.ts";
 
 async function makeTmpDir() {
   return mkdtemp(path.join(os.tmpdir(), "bibliary-lock-test-"));

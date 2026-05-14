@@ -17,7 +17,7 @@ import { closeCacheDb, getBookById, getCacheDbPath, getKnownSha256s, openCacheDb
 import { _resetLibraryRootCache, getLibraryRoot } from "../electron/lib/library/paths.js";
 import { isArchive } from "../electron/lib/library/archive-extractor.js";
 import { SUPPORTED_BOOK_EXTS, type BookCatalogMeta } from "../electron/lib/library/types.js";
-import { detectExt } from "../electron/lib/scanner/parsers/index.js";
+import { detectExt } from "../server/lib/scanner/parsers/index.js";
 import { computeFileSha256 } from "../electron/lib/library/sha-stream.js";
 
 interface Args {

@@ -21,7 +21,7 @@ import {
   clearActionsLog,
   flushActionsLog,
   _setLogFilePathForTests,
-} from "../electron/lib/llm/lmstudio-actions-log.ts";
+} from "../server/lib/scanner/_vendor/llm/lmstudio-actions-log.ts";
 
 async function withTempLogFile<T>(fn: (logPath: string) => Promise<T>): Promise<T> {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "bibliary-actions-log-"));

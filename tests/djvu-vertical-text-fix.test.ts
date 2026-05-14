@@ -17,7 +17,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { paragraphsToSections } from "../electron/lib/scanner/parsers/djvu.ts";
+import { paragraphsToSections } from "../server/lib/scanner/parsers/djvu.ts";
 
 test("djvu paragraphsToSections: одиночные \\n склеиваются в пробелы", () => {
   /* Вход: «вертикальный» текст из DjVu OCR — слово на строку. */

@@ -19,7 +19,7 @@ import { expect } from "./helpers/expect-shim.ts";
 import {
   CircuitBreaker,
   CircuitOpenError,
-} from "../electron/lib/resilience/circuit-breaker.js";
+} from "../server/lib/scanner/_vendor/resilience/circuit-breaker.js";
 
 class TestClock {
   private t = 1_000_000;

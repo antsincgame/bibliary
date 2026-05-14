@@ -28,7 +28,7 @@ import assert from "node:assert/strict";
 import * as http from "node:http";
 import type { AddressInfo } from "node:net";
 
-import { chatWithPolicy } from "../electron/lmstudio-client.ts";
+import { chatWithPolicy } from "../server/lib/scanner/_vendor/lmstudio-client.ts";
 import { evaluateBook } from "../electron/lib/library/book-evaluator.ts";
 import { parseEvaluationResponse } from "../electron/lib/library/book-evaluator-schema.ts";
 import {
@@ -36,9 +36,9 @@ import {
   upsertEvaluatorReasoning,
   parseFrontmatter,
 } from "../electron/lib/library/md-converter.ts";
-import { invalidateEndpointsCache } from "../electron/lib/endpoints/index.ts";
+import { invalidateEndpointsCache } from "../server/lib/scanner/_vendor/endpoints/index.ts";
 import type { BookCatalogMeta, BookEvaluation } from "../electron/lib/library/types.ts";
-import type { ModelPool, PoolHandle } from "../electron/lib/llm/model-pool.ts";
+import type { ModelPool, PoolHandle } from "../server/lib/scanner/_vendor/llm/model-pool.ts";
 
 /* ─── Helpers ─────────────────────────────────────────────────────── */
 

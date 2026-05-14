@@ -11,7 +11,7 @@ import {
   estimateModelVramGb,
   totalVramEstimateGb,
 } from "../electron/lib/llm/auto-config.ts";
-import type { LoadedModelInfo } from "../electron/lmstudio-client.ts";
+import type { LoadedModelInfo } from "../server/lib/scanner/_vendor/lmstudio-client.ts";
 
 function model(modelKey: string, overrides: Partial<LoadedModelInfo> = {}): LoadedModelInfo {
   return {

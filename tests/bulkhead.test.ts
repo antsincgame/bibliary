@@ -13,7 +13,7 @@
 
 import { describe, it } from "node:test";
 import { expect } from "./helpers/expect-shim.ts";
-import { Bulkhead, BulkheadFullError } from "../electron/lib/resilience/bulkhead.js";
+import { Bulkhead, BulkheadFullError } from "../server/lib/scanner/_vendor/resilience/bulkhead.js";
 
 describe("Bulkhead — basic concurrency", () => {
   it("maxConcurrent=1 сериализует задачи в FIFO", async () => {

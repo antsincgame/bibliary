@@ -4,7 +4,7 @@ import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { parseBook } from "../electron/lib/scanner/parsers/index.js";
+import { parseBook } from "../server/lib/scanner/parsers/index.js";
 
 test("DJVU parser respects ocrEnabled=false and does not auto-OCR raster pages", async (t) => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "bibliary-djvu-policy-"));

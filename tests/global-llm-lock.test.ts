@@ -7,7 +7,7 @@
 import { test, describe, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
-import { globalLlmLock } from "../electron/lib/llm/global-llm-lock.ts";
+import { globalLlmLock } from "../server/lib/scanner/_vendor/llm/global-llm-lock.ts";
 
 beforeEach(() => {
   globalLlmLock._resetForTests();
