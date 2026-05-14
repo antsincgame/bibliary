@@ -78,7 +78,7 @@ jobs:
             tests/datasets-chatml-smoke.test.ts \
             tests/datasets-stream-writer-smoke.test.ts \
             tests/sharegpt-tiered-smoke.test.ts \
-            tests/solo-store-smoke.test.ts
+            tests/store-smoke.test.ts
 
       # Legacy unit suite — BEST EFFORT. Targets electron/lib/* tests
       # that haven't been retired yet (Phase 13c full migration is still

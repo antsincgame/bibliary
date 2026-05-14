@@ -1,7 +1,8 @@
-# The golden corpus ships empty by design — books are operator-supplied
-# (copyright + clone size; see ../README.md). Book files are ignored;
-# the manifest and the verified `.ref.md` references ARE committed.
+# The golden corpus is operator-local by design. Book files AND their
+# rendered `.ref.md` references stay gitignored — a reference is the
+# extracted text of the book and carries the same copyright. Only
+# `manifest.json` (fixture metadata: names, formats, thresholds) and
+# this file are committed. See ../README.md.
 *
 !.gitignore
 !manifest.json
-!*.ref.md

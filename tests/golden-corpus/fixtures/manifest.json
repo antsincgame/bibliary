@@ -1,1 +1,18 @@
-[]
+[
+  {
+    "name": "01-php-mysql.djvu",
+    "format": "djvu",
+    "language": "rus",
+    "referenceMarkdown": "01-php-mysql.ref.md",
+    "minSimilarity": 0.95,
+    "notes": "Operator-supplied fixture — multi-page DjVu (PHP/MySQL book). DjVu exercises the WASM/CLI parser cascade."
+  },
+  {
+    "name": "02-lean-websites.epub",
+    "format": "epub",
+    "language": "eng",
+    "referenceMarkdown": "02-lean-websites.ref.md",
+    "minSimilarity": 0.95,
+    "notes": "Operator-supplied fixture — Barbara Bermes, Lean Websites (2015). EPUB: pure-JS parser, OPF spine + NCX nav."
+  }
+]

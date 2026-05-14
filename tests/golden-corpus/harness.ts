@@ -14,7 +14,7 @@
  * operator-supplied under `tests/golden-corpus/fixtures/`.
  */
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { parseBook } from "../../server/lib/scanner/parsers-bridge.ts";
@@ -78,6 +78,17 @@ export async function parseFixture(name: string): Promise<string> {
 /** Read a committed reference markdown by filename (relative to {@link FIXTURES_DIR}). */
 export function readReference(referenceMarkdown: string): string {
   return readFileSync(join(FIXTURES_DIR, referenceMarkdown), "utf-8");
+}
+
+/**
+ * Whether a fixture's book file is actually present. Books are
+ * operator-supplied and not committed (the `.gitignore` keeps only
+ * `manifest.json` + `*.ref.md`), so a committed manifest entry can
+ * legitimately have no file on a fresh clone or in CI — the runner
+ * skips those rather than failing.
+ */
+export function fixtureExists(name: string): boolean {
+  return existsSync(join(FIXTURES_DIR, name));
 }
 
 /**

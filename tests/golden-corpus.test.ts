@@ -23,6 +23,7 @@ import { describe, it } from "node:test";
 
 import {
   firstDivergence,
+  fixtureExists,
   loadManifest,
   parseFixture,
   readReference,
@@ -42,15 +43,25 @@ describe("golden corpus", () => {
   }
 
   for (const entry of manifest) {
-    it(`${entry.name} — parse stays >= ${entry.minSimilarity} similar to its reference`, async () => {
-      const live = await parseFixture(entry.name);
-      const ref = readReference(entry.referenceMarkdown);
-      const { score, unit } = similarity(ref, live);
-      assert.ok(
-        score >= entry.minSimilarity,
-        `${entry.name}: ${unit}-similarity ${score.toFixed(4)} < ` +
-          `${entry.minSimilarity}\n${firstDivergence(ref, live)}`,
-      );
-    });
+    /* Books are operator-supplied and not committed — a committed
+     * manifest entry with no local file (fresh clone / CI) skips
+     * cleanly rather than failing on a missing fixture. */
+    const opts = fixtureExists(entry.name)
+      ? {}
+      : { skip: "fixture book not present (operator-supplied, not committed)" };
+    it(
+      `${entry.name} — parse stays >= ${entry.minSimilarity} similar to its reference`,
+      opts,
+      async () => {
+        const live = await parseFixture(entry.name);
+        const ref = readReference(entry.referenceMarkdown);
+        const { score, unit } = similarity(ref, live);
+        assert.ok(
+          score >= entry.minSimilarity,
+          `${entry.name}: ${unit}-similarity ${score.toFixed(4)} < ` +
+            `${entry.minSimilarity}\n${firstDivergence(ref, live)}`,
+        );
+      },
+    );
   }
 });
