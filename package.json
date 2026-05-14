@@ -33,6 +33,8 @@
     "test:unit": "node --import tsx --test tests/*.test.ts",
     "test:fast": "node --import tsx --test tests/*.test.ts",
     "test:fast:serial": "node --import tsx --test --test-concurrency=1 tests/*.test.ts",
+    "golden:generate": "tsx scripts/golden-corpus-generate.ts",
+    "golden:check": "node --import tsx --test tests/golden-corpus.test.ts",
     "lint": "npm run typecheck && eslint \"renderer/**/*.js\" --ignore-pattern \"renderer/vendor/**\" --max-warnings=0",
     "lint:fix": "eslint \"renderer/**/*.js\" --ignore-pattern \"renderer/vendor/**\" --fix",
     "dead-code": "knip --no-progress",
