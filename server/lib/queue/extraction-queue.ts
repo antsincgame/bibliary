@@ -54,9 +54,36 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
  */
 
 class ExtractionQueueImpl {
+  /* Post-merge fix: head-index FIFO instead of Array.shift().
+   *
+   * Array.shift() re-indexes the rest of the array on every call —
+   * O(n) per dequeue, O(n²) total drain cost. For typical 5-50
+   * concurrently-queued books this doesn't matter, but a bulk import
+   * of 10k books at once would hitch the worker for measurable
+   * seconds. Head index keeps push/dequeue both O(1) amortized;
+   * compaction kicks in when half the array is consumed slack. */
   private pending: string[] = [];
+  private pendingHead = 0;
   private active = new Map<string, AbortController>();
   private running = false;
+
+  private effectivePendingLength(): number {
+    return this.pending.length - this.pendingHead;
+  }
+
+  private dequeuePending(): string | undefined {
+    if (this.pendingHead >= this.pending.length) return undefined;
+    const id = this.pending[this.pendingHead];
+    this.pending[this.pendingHead] = ""; // hint to GC for completed jobIds
+    this.pendingHead += 1;
+    /* Compact when slack exceeds half — amortized O(1) per dequeue,
+     * keeps memory bounded for steady-state long-running queues. */
+    if (this.pendingHead > 64 && this.pendingHead * 2 > this.pending.length) {
+      this.pending = this.pending.slice(this.pendingHead);
+      this.pendingHead = 0;
+    }
+    return id;
+  }
 
   /**
    * @returns the freshly created JobDoc (state=queued).
@@ -152,7 +179,10 @@ class ExtractionQueueImpl {
     const queued = await listQueuedJobs();
     let queuedAdded = 0;
     for (const job of queued) {
-      if (this.pending.includes(job.id)) continue;
+      /* includes from pendingHead onwards — completed jobIds were
+       * zeroed by dequeuePending so they don't false-match anyway,
+       * but starting from head is the conceptually-correct bound. */
+      if (this.pending.indexOf(job.id, this.pendingHead) !== -1) continue;
       if (this.active.has(job.id)) continue;
       this.pending.push(job.id);
       queuedAdded += 1;
@@ -166,6 +196,7 @@ class ExtractionQueueImpl {
   /** Test helper — reset internal state. */
   _resetForTesting(): void {
     this.pending.length = 0;
+    this.pendingHead = 0;
     for (const ctrl of this.active.values()) {
       ctrl.abort("test-reset");
     }
@@ -174,16 +205,16 @@ class ExtractionQueueImpl {
   }
 
   getDepth(): { pending: number; active: number } {
-    return { pending: this.pending.length, active: this.active.size };
+    return { pending: this.effectivePendingLength(), active: this.active.size };
   }
 
   private async drain(): Promise<void> {
     if (this.running) return;
     this.running = true;
     try {
-      while (this.pending.length > 0) {
-        const jobId = this.pending.shift();
-        if (!jobId) continue;
+      for (;;) {
+        const jobId = this.dequeuePending();
+        if (!jobId) break;
         await this.processOne(jobId);
       }
     } finally {

@@ -80,7 +80,16 @@ describe("server boot smoke", () => {
     };
     assert.equal(body.ok, false);
     assert.ok(body.checks, "checks block missing");
-    assert.equal(typeof body.checks?.appwrite?.ok, "boolean");
+    /* Smoke env uses a fake Appwrite URL — the probe MUST fail. If
+     * this asserts `true` someday it means we silently stopped
+     * probing or hard-coded ok=true. The vec probe may succeed or
+     * fail depending on whether a real sqlite-vec file exists in
+     * the test scratch; only assert the type for that one. */
+    assert.equal(
+      body.checks?.appwrite?.ok,
+      false,
+      "appwrite probe must fail against the fake URL in smoke env",
+    );
     assert.equal(typeof body.checks?.vec?.ok, "boolean");
   });
 

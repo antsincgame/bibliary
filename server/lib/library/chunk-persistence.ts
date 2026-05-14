@@ -31,9 +31,22 @@ export async function embedAndStoreChunks(
   bookId: string,
   chunks: SectionAwareChunk[],
   onWarning: (msg: string) => void,
+  signal?: AbortSignal,
 ): Promise<Array<number | null>> {
   const rowIds: Array<number | null> = [];
   for (const chunk of chunks) {
+    /* Post-merge fix: check abort BETWEEN chunks. Without this an
+     * extraction cancel only stops at the next extractChapter() boundary
+     * — the embed loop keeps consuming CPU through to the end of the
+     * current unit's chunks. For 100-chunk chapters that's seconds of
+     * wasted work after cancel. */
+    if (signal?.aborted) {
+      onWarning("chunk embed loop aborted by signal");
+      /* Pad the remaining slots so the caller's parallel arrays stay
+       * aligned to chunks.length. */
+      while (rowIds.length < chunks.length) rowIds.push(null);
+      break;
+    }
     try {
       const embedding = await embedPassage(chunk.text);
       const rowid = insertChunk({

@@ -1,28 +1,17 @@
 /**
- * Phase Δe — pure-function smoke for the proposition builder. The
- * embed-and-store helper is an extractor-bridge internal that goes
- * through the real embedder + sqlite-vec stack; we cover its building
- * block (text composition) here in isolation.
+ * Phase Δe — pure-function smoke for the proposition builder.
  *
- * Logic mirrored from extractor-bridge.buildPropositionText: the
- * predicate underscores are replaced with spaces, S/P/O are trimmed,
- * a terminating period is appended, and the output is capped at 400
- * chars.
+ * Post-merge fix: imports `buildPropositionText` from the production
+ * module instead of a local copy. The previous copy was a contract
+ * test that would have silently passed against stale logic if the
+ * implementation drifted. Now this is a real integration check of
+ * the exported helper.
  */
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-function buildPropositionText(rel: {
-  subject: string;
-  predicate: string;
-  object: string;
-}): string {
-  const subj = rel.subject.trim();
-  const pred = rel.predicate.trim().replace(/_/g, " ");
-  const obj = rel.object.trim();
-  return `${subj} ${pred} ${obj}.`.slice(0, 400);
-}
+import { buildPropositionText } from "../server/lib/library/proposition-builder.ts";
 
 describe("buildPropositionText", () => {
   it("composes 'subject predicate object.' with underscore→space predicates", () => {

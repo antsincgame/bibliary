@@ -78,10 +78,16 @@ export async function revokeRefreshByToken(refreshToken: string): Promise<boolea
 export async function revokeAllForUser(userId: string): Promise<number> {
   const { databases, databaseId } = getAppwrite();
   let revoked = 0;
+  let failed = 0;
   /* Appwrite doesn't support bulk UPDATE; each token must be flipped
    * individually. Parallelize per-page so revoke for a heavy user
    * stays under a few hundred ms instead of N×roundtrip. Page size 100
-   * matches Appwrite's listDocuments cap. */
+   * matches Appwrite's listDocuments cap.
+   *
+   * allSettled (not all) — one transient failure mid-revocation must
+   * NOT short-circuit the loop. If even one token survives we leave
+   * the user with an active refresh token. Continue past per-doc
+   * failures, count them, escalate only at the end if any failed. */
   for (;;) {
     const list = await databases.listDocuments<RawRefreshDoc>(
       databaseId,
@@ -89,9 +95,25 @@ export async function revokeAllForUser(userId: string): Promise<number> {
       [Query.equal("userId", userId), Query.equal("revoked", false), Query.limit(100)],
     );
     if (list.documents.length === 0) break;
-    await Promise.all(list.documents.map((doc) => revokeRefreshById(doc.$id)));
-    revoked += list.documents.length;
+    const results = await Promise.allSettled(
+      list.documents.map((doc) => revokeRefreshById(doc.$id)),
+    );
+    for (const r of results) {
+      if (r.status === "fulfilled") revoked += 1;
+      else {
+        failed += 1;
+        console.warn(
+          `[sessions] revokeRefreshById failed: ${r.reason instanceof Error ? r.reason.message : r.reason}`,
+        );
+      }
+    }
     if (list.documents.length < 100) break;
+  }
+  if (failed > 0) {
+    /* Throwing surfaces the partial-revoke to the caller (admin route
+     * publishes an audit event with what we did manage). Without this
+     * the caller would think every token was revoked. */
+    throw new Error(`revokeAllForUser: ${revoked} revoked, ${failed} failed`);
   }
   return revoked;
 }
