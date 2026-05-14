@@ -18,25 +18,23 @@ import {
 } from "./synthesize.js";
 
 /**
- * Phase 8 bridge: trigger dataset build → синтезирует JSONL поток
- * concepts → uploads в `dataset-exports` bucket → updates dataset_jobs
- * document со exportFileId. Renderer poll'ит /jobs/:id или подписан
- * на extractor_events:created channel (kind="dataset_build").
- *
- * State machine job: queued → running → done/failed. Same dataset_jobs
- * collection как extraction queue (Phase 7) — caller различает по
- * targetCollection name + extractModel field (extraction ставит
- * extractor model, build не ставит).
+ * Phase 8 bridge: synthesize accepted concepts → temp JSONL → upload to
+ * `dataset-exports` bucket. As of Phase 8b the build runs from the
+ * export-queue worker (not the HTTP request thread): the queue owns
+ * job lifecycle (queued → running → done/failed/cancelled) and just
+ * calls `runDatasetBuild` to do the actual streaming + LLM work for a
+ * job that already exists. Caller passes a `signal` so the build can
+ * be cancelled mid-flight without leaving Appwrite Storage litter.
  */
 
 export interface BuildDatasetResult {
   ok: boolean;
-  jobId: string;
   exportFileId?: string;
   lineCount?: number;
   bytes?: number;
   warnings: string[];
   error?: string;
+  cancelled?: boolean;
 }
 
 type RawJob = RawDoc & {
@@ -44,71 +42,6 @@ type RawJob = RawDoc & {
   state: string;
   exportFileId?: string;
 };
-
-async function createBuildJob(
-  userId: string,
-  collectionName: string,
-  format: DatasetFormat,
-): Promise<string> {
-  const { databases, databaseId } = getAppwrite();
-  const nowIso = new Date().toISOString();
-  const doc = await databases.createDocument(
-    databaseId,
-    COLLECTIONS.datasetJobs,
-    ID.unique(),
-    {
-      userId,
-      state: "running",
-      stage: `build:${format}`,
-      booksTotal: 0,
-      booksProcessed: 0,
-      conceptsExtracted: 0,
-      targetCollection: collectionName,
-      createdAt: nowIso,
-      updatedAt: nowIso,
-    },
-    [
-      Permission.read(Role.user(userId)),
-      Permission.update(Role.user(userId)),
-      Permission.delete(Role.user(userId)),
-      Permission.read(Role.team("admin")),
-    ],
-  );
-  return doc.$id;
-}
-
-async function markBuildDone(
-  jobId: string,
-  exportFileId: string,
-  lineCount: number,
-): Promise<void> {
-  const { databases, databaseId } = getAppwrite();
-  try {
-    await databases.updateDocument(databaseId, COLLECTIONS.datasetJobs, jobId, {
-      state: "done",
-      stage: "done",
-      exportFileId,
-      conceptsExtracted: lineCount,
-      updatedAt: new Date().toISOString(),
-    });
-  } catch (err) {
-    if (!isAppwriteCode(err, 404)) throw err;
-  }
-}
-
-async function markBuildFailed(jobId: string, error: string): Promise<void> {
-  const { databases, databaseId } = getAppwrite();
-  try {
-    await databases.updateDocument(databaseId, COLLECTIONS.datasetJobs, jobId, {
-      state: "failed",
-      stage: "failed",
-      error: error.slice(0, 1800),
-      updatedAt: new Date().toISOString(),
-    });
-  } catch (err) {
-    if (!isAppwriteCode(err, 404)) throw err;
-  }
-}
 
 async function uploadFromPath(
   userId: string,
@@ -137,46 +70,41 @@ function buildFilename(collection: string, format: DatasetFormat): string {
   return `${collection}-${ts}.${ext}`;
 }
 
-export interface BuildDatasetInput {
+export interface RunDatasetBuildInput {
+  /** Pre-created dataset_jobs document id; queue owns lifecycle transitions. */
+  jobId: string;
   userId: string;
   collectionName: string;
-  format?: DatasetFormat;
+  format: DatasetFormat;
+  /** Abort to cancel mid-build; the build returns `cancelled: true`. */
+  signal?: AbortSignal;
 }
 
 /**
- * Streaming build (Phase 8d). Пишет JSONL в temp file построчно — RAM
- * footprint O(1) regardless of dataset size. Upload через
- * InputFile.fromPath; temp dir cleaned в finally.
+ * Streaming build executor. Pure work — does NOT touch dataset_jobs
+ * state (queue does that). Writes line-by-line to a temp file
+ * (RAM O(1) regardless of dataset size), uploads via InputFile.fromPath,
+ * cleans the temp dir in `finally`. Honours `signal`: aborts return
+ * `cancelled: true` before any bucket upload happens, so cancel never
+ * leaves a partial export file on storage.
  *
- * Поддерживает три format:
+ * Supports three formats:
  *   - jsonl:    direct dump DeltaKnowledge без LLM, instant.
  *   - sharegpt: per-concept LLM Q&A через crystallizer role.
  *   - chatml:   same Q&A, rendered как <|im_start|>...<|im_end|> template
  *               в `text` field (HuggingFace SFT convention).
  */
-export async function buildDataset(
-  input: BuildDatasetInput,
+export async function runDatasetBuild(
+  input: RunDatasetBuildInput,
 ): Promise<BuildDatasetResult> {
-  const format: DatasetFormat = input.format ?? "jsonl";
+  const { jobId, format, signal } = input;
   if (format !== "jsonl" && format !== "sharegpt" && format !== "chatml") {
     return {
       ok: false,
-      jobId: "",
       warnings: [],
       error: `format_not_supported:${format}`,
     };
   }
-
-  const jobId = await createBuildJob(input.userId, input.collectionName, format);
-  publishUser(input.userId, "extractor_events:created", {
-    jobId,
-    event: "started",
-    payload: {
-      kind: "dataset_build",
-      collection: input.collectionName,
-      format,
-    },
-  });
 
   const filename = buildFilename(input.collectionName, format);
   const writer = await openTempJsonlWriter(filename);
@@ -189,7 +117,9 @@ export async function buildDataset(
         userId: input.userId,
         collectionName: input.collectionName,
         onWarning: (w) => warnings.push(w),
+        ...(signal ? { signal } : {}),
       })) {
+        if (signal?.aborted) return { ok: false, warnings, cancelled: true };
         await writer.writeLine(JSON.stringify(src));
         lineCount += 1;
       }
@@ -202,17 +132,20 @@ export async function buildDataset(
         userId: input.userId,
         collectionName: input.collectionName,
         onWarning: (w) => warnings.push(w),
+        ...(signal ? { signal } : {}),
       })) {
+        if (signal?.aborted) return { ok: false, warnings, cancelled: true };
         sourceLines.push(src);
       }
 
       /** Buffer всех ShareGptLines до dedup. Multi-tier ↑3× concept_count. */
       const bufferedLines: ShareGptLine[] = [];
 
-      if (sourceLines.length > 0) {
+      if (sourceLines.length > 0 && !signal?.aborted) {
         await withProvider(input.userId, "crystallizer", async (provider, model) => {
           let processed = 0;
           for (const src of sourceLines) {
+            if (signal?.aborted) break;
             try {
               const tiered = await generateTieredQA(provider, model, src.delta);
               if (!tiered) {
@@ -241,6 +174,8 @@ export async function buildDataset(
         });
       }
 
+      if (signal?.aborted) return { ok: false, warnings, cancelled: true };
+
       /* Jaccard dedup pass — within-tier similarity > 0.92 → drop. */
       const { kept, dropped } = dedupShareGptLines(bufferedLines, 0.92);
       if (dropped > 0) {
@@ -254,42 +189,25 @@ export async function buildDataset(
       }
     }
 
+    if (signal?.aborted) return { ok: false, warnings, cancelled: true };
+
     if (lineCount === 0) {
-      await markBuildFailed(jobId, "no_concepts_in_collection");
-      publishUser(input.userId, "extractor_events:created", {
-        jobId,
-        event: "failed",
-        payload: {
-          kind: "dataset_build",
-          reason: "collection is empty (no accepted concepts)",
-        },
-      });
       return {
         ok: false,
-        jobId,
         warnings,
         error: "no_concepts_in_collection",
       };
     }
 
     const { path, bytes } = await writer.finish();
+    /* One last cancel check before the bucket upload — bucket writes
+     * are not abortable, so this is the last bail-out point that
+     * avoids litter in `dataset-exports`. */
+    if (signal?.aborted) return { ok: false, warnings, cancelled: true };
     const { fileId } = await uploadFromPath(input.userId, filename, path);
 
-    await markBuildDone(jobId, fileId, lineCount);
-    publishUser(input.userId, "extractor_events:created", {
-      jobId,
-      event: "done",
-      payload: {
-        kind: "dataset_build",
-        format,
-        lineCount,
-        bytes,
-        exportFileId: fileId,
-      },
-    });
     return {
       ok: true,
-      jobId,
       exportFileId: fileId,
       lineCount,
       bytes,
@@ -297,13 +215,7 @@ export async function buildDataset(
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    await markBuildFailed(jobId, msg);
-    publishUser(input.userId, "extractor_events:created", {
-      jobId,
-      event: "failed",
-      payload: { kind: "dataset_build", reason: msg },
-    });
-    return { ok: false, jobId, warnings, error: msg };
+    return { ok: false, warnings, error: msg };
   } finally {
     await writer.cleanup();
   }
