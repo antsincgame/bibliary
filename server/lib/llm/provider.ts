@@ -8,16 +8,18 @@
 
 export type ProviderId = "lmstudio" | "anthropic" | "openai";
 
-export type LLMRole =
-  | "crystallizer"
-  | "evaluator"
-  | "vision_meta"
-  | "vision_ocr"
-  | "vision_illustration"
-  | "layout_assistant"
-  | "ukrainian_specialist"
-  | "lang_detector"
-  | "translator";
+/**
+ * Roles the web server actually drives. Kept deliberately to the two
+ * that have running code paths — `crystallizer` (delta extraction,
+ * summaries, dataset synthesis) and `evaluator` (book quality scoring).
+ *
+ * The legacy Electron build had a wider taxonomy (vision_*, translator,
+ * lang_detector, ukrainian_specialist) — those are documented in
+ * .claude/rules/01-roles.md but were never wired into server/. If one
+ * is ported, add it back here together with its resolver call site, so
+ * the type never advertises a capability the server doesn't have.
+ */
+export type LLMRole = "crystallizer" | "evaluator";
 
 export interface ProviderModel {
   /** Provider-scoped identifier (например "claude-sonnet-4-6" или path для LM Studio). */

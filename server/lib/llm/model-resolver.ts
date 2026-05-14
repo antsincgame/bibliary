@@ -12,8 +12,6 @@ import type { LLMProvider, LLMRole, ProviderId } from "./provider.js";
  *   providerAssignments: {
  *     crystallizer:  { provider: "anthropic", model: "claude-sonnet-4-6" },
  *     evaluator:     { provider: "openai",    model: "gpt-5-mini" },
- *     vision_meta:   { provider: "lmstudio",  model: "qwen2-vl-7b" },
- *     ...
  *   }
  *
  * Fallback: если роль не назначена — пробуем LM Studio. Если LM Studio

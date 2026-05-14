@@ -14,19 +14,26 @@ import { z } from "zod";
  *   - AURA flags: 2 из 4 — фильтр против банальностей.
  */
 
+/**
+ * Predicate must not be a bare copula. The regex blocks both the
+ * top-level copulas (is/was/has/...) AND the underscore-glued variants
+ * (`is_a`, `has_a`, `was_a`) that LLMs reach for when prompted to use
+ * snake_case predicates. Without `is_a` in the blocklist the rule
+ * leaks: "Mammal → is_a → Animal" passes the length-3 minimum but
+ * still encodes nothing more than classification.
+ */
+const COPULA_RE =
+  /^(is|was|are|were|has|have|had|be|been|will|would|do|does|did)(_(a|an|the))?$/i;
+
 export const TopologyRelationSchema = z.object({
   subject: z.string().min(2).max(120),
   predicate: z
     .string()
     .min(3)
     .max(60)
-    .refine(
-      (v) =>
-        !/^(is|was|are|were|has|have|had|be|been|will|would|do|does|did)$/i.test(
-          v.trim(),
-        ),
-      { message: "predicate must be concrete, not a copula (is/was/has/...)" },
-    ),
+    .refine((v) => !COPULA_RE.test(v.trim()), {
+      message: "predicate must be concrete, not a copula (is/was/has/is_a/...)",
+    }),
   object: z.string().min(2).max(120),
 });
 
@@ -37,10 +44,17 @@ export const DeltaKnowledgeSchema = z.object({
   cipher: z.string().min(5).max(500),
   proof: z.string().min(10).max(800),
   applicability: z.string().max(500).default(""),
+  /* Zod's array doesn't dedupe enum values; LLM emitting
+   * `["authorship", "authorship"]` would satisfy .min(2) with a single
+   * distinct flag. Add a set-size check so the AURA invariant ("at
+   * least 2 DISTINCT markers") is actually enforced. */
   auraFlags: z
     .array(z.enum(["authorship", "specialization", "revision", "causality"]))
     .min(2)
-    .max(4),
+    .max(4)
+    .refine((arr) => new Set(arr).size === arr.length, {
+      message: "auraFlags must contain DISTINCT markers (no duplicates)",
+    }),
   tags: z.array(z.string().min(1).max(40)).min(1).max(10),
   relations: z.array(TopologyRelationSchema).min(1).max(8),
 });

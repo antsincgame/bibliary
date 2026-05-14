@@ -87,17 +87,39 @@ export async function writeAuditEvent(ev: AuditEvent): Promise<void> {
       /* Two-step truncation: cap individual string values first so the
        * structure survives; only if it's still over budget replace
        * with a sentinel. Mid-JSON-string slicing produces unparseable
-       * output that listAuditEvents silently drops. */
+       * output that listAuditEvents silently drops.
+       *
+       * Post-merge fix: the sentinel itself can exceed METADATA_MAX_CHARS
+       * if the metadata had hundreds of keys (operator passes a flat
+       * bag of feature flags etc.). Cap the keys array in the sentinel
+       * and report how many were dropped so the operator knows to
+       * inspect upstream. */
       let serialized: string;
       try {
         const trimmed = truncateValues(ev.metadata, 500);
         serialized = JSON.stringify(trimmed);
         if (serialized.length > METADATA_MAX_CHARS) {
-          serialized = JSON.stringify({
+          const allKeys = Object.keys(ev.metadata);
+          const MAX_SENTINEL_KEYS = 40;
+          const keysSample = allKeys.slice(0, MAX_SENTINEL_KEYS);
+          const sentinel: Record<string, unknown> = {
             __truncated: true,
             approxChars: serialized.length,
-            keys: Object.keys(ev.metadata),
-          });
+            keys: keysSample,
+          };
+          if (allKeys.length > MAX_SENTINEL_KEYS) {
+            sentinel["keysDropped"] = allKeys.length - MAX_SENTINEL_KEYS;
+          }
+          serialized = JSON.stringify(sentinel);
+          /* Final defensive: even the sentinel can theoretically exceed
+           * cap if a single key name is huge. Hard-truncate as last resort. */
+          if (serialized.length > METADATA_MAX_CHARS) {
+            serialized = JSON.stringify({
+              __truncated: true,
+              reason: "sentinel_oversized",
+              keyCount: allKeys.length,
+            });
+          }
         }
       } catch {
         serialized = JSON.stringify({ __truncated: true, reason: "stringify_failed" });
