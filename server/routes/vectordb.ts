@@ -10,6 +10,7 @@ import {
   heartbeat,
   listCollections,
 } from "../lib/vectordb/store.js";
+import { getBookGraph } from "../lib/vectordb/graph.js";
 import { requireAuth } from "../middleware/auth.js";
 
 const CreateCollectionBody = z.object({
@@ -72,6 +73,14 @@ export function vectordbRoutes(): Hono<AppEnv> {
     const user = c.get("user");
     if (!user) throw new HTTPException(401, { message: "auth_required" });
     return c.json(heartbeat(user.sub));
+  });
+
+  /* Knowledge graph for one book — entities (nodes) + relations (edges)
+   * the crystallizer extracted. Shaped for the renderer's graph view. */
+  app.get("/graph/book/:bookId", (c) => {
+    const user = c.get("user");
+    if (!user) throw new HTTPException(401, { message: "auth_required" });
+    return c.json(getBookGraph(user.sub, c.req.param("bookId")));
   });
 
   return app;

@@ -273,3 +273,79 @@ export function deleteGraphForUser(userId: string): {
   });
   return tx();
 }
+
+export interface GraphNode {
+  id: number;
+  label: string;
+  /** Incident-edge count — lets the UI size hub entities larger. */
+  degree: number;
+}
+
+export interface GraphEdge {
+  id: number;
+  source: number;
+  target: number;
+  predicate: string;
+}
+
+export interface BookGraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+/**
+ * The full entity graph for one book — every relation the crystallizer
+ * extracted from it plus the entities those relations touch. Shaped for
+ * a node/edge visualization: `degree` is precomputed, and edges are
+ * filtered to ones whose endpoints are both present so the renderer
+ * never sees a dangling reference.
+ */
+export function getBookGraph(userId: string, bookId: string): BookGraph {
+  const { db } = getVectorDb();
+  const relRows = db
+    .prepare(
+      `SELECT id, subject_id, predicate, object_id
+       FROM relations WHERE user_id = ? AND book_id = ?
+       ORDER BY id`,
+    )
+    .all(userId, bookId) as Array<{
+    id: number;
+    subject_id: number;
+    predicate: string;
+    object_id: number;
+  }>;
+
+  /* Degree from the edge list in one pass — no extra query. */
+  const degree = new Map<number, number>();
+  for (const r of relRows) {
+    degree.set(r.subject_id, (degree.get(r.subject_id) ?? 0) + 1);
+    degree.set(r.object_id, (degree.get(r.object_id) ?? 0) + 1);
+  }
+  const ids = [...degree.keys()];
+  if (ids.length === 0) return { nodes: [], edges: [] };
+
+  /* Display names for exactly the entities in scope. */
+  const placeholders = ids.map(() => "?").join(", ");
+  const entRows = db
+    .prepare(
+      `SELECT id, display FROM entities WHERE user_id = ? AND id IN (${placeholders})`,
+    )
+    .all(userId, ...ids) as Array<{ id: number; display: string }>;
+
+  const nodes: GraphNode[] = entRows.map((e) => ({
+    id: e.id,
+    label: e.display,
+    degree: degree.get(e.id) ?? 0,
+  }));
+  const known = new Set(nodes.map((n) => n.id));
+  const edges: GraphEdge[] = relRows
+    .filter((r) => known.has(r.subject_id) && known.has(r.object_id))
+    .map((r) => ({
+      id: r.id,
+      source: r.subject_id,
+      target: r.object_id,
+      predicate: r.predicate,
+    }));
+
+  return { nodes, edges };
+}
